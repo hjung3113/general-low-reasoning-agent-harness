@@ -18,5 +18,6 @@
 | 2026-05-15 | Phase 1 release | Target release smoke matrix | PASS | `python3 scripts/release_smoke_test.py` covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, and all-packs. |
 | 2026-05-15 | Phase 1 release | Pre-push adversarial review | BLOCKED THEN ADDRESSED | Subagent `019e2782-6d80-7453-8af9-c20501d1a8d9` found missing ledger evidence, placeholder verification, and missing `check --worktree` tests; follow-up changes addressed all three. |
 | 2026-05-15 | Phase 1 release | Release hardening commit | PASS | `8805dc31e8a071a6a643df24ec121fbecfea68bc` (`fix: harden generalized harness release gates`). |
+| 2026-05-15 | Phase 1 release | Remote push | PASS | `git push origin main` -> `001ef5f..80ff57a  main -> main`. |
 
 Add new rows when a phase closes or a cross-phase verification command becomes important.
