@@ -1,0 +1,14 @@
+.db-context/
+.scratch/reports/
+.superpowers/
+*.db-context.json
+*.db-context.md
+*.db-context.config.json
+db-context.config.json
+.db-context.config.json
+.env.db-context
+.env
+.env.*
+!.env.example
+routines.sql
+jobs.md

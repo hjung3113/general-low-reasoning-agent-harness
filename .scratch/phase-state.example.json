@@ -1,0 +1,43 @@
+{
+  "phase": "execute",
+  "plan_id": "phase-gate-docs-001",
+  "approved": true,
+  "approved_by": "human",
+  "approved_at": "2026-05-11T09:00:00Z",
+  "summary": "Add a Roo discuss-plan-execute phase gate harness.",
+  "plan_path": "docs/phase-gate-harness.md",
+  "state_path": ".planning/STATE.md",
+  "checkpoint_path": ".planning/phases/01-document-centered-phase-continuity/01-CHECKPOINTS.md",
+  "current_checkpoint": "CP-example-execute",
+  "next_action": "Run the approved verification commands and update the active phase summary.",
+  "allowed_paths": [
+    ".roo/skills/workflow-phase-gate/",
+    ".roo/rules/phase-gate.md",
+    "docs/phase-gate-harness.md",
+    ".scratch/phase-state.schema.json",
+    ".scratch/phase-state.example.json",
+    "README.md",
+    ".roo/skills/README.md"
+  ],
+  "blocked_paths": [
+    "src/",
+    "tests/"
+  ],
+  "acceptance_criteria": [
+    "State schema lists discuss, plan, execute, and done phases.",
+    "Execute phase requires approved=true and a plan_id.",
+    "Docs explain Roo prompt-level enforcement and mechanical limitations.",
+    "Workflow skill gives low-reasoning models a clear next step for each phase."
+  ],
+  "verification": [
+    "Validate .scratch/phase-state.example.json against .scratch/phase-state.schema.json.",
+    "Review changed paths stay inside the approved ownership scope."
+  ],
+  "notes": [
+    "Roo rules and skills alone do not prevent filesystem writes or commits."
+  ],
+  "automation_mode": "manual",
+  "auto_selected": [],
+  "updated_at": "2026-05-11T09:00:00Z",
+  "updated_by": "codex"
+}

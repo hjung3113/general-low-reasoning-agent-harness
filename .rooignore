@@ -1,0 +1,12 @@
+bin/
+obj/
+**/bin/
+**/obj/
+TestResults/
+coverage/
+artifacts/
+.vs/
+.vscode/
+node_modules/
+**/*.user
+**/*.suo

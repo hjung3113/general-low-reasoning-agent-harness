@@ -1,0 +1,37 @@
+{
+  "phase": "execute",
+  "approved": true,
+  "approved_by": "user",
+  "approved_at": "2026-05-15T00:00:00+09:00",
+  "plan_id": "generalized-harness-release-01",
+  "automation_mode": "manual",
+  "auto_selected": [],
+  "summary": "Generalized harness release work is approved in a separate repository copy.",
+  "state_path": ".planning/STATE.md",
+  "plan_path": ".planning/phases/01-generalized-harness-release/01-01-PLAN.md",
+  "checkpoint_path": ".planning/phases/01-generalized-harness-release/01-CHECKPOINTS.md",
+  "current_checkpoint": "CP-01-02",
+  "next_action": "Run release verification, initialize git, create the GitHub remote, and push.",
+  "allowed_paths": [
+    "README.md",
+    "AGENTS.md",
+    ".planning/",
+    ".scratch/phase-state.json",
+    ".opencode/",
+    ".roo/",
+    "docs/",
+    "harness/",
+    "scripts/"
+  ],
+  "blocked_paths": [],
+  "verification": [
+    "python3 -m unittest scripts/test_harness.py",
+    "python3 scripts/harness.py check",
+    "target install matrix smoke commands"
+  ],
+  "notes": [
+    "This is a new repository copy created from the previous harness project.",
+    "Core must remain stack-neutral and client-neutral.",
+    "Skill packs are generic composable plugins."
+  ]
+}

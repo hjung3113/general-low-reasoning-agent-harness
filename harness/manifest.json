@@ -1,0 +1,429 @@
+{
+  "version": "0.4.0",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "source": "harness/skeleton/clean/AGENTS.md",
+      "policy": "managed"
+    },
+    {
+      "path": "README.md",
+      "source": "harness/skeleton/clean/README.md",
+      "policy": "managed"
+    },
+    {
+      "path": "docs/profiles/generic.md",
+      "source": "harness/profiles/generic/PROFILE.md",
+      "policy": "harness-owned",
+      "owner": "profile:generic",
+      "profile": "generic"
+    },
+    {
+      "path": ".agents/skills/repository-evidence-research/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/repository-evidence-research/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/skill-plugin-composition/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/skill-plugin-composition/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/verification-contract/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/verification-contract/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/risk-review/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/risk-review/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/data-workflow/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/data-workflow/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/integration-boundary/SKILL.md",
+      "source": "harness/skill-packs/workflow-core/integration-boundary/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-core",
+      "pack": "workflow-core"
+    },
+    {
+      "path": ".roomodes",
+      "source": ".roomodes",
+      "policy": "harness-owned",
+      "owner": "adapter:roo",
+      "adapter": "roo"
+    },
+    {
+      "path": ".gitignore",
+      "source": "harness/skeleton/clean/.gitignore",
+      "policy": "managed"
+    },
+    {
+      "path": ".opencode/commands/discuss.md",
+      "source": ".opencode/commands/discuss.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/commands/plan.md",
+      "source": ".opencode/commands/plan.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/commands/execute.md",
+      "source": ".opencode/commands/execute.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/commands/done.md",
+      "source": ".opencode/commands/done.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".roo/README.md",
+      "source": ".roo/README.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/README.md",
+      "source": ".roo/commands/README.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/adr.md",
+      "source": ".roo/commands/adr.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/bugfix.md",
+      "source": ".roo/commands/bugfix.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/doctor.md",
+      "source": ".roo/commands/doctor.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/fsd-phase.md",
+      "source": ".roo/commands/fsd-phase.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/feature.md",
+      "source": ".roo/commands/feature.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/issues.md",
+      "source": ".roo/commands/issues.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/ops.md",
+      "source": ".roo/commands/ops.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/phase-discuss.md",
+      "source": ".roo/commands/phase-discuss.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/phase-execute.md",
+      "source": ".roo/commands/phase-execute.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/phase-plan.md",
+      "source": ".roo/commands/phase-plan.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/review.md",
+      "source": ".roo/commands/review.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/simple.md",
+      "source": ".roo/commands/simple.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules/global.md",
+      "source": ".roo/rules/global.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules/phase-gate.md",
+      "source": ".roo/rules/phase-gate.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-architect/rules.md",
+      "source": ".roo/rules-architect/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-diagnose/rules.md",
+      "source": ".roo/rules-diagnose/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-docs-issues/rules.md",
+      "source": ".roo/rules-docs-issues/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-ops-observability/rules.md",
+      "source": ".roo/rules-ops-observability/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-orchestrator/rules.md",
+      "source": ".roo/rules-orchestrator/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-review/rules.md",
+      "source": ".roo/rules-review/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/rules-tdd-code/rules.md",
+      "source": ".roo/rules-tdd-code/rules.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/README.md",
+      "source": ".roo/skills/README.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-architecture-decision/SKILL.md",
+      "source": ".roo/skills/workflow-architecture-decision/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-bug-diagnosis/SKILL.md",
+      "source": ".roo/skills/workflow-bug-diagnosis/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-code-review/SKILL.md",
+      "source": ".roo/skills/workflow-code-review/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-docs-to-issues/SKILL.md",
+      "source": ".roo/skills/workflow-docs-to-issues/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-feature-tdd/SKILL.md",
+      "source": ".roo/skills/workflow-feature-tdd/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-harness-doctor/SKILL.md",
+      "source": ".roo/skills/workflow-harness-doctor/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-ops-observability/SKILL.md",
+      "source": ".roo/skills/workflow-ops-observability/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-phase-gate/SKILL.md",
+      "source": ".roo/skills/workflow-phase-gate/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-planning-hydration/SKILL.md",
+      "source": ".roo/skills/workflow-planning-hydration/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/skills/workflow-simple-task/SKILL.md",
+      "source": ".roo/skills/workflow-simple-task/SKILL.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".scratch/phase-state.schema.json",
+      "source": ".scratch/phase-state.schema.json",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".scratch/phase-state.example.json",
+      "source": ".scratch/phase-state.example.json",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".scratch/phase-state.json",
+      "source": "harness/skeleton/clean/.scratch/phase-state.json",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/STATE.md",
+      "source": "harness/skeleton/clean/.planning/STATE.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/ROADMAP.md",
+      "source": "harness/skeleton/clean/.planning/ROADMAP.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/PROJECT.md",
+      "source": "harness/skeleton/clean/.planning/PROJECT.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/REQUIREMENTS.md",
+      "source": "harness/skeleton/clean/.planning/REQUIREMENTS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/DECISIONS.md",
+      "source": "harness/skeleton/clean/.planning/DECISIONS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/HANDOFF-PROTOCOL.md",
+      "source": "harness/skeleton/clean/.planning/HANDOFF-PROTOCOL.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/VERIFICATION.md",
+      "source": "harness/skeleton/clean/.planning/VERIFICATION.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/ARCHITECTURE.md",
+      "source": "harness/skeleton/clean/.planning/codebase/ARCHITECTURE.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/STACK.md",
+      "source": "harness/skeleton/clean/.planning/codebase/STACK.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/STRUCTURE.md",
+      "source": "harness/skeleton/clean/.planning/codebase/STRUCTURE.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/CONVENTIONS.md",
+      "source": "harness/skeleton/clean/.planning/codebase/CONVENTIONS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/TESTING.md",
+      "source": "harness/skeleton/clean/.planning/codebase/TESTING.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/INTEGRATIONS.md",
+      "source": "harness/skeleton/clean/.planning/codebase/INTEGRATIONS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase/CONCERNS.md",
+      "source": "harness/skeleton/clean/.planning/codebase/CONCERNS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-CONTEXT.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-CONTEXT.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-01-PLAN.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-PLAN.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-REVIEW.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-REVIEW.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-VERIFICATION.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-VERIFICATION.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": ".planning/phases/00-planning-hydration/00-01-SUMMARY.md",
+      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-SUMMARY.md",
+      "policy": "project-owned"
+    },
+    {
+      "path": "docs/agents/domain.md",
+      "source": "docs/agents/domain.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "docs/agents/issue-tracker.md",
+      "source": "docs/agents/issue-tracker.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "docs/agents/triage-labels.md",
+      "source": "docs/agents/triage-labels.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "docs/phase-gate-harness.md",
+      "source": "docs/phase-gate-harness.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/harness.py",
+      "source": "scripts/harness.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/test_harness.py",
+      "source": "scripts/target_smoke_test.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/project_dashboard.py",
+      "source": "scripts/project_dashboard.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/test_project_dashboard.py",
+      "source": "scripts/test_project_dashboard.py",
+      "policy": "harness-owned"
+    }
+  ]
+}

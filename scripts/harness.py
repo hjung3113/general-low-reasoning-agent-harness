@@ -1,0 +1,1160 @@
+#!/usr/bin/env python3
+"""Install, upgrade, and validate the generalized low-reasoning harness."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Iterable
+
+
+HARNESS_VERSION = "0.4.0"
+MANIFEST_PATH = Path("harness/manifest.json")
+CLEAN_SKELETON = Path("harness/skeleton/clean")
+INSTALL_STATE = Path(".harness/installed-manifest.json")
+REQUIRED_TARGET_PHRASES = {
+    "AGENTS.md": (
+        "Karpathy-Inspired Coding Guidelines",
+        "If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`",
+        "Every roadmap phase starts with its own `discuss` pass",
+    ),
+    "README.md": (
+        "Fresh target first action",
+        "python3 scripts/harness.py check",
+        "project_dashboard.py",
+    ),
+}
+CONTAMINATION_PATTERNS = (
+    re.compile(r"\bPR\s*#\d+\b", re.IGNORECASE),
+    re.compile(r"\bDB context snapshot\b", re.IGNORECASE),
+    re.compile(r"\bhjung3113/new-project\b", re.IGNORECASE),
+    re.compile(r"\bPhase\s+[0-9]+.*(?:implemented|complete|완료)", re.IGNORECASE),
+    re.compile(r"\bunder PR review\b", re.IGNORECASE),
+)
+
+
+@dataclass(frozen=True)
+class ManifestEntry:
+    path: PurePosixPath
+    source: PurePosixPath
+    policy: str
+    owner: str = "core"
+    adapter: str | None = None
+    profile: str | None = None
+    pack: str | None = None
+    retired_action: str = "remove_if_unmodified"
+
+
+@dataclass(frozen=True)
+class RoadmapPhase:
+    number: int
+    title: str
+    completed: bool
+
+
+@dataclass(frozen=True)
+class StateSnapshot:
+    total_phases: int | None
+    completed_phases: int | None
+    percent: int | None
+    active_phase: int | None
+    checkpoint: str | None
+    checkpoint_path: str | None
+
+
+@dataclass(frozen=True)
+class DoctorFinding:
+    severity: str
+    code: str
+    path: str
+    cause: str
+    impact: str
+    fix: str
+    evidence: str
+    connects_to_db: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "severity": self.severity,
+            "code": self.code,
+            "path": self.path,
+            "cause": self.cause,
+            "impact": self.impact,
+            "fix": self.fix,
+            "evidence": self.evidence,
+            "connects_to_db": self.connects_to_db,
+        }
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def run(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init", help="Install the clean harness skeleton into a target project.")
+    init_parser.add_argument("--target", required=True, type=Path)
+    init_parser.add_argument("--dry-run", action="store_true")
+    init_parser.add_argument(
+        "--adapters",
+        default="roo",
+        help="Comma-separated adapters to install: none, roo, opencode, or both. Defaults to roo for compatibility.",
+    )
+    init_parser.add_argument(
+        "--profiles",
+        default="generic",
+        help="Comma-separated active profiles. Defaults to generic; stack profiles must be confirmed before use.",
+    )
+    init_parser.add_argument(
+        "--packs",
+        default="workflow-core",
+        help="Comma-separated optional skill/capability packs to install. Defaults to workflow-core.",
+    )
+
+    upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
+    upgrade_parser.add_argument("--target", required=True, type=Path)
+    upgrade_parser.add_argument("--dry-run", action="store_true")
+    upgrade_parser.add_argument("--force", action="store_true", help="Overwrite locally modified harness-owned files.")
+    upgrade_parser.add_argument("--adapters", default=None, help="Adapter scope for upgrade. Defaults to installed adapters.")
+    upgrade_parser.add_argument("--profiles", default=None, help="Profile scope for upgrade. Defaults to installed profiles.")
+    upgrade_parser.add_argument("--packs", default=None, help="Pack scope for upgrade. Defaults to installed packs.")
+
+    check_parser = subparsers.add_parser("check", help="Validate harness structure and policy.")
+    check_parser.add_argument("--target", type=Path, default=None)
+    check_parser.add_argument("--adapter", default=None, help="Validate a specific adapter in addition to installed adapters.")
+    check_parser.add_argument("--base", default=None, help="Optional git base ref for changed-path checks.")
+    check_parser.add_argument("--worktree", action="store_true", help="Check staged and unstaged paths against allowed_paths.")
+
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnose planning, Roo, and harness environment drift.")
+    doctor_parser.add_argument("--target", type=Path, default=None)
+    doctor_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+
+    args = parser.parse_args(argv)
+    root = repo_root()
+
+    if args.command == "init":
+        install(
+            root=root,
+            target=args.target,
+            dry_run=args.dry_run,
+            adapters=parse_scope(args.adapters, default={"roo"}),
+            profiles=parse_scope(args.profiles, default={"generic"}),
+            packs=parse_scope(args.packs, default={"workflow-core"}),
+        )
+        return 0
+    if args.command == "upgrade":
+        return upgrade(
+            root=root,
+            target=args.target,
+            dry_run=args.dry_run,
+            force=args.force,
+            adapters=parse_optional_scope(args.adapters),
+            profiles=parse_optional_scope(args.profiles),
+            packs=parse_optional_scope(args.packs),
+        )
+    if args.command == "check":
+        check(root=root, target=args.target, base=args.base, worktree=args.worktree, adapter=args.adapter)
+        return 0
+    if args.command == "doctor":
+        doctor(root=(args.target or root).resolve(), output_format=args.format)
+        return 0
+    raise AssertionError(f"Unhandled command: {args.command}")
+
+
+def install(
+    *,
+    root: Path,
+    target: Path,
+    dry_run: bool = False,
+    adapters: set[str] | None = None,
+    profiles: set[str] | None = None,
+    packs: set[str] | None = None,
+) -> None:
+    adapters = adapters if adapters is not None else {"roo"}
+    profiles = profiles if profiles is not None else {"generic"}
+    packs = packs if packs is not None else set()
+    entries = select_entries(load_manifest(root), adapters=adapters, profiles=profiles, packs=packs)
+    target = target.resolve()
+    destinations = [
+        (entry, source_path(root, entry), destination_path(target, entry))
+        for entry in entries
+        if entry.policy != "exclude"
+    ]
+    existing = [str(entry.path) for entry, _, destination in destinations if destination.exists() or destination.is_symlink()]
+    if existing:
+        raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
+
+    if dry_run:
+        return
+
+    target.mkdir(parents=True, exist_ok=True)
+    for _, source, destination in destinations:
+        if not dry_run:
+            write_copy(source, destination)
+
+    write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
+
+
+def upgrade(
+    *,
+    root: Path,
+    target: Path,
+    dry_run: bool = False,
+    force: bool = False,
+    adapters: set[str] | None = None,
+    profiles: set[str] | None = None,
+    packs: set[str] | None = None,
+) -> int:
+    if not (root / MANIFEST_PATH).exists():
+        raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
+    target = target.resolve()
+    installed = read_install_state(target)
+    adapters = adapters if adapters is not None else set(installed.get("adapters", ["roo"]))
+    profiles = profiles if profiles is not None else set(installed.get("profiles", ["generic"]))
+    packs = packs if packs is not None else set(installed.get("packs", []))
+    entries = select_entries(load_manifest(root), adapters=adapters, profiles=profiles, packs=packs)
+    installed_paths = installed.get("files", {})
+    if installed.get("version") is None:
+        raise SystemExit("Target is not initialized. Run init before upgrade.")
+    conflicts = 0
+    current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
+
+    for entry in entries:
+        if entry.policy not in {"harness-owned", "managed"}:
+            continue
+
+        source = source_path(root, entry)
+        destination = destination_path(target, entry)
+        new_hash = file_hash(source)
+
+        if destination.exists() and not force:
+            old_hash = installed_paths.get(str(entry.path), {}).get("sha256")
+            current_hash = file_hash(destination)
+            if not old_hash or current_hash != old_hash:
+                conflicts += 1
+                conflict_path = target / ".harness/conflicts" / f"{entry.path}.new"
+                if not dry_run:
+                    write_copy(source, conflict_path)
+                continue
+
+        if not dry_run:
+            write_copy(source, destination)
+            installed.setdefault("files", {})[str(entry.path)] = {
+                "policy": entry.policy,
+                "sha256": new_hash,
+            }
+
+    for path_text, info in list(installed_paths.items()):
+        if path_text in current_paths:
+            continue
+        if not isinstance(info, dict) or info.get("policy") not in {"harness-owned", "managed"}:
+            continue
+        destination = target / normalize_path(path_text)
+        old_hash = info.get("sha256")
+        if destination.exists() and old_hash and file_hash(destination) != old_hash:
+            conflicts += 1
+            conflict_path = target / ".harness/conflicts" / f"{path_text}.retired"
+            if not dry_run:
+                write_copy(destination, conflict_path)
+            continue
+        if not dry_run:
+            if destination.exists():
+                destination.unlink()
+            installed.setdefault("files", {}).pop(path_text, None)
+
+    installed["version"] = HARNESS_VERSION
+    installed["adapters"] = sorted(adapters)
+    installed["profiles"] = sorted(profiles)
+    installed["packs"] = sorted(packs)
+    if not dry_run:
+        write_json(target / INSTALL_STATE, installed)
+    return 1 if conflicts else 0
+
+
+def check(
+    *,
+    root: Path,
+    target: Path | None = None,
+    base: str | None = None,
+    worktree: bool = False,
+    adapter: str | None = None,
+) -> None:
+    root = root.resolve()
+    if not (root / MANIFEST_PATH).exists():
+        check_installed_target(root)
+        if base:
+            check_changed_paths(root, base)
+        if worktree:
+            check_worktree_paths(root)
+        return
+
+    manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    if manifest.get("version") != HARNESS_VERSION:
+        raise SystemExit(f"Manifest version mismatch: expected {HARNESS_VERSION}")
+
+    all_entries = load_manifest(root)
+    entries = all_entries
+    missing = [str(entry.source) for entry in entries if entry.policy != "exclude" and not source_path(root, entry).exists()]
+    if missing:
+        raise SystemExit(f"Manifest sources missing: {', '.join(missing)}")
+
+    check_clean_skeleton(root)
+    if (root / ".roomodes").exists():
+        check_json(root / ".roomodes")
+    check_json(root / ".scratch/phase-state.schema.json")
+    check_json(root / ".scratch/phase-state.example.json")
+    check_json(root / ".scratch/phase-state.json")
+    check_phase_state_semantics(root / ".scratch/phase-state.json")
+    check_phase_state_semantics(root / ".scratch/phase-state.example.json")
+    if (root / ".roo").exists() and (root / ".roomodes").exists():
+        check_command_modes(root)
+    check_phase_state_paths(root)
+    check_roadmap_state_sync(root)
+    check_phase_reference_drift(root)
+
+    check_target = (target or root).resolve()
+    if target:
+        installed = read_install_state(check_target)
+        adapters = set(installed.get("adapters", ["roo"]))
+        profiles = set(installed.get("profiles", ["generic"]))
+        packs = set(installed.get("packs", []))
+        if adapter:
+            adapters.add(adapter)
+        expected = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
+        check_installed_target(check_target, expected_entries=expected)
+    if base:
+        check_changed_paths(check_target, base)
+    if worktree:
+        check_worktree_paths(check_target)
+
+
+def load_manifest(root: Path) -> list[ManifestEntry]:
+    data = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    entries = []
+    for item in data.get("files", []):
+        entries.append(
+            ManifestEntry(
+                path=PurePosixPath(item["path"]),
+                source=PurePosixPath(item["source"]),
+                policy=item["policy"],
+                owner=item.get("owner") or infer_owner(item["path"]),
+                adapter=item.get("adapter") or infer_adapter(item["path"]),
+                profile=item.get("profile"),
+                pack=item.get("pack") or infer_pack(item["path"]),
+                retired_action=item.get("retired_action", "remove_if_unmodified"),
+            )
+        )
+    return entries
+
+
+def parse_optional_scope(value: str | None) -> set[str] | None:
+    if value is None:
+        return None
+    return parse_scope(value, default=set())
+
+
+def parse_scope(value: str, *, default: set[str]) -> set[str]:
+    if value is None:
+        return set(default)
+    normalized = value.strip().lower()
+    if normalized in {"", "default"}:
+        return set(default)
+    if normalized in {"none", "core", "core-only"}:
+        return set()
+    return {item.strip().lower() for item in value.split(",") if item.strip()}
+
+
+def infer_adapter(path_text: str) -> str | None:
+    if path_text == ".roomodes" or path_text.startswith(".roo/"):
+        return "roo"
+    if path_text == "docs/roo-orchestration-design.md":
+        return "roo"
+    if path_text.startswith(".opencode/"):
+        return "opencode"
+    return None
+
+
+def infer_pack(path_text: str) -> str | None:
+    if path_text.startswith(".db-context/") or "db_context" in path_text or path_text == "docs/db-context-snapshot.md":
+        return "db-context"
+    return None
+
+
+def infer_owner(path_text: str) -> str:
+    adapter = infer_adapter(path_text)
+    if adapter:
+        return f"adapter:{adapter}"
+    pack = infer_pack(path_text)
+    if pack:
+        return f"pack:{pack}"
+    return "core"
+
+
+def select_entries(
+    entries: Iterable[ManifestEntry],
+    *,
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+) -> list[ManifestEntry]:
+    selected = []
+    for entry in entries:
+        if entry.adapter and entry.adapter not in adapters:
+            continue
+        if entry.profile and entry.profile not in profiles:
+            continue
+        if entry.pack and entry.pack not in packs:
+            continue
+        selected.append(entry)
+    return selected
+
+
+def source_path(root: Path, entry: ManifestEntry) -> Path:
+    if entry.source.is_absolute():
+        raise SystemExit(f"Absolute manifest sources are not allowed: {entry.source}")
+    path = (root / entry.source).resolve()
+    if not is_relative_to(path, root.resolve()):
+        raise SystemExit(f"Manifest source escapes repository: {entry.source}")
+    return path
+
+
+def destination_path(target: Path, entry: ManifestEntry) -> Path:
+    if entry.path.is_absolute():
+        raise SystemExit(f"Manifest destination escapes target: {entry.path}")
+    parts = entry.path.parts
+    if not parts or any(part in {"", ".", ".."} for part in parts) or re.match(r"^[A-Za-z]:", parts[0]):
+        raise SystemExit(f"Manifest destination escapes target: {entry.path}")
+    destination = (target / Path(*parts)).resolve(strict=False)
+    if not is_relative_to(destination, target.resolve(strict=False)):
+        raise SystemExit(f"Manifest destination escapes target: {entry.path}")
+    return destination
+
+
+def write_copy(source: Path, destination: Path) -> None:
+    assert_safe_write_destination(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, destination)
+
+
+def assert_safe_write_destination(destination: Path) -> None:
+    for candidate in (destination, *destination.parents):
+        if candidate.is_symlink():
+            raise SystemExit(f"Refusing to write through symlink: {candidate}")
+        if candidate == candidate.parent:
+            break
+
+
+def write_install_state(
+    *,
+    root: Path,
+    target: Path,
+    entries: Iterable[ManifestEntry],
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+) -> None:
+    files = {}
+    for entry in entries:
+        if entry.policy == "exclude":
+            continue
+        destination = target / entry.path
+        files[str(entry.path)] = {
+            "policy": entry.policy,
+            "sha256": file_hash(destination),
+        }
+    write_json(
+        target / INSTALL_STATE,
+        {
+            "version": HARNESS_VERSION,
+            "source": str(root),
+            "adapters": sorted(adapters),
+            "profiles": sorted(profiles),
+            "packs": sorted(packs),
+            "files": files,
+        },
+    )
+
+
+def read_install_state(target: Path) -> dict[str, object]:
+    path = target / INSTALL_STATE
+    if not path.exists():
+        return {"version": None, "files": {}}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
+    installed_path = target / INSTALL_STATE
+    if not installed_path.exists():
+        raise SystemExit(f"Target is missing {INSTALL_STATE}")
+    installed = json.loads(installed_path.read_text(encoding="utf-8"))
+    if installed.get("version") is None:
+        raise SystemExit("Target install state is missing version.")
+    missing = []
+    for path_text in installed.get("files", {}):
+        destination = target / normalize_path(path_text)
+        if not destination.exists():
+            missing.append(path_text)
+    if missing:
+        raise SystemExit("Installed target is missing files: " + ", ".join(missing))
+    if expected_entries is not None:
+        expected_paths = {str(entry.path) for entry in expected_entries if entry.policy != "exclude"}
+        missing_current = [
+            path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
+        ]
+        if missing_current:
+            raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
+        retired = [path_text for path_text in sorted(installed.get("files", {})) if path_text not in expected_paths]
+        if retired:
+            raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
+    missing_phrases = []
+    for relative, phrases in REQUIRED_TARGET_PHRASES.items():
+        path = target / relative
+        if not path.exists():
+            missing_phrases.append(f"{relative}: missing file")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for phrase in phrases:
+            if phrase not in text:
+                missing_phrases.append(f"{relative}: {phrase}")
+    if missing_phrases:
+        raise SystemExit("Required guardrail phrases missing: " + "; ".join(missing_phrases))
+    for relative in (
+        ".roomodes",
+        ".scratch/phase-state.schema.json",
+        ".scratch/phase-state.example.json",
+        ".scratch/phase-state.json",
+    ):
+        path = target / relative
+        if path.exists():
+            check_json(path)
+    for relative in (".scratch/phase-state.json", ".scratch/phase-state.example.json"):
+        path = target / relative
+        if path.exists():
+            check_phase_state_semantics(path)
+    if roadmap_state_sync_applicable(target):
+        check_roadmap_state_sync(target)
+
+
+def write_json(path: Path, data: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_clean_skeleton(root: Path) -> None:
+    skeleton = root / CLEAN_SKELETON
+    if not skeleton.exists():
+        raise SystemExit(f"Missing clean skeleton: {CLEAN_SKELETON}")
+    offenders: list[str] = []
+    for path in skeleton.rglob("*"):
+        if path.is_file() and is_text_file(path):
+            text = path.read_text(encoding="utf-8")
+            if any(pattern.search(text) for pattern in CONTAMINATION_PATTERNS):
+                offenders.append(str(path.relative_to(root)))
+    if offenders:
+        raise SystemExit("Clean skeleton contamination detected: " + ", ".join(offenders))
+
+
+def check_json(path: Path) -> None:
+    json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_phase_state_semantics(path: Path) -> None:
+    state = json.loads(path.read_text(encoding="utf-8"))
+    automation_mode = state.get("automation_mode")
+    if automation_mode not in {"manual", "auto", "chain"}:
+        raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
+    auto_selected = state.get("auto_selected")
+    if not isinstance(auto_selected, list):
+        raise SystemExit(f"{path} auto_selected must be an array.")
+    if automation_mode in {"auto", "chain"} and not auto_selected:
+        raise SystemExit(f"{path} auto_selected must record choices when automation_mode={automation_mode}.")
+    required = {
+        "choice": str,
+        "selected_value": str,
+        "reason": str,
+        "evidence_path": str,
+        "risk_level": str,
+        "reversible": bool,
+        "inside_allowed_paths": bool,
+        "stop_conditions_checked": list,
+    }
+    for index, item in enumerate(auto_selected):
+        if not isinstance(item, dict):
+            raise SystemExit(f"{path} auto_selected[{index}] must be an object.")
+        for key, expected_type in required.items():
+            if key not in item or not isinstance(item[key], expected_type):
+                raise SystemExit(f"{path} auto_selected[{index}].{key} is required.")
+        if item["risk_level"] not in {"low", "medium", "high"}:
+            raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high.")
+        if not item["stop_conditions_checked"]:
+            raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty.")
+    if state.get("phase") == "execute" and state.get("approved") is True:
+        required_execute = (
+            "plan_id",
+            "allowed_paths",
+            "verification",
+            "state_path",
+            "plan_path",
+            "checkpoint_path",
+            "approved_by",
+            "approved_at",
+        )
+        missing = [key for key in required_execute if not state.get(key)]
+        if missing:
+            raise SystemExit(f"{path} execute approval requires {', '.join(missing)}.")
+
+
+def check_command_modes(root: Path) -> None:
+    modes = json.loads((root / ".roomodes").read_text(encoding="utf-8"))
+    known = {mode["slug"] for mode in modes.get("customModes", [])}
+    unknown: list[str] = []
+    for command in (root / ".roo/commands").glob("*.md"):
+        text = command.read_text(encoding="utf-8")
+        match = re.search(r"^mode:\s*([A-Za-z0-9_-]+)\s*$", text, re.MULTILINE)
+        if match and match.group(1) not in known:
+            unknown.append(f"{command.relative_to(root)} -> {match.group(1)}")
+    if unknown:
+        raise SystemExit("Commands reference unknown Roo modes: " + ", ".join(unknown))
+
+
+def check_phase_reference_drift(root: Path) -> None:
+    stale = (
+        "Phase 2 should add mechanical",
+        "Future mechanical enforcement belongs to Phase 2",
+        "Phase 3 for consumer onboarding",
+        "Phase 4 is reserved for an example ETL slice",
+    )
+    offenders = []
+    for path in (root / ".planning").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        for phrase in stale:
+            if phrase in text:
+                offenders.append(f"{path.relative_to(root)}: {phrase}")
+    if offenders:
+        raise SystemExit("Stale phase reference detected: " + "; ".join(offenders))
+
+
+def check_phase_state_paths(root: Path) -> None:
+    state_path = root / ".scratch/phase-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    missing = []
+    for key in ("state_path", "plan_path", "checkpoint_path"):
+        value = state.get(key)
+        if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
+            missing.append(f"{key}={value}")
+    if missing:
+        raise SystemExit("Phase-state paths are missing: " + ", ".join(missing))
+
+
+def doctor(*, root: Path, output_format: str) -> None:
+    sys.stdout.write(render_doctor_report(collect_doctor_findings(root), output_format=output_format))
+
+
+def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
+    findings: list[DoctorFinding] = []
+    findings.extend(roadmap_state_doctor_findings(root))
+    findings.extend(phase_state_path_doctor_findings(root))
+    findings.extend(command_mode_doctor_findings(root))
+    findings.extend(db_context_doctor_findings(root))
+    findings.append(
+        DoctorFinding(
+            severity="P3",
+            code="diff_before_mutation",
+            path="scripts/harness.py",
+            cause="Harness mutation commands can change many files when init or upgrade runs against a target.",
+            impact="A low-reasoning agent may apply changes before the user has reviewed the affected files.",
+            fix="Run dry-run or diagnostic commands first, inspect the diff or conflict report, then mutate only after review.",
+            evidence="Use `python3 scripts/harness.py upgrade --target <path> --dry-run` before upgrade and `git diff` before commit.",
+        )
+    )
+    return sorted(findings, key=lambda item: (item.severity, item.code, item.path, item.cause))
+
+
+def roadmap_state_doctor_findings(root: Path) -> list[DoctorFinding]:
+    return [
+        DoctorFinding(
+            severity="P1",
+            code="roadmap_state_sync",
+            path=".planning/ROADMAP.md",
+            cause=finding,
+            impact="Agents may execute the wrong phase, compute progress incorrectly, or trust stale approval pointers.",
+            fix="Update `.planning/ROADMAP.md`, `.planning/STATE.md`, the active checkpoint, and `.scratch/phase-state.json` together.",
+            evidence=finding,
+        )
+        for finding in find_roadmap_state_sync_findings(root)
+    ]
+
+
+def phase_state_path_doctor_findings(root: Path) -> list[DoctorFinding]:
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return [
+            DoctorFinding(
+                severity="P1",
+                code="phase_state_missing",
+                path=".scratch/phase-state.json",
+                cause="Live phase gate file is missing.",
+                impact="Implementation workflows cannot prove phase, plan_id, approved state, allowed paths, or verification.",
+                fix="Create `.scratch/phase-state.json` from schema/example and point it at durable `.planning/` files.",
+                evidence="missing file",
+            )
+        ]
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [
+            DoctorFinding(
+                severity="P1",
+                code="phase_state_invalid_json",
+                path=".scratch/phase-state.json",
+                cause=str(exc),
+                impact="Harness checks and workflow gates cannot parse the live phase state.",
+                fix="Repair JSON syntax and validate with `.scratch/phase-state.schema.json`.",
+                evidence=f"line {exc.lineno} column {exc.colno}",
+            )
+        ]
+    findings: list[DoctorFinding] = []
+    for key in ("state_path", "plan_path", "checkpoint_path"):
+        value = state.get(key)
+        if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
+            findings.append(
+                DoctorFinding(
+                    severity="P1",
+                    code="phase_state_pointer_missing",
+                    path=".scratch/phase-state.json",
+                    cause=f"{key} points to missing path {value!r}.",
+                    impact="Fresh sessions may restart from a non-existent plan or checkpoint.",
+                    fix="Update the pointer to an existing durable planning file or restore the missing file.",
+                    evidence=f"{key}={value}",
+                )
+            )
+    return findings
+
+
+def command_mode_doctor_findings(root: Path) -> list[DoctorFinding]:
+    roomodes_path = root / ".roomodes"
+    commands_dir = root / ".roo/commands"
+    if not roomodes_path.exists() or not commands_dir.exists():
+        return []
+    try:
+        modes = json.loads(roomodes_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [
+            DoctorFinding(
+                severity="P1",
+                code="roomodes_invalid_json",
+                path=".roomodes",
+                cause=str(exc),
+                impact="Roo cannot reliably load project-local modes.",
+                fix="Repair `.roomodes` JSON and run `jq . .roomodes >/dev/null`.",
+                evidence=f"line {exc.lineno} column {exc.colno}",
+            )
+        ]
+    known = {mode["slug"] for mode in modes.get("customModes", []) if isinstance(mode, dict) and "slug" in mode}
+    findings: list[DoctorFinding] = []
+    for command in commands_dir.glob("*.md"):
+        text = command.read_text(encoding="utf-8")
+        match = re.search(r"^mode:\s*([A-Za-z0-9_-]+)\s*$", text, re.MULTILINE)
+        if match and match.group(1) not in known:
+            relative = str(command.relative_to(root))
+            findings.append(
+                DoctorFinding(
+                    severity="P1",
+                    code="command_unknown_mode",
+                    path=relative,
+                    cause=f"Command references unknown Roo mode {match.group(1)!r}.",
+                    impact="The slash command may route to a mode that Roo cannot start.",
+                    fix="Update the command frontmatter or add the missing mode to `.roomodes`.",
+                    evidence=f"{relative} -> {match.group(1)}",
+                )
+            )
+    return findings
+
+
+def db_context_doctor_findings(root: Path) -> list[DoctorFinding]:
+    findings: list[DoctorFinding] = []
+    gitignore_path = root / ".gitignore"
+    gitignore = gitignore_path.read_text(encoding="utf-8") if gitignore_path.exists() else ""
+    required_patterns = [".db-context/", "db-context.config.json", "*.db-context.config.json", ".env", ".env.*", "!.env.example"]
+    for pattern in required_patterns:
+        if pattern not in gitignore:
+            findings.append(
+                DoctorFinding(
+                    severity="P2",
+                    code="db_context_secret_ignore_missing",
+                    path=".gitignore",
+                    cause=f"Secret-bearing DB context pattern {pattern!r} is not ignored.",
+                    impact="Connection strings or generated DB context artifacts may be committed accidentally.",
+                    fix=f"Add `{pattern}` to `.gitignore`.",
+                    evidence=pattern,
+                )
+            )
+    snapshot_path = root / ".db-context/latest.json"
+    if snapshot_path.exists():
+        try:
+            report = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            findings.append(
+                DoctorFinding(
+                    severity="P2",
+                    code="db_context_snapshot_invalid_json",
+                    path=".db-context/latest.json",
+                    cause=str(exc),
+                    impact="DB-dependent workflows cannot safely read cached database context.",
+                    fix="Refresh the DB context snapshot after explicit user approval or repair the JSON.",
+                    evidence=f"line {exc.lineno} column {exc.colno}",
+                )
+            )
+        else:
+            options = report.get("collection_options", {})
+            if options.get("snapshot_scope") == "selected" and not any(
+                options.get(key) for key in ("include_tables", "include_procedures", "include_jobs")
+            ):
+                findings.append(
+                    DoctorFinding(
+                        severity="P2",
+                        code="db_context_selected_empty",
+                        path=".db-context/latest.json",
+                        cause="Snapshot scope is selected but no selected objects are recorded.",
+                        impact="Agents may believe the snapshot is intentionally narrow while it contains no target object list.",
+                        fix="Refresh with `--snapshot-scope selected` plus `--include-tables`, `--include-procedures`, or `--include-jobs`.",
+                        evidence="collection_options.snapshot_scope=selected",
+                    )
+                )
+            if options.get("include_jobs") and "agent_jobs" not in report:
+                findings.append(
+                    DoctorFinding(
+                        severity="P2",
+                        code="db_context_jobs_requested_not_collected",
+                        path=".db-context/latest.json",
+                        cause="Selected jobs are recorded but SQL Agent job metadata is absent.",
+                        impact="Workflow review may miss job commands or schedules.",
+                        fix="Refresh with `--include-agent-jobs --include-jobs <names>` after explicit user approval.",
+                        evidence="include_jobs present; agent_jobs missing",
+                    )
+                )
+    return findings
+
+
+def render_doctor_report(findings: list[DoctorFinding], *, output_format: str) -> str:
+    if output_format == "json":
+        return json.dumps({"findings": [finding.to_dict() for finding in findings]}, indent=2, sort_keys=True) + "\n"
+    if output_format != "markdown":
+        raise SystemExit("doctor format must be markdown or json")
+    if not findings:
+        return "# Harness Doctor\n\nNo findings.\n"
+    lines = ["# Harness Doctor", ""]
+    for finding in findings:
+        lines.extend(
+            [
+                f"## {finding.severity} {finding.code}",
+                "",
+                f"- Path: `{finding.path}`",
+                f"- Cause: {finding.cause}",
+                f"- Impact: {finding.impact}",
+                f"- Fix: {finding.fix}",
+                f"- Evidence: {finding.evidence}",
+                f"- Connects to DB: `{str(finding.connects_to_db).lower()}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def check_roadmap_state_sync(root: Path) -> None:
+    findings = find_roadmap_state_sync_findings(root)
+    if findings:
+        raise SystemExit("Roadmap/state sync invariant failed: " + "; ".join(findings))
+
+
+def roadmap_state_sync_applicable(root: Path) -> bool:
+    state_path = root / ".planning/STATE.md"
+    phase_state_path = root / ".scratch/phase-state.json"
+    roadmap_path = root / ".planning/ROADMAP.md"
+    if not state_path.exists() or not roadmap_path.exists() or not phase_state_path.exists():
+        return False
+    state = parse_state_snapshot(state_path.read_text(encoding="utf-8"))
+    phase_state = json.loads(phase_state_path.read_text(encoding="utf-8"))
+    return any(
+        (
+            state.total_phases is not None,
+            state.completed_phases is not None,
+            state.percent is not None,
+            state.active_phase is not None,
+            state.checkpoint is not None,
+            state.checkpoint_path is not None,
+            phase_state.get("state_path") is not None,
+            phase_state.get("checkpoint_path") is not None,
+            phase_state.get("current_checkpoint") is not None,
+        )
+    )
+
+
+def find_roadmap_state_sync_findings(root: Path) -> list[str]:
+    roadmap_path = root / ".planning/ROADMAP.md"
+    state_path = root / ".planning/STATE.md"
+    phase_state_path = root / ".scratch/phase-state.json"
+    findings: list[str] = []
+
+    for path in (roadmap_path, state_path, phase_state_path):
+        if not path.exists():
+            findings.append(f"{path.relative_to(root)} is missing")
+    if findings:
+        return findings
+
+    phases = parse_roadmap_phases(roadmap_path.read_text(encoding="utf-8"))
+    state = parse_state_snapshot(state_path.read_text(encoding="utf-8"))
+    phase_state = json.loads(phase_state_path.read_text(encoding="utf-8"))
+
+    if not phases:
+        findings.append(".planning/ROADMAP.md has no parseable phase checklist under ## Phases")
+        return findings
+
+    total_phases = len(phases)
+    completed_phases = sum(1 for phase in phases if phase.completed)
+    percent = round((completed_phases / total_phases) * 100) if total_phases else 0
+    active_phase = next((phase.number for phase in phases if not phase.completed), None)
+
+    if state.total_phases != total_phases:
+        findings.append(
+            f".planning/STATE.md progress.total_phases={state.total_phases} does not match "
+            f".planning/ROADMAP.md total phases={total_phases}"
+        )
+    if state.completed_phases != completed_phases:
+        findings.append(
+            f".planning/STATE.md progress.completed_phases={state.completed_phases} does not match "
+            f".planning/ROADMAP.md completed phases={completed_phases}"
+        )
+    if state.percent != percent:
+        findings.append(
+            f".planning/STATE.md progress.percent={state.percent} does not match "
+            f".planning/ROADMAP.md derived percent={percent}"
+        )
+    if active_phase is not None and state.active_phase != active_phase:
+        findings.append(
+            f".planning/STATE.md active phase={state.active_phase} does not match "
+            f".planning/ROADMAP.md first incomplete phase={active_phase}"
+        )
+
+    expected_state_path = ".planning/STATE.md"
+    actual_state_path = phase_state.get("state_path")
+    if actual_state_path != expected_state_path:
+        findings.append(f".scratch/phase-state.json state_path={actual_state_path!r} must be {expected_state_path!r}")
+    if state.checkpoint_path and phase_state.get("checkpoint_path") != state.checkpoint_path:
+        findings.append(
+            f".scratch/phase-state.json checkpoint_path={phase_state.get('checkpoint_path')!r} does not match "
+            f".planning/STATE.md checkpoint file={state.checkpoint_path!r}"
+        )
+    if state.checkpoint and phase_state.get("current_checkpoint") != state.checkpoint:
+        findings.append(
+            f".scratch/phase-state.json current_checkpoint={phase_state.get('current_checkpoint')!r} does not match "
+            f".planning/STATE.md checkpoint={state.checkpoint!r}"
+        )
+
+    plan_path = phase_state.get("plan_path")
+    if isinstance(plan_path, str) and state.checkpoint_path:
+        plan_parent = PurePosixPath(normalize_path(plan_path)).parent
+        checkpoint_parent = PurePosixPath(normalize_path(state.checkpoint_path)).parent
+        if plan_parent != checkpoint_parent:
+            findings.append(
+                f".scratch/phase-state.json plan_path={plan_path!r} must point inside active phase folder "
+                f"{str(checkpoint_parent)!r}"
+            )
+
+    return findings
+
+
+def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
+    section = markdown_section(text, "Phases")
+    phases: list[RoadmapPhase] = []
+    pattern = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*Phase\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*")
+    for line in section.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            phases.append(
+                RoadmapPhase(
+                    number=int(match.group("number")),
+                    title=match.group("title").strip(),
+                    completed=match.group("mark").lower() == "x",
+                )
+            )
+    return phases
+
+
+def parse_state_snapshot(text: str) -> StateSnapshot:
+    frontmatter = parse_frontmatter(text)
+    progress = frontmatter.get("progress", {})
+    checkpoint_match = re.search(r"^-\s+\*\*Checkpoint\*\*:\s*([A-Za-z0-9_-]+)\b", text, re.MULTILINE)
+    checkpoint_path_match = re.search(r"^-\s+\*\*Checkpoint file\*\*:\s*`([^`]+)`", text, re.MULTILINE)
+    active_phase_match = re.search(r"^-\s+\*\*Phase\*\*:\s*(\d+)\b", text, re.MULTILINE)
+    return StateSnapshot(
+        total_phases=int_value(progress.get("total_phases")),
+        completed_phases=int_value(progress.get("completed_phases")),
+        percent=int_value(progress.get("percent")),
+        active_phase=int(active_phase_match.group(1)) if active_phase_match else None,
+        checkpoint=checkpoint_match.group(1) if checkpoint_match else None,
+        checkpoint_path=normalize_path(checkpoint_path_match.group(1)) if checkpoint_path_match else None,
+    )
+
+
+def parse_frontmatter(text: str) -> dict[str, object]:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    data: dict[str, object] = {}
+    current_map: dict[str, object] | None = None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if not line.strip():
+            continue
+        if not line.startswith(" ") and line.endswith(":"):
+            current_map = {}
+            data[line[:-1].strip()] = current_map
+            continue
+        if not line.startswith(" "):
+            key, value = split_frontmatter_pair(line)
+            data[key] = value
+            current_map = None
+            continue
+        if current_map is not None:
+            key, value = split_frontmatter_pair(line.strip())
+            current_map[key] = value
+    return data
+
+
+def split_frontmatter_pair(line: str) -> tuple[str, object]:
+    if ":" not in line:
+        return line.strip(), ""
+    key, raw_value = line.split(":", 1)
+    value = raw_value.strip().strip('"')
+    parsed: object = int(value) if re.fullmatch(r"-?\d+", value) else value
+    return key.strip(), parsed
+
+
+def int_value(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"-?\d+", value):
+        return int(value)
+    return None
+
+
+def markdown_section(text: str, heading: str) -> str:
+    pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$", re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        return ""
+    next_heading = re.search(r"^##\s+", text[match.end() :], re.MULTILINE)
+    end = match.end() + next_heading.start() if next_heading else len(text)
+    return text[match.end() : end]
+
+
+def check_changed_paths(target: Path, base: str) -> None:
+    state_path = target / ".scratch/phase-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    if state.get("phase") not in {"execute", "done"} or state.get("approved") is not True:
+        raise SystemExit("Changed-path check requires phase=execute or phase=done with approved=true")
+    changed = git_changed_paths(target, base)
+    denied = [
+        path
+        for path in changed
+        if not path_allowed(path, state.get("allowed_paths", []), state.get("blocked_paths", []))
+    ]
+    if denied:
+        raise SystemExit("Changed paths outside allowed_paths: " + ", ".join(denied))
+
+
+def check_worktree_paths(target: Path) -> None:
+    state = json.loads((target / ".scratch/phase-state.json").read_text(encoding="utf-8"))
+    if state.get("phase") not in {"execute", "done"} or state.get("approved") is not True:
+        raise SystemExit("Worktree changed-path check requires phase=execute or phase=done with approved=true")
+    changed = sorted(set(git_worktree_paths(target)))
+    denied = [
+        path
+        for path in changed
+        if not path_allowed(path, state.get("allowed_paths", []), state.get("blocked_paths", []))
+    ]
+    if denied:
+        raise SystemExit("Worktree paths outside allowed_paths: " + ", ".join(denied))
+
+
+def git_changed_paths(target: Path, base: str) -> list[str]:
+    output = subprocess.check_output(
+        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        cwd=target,
+        text=True,
+    )
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def git_worktree_paths(target: Path) -> list[str]:
+    outputs = [
+        subprocess.check_output(["git", "diff", "--name-only"], cwd=target, text=True),
+        subprocess.check_output(["git", "diff", "--cached", "--name-only"], cwd=target, text=True),
+        subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], cwd=target, text=True),
+    ]
+    return [line.strip() for output in outputs for line in output.splitlines() if line.strip()]
+
+
+def path_allowed(path: str, allowed: Iterable[str], blocked: Iterable[str]) -> bool:
+    normalized = normalize_path(path)
+    if matches_any(normalized, blocked):
+        return False
+    return matches_any(normalized, allowed)
+
+
+def matches_any(path: str, patterns: Iterable[str]) -> bool:
+    for pattern in patterns:
+        normalized = normalize_path(pattern)
+        if normalized.endswith("/"):
+            if path.startswith(normalized):
+                return True
+        elif path == normalized:
+            return True
+    return False
+
+
+def normalize_path(path: str) -> str:
+    normalized = os.path.normpath(path).replace(os.sep, "/")
+    if normalized == "." or normalized.startswith("../") or normalized == "..":
+        raise ValueError(f"Unsafe relative path: {path}")
+    if path.endswith("/") and not normalized.endswith("/"):
+        normalized += "/"
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def is_text_file(path: Path) -> bool:
+    return path.suffix in {".md", ".json", ".txt", ".yml", ".yaml", ".toml", ".sh", ".py"} or path.name in {
+        "AGENTS.md",
+        ".roomodes",
+        ".gitignore",
+    }
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
