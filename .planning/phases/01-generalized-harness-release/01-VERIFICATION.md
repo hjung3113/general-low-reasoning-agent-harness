@@ -20,7 +20,7 @@
 | Target release smoke matrix | PASS | `python3 scripts/release_smoke_test.py` covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, and all-packs install/check/target-smoke cases. Latest temp matrix: `/var/folders/6t/ddmgth_n47j1dq_mwk8lm6700000gn/T/harness-release-smoke.xgu1qerh`. |
 | Pre-push adversarial review | BLOCKED THEN ADDRESSED | Subagent `019e2782-6d80-7453-8af9-c20501d1a8d9` returned NO-PUSH for missing ledger evidence, placeholder verification, and missing `check --worktree` regression tests. Follow-up changes added this ledger, replaced the placeholder with `python3 scripts/release_smoke_test.py`, and added focused worktree tests. |
 | Commit | PASS | `8805dc31e8a071a6a643df24ec121fbecfea68bc` (`fix: harden generalized harness release gates`). |
-| Push | PASS | `git push origin main` -> `001ef5f..80ff57a  main -> main`. |
+| Push | PASS | Remote branch is synchronized after push; final audit command `git status --short --branch` reports `## main...origin/main`. |
 
 ## Target Matrix Covered By `scripts/release_smoke_test.py`
 
