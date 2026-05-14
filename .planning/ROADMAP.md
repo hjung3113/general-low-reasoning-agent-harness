@@ -2,7 +2,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Generalized Harness Release** - Publish the stack-neutral harness with OpenCode compatibility and composable workflow skill packs.
+- [x] **Phase 1: Generalized Harness Release** - Publish the stack-neutral harness with OpenCode compatibility and composable workflow skill packs.
 
 ## Phase Details
 
@@ -22,5 +22,4 @@
 
 | Phase | Plans Complete | Status | Completed |
 | --- | ---: | --- | --- |
-| 1. Generalized Harness Release | 0/1 | In progress | - |
-
+| 1. Generalized Harness Release | 1/1 | Complete | 2026-05-15 |

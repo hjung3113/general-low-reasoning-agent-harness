@@ -1,5 +1,5 @@
 {
-  "phase": "execute",
+  "phase": "done",
   "approved": true,
   "approved_by": "user",
   "approved_at": "2026-05-14T15:00:00Z",
@@ -10,8 +10,8 @@
   "state_path": ".planning/STATE.md",
   "plan_path": ".planning/phases/01-generalized-harness-release/01-01-PLAN.md",
   "checkpoint_path": ".planning/phases/01-generalized-harness-release/01-CHECKPOINTS.md",
-  "current_checkpoint": "CP-01-02",
-  "next_action": "Run release verification, initialize git, create the GitHub remote, and push.",
+  "current_checkpoint": "CP-01-03",
+  "next_action": "Phase 1 release complete. Start a new discuss pass for any further scope.",
   "allowed_paths": [
     "README.md",
     "AGENTS.md",
@@ -40,6 +40,6 @@
     "Core must remain stack-neutral and client-neutral.",
     "Skill packs are generic composable plugins."
   ],
-  "updated_at": "2026-05-14T15:00:00Z",
+  "updated_at": "2026-05-15T00:00:00Z",
   "updated_by": "codex"
 }

@@ -207,6 +207,11 @@ python3 scripts/harness.py init \
 - `workflow-etl`
 - `workflow-db-context`
 - `workflow-web-development`
+- `workflow-tdd`
+- `workflow-debugging`
+- `workflow-code-review`
+- `workflow-skill-authoring`
+- `workflow-security-review`
 
 ## workflow-core 기본 스킬
 
@@ -214,8 +219,11 @@ python3 scripts/harness.py init \
 
 - `repository-evidence-research`: repo evidence를 먼저 읽고 확인된 사실/추론/거절된 가정을 분리
 - `skill-plugin-composition`: 현재 phase에 필요한 skill만 최소 조합
+- `ecosystem-skill-research`: 외부 skill/plugin 생태계에서 패턴만 추출하고 stack-neutral local pack으로 번역
 - `verification-contract`: execute 전에 검증 명령, 증거, 실패 신호를 명시
 - `risk-review`: phase gate, adapter, pack, 구현 계획을 적대적으로 리뷰
+- `multi-agent-review`: release나 큰 workflow 변경 전 서로 다른 전문가 관점의 병렬 리뷰를 기록
+- `release-readiness-audit`: prompt 요구사항을 실제 artifact, test, git evidence에 매핑
 - `data-workflow`: 데이터 이동/형태/검증/민감정보를 스택 중립적으로 확인
 - `integration-boundary`: API, DB, queue, filesystem, auth, 배포 경계 확인
 
@@ -229,7 +237,51 @@ python3 scripts/harness.py init \
 - DB-backed ETL이면 `workflow-db-context`도 함께 포함합니다.
 - 예: React UI이면 `tech-react` + `tech-typescript` + `tech-tailwind` + `workflow-web-development`
 - 예: Python 분석이면 `tech-python` + `workflow-data-analysis`
+- 예: 버그 수정이면 `workflow-debugging` + `workflow-tdd`
+- 예: 보안/권한/secret이 걸린 변경이면 `workflow-security-review`
+- 예: skill pack을 추가하거나 고치면 `workflow-skill-authoring`
+- 예: push 전 리뷰이면 `workflow-code-review` + `multi-agent-review` + `release-readiness-audit`
 - 알 수 없는 스택이면 `workflow-core`만 설치하고 Phase 0 hydration에서 evidence를 모읍니다.
+
+## End-to-End 예시
+
+아래는 React UI 버그 수정 요청을 저추론 모델이 처리할 때 남겨야 하는 최소 기록 예시입니다.
+
+```yaml
+confirmed:
+  - fact: "React UI project"
+    evidence: "package.json"
+  - fact: "TypeScript check command exists"
+    evidence: "package.json:scripts.typecheck"
+inferred:
+  - inference: "Tailwind may be active"
+    basis: "tailwind.config.* exists"
+rejected_assumptions:
+  - assumption: "Backend API can be changed"
+    reason: "Request only mentions UI and allowed paths exclude API."
+active_skills:
+  - repository-evidence-research
+  - skill-plugin-composition
+  - workflow-web-development
+  - workflow-debugging
+  - workflow-tdd
+  - tech-react
+  - tech-typescript
+  - verification-contract
+rejected_skills:
+  - skill: tech-csharp
+    reason: "No C# evidence."
+verification:
+  - command: "npm test -- --run affected.test.tsx"
+    required_signal: "fails before fix, passes after fix"
+  - command: "npm run typecheck"
+    required_signal: "exit 0"
+  - command: "browser smoke for changed route"
+    required_signal: "loading, empty, error, success states render without overlap"
+blocked_until: null
+```
+
+핵심은 설치 명령만 기록하는 것이 아니라, evidence -> selected skills -> rejected skills -> verification evidence를 phase 문서에 남기는 것입니다.
 
 ## 검증 명령
 
@@ -275,6 +327,7 @@ python3 scripts/harness.py init --target /tmp/both --adapters roo,opencode
 python3 scripts/harness.py init --target /tmp/python-analysis --adapters opencode --packs workflow-core,tech-python,workflow-data-analysis
 python3 scripts/harness.py init --target /tmp/dotnet-etl --adapters roo,opencode --profiles generic,dotnet-etl-mssql --packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context
 python3 scripts/harness.py init --target /tmp/web --packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development
+python3 scripts/harness.py init --target /tmp/workflow-quality --packs workflow-core,workflow-tdd,workflow-debugging,workflow-code-review,workflow-skill-authoring,workflow-security-review
 ```
 
 각 타겟에서 아래 두 명령이 통과해야 합니다.
@@ -324,6 +377,16 @@ python3 /path/to/project/scripts/harness.py check
 
 충돌이 있으면 `.harness/conflicts/`에 새 파일이 생깁니다. 충돌 파일을 검토하기 전에는 `--force`를 쓰지 않습니다.
 
+`init`은 선택한 `--adapters`, `--profiles`, `--packs`를 `.harness/installed-manifest.json`의 `init_options`에 기록합니다. 이후 `upgrade`에서 scope 옵션을 생략하면 이 remembered scope를 그대로 사용합니다.
+
+pack을 더 추가하거나 adapter 구성을 바꾸려면 upgrade 때 명시합니다. 이 경우 새 선택이 다음 upgrade의 remembered scope가 됩니다.
+
+```bash
+python3 /path/to/newer-harness/scripts/harness.py upgrade \
+  --target /path/to/project \
+  --packs workflow-core,workflow-tdd,workflow-debugging,workflow-code-review
+```
+
 ## 바로 사용할 프롬프트
 
 ### 기존 저장소에 처음 적용
@@ -366,6 +429,10 @@ push 전에 서브에이전트 적대적 리뷰를 해줘.
 P1/P2가 나오면 push하지 말고 수정 계획을 세운 뒤 다시 테스트해.
 P3만 남으면 residual risk로 기록하고 push 가능 여부를 판단해.
 ```
+
+## 리서치 기준
+
+현재 pack 구성은 `docs/research/skill-ecosystem-review.md`의 외부 생태계 리뷰를 기준으로 합니다. 외부 skill/plugin은 그대로 복사하지 않고, reusable workflow pattern만 추출해 stack-neutral, client-neutral skill pack으로 번역합니다.
 
 ## 구조
 

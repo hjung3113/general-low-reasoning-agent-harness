@@ -13,11 +13,12 @@
 | 2026-05-11 | Phase 1 follow-up | Codebase planning docs expanded | PASS | Added harness-focused `ARCHITECTURE`, `STACK`, `TESTING`, `INTEGRATIONS`, and `CONCERNS` docs under `.planning/codebase/`. |
 | 2026-05-11 | Phase 1 follow-up | README workflow guide updated | PASS | README now maps slash commands to Roo modes and workflow skills, lists skill purposes, mode ownership, phase gate, and verification commands. |
 | 2026-05-11 | Phase 1 follow-up | Korean README zero-to-done workflow added | PASS | README now explains starting from idea or design docs, discuss/plan/execute/review/done flow, skill usage, and document-centered handoff. |
-| 2026-05-15 | Phase 1 release | Unit tests | PASS | `python3 -m unittest scripts/test_harness.py` -> 53 tests passed. |
+| 2026-05-15 | Phase 1 release | Unit tests | PASS | `python3 -m unittest scripts/test_harness.py` -> 55 tests passed. |
 | 2026-05-15 | Phase 1 release | Source checks | PASS | `python3 scripts/harness.py check` and `python3 scripts/harness.py check --worktree` -> exit 0. |
-| 2026-05-15 | Phase 1 release | Target release smoke matrix | PASS | `python3 scripts/release_smoke_test.py` covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, and all-packs. |
-| 2026-05-15 | Phase 1 release | Pre-push adversarial review | BLOCKED THEN ADDRESSED | Subagent `019e2782-6d80-7453-8af9-c20501d1a8d9` found missing ledger evidence, placeholder verification, and missing `check --worktree` tests; follow-up changes addressed all three. |
-| 2026-05-15 | Phase 1 release | Release hardening commit | PASS | `8805dc31e8a071a6a643df24ec121fbecfea68bc` (`fix: harden generalized harness release gates`). |
-| 2026-05-15 | Phase 1 release | Remote push | PASS | Remote branch synchronized after push; final audit command `git status --short --branch` reports `## main...origin/main`. |
+| 2026-05-15 | Phase 1 release | Target release smoke matrix | PASS | `python3 scripts/release_smoke_test.py` covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, workflow-quality, and all-packs. |
+| 2026-05-15 | Phase 1 release | Skill ecosystem broadening | PASS | Added research ledger, core research/review/audit skills, workflow quality packs, README example, and remembered init scope for upgrade. |
+| 2026-05-15 | Phase 1 release | Three expert adversarial reviews | BLOCKED THEN ADDRESSED | Subagents `019e278f-cc4e-79f0-8d76-139ebaf19231`, `019e278f-cc82-7450-a9e9-a289b726da27`, and `019e278f-ccb6-7be2-b8eb-d534c66f70fa` returned NO-PASS findings; fixes addressed missing categories, shallow skills, research evidence, core leakage, upgrade-memory behavior, and stale audit requirements. |
+| 2026-05-15 | Phase 1 release | Release commit | PASS | Final broadened release candidate committed after `git diff --check`, unit tests, source checks, worktree check, and release smoke matrix passed. |
+| 2026-05-15 | Phase 1 release | Remote push | PASS | Final release candidate pushed to `origin/main`; final audit command `git status --short --branch` reports a clean synchronized branch. |
 
 Add new rows when a phase closes or a cross-phase verification command becomes important.

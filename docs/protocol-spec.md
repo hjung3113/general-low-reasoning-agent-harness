@@ -151,8 +151,11 @@ The default `workflow-core` pack includes:
 
 - `repository-evidence-research`
 - `skill-plugin-composition`
+- `ecosystem-skill-research`
 - `verification-contract`
 - `risk-review`
+- `multi-agent-review`
+- `release-readiness-audit`
 - `data-workflow`
 - `integration-boundary`
 
@@ -173,6 +176,11 @@ Additional shipped workflow packs:
 - `workflow-etl`
 - `workflow-db-context`
 - `workflow-web-development`
+- `workflow-tdd`
+- `workflow-debugging`
+- `workflow-code-review`
+- `workflow-skill-authoring`
+- `workflow-security-review`
 
 Selection rules:
 

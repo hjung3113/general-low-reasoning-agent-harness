@@ -281,8 +281,11 @@ progress:
             for skill_name in (
                 "repository-evidence-research",
                 "skill-plugin-composition",
+                "ecosystem-skill-research",
                 "verification-contract",
                 "risk-review",
+                "multi-agent-review",
+                "release-readiness-audit",
                 "data-workflow",
                 "integration-boundary",
             ):
@@ -308,6 +311,11 @@ progress:
                     "workflow-etl",
                     "workflow-db-context",
                     "workflow-web-development",
+                    "workflow-tdd",
+                    "workflow-debugging",
+                    "workflow-code-review",
+                    "workflow-skill-authoring",
+                    "workflow-security-review",
                 ]
             )
 
@@ -414,6 +422,39 @@ progress:
             self.assertTrue((target / ".roo/skills/workflow-phase-gate/SKILL.md").exists())
             self.assertTrue((target / ".opencode/commands/execute.md").exists())
             harness.run(["check", "--target", str(target), "--adapter", "opencode"])
+
+    def test_quality_workflow_packs_install_low_reasoning_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            packs = ",".join(
+                [
+                    "workflow-core",
+                    "workflow-tdd",
+                    "workflow-debugging",
+                    "workflow-code-review",
+                    "workflow-skill-authoring",
+                    "workflow-security-review",
+                ]
+            )
+
+            harness.run(["init", "--target", str(target), "--adapters", "none", "--packs", packs])
+
+            expected_snippets = {
+                "workflow-tdd": "Do not implement first",
+                "workflow-debugging": "Do not guess the cause",
+                "workflow-code-review": "Findings first",
+                "workflow-skill-authoring": "A useful skill must say when to use it",
+                "workflow-security-review": "Identify trust boundaries before editing",
+            }
+            for skill_name, snippet in expected_snippets.items():
+                skill = (target / f".agents/skills/{skill_name}/SKILL.md").read_text(encoding="utf-8")
+                self.assertIn("## Output Contract", skill)
+                self.assertIn(snippet, skill)
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(sorted(packs.split(",")), installed["packs"])
+            self.assertIn("red green refactor", installed["pack_metadata"]["workflow-tdd"]["capabilities"])
+            harness.run(["check", "--target", str(target)])
 
     def test_default_roo_adapter_does_not_leak_specialized_stack_guardrails(self) -> None:
         forbidden = (
@@ -585,6 +626,41 @@ progress:
             self.assertEqual("local command edit", command.read_text(encoding="utf-8"))
             self.assertTrue((target / ".harness/conflicts/.roo/commands/simple.md.new").exists())
 
+    def test_init_records_scope_and_upgrade_reuses_it_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(
+                [
+                    "init",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "opencode",
+                    "--profiles",
+                    "generic,dotnet-etl-mssql",
+                    "--packs",
+                    "workflow-core,workflow-tdd,tech-python",
+                ]
+            )
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode"], installed["init_options"]["adapters"])
+            self.assertEqual(["dotnet-etl-mssql", "generic"], installed["init_options"]["profiles"])
+            self.assertEqual(["tech-python", "workflow-core", "workflow-tdd"], installed["init_options"]["packs"])
+
+            result = harness.run(["upgrade", "--target", str(target)])
+
+            self.assertEqual(0, result)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode"], installed["adapters"])
+            self.assertEqual(["dotnet-etl-mssql", "generic"], installed["profiles"])
+            self.assertEqual(["tech-python", "workflow-core", "workflow-tdd"], installed["packs"])
+            self.assertEqual(installed["init_options"]["packs"], installed["packs"])
+            self.assertTrue((target / ".opencode/commands/plan.md").exists())
+            self.assertFalse((target / ".roo").exists())
+            self.assertTrue((target / ".agents/skills/workflow-tdd/SKILL.md").exists())
+            self.assertTrue((target / ".agents/skills/tech-python/SKILL.md").exists())
+
     def test_upgrade_without_install_state_refuses_existing_manifest_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -698,6 +774,8 @@ progress:
             self.assertFalse((target / ".roo").exists())
             self.assertFalse((target / ".roomodes").exists())
             self.assertTrue((target / ".opencode/commands/plan.md").exists())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode"], installed["init_options"]["adapters"])
 
     def test_upgrade_reports_modified_retired_harness_file_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1146,6 +1224,11 @@ progress:
             "push 전에 서브에이전트 적대적 리뷰를 해줘",
             "--packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
             "--packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development",
+            "workflow-tdd",
+            "workflow-debugging",
+            "workflow-code-review",
+            "workflow-skill-authoring",
+            "workflow-security-review",
         ):
             self.assertIn(phrase, readme)
 

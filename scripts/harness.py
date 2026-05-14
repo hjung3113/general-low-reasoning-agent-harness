@@ -36,6 +36,11 @@ KNOWN_PACKS = {
     "workflow-etl",
     "workflow-db-context",
     "workflow-web-development",
+    "workflow-tdd",
+    "workflow-debugging",
+    "workflow-code-review",
+    "workflow-skill-authoring",
+    "workflow-security-review",
 }
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 VERIFICATION_PREFIXES = (
@@ -252,9 +257,9 @@ def upgrade(
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
     target = target.resolve()
     installed = read_install_state(target)
-    adapters = adapters if adapters is not None else set(installed.get("adapters", ["roo"]))
-    profiles = profiles if profiles is not None else set(installed.get("profiles", ["generic"]))
-    packs = packs if packs is not None else set(installed.get("packs", []))
+    adapters = adapters if adapters is not None else installed_scope(installed, "adapters", default={"roo"})
+    profiles = profiles if profiles is not None else installed_scope(installed, "profiles", default={"generic"})
+    packs = packs if packs is not None else installed_scope(installed, "packs", default=set())
     all_entries = load_manifest(root)
     validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
@@ -312,6 +317,7 @@ def upgrade(
     installed["adapters"] = sorted(adapters)
     installed["profiles"] = sorted(profiles)
     installed["packs"] = sorted(packs)
+    installed["init_options"] = scope_record(adapters=adapters, profiles=profiles, packs=packs)
     installed["pack_metadata"] = selected_pack_metadata(root, packs)
     installed["available_scopes"] = available_scopes(root)
     if not dry_run:
@@ -405,6 +411,24 @@ def selected_pack_metadata(root: Path, packs: set[str]) -> dict[str, object]:
     if not isinstance(metadata, dict):
         return {}
     return {pack: metadata[pack] for pack in sorted(packs) if pack in metadata}
+
+
+def scope_record(*, adapters: set[str], profiles: set[str], packs: set[str]) -> dict[str, list[str]]:
+    return {
+        "adapters": sorted(adapters),
+        "profiles": sorted(profiles),
+        "packs": sorted(packs),
+    }
+
+
+def installed_scope(installed: dict[str, object], key: str, *, default: set[str]) -> set[str]:
+    init_options = installed.get("init_options", {})
+    if isinstance(init_options, dict) and isinstance(init_options.get(key), list):
+        return {str(value) for value in init_options[key]}
+    values = installed.get(key)
+    if isinstance(values, list):
+        return {str(value) for value in values}
+    return set(default)
 
 
 def available_scopes(root: Path) -> dict[str, list[str]]:
@@ -578,6 +602,7 @@ def write_install_state(
             "adapters": sorted(adapters),
             "profiles": sorted(profiles),
             "packs": sorted(packs),
+            "init_options": scope_record(adapters=adapters, profiles=profiles, packs=packs),
             "pack_metadata": selected_pack_metadata(root, packs),
             "available_scopes": available_scopes(root),
             "files": files,

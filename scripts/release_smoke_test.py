@@ -33,6 +33,13 @@ CASES = [
         ["--packs", "workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development"],
     ),
     (
+        "workflow-quality",
+        [
+            "--packs",
+            "workflow-core,workflow-tdd,workflow-debugging,workflow-code-review,workflow-skill-authoring,workflow-security-review",
+        ],
+    ),
+    (
         "all-packs",
         [
             "--adapters",
@@ -55,6 +62,11 @@ CASES = [
                     "workflow-etl",
                     "workflow-db-context",
                     "workflow-web-development",
+                    "workflow-tdd",
+                    "workflow-debugging",
+                    "workflow-code-review",
+                    "workflow-skill-authoring",
+                    "workflow-security-review",
                 ]
             ),
         ],
