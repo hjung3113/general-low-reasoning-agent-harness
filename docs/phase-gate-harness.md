@@ -1,6 +1,6 @@
 # Phase Gate Harness
 
-This harness gives Roo agents a small external state machine for work that must move through discussion, planning, execution, and completion without skipping approval. Implementation commands in this template must check the phase gate before editable work starts.
+This harness gives low-reasoning agents a small external state machine for work that must move through discussion, planning, execution, and completion without skipping approval. Roo and OpenCode are adapters over the same state machine. Implementation commands in any adapter must check the phase gate before editable work starts.
 
 ## State File
 
@@ -96,19 +96,19 @@ plan_id=<approved plan id>
 
 If the work no longer matches the approved plan, stop implementation and return to `plan`.
 
-## What Roo Can Enforce
+## What Adapters Can Enforce
 
-The current Roo harness can mechanically help by:
+Adapters can mechanically help by:
 
-- Loading workflow instructions from `.roo/skills/workflow-phase-gate/SKILL.md`.
-- Loading prompt rules from `.roo/rules/phase-gate.md` when included by the mode or operator.
+- Loading workflow instructions from adapter-specific files, such as `.roo/skills/workflow-phase-gate/SKILL.md` or `.opencode/commands/execute.md`.
+- Loading prompt rules from adapter-specific rule files, such as `.roo/rules/phase-gate.md`, when included by the mode or operator.
 - Making low-reasoning models follow a visible checklist.
 - Requiring the agent to state the current phase, plan id, approval status, allowed work, and next step.
 - Making phase violations reviewable in the transcript.
 
-## What Roo Cannot Enforce Alone
+## What Adapters Cannot Enforce Alone
 
-Roo skills and rules are not a file-system lock or policy engine. By themselves, they cannot:
+Adapter skills, commands, and rules are not a file-system lock or policy engine. By themselves, they cannot:
 
 - Stop a model or human from editing files during `discuss`.
 - Reject a commit when `phase` is not `execute`.
@@ -121,6 +121,8 @@ For hard enforcement, add separate tooling: JSON Schema validation, pre-commit c
 This harness includes `scripts/harness.py check` for local structure checks and phase-state automation semantics. Before committing implementation work in a git worktree, run `python3 scripts/harness.py check --worktree` so staged, unstaged, and untracked paths are checked against `allowed_paths`.
 
 Continue to run JSON Schema validation or the built-in phase-state semantic checks as part of PR verification.
+
+`check --worktree` also accepts `phase=done` for post-completion audit work. That mode is for proving the already-completed phase only; it does not authorize new implementation. New scope after `done` must start again at `discuss`.
 
 ## Document-Centered Continuity
 

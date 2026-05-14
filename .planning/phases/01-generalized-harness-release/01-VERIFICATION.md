@@ -51,3 +51,36 @@
 - React/TypeScript/Tailwind web composition: `--packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development`
 - Workflow quality composition: `--packs workflow-core,workflow-tdd,workflow-debugging,workflow-code-review,workflow-skill-authoring,workflow-security-review`
 - all representative packs together with both adapters
+
+## Post-Publish Adversarial Audit - 2026-05-15
+
+User requested a fresh seven-area adversarial review, README reinforcement for workflow/skill/command explanations, use-case prompts, Windows/Linux compatibility notes, Roo/OpenCode compatibility notes, and push after verification.
+
+### Expert Review Summary
+
+| Reviewer Lens | Result | Reinforcement Applied |
+| --- | --- | --- |
+| Planning gate consistency and verification loop | PASS with Windows command weakness | Added README platform command matrix and documented `phase=done` post-completion audit semantics in `docs/phase-gate-harness.md`. |
+| Core protocol neutrality and adapter boundary | PASS/WEAK | Reworded `docs/phase-gate-harness.md` from Roo-first to adapter-neutral language; documented OpenCode as phase-primitives-only and workflow specialization through `.agents/skills/**`. |
+| Low-reasoning execution, Windows/Linux, skill/workflow sufficiency | WEAK for portability/OpenCode explanation | Added active phase doc resolution algorithm, OpenCode preflight/output checklists, use-case table, installed target skill inventory example, and ready-to-use prompts. |
+
+### Prompt-To-Artifact Checklist
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| Check `.planning/STATE.md`, `ROADMAP.md`, active checkpoint, `.scratch/phase-state.json` consistency | Three-review audit found Phase 1 complete/published/done state aligned; `python3 scripts/harness.py check` passed. | PASS |
+| Keep core protocol neutral from Roo/OpenCode/stack leakage | `docs/phase-gate-harness.md` now says Roo/OpenCode are adapters over one state machine; `docs/protocol-spec.md` documents adapter primitives and skill-pack specialization. | PASS |
+| Make workflow concrete for low-reasoning models | README and OpenCode command files now include deterministic active-doc order, preflight checklists, output checklists, use-case prompts, and stop conditions. | PASS |
+| Clarify skill pack / adapter boundaries | README now states source `harness/skill-packs/**`, installed target `.agents/skills/**`, and `.roo/skills/**` as Roo shims. | PASS |
+| Connect verification loops to success/failure signals | README keeps source/target/release commands; OpenCode execute output requires command exit status; tests assert these docs stay present. | PASS |
+| Windows/Linux compatibility | README now documents Linux/macOS `python3`, Windows PowerShell `py -3`, fallback `python`, and `.sh` script boundary. | PASS |
+| Roo/OpenCode compatibility | README gives Roo command table and OpenCode phase primitive table; OpenCode command docs now include checklists. | PASS |
+| Skill/workflow pack/script sufficiency | README use-case matrix maps user goals to packs, commands, and prompts; installed skill inventory example explains `.agents/skills/**`. | PASS |
+| README update requested by user | `README.md` expanded with command model, use cases, prompts, OS variants, skill inventory, active-doc algorithm. | PASS |
+
+### Verification Commands
+
+- `python3 -m unittest scripts/test_harness.py` -> 57 tests passed.
+- `python3 scripts/harness.py check` -> exit 0.
+- `python3 scripts/harness.py check --worktree` -> exit 0.
+- `python3 scripts/release_smoke_test.py` -> core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, workflow-quality, and all-packs targets passed.

@@ -37,6 +37,13 @@ Fresh sessions must read:
 
 `.planning/**` explains the project. `.scratch/phase-state.json` only approves or blocks the current work.
 
+Resolve active phase docs deterministically:
+
+1. Prefer explicit pointers in `.scratch/phase-state.json`: `checkpoint_path`, `plan_path`, and `state_path`.
+2. If pointers are missing during `discuss`, choose the highest numbered directory under `.planning/phases/**`.
+3. Within a phase directory, read matching files in this order: `*-CONTEXT.md`, `*-PLAN.md`, `*-REVIEW.md`, `*-VERIFICATION.md`, `*-SUMMARY.md`, `*-CHECKPOINTS.md`.
+4. If an expected file is absent, record that it is absent. Do not infer hidden requirements from a missing file.
+
 ## Phase Rules
 
 ### Discuss
@@ -142,6 +149,8 @@ Valid target shapes:
 - core + Roo + OpenCode
 
 `check --target` validates core plus installed adapters. `check --target --adapter opencode` validates OpenCode without requiring Roo files. Missing uninstalled Roo files are not findings.
+
+OpenCode intentionally ships phase primitives: `discuss`, `plan`, `execute`, and `done`. Workflow specialization comes from installed `.agents/skills/**` packs, not from duplicating every Roo slash command under `.opencode/commands/**`.
 
 ## Skill Plugins
 

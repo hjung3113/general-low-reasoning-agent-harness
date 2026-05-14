@@ -1160,10 +1160,15 @@ progress:
 
         for phrase in (
             "discuss -> plan -> execute -> done",
+            "지원 환경과 명령 표기",
+            "사용 시나리오 빠른 선택",
+            "클라이언트별 커맨드 모델",
             "core-only 하네스",
             "OpenCode 전용 하네스",
             "Roo + OpenCode 동시 지원",
             "skill pack은 플러그인입니다",
+            "source repository에는 `.agents/skills/**`가 없어도 정상입니다",
+            "OpenCode adapter는 의도적으로 phase primitive만 제공합니다",
             "repository-evidence-research",
             "skill-plugin-composition",
             "verification-contract",
@@ -1177,28 +1182,59 @@ progress:
         ):
             self.assertIn(phrase, readme)
 
+    def test_root_readme_documents_user_use_cases_prompts_and_platform_variants(self) -> None:
+        readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
+
+        for phrase in (
+            "Windows PowerShell",
+            "py -3 scripts/harness.py check",
+            "`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다",
+            "새 프로젝트에 기본 가드레일만 넣기",
+            "OpenCode만 쓰기",
+            "버그 진단",
+            "보안/권한/secret 변경",
+            "하네스 업그레이드",
+            "`/phase-discuss`",
+            "`.opencode/commands/execute.md`",
+            "OpenCode에서 버그 수정",
+            "Windows 사용자에게 적용",
+            "active phase docs는 다음 순서로 해석합니다",
+            "workflow-debugging,workflow-tdd",
+        ):
+            self.assertIn(phrase, readme)
+
     def test_opencode_commands_document_core_adapter_contract(self) -> None:
         root = harness.repo_root()
         required = {
             "discuss.md": [
                 "Use this command for `phase=discuss` work only.",
+                "Preflight checklist:",
+                "Resolve active phase docs in this order:",
+                "Output checklist:",
                 "Read `.scratch/phase-state.json` last.",
                 "application-code edits",
             ],
             "plan.md": [
                 "Use this command for `phase=plan` work only.",
+                "Preflight checklist:",
+                "Plan output checklist:",
                 "allowed path candidates",
                 "verification candidates",
                 "Request execute approval instead of self-approving.",
             ],
             "execute.md": [
                 "Use this command only after the live gate is already approved.",
+                "Preflight checklist:",
+                "Execution output checklist:",
                 "non-empty `allowed_paths`",
                 "non-empty `verification`",
                 "Run `python3 scripts/harness.py check --worktree` before committing.",
             ],
             "done.md": [
                 "Use this command to close a completed phase.",
+                "Preflight checklist:",
+                "Done output checklist:",
+                "post-completion audit only",
                 "Confirm verification evidence exists.",
                 "Run `python3 scripts/harness.py check --worktree` before marking done.",
             ],
@@ -1231,6 +1267,25 @@ progress:
             "workflow-security-review",
         ):
             self.assertIn(phrase, readme)
+
+    def test_core_docs_are_client_neutral_and_document_done_audit_mode(self) -> None:
+        root = harness.repo_root()
+        phase_gate = (root / "docs/phase-gate-harness.md").read_text(encoding="utf-8")
+        protocol = (root / "docs/protocol-spec.md").read_text(encoding="utf-8")
+
+        for phrase in (
+            "Roo and OpenCode are adapters over the same state machine",
+            "What Adapters Can Enforce",
+            "What Adapters Cannot Enforce Alone",
+            "`check --worktree` also accepts `phase=done` for post-completion audit work",
+        ):
+            self.assertIn(phrase, phase_gate)
+        for phrase in (
+            "Resolve active phase docs deterministically",
+            "OpenCode intentionally ships phase primitives",
+            "Workflow specialization comes from installed `.agents/skills/**` packs",
+        ):
+            self.assertIn(phrase, protocol)
 
     def test_init_installs_phase_commands_from_manifest_sources(self) -> None:
         root = harness.repo_root()

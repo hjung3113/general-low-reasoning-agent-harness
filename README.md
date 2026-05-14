@@ -13,9 +13,67 @@ discuss -> plan -> execute -> done
 - `.planning/**`은 canonical memory입니다.
 - `.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다.
 - Roo와 OpenCode는 adapter입니다. 프로젝트의 진실은 adapter 파일이 아니라 `.planning/**`에 있습니다.
-- skill pack은 플러그인입니다. Python, C#, MSSQL, React 같은 기술 pack과 ETL, 웹 개발, 데이터 분석 같은 workflow pack을 필요에 맞게 조합합니다.
+- skill pack은 플러그인입니다. Python, C#, MSSQL, React 같은 기술 pack과 ETL, 웹 개발, 데이터 분석 같은 workflow pack을 필요에 맞게 조합합니다. 이 저장소의 실제 소스 경로는 `harness/skill-packs/**`이고, workflow pack은 그 안의 `category=workflow` pack입니다.
 - `--adapters`는 사용할 클라이언트 파일을 고르고, `--packs`는 설치할 스킬 묶음을 고릅니다. 두 옵션은 서로 독립입니다.
 - 기본 설치는 stack-neutral입니다. Python, .NET, MSSQL, PostgreSQL, React 등을 자동으로 가정하지 않습니다.
+
+## 지원 환경과 명령 표기
+
+하네스 자체는 Python 표준 라이브러리만 사용합니다. Linux/macOS에서는 `python3`를 권장하고, Windows에서는 Python Launcher가 있으면 `py -3`, 없으면 `python`을 사용합니다.
+
+| 환경 | 테스트 | 하네스 점검 | 릴리스 스모크 |
+| --- | --- | --- | --- |
+| Linux/macOS | `python3 -m unittest scripts/test_harness.py` | `python3 scripts/harness.py check` | `python3 scripts/release_smoke_test.py` |
+| Windows PowerShell | `py -3 -m unittest scripts/test_harness.py` | `py -3 scripts/harness.py check` | `py -3 scripts/release_smoke_test.py` |
+| Windows without launcher | `python -m unittest scripts/test_harness.py` | `python scripts/harness.py check` | `python scripts/release_smoke_test.py` |
+
+`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다. Windows에서는 같은 효과를 내는 setup 명령을 PowerShell로 옮겨 실행하거나, core 명령인 `scripts/harness.py init/check/doctor`만 사용합니다.
+
+## 사용 시나리오 빠른 선택
+
+| 유즈케이스 | 설치/선택 | 추천 커맨드 | 추천 프롬프트 |
+| --- | --- | --- | --- |
+| 새 프로젝트에 기본 가드레일만 넣기 | `--adapters roo` 또는 기본값 | `python3 scripts/harness.py init --target /path/to/project` | "아직 구현하지 말고 planning hydration만 해줘." |
+| OpenCode만 쓰기 | `--adapters opencode` | `python3 scripts/harness.py init --target /path/to/project --adapters opencode` | "OpenCode discuss command 순서대로 읽고 phase 후보만 제안해." |
+| Roo와 OpenCode를 같이 쓰기 | `--adapters both` | `python3 scripts/harness.py init --target /path/to/project --adapters both` | "Roo/OpenCode 모두 같은 `.planning/**`과 live gate를 쓰는지 확인해." |
+| 기존 저장소 구조 파악 | `workflow-core` | `python3 scripts/harness.py doctor` | "repository evidence를 읽고 confirmed/inferred/rejected assumptions로 정리해." |
+| 기능 구현 | 필요한 `tech-*` + 작업 `workflow-*` | `python3 scripts/harness.py check --worktree` | "discuss -> plan -> execute로 처리하고, execute 승인은 내가 명시할 때까지 기다려." |
+| 버그 진단 | `workflow-debugging,workflow-tdd` | 프로젝트 테스트 + `check --worktree` | "재현 -> 최소화 -> 원인 가설 -> 회귀 테스트 -> 수정 순서로 진행해." |
+| PR/push 전 리뷰 | `workflow-code-review` + core 리뷰 스킬 | `python3 scripts/release_smoke_test.py` | "P1/P2가 있으면 push하지 말고 보강 계획부터 세워." |
+| 보안/권한/secret 변경 | `workflow-security-review` | 프로젝트 보안/권한 테스트 | "trust boundary와 secret 노출 경로를 먼저 식별하고 편집은 승인 후 해." |
+| 하네스 업그레이드 | 기존 `init_options` 재사용 | `python3 /new/harness/scripts/harness.py upgrade --target /path --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
+
+## 클라이언트별 커맨드 모델
+
+### Roo
+
+Roo adapter는 풍부한 slash-command와 mode를 제공합니다. 대표 흐름은 다음과 같습니다.
+
+| 목적 | Roo command | 연결되는 핵심 스킬 |
+| --- | --- | --- |
+| 새 phase 논의 | `/phase-discuss` | `workflow-planning-hydration`, `repository-evidence-research` |
+| phase 계획 | `/phase-plan` | `verification-contract`, `risk-review` |
+| 승인된 구현 | `/phase-execute` | 요청별 `tech-*`, `workflow-*`, `workflow-tdd` |
+| 단순 작업 | `/simple` | `workflow-simple-task` |
+| 버그 | `/bugfix` | `workflow-bug-diagnosis`, `workflow-debugging` |
+| 리뷰 | `/review` | `workflow-code-review`, `multi-agent-review` |
+| ADR | `/adr` | `workflow-architecture-decision` |
+| 상태 진단 | `/doctor` | `workflow-harness-doctor` |
+
+`.roo/skills/**`는 Roo adapter가 Roo UI에 맞게 phase와 command를 연결하는 shim입니다. 재사용 가능한 일반 workflow 권한은 설치된 target의 `.agents/skills/**`와 source의 `harness/skill-packs/**`에 둡니다.
+
+### OpenCode
+
+OpenCode adapter는 의도적으로 phase primitive만 제공합니다.
+
+| 목적 | OpenCode command file | 해야 할 일 |
+| --- | --- | --- |
+| 논의 | `.opencode/commands/discuss.md` | read order를 지키고 confirmed/inferred/rejected/open questions를 기록 |
+| 계획 | `.opencode/commands/plan.md` | `plan_id`, `allowed_paths`, `verification`, review checks 작성 |
+| 실행 | `.opencode/commands/execute.md` | live gate가 `phase=execute`, `approved=true`인지 확인 후 approved paths만 편집 |
+| 완료 | `.opencode/commands/done.md` | 검증 증거, residual risk, follow-up 기록 |
+
+OpenCode에서 버그/리뷰/보안 같은 세부 workflow를 수행할 때는 별도 OpenCode command가 아니라 `.agents/skills/**`의 installed skill pack을 선택합니다. 예를 들어 버그는 `workflow-debugging`과 `workflow-tdd`, push 전 리뷰는 `workflow-code-review`, `multi-agent-review`, `release-readiness-audit`를 사용합니다.
 
 ## 설치 예시
 
@@ -213,6 +271,18 @@ python3 scripts/harness.py init \
 - `workflow-skill-authoring`
 - `workflow-security-review`
 
+설치 후 target에는 선택한 pack만 `.agents/skills/**`로 복사됩니다. source repository에는 `.agents/skills/**`가 없어도 정상입니다. 예를 들어 `--packs workflow-core,workflow-debugging`이면 target에는 다음처럼 생깁니다.
+
+```text
+.agents/
+  skills/
+    repository-evidence-research/SKILL.md
+    skill-plugin-composition/SKILL.md
+    verification-contract/SKILL.md
+    risk-review/SKILL.md
+    workflow-debugging/SKILL.md
+```
+
 ## workflow-core 기본 스킬
 
 `workflow-core`는 기본 설치되는 stack-neutral plugin 묶음입니다. adapter를 OpenCode로 고르거나 Roo를 제외해도, `--packs none`을 지정하지 않는 한 이 스킬들은 설치됩니다.
@@ -349,6 +419,13 @@ python3 scripts/project_dashboard.py
 
 Roo를 설치했다면 `/phase-discuss planning-hydration --pass 0`로 시작합니다. OpenCode만 설치했다면 `.opencode/commands/discuss.md`의 순서대로 `AGENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, active checkpoint, active phase docs, `.scratch/phase-state.json`을 읽고 hydration을 시작합니다.
 
+active phase docs는 다음 순서로 해석합니다.
+
+1. `.scratch/phase-state.json`의 `checkpoint_path`, `plan_path`, `state_path`를 우선 확인합니다.
+2. pointer가 비어 있으면 `.planning/phases/**` 아래 phase 번호 prefix가 가장 큰 디렉터리를 후보로 잡습니다.
+3. 같은 phase 안에서는 `*-CONTEXT.md`, `*-PLAN.md`, `*-REVIEW.md`, `*-VERIFICATION.md`, `*-SUMMARY.md`, `*-CHECKPOINTS.md` 순서로 읽습니다.
+4. 파일이 없으면 없는 사실을 기록하고 추측해서 만들지 않습니다.
+
 ### 계획 승인 전 검토
 
 ```bash
@@ -428,6 +505,25 @@ push 전에 서브에이전트 적대적 리뷰를 해줘.
 리뷰어는 protocol/product fit, installer/adapter compatibility, release verification/low-reasoning usability 관점으로 나눠.
 P1/P2가 나오면 push하지 말고 수정 계획을 세운 뒤 다시 테스트해.
 P3만 남으면 residual risk로 기록하고 push 가능 여부를 판단해.
+```
+
+### Windows 사용자에게 적용
+
+```text
+이 저장소에서 Windows 호환성을 전제로 하네스를 적용하자.
+Linux/macOS 예시의 python3 명령은 Windows PowerShell에서 py -3 또는 python으로 바꿔 실행해.
+.sh 스크립트는 Linux/macOS 전용으로 보고, 하네스 핵심 검증은 scripts/harness.py check와 scripts/test_harness.py로 해.
+경로는 Windows 절대경로를 그대로 쓰되, manifest나 planning 문서에는 repo-relative POSIX 스타일 경로를 기록해.
+```
+
+### OpenCode에서 버그 수정
+
+```text
+OpenCode phase primitive로 진행해.
+먼저 discuss에서 증거를 읽고 workflow-debugging, workflow-tdd가 필요한지 기록해.
+plan에는 재현 명령, 실패 신호, allowed_paths, 회귀 테스트, stop condition을 써.
+내가 execute를 승인하기 전에는 코드를 수정하지 마.
+execute에서는 .agents/skills/workflow-debugging/SKILL.md와 workflow-tdd/SKILL.md의 Output Contract를 따라.
 ```
 
 ## 리서치 기준

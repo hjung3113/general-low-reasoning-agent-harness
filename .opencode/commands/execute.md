@@ -2,6 +2,16 @@
 
 Use this command only after the live gate is already approved.
 
+Preflight checklist:
+
+- [ ] `.scratch/phase-state.json` says `phase=execute`.
+- [ ] `.scratch/phase-state.json` says `approved=true`.
+- [ ] `plan_id` matches the plan being executed.
+- [ ] `allowed_paths` is non-empty.
+- [ ] `verification` is non-empty.
+- [ ] Requested edits are inside `allowed_paths`.
+- [ ] Active checkpoint, plan, and allowed paths have not drifted since approval.
+
 Before editing, verify `.scratch/phase-state.json` has:
 
 - `phase=execute`
@@ -21,3 +31,11 @@ python3 scripts/harness.py check --worktree
 ```
 
 Run `python3 scripts/harness.py check --worktree` before committing.
+
+Execution output checklist:
+
+- [ ] changed paths
+- [ ] verification commands run, with exit status
+- [ ] failed checks or skipped checks with reason
+- [ ] residual risks
+- [ ] phase-state updates made, if any
