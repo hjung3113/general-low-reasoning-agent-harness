@@ -14,3 +14,10 @@ Before editing, verify `.scratch/phase-state.json` has:
 
 Stop if requested work falls outside `allowed_paths` or if phase, checkpoint, plan, or allowed paths changed during the session.
 
+Before committing, run:
+
+```bash
+python3 scripts/harness.py check --worktree
+```
+
+Run `python3 scripts/harness.py check --worktree` before committing.

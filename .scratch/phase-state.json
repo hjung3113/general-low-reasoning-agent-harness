@@ -2,7 +2,7 @@
   "phase": "execute",
   "approved": true,
   "approved_by": "user",
-  "approved_at": "2026-05-15T00:00:00+09:00",
+  "approved_at": "2026-05-14T15:00:00Z",
   "plan_id": "generalized-harness-release-01",
   "automation_mode": "manual",
   "auto_selected": [],
@@ -24,14 +24,22 @@
     "scripts/"
   ],
   "blocked_paths": [],
+  "acceptance_criteria": [
+    "Reviewer P1 findings for adapter alias, gate enforcement, release evidence, and core neutrality are addressed.",
+    "README documents post-install commands and ready-to-use prompts.",
+    "Release verification evidence records source checks, target matrix smoke, adversarial review, commit, and push."
+  ],
   "verification": [
     "python3 -m unittest scripts/test_harness.py",
     "python3 scripts/harness.py check",
-    "target install matrix smoke commands"
+    "python3 scripts/harness.py check --worktree",
+    "python3 scripts/release_smoke_test.py"
   ],
   "notes": [
     "This is a new repository copy created from the previous harness project.",
     "Core must remain stack-neutral and client-neutral.",
     "Skill packs are generic composable plugins."
-  ]
+  ],
+  "updated_at": "2026-05-14T15:00:00Z",
+  "updated_by": "codex"
 }

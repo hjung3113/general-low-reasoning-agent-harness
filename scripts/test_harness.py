@@ -70,7 +70,16 @@ class HarnessToolTests(unittest.TestCase):
         (root / ".scratch").mkdir()
         (root / ".scratch/phase-state.schema.json").write_text("{}", encoding="utf-8")
         (root / ".scratch/phase-state.example.json").write_text(
-            json.dumps({"phase": "discuss", "approved": False, "automation_mode": "manual", "auto_selected": []}),
+            json.dumps(
+                {
+                    "phase": "discuss",
+                    "approved": False,
+                    "automation_mode": "manual",
+                    "auto_selected": [],
+                    "updated_at": "2026-05-15T00:00:00Z",
+                    "updated_by": "test-fixture",
+                }
+            ),
             encoding="utf-8",
         )
         (root / ".scratch/phase-state.json").write_text(
@@ -85,10 +94,13 @@ class HarnessToolTests(unittest.TestCase):
                     "plan_path": ".planning/phases/04-template-consumer-onboarding/04-01-PLAN.md",
                     "checkpoint_path": phase_state_checkpoint_path,
                     "current_checkpoint": phase_state_current_checkpoint,
+                    "next_action": "Run the approved verification.",
                     "allowed_paths": ["scripts/harness.py"],
                     "verification": ["python3 -m unittest scripts/test_harness.py"],
                     "approved_by": "test-fixture",
                     "approved_at": "2026-05-15T00:00:00Z",
+                    "updated_at": "2026-05-15T00:00:00Z",
+                    "updated_by": "test-fixture",
                 }
             ),
             encoding="utf-8",
@@ -236,6 +248,18 @@ progress:
             self.assertFalse((target / ".roomodes").exists())
             harness.run(["check", "--target", str(target), "--adapter", "opencode"])
 
+    def test_init_both_adapter_alias_installs_roo_and_opencode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode", "roo"], installed["adapters"])
+            self.assertTrue((target / ".roo/commands/phase-plan.md").exists())
+            self.assertTrue((target / ".opencode/commands/plan.md").exists())
+            harness.run(["check", "--target", str(target), "--adapter", "opencode"])
+
     def test_workflow_core_pack_installs_composable_project_local_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -321,6 +345,28 @@ progress:
 
             with self.assertRaisesRegex(SystemExit, "pack: unknown-pack"):
                 harness.run(["check", "--target", str(target)])
+
+    def test_target_local_check_rejects_unknown_installed_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["adapters"] = ["unknown-adapter"]
+            installed["packs"] = ["unknown-pack"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            completed = subprocess.run(
+                [sys.executable, "scripts/harness.py", "check"],
+                cwd=target,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("Unknown installed harness scope", completed.stderr)
 
     def test_csharp_mssql_etl_pack_composition_recreates_specialized_guardrails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -641,6 +687,18 @@ progress:
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
             self.assertNotIn(".roo/commands/retired.md", installed["files"])
 
+    def test_upgrade_removes_empty_adapter_directories_after_scope_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "roo"])
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "opencode"])
+
+            self.assertEqual(0, result)
+            self.assertFalse((target / ".roo").exists())
+            self.assertFalse((target / ".roomodes").exists())
+            self.assertTrue((target / ".opencode/commands/plan.md").exists())
+
     def test_upgrade_reports_modified_retired_harness_file_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -679,6 +737,57 @@ progress:
         self.assertFalse(harness.path_allowed("README.md.bak", allowed, blocked))
         self.assertFalse(harness.path_allowed(".db-context/latest.json", allowed, blocked))
 
+    def test_check_worktree_paths_accepts_allowed_staged_unstaged_and_untracked_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_phase_state_for_worktree(root, allowed_paths=[".scratch/phase-state.json", "allowed/"])
+            subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            (root / "allowed").mkdir()
+            (root / "allowed/staged.txt").write_text("staged", encoding="utf-8")
+            subprocess.run(["git", "add", "allowed/staged.txt"], cwd=root, check=True)
+            (root / "allowed/unstaged.txt").write_text("unstaged", encoding="utf-8")
+            subprocess.run(["git", "add", "allowed/unstaged.txt"], cwd=root, check=True)
+            (root / "allowed/unstaged.txt").write_text("changed", encoding="utf-8")
+            (root / "allowed/untracked.txt").write_text("untracked", encoding="utf-8")
+
+            harness.check_worktree_paths(root)
+
+    def test_check_worktree_paths_rejects_denied_untracked_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_phase_state_for_worktree(root, allowed_paths=[".scratch/phase-state.json", "allowed/"])
+            subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            (root / "outside.txt").write_text("outside", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "Worktree paths outside allowed_paths: outside.txt"):
+                harness.check_worktree_paths(root)
+
+    def write_phase_state_for_worktree(self, root: Path, *, allowed_paths: list[str]) -> None:
+        (root / ".scratch").mkdir(parents=True)
+        (root / ".scratch/phase-state.json").write_text(
+            json.dumps(
+                {
+                    "phase": "execute",
+                    "approved": True,
+                    "automation_mode": "manual",
+                    "auto_selected": [],
+                    "plan_id": "worktree-test-plan",
+                    "allowed_paths": allowed_paths,
+                    "verification": ["python3 scripts/harness.py check"],
+                    "state_path": ".planning/STATE.md",
+                    "plan_path": ".planning/phases/01/PLAN.md",
+                    "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                    "current_checkpoint": "CP-01",
+                    "next_action": "Run check --worktree.",
+                    "approved_by": "test",
+                    "approved_at": "2026-05-15T00:00:00Z",
+                    "updated_at": "2026-05-15T00:00:00Z",
+                    "updated_by": "test",
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_phase_state_semantics_require_auditable_auto_selected_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "phase-state.json"
@@ -710,12 +819,88 @@ progress:
                         "automation_mode": "manual",
                         "auto_selected": [],
                         "plan_id": "manual-plan",
+                        "updated_at": "2026-05-15T00:00:00Z",
+                        "updated_by": "test",
                     }
                 ),
                 encoding="utf-8",
             )
 
             with self.assertRaisesRegex(SystemExit, "execute approval requires"):
+                harness.check_phase_state_semantics(path)
+
+    def test_phase_state_rejects_bad_timestamp_and_missing_plan_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "phase": "plan",
+                        "approved": False,
+                        "automation_mode": "manual",
+                        "auto_selected": [],
+                        "updated_at": "not-a-date",
+                        "updated_by": "test",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "updated_at must be an ISO-8601 UTC timestamp"):
+                harness.check_phase_state_semantics(path)
+
+            path.write_text(
+                json.dumps(
+                    {
+                        "phase": "plan",
+                        "approved": False,
+                        "automation_mode": "manual",
+                        "auto_selected": [],
+                        "updated_at": "2026-05-15T00:00:00Z",
+                        "updated_by": "test",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "plan phase requires"):
+                harness.check_phase_state_semantics(path)
+
+    def test_phase_state_rejects_bogus_execute_verification_and_approval_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "phase": "execute",
+                        "approved": True,
+                        "automation_mode": "manual",
+                        "auto_selected": [],
+                        "plan_id": "manual-plan",
+                        "allowed_paths": ["scripts/harness.py"],
+                        "verification": ["definitely-not-a-command --nope"],
+                        "state_path": ".planning/STATE.md",
+                        "plan_path": ".planning/phases/01/PLAN.md",
+                        "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                        "current_checkpoint": "CP-01",
+                        "next_action": "Run verification.",
+                        "approved_by": "user",
+                        "approved_at": "not-a-date",
+                        "updated_at": "2026-05-15T00:00:00Z",
+                        "updated_by": "test",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "approved_at must be an ISO-8601 UTC timestamp"):
+                harness.check_phase_state_semantics(path)
+
+            state = json.loads(path.read_text(encoding="utf-8"))
+            state["approved_at"] = "2026-05-15T00:00:00Z"
+            path.write_text(json.dumps(state), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "verification\\[0\\] must start with an allowed command"):
                 harness.check_phase_state_semantics(path)
 
     def test_phase_state_execute_accepts_manual_mode_with_scope_and_provenance(self) -> None:
@@ -734,8 +919,12 @@ progress:
                         "state_path": ".planning/STATE.md",
                         "plan_path": ".planning/phases/04-template-consumer-onboarding/04-01-PLAN.md",
                         "checkpoint_path": ".planning/phases/04-template-consumer-onboarding/04-CHECKPOINTS.md",
+                        "current_checkpoint": "CP-04-02",
+                        "next_action": "Run verification.",
                         "approved_by": "user",
                         "approved_at": "2026-05-15T00:00:00Z",
+                        "updated_at": "2026-05-15T00:00:00Z",
+                        "updated_by": "test",
                     }
                 ),
                 encoding="utf-8",
@@ -910,6 +1099,38 @@ progress:
         ):
             self.assertIn(phrase, readme)
 
+    def test_opencode_commands_document_core_adapter_contract(self) -> None:
+        root = harness.repo_root()
+        required = {
+            "discuss.md": [
+                "Use this command for `phase=discuss` work only.",
+                "Read `.scratch/phase-state.json` last.",
+                "application-code edits",
+            ],
+            "plan.md": [
+                "Use this command for `phase=plan` work only.",
+                "allowed path candidates",
+                "verification candidates",
+                "Request execute approval instead of self-approving.",
+            ],
+            "execute.md": [
+                "Use this command only after the live gate is already approved.",
+                "non-empty `allowed_paths`",
+                "non-empty `verification`",
+                "Run `python3 scripts/harness.py check --worktree` before committing.",
+            ],
+            "done.md": [
+                "Use this command to close a completed phase.",
+                "Confirm verification evidence exists.",
+                "Run `python3 scripts/harness.py check --worktree` before marking done.",
+            ],
+        }
+
+        for filename, phrases in required.items():
+            text = (root / ".opencode/commands" / filename).read_text(encoding="utf-8")
+            for phrase in phrases:
+                self.assertIn(phrase, text, filename)
+
     def test_root_readme_documents_general_install_check_and_upgrade_hardening(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
 
@@ -918,7 +1139,11 @@ progress:
             "`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다",
             "python3 scripts/harness.py init --target /path/to/project --adapters none",
             "python3 scripts/harness.py init --target /path/to/project --adapters opencode",
+            "python3 scripts/harness.py init --target /path/to/project --adapters both",
             "python3 scripts/harness.py check --target /path/to/project --adapter opencode",
+            "python3 scripts/harness.py check --worktree",
+            "python3 scripts/release_smoke_test.py",
+            "push 전에 서브에이전트 적대적 리뷰를 해줘",
             "--packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
             "--packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development",
         ):

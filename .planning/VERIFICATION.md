@@ -13,5 +13,9 @@
 | 2026-05-11 | Phase 1 follow-up | Codebase planning docs expanded | PASS | Added harness-focused `ARCHITECTURE`, `STACK`, `TESTING`, `INTEGRATIONS`, and `CONCERNS` docs under `.planning/codebase/`. |
 | 2026-05-11 | Phase 1 follow-up | README workflow guide updated | PASS | README now maps slash commands to Roo modes and workflow skills, lists skill purposes, mode ownership, phase gate, and verification commands. |
 | 2026-05-11 | Phase 1 follow-up | Korean README zero-to-done workflow added | PASS | README now explains starting from idea or design docs, discuss/plan/execute/review/done flow, skill usage, and document-centered handoff. |
+| 2026-05-15 | Phase 1 release | Unit tests | PASS | `python3 -m unittest scripts/test_harness.py` -> 53 tests passed. |
+| 2026-05-15 | Phase 1 release | Source checks | PASS | `python3 scripts/harness.py check` and `python3 scripts/harness.py check --worktree` -> exit 0. |
+| 2026-05-15 | Phase 1 release | Target release smoke matrix | PASS | `python3 scripts/release_smoke_test.py` covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, and all-packs. |
+| 2026-05-15 | Phase 1 release | Pre-push adversarial review | BLOCKED THEN ADDRESSED | Subagent `019e2782-6d80-7453-8af9-c20501d1a8d9` found missing ledger evidence, placeholder verification, and missing `check --worktree` tests; follow-up changes addressed all three. |
 
 Add new rows when a phase closes or a cross-phase verification command becomes important.

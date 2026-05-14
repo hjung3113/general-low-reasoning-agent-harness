@@ -1,19 +1,15 @@
-# Issue tracker: Local Markdown
+# Issue Tracker Placeholder
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+This file is target-owned after initialization. Replace it during planning hydration with the issue tracker that the target repository actually uses.
 
-## Conventions
+## Record During Hydration
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- Tracker type: GitHub Issues, Linear, Jira, local Markdown, or none.
+- Canonical project or board URL when one exists.
+- Where PRDs, issues, bug reports, and implementation tasks should be created.
+- Required status labels or workflow states.
+- Whether agents may create issues directly or must draft them for review.
 
-## When a skill says "publish to the issue tracker"
+## Default Until Hydrated
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
-
-## When a skill says "fetch the relevant ticket"
-
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Do not assume an issue tracker. If a skill says "publish to the issue tracker" before this file is hydrated, draft the content in the active phase planning document and ask where it should be published.

@@ -20,6 +20,37 @@ HARNESS_VERSION = "0.4.0"
 MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
+KNOWN_ADAPTERS = {"roo", "opencode"}
+KNOWN_PROFILES = {"generic", "dotnet-etl-mssql"}
+KNOWN_PACKS = {
+    "workflow-core",
+    "tech-python",
+    "tech-react",
+    "tech-typescript",
+    "tech-tailwind",
+    "tech-csharp",
+    "tech-mssql",
+    "tech-postgresql",
+    "workflow-data-analysis",
+    "workflow-data-processing",
+    "workflow-etl",
+    "workflow-db-context",
+    "workflow-web-development",
+}
+UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+VERIFICATION_PREFIXES = (
+    "python3 ",
+    "git ",
+    "jq ",
+    "npx ",
+    "Validate ",
+    "Review ",
+    "Inspect ",
+    "Confirm ",
+    "core-only ",
+    "OpenCode-only ",
+    "Roo",
+)
 REQUIRED_TARGET_PHRASES = {
     "AGENTS.md": (
         "Karpathy-Inspired Coding Guidelines",
@@ -274,6 +305,7 @@ def upgrade(
         if not dry_run:
             if destination.exists():
                 destination.unlink()
+                remove_empty_parents(destination.parent, target)
             installed.setdefault("files", {}).pop(path_text, None)
 
     installed["version"] = HARNESS_VERSION
@@ -281,6 +313,7 @@ def upgrade(
     installed["profiles"] = sorted(profiles)
     installed["packs"] = sorted(packs)
     installed["pack_metadata"] = selected_pack_metadata(root, packs)
+    installed["available_scopes"] = available_scopes(root)
     if not dry_run:
         write_json(target / INSTALL_STATE, installed)
     return 1 if conflicts else 0
@@ -374,6 +407,17 @@ def selected_pack_metadata(root: Path, packs: set[str]) -> dict[str, object]:
     return {pack: metadata[pack] for pack in sorted(packs) if pack in metadata}
 
 
+def available_scopes(root: Path) -> dict[str, list[str]]:
+    entries = load_manifest(root)
+    manifest_packs = load_manifest_data(root).get("packs", {})
+    pack_names = sorted(manifest_packs) if isinstance(manifest_packs, dict) else sorted(KNOWN_PACKS)
+    return {
+        "adapters": sorted({entry.adapter for entry in entries if entry.adapter} or KNOWN_ADAPTERS),
+        "profiles": sorted({entry.profile for entry in entries if entry.profile} or KNOWN_PROFILES),
+        "packs": pack_names,
+    }
+
+
 def parse_optional_scope(value: str | None) -> set[str] | None:
     if value is None:
         return None
@@ -388,6 +432,8 @@ def parse_scope(value: str, *, default: set[str]) -> set[str]:
         return set(default)
     if normalized in {"none", "core", "core-only"}:
         return set()
+    if normalized in {"both", "all"}:
+        return {"roo", "opencode"}
     return {item.strip().lower() for item in value.split(",") if item.strip()}
 
 
@@ -487,6 +533,17 @@ def write_copy(source: Path, destination: Path) -> None:
     shutil.copyfile(source, destination)
 
 
+def remove_empty_parents(path: Path, stop: Path) -> None:
+    stop = stop.resolve()
+    current = path.resolve()
+    while current != stop and is_relative_to(current, stop):
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
 def assert_safe_write_destination(destination: Path) -> None:
     for candidate in (destination, *destination.parents):
         if candidate.is_symlink():
@@ -522,6 +579,7 @@ def write_install_state(
             "profiles": sorted(profiles),
             "packs": sorted(packs),
             "pack_metadata": selected_pack_metadata(root, packs),
+            "available_scopes": available_scopes(root),
             "files": files,
         },
     )
@@ -541,6 +599,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     installed = json.loads(installed_path.read_text(encoding="utf-8"))
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")
+    validate_installed_scope_names(installed)
     missing = []
     for path_text in installed.get("files", {}):
         destination = target / normalize_path(path_text)
@@ -587,6 +646,26 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         check_roadmap_state_sync(target)
 
 
+def validate_installed_scope_names(installed: dict[str, object]) -> None:
+    unknown = []
+    scopes = installed.get("available_scopes", {})
+    if not isinstance(scopes, dict):
+        scopes = {}
+    for kind, values, available in (
+        ("adapter", installed.get("adapters", []), set(scopes.get("adapters", [])) or KNOWN_ADAPTERS),
+        ("profile", installed.get("profiles", []), set(scopes.get("profiles", [])) or KNOWN_PROFILES),
+        ("pack", installed.get("packs", []), set(scopes.get("packs", [])) or KNOWN_PACKS),
+    ):
+        if not isinstance(values, list):
+            unknown.append(f"{kind}: <not an array>")
+            continue
+        missing = sorted(str(value) for value in values if value not in available)
+        if missing:
+            unknown.append(f"{kind}: {', '.join(missing)}")
+    if unknown:
+        raise SystemExit("Unknown installed harness scope: " + "; ".join(unknown))
+
+
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -616,6 +695,11 @@ def check_json(path: Path) -> None:
 
 def check_phase_state_semantics(path: Path) -> None:
     state = json.loads(path.read_text(encoding="utf-8"))
+    for key in ("updated_at",):
+        if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
+            raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
+    if not isinstance(state.get("updated_by"), str) or not state.get("updated_by"):
+        raise SystemExit(f"{path} updated_by is required.")
     automation_mode = state.get("automation_mode")
     if automation_mode not in {"manual", "auto", "chain"}:
         raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
@@ -644,7 +728,29 @@ def check_phase_state_semantics(path: Path) -> None:
             raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high.")
         if not item["stop_conditions_checked"]:
             raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty.")
-    if state.get("phase") == "execute" and state.get("approved") is True:
+    phase = state.get("phase")
+    if phase not in {"discuss", "plan", "execute", "done"}:
+        raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
+    if phase == "discuss" and state.get("approved") is not False:
+        raise SystemExit(f"{path} discuss phase requires approved=false.")
+    if phase == "plan":
+        required_plan = (
+            "plan_id",
+            "summary",
+            "plan_path",
+            "state_path",
+            "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
+            "acceptance_criteria",
+            "verification",
+        )
+        missing = [key for key in required_plan if not state.get(key)]
+        if state.get("approved") is not False:
+            missing.append("approved=false")
+        if missing:
+            raise SystemExit(f"{path} plan phase requires {', '.join(missing)}.")
+    if phase in {"execute", "done"}:
         required_execute = (
             "plan_id",
             "allowed_paths",
@@ -652,12 +758,27 @@ def check_phase_state_semantics(path: Path) -> None:
             "state_path",
             "plan_path",
             "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
             "approved_by",
             "approved_at",
         )
         missing = [key for key in required_execute if not state.get(key)]
+        if state.get("approved") is not True:
+            missing.append("approved=true")
         if missing:
             raise SystemExit(f"{path} execute approval requires {', '.join(missing)}.")
+        if not UTC_TIMESTAMP.fullmatch(str(state.get("approved_at", ""))):
+            raise SystemExit(f"{path} approved_at must be an ISO-8601 UTC timestamp.")
+    verification = state.get("verification", [])
+    if verification:
+        if not isinstance(verification, list):
+            raise SystemExit(f"{path} verification must be an array.")
+        for index, command in enumerate(verification):
+            if not isinstance(command, str) or not command.strip():
+                raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
+            if not command.startswith(VERIFICATION_PREFIXES):
+                raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
 
 
 def check_command_modes(root: Path) -> None:

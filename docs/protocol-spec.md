@@ -245,10 +245,13 @@ Before pushing a generalized harness release:
 
 1. Run unit tests.
 2. Run source `check`.
-3. Init and check core-only target.
-4. Init and check OpenCode-only target.
-5. Init and check Roo target.
-6. Init and check combined Roo + OpenCode target.
-7. Init and check target with default `workflow-core` skill pack.
-8. Confirm the README and clean skeleton are stack-neutral.
-9. Confirm stack-specific docs are adapter, profile, pack, or example material only.
+3. Run source `check --worktree` before commit.
+4. Init and check core-only target.
+5. Init and check OpenCode-only target.
+6. Init and check Roo target.
+7. Init and check combined Roo + OpenCode target.
+8. Run the installed target smoke suite in each release-matrix target.
+9. Init and check target with default `workflow-core` skill pack.
+10. Confirm the README and clean skeleton are stack-neutral.
+11. Confirm stack-specific docs are adapter, profile, pack, or example material only.
+12. Record command results, target paths, timestamp, adversarial review result, commit, and pushed branch in the phase verification ledger.

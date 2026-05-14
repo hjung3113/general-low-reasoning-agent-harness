@@ -1,15 +1,13 @@
-# Triage Labels
+# Triage Labels Placeholder
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+This file is target-owned after initialization. Replace the right-hand column with the target repository's real labels or workflow states.
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+| Agent role | Target tracker label or state | Meaning |
+| --- | --- | --- |
+| `needs-triage` | unset | Maintainer needs to evaluate this issue. |
+| `needs-info` | unset | Waiting on reporter or product owner for more information. |
+| `ready-for-agent` | unset | Fully specified and safe for an agent to implement. |
+| `ready-for-human` | unset | Requires human implementation or approval. |
+| `wontfix` | unset | Will not be actioned. |
 
-When a skill mentions a role, use the corresponding label string from this table.
-
-Edit the right-hand column to match whatever vocabulary you actually use.
+Until this file is hydrated, do not invent labels in an external tracker. Draft the intended state transition in planning docs and ask for confirmation.

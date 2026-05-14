@@ -118,7 +118,9 @@ Roo skills and rules are not a file-system lock or policy engine. By themselves,
 
 For hard enforcement, add separate tooling: JSON Schema validation, pre-commit checks, CI diff checks against `allowed_paths`, branch protection, or repository permissions.
 
-This harness includes `scripts/harness.py check` for local structure checks, phase-state automation semantics, and optional changed-path enforcement. Continue to run AJV schema validation as part of PR verification.
+This harness includes `scripts/harness.py check` for local structure checks and phase-state automation semantics. Before committing implementation work in a git worktree, run `python3 scripts/harness.py check --worktree` so staged, unstaged, and untracked paths are checked against `allowed_paths`.
+
+Continue to run JSON Schema validation or the built-in phase-state semantic checks as part of PR verification.
 
 ## Document-Centered Continuity
 

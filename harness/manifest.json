@@ -538,17 +538,17 @@
     {
       "path": "docs/agents/domain.md",
       "source": "docs/agents/domain.md",
-      "policy": "harness-owned"
+      "policy": "project-owned"
     },
     {
       "path": "docs/agents/issue-tracker.md",
       "source": "docs/agents/issue-tracker.md",
-      "policy": "harness-owned"
+      "policy": "project-owned"
     },
     {
       "path": "docs/agents/triage-labels.md",
       "source": "docs/agents/triage-labels.md",
-      "policy": "harness-owned"
+      "policy": "project-owned"
     },
     {
       "path": "docs/phase-gate-harness.md",
