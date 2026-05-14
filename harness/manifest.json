@@ -1,5 +1,64 @@
 {
   "version": "0.4.0",
+  "packs": {
+    "workflow-core": {
+      "category": "workflow",
+      "capabilities": ["evidence research", "skill composition", "verification contract", "risk review"],
+      "generic_safe_default": true
+    },
+    "tech-python": {
+      "category": "tech",
+      "capabilities": ["python evidence", "python packaging", "python verification"],
+      "activation_evidence": ["pyproject.toml", "requirements.txt", "uv.lock", "python files"]
+    },
+    "tech-react": {
+      "category": "tech",
+      "capabilities": ["react components", "react state", "frontend behavior"]
+    },
+    "tech-typescript": {
+      "category": "tech",
+      "capabilities": ["typecheck", "typed module boundaries"]
+    },
+    "tech-tailwind": {
+      "category": "tech",
+      "capabilities": ["tailwind styling", "responsive utility conventions"]
+    },
+    "tech-csharp": {
+      "category": "tech",
+      "capabilities": ["dotnet solution analysis", "build and test verification"]
+    },
+    "tech-mssql": {
+      "category": "tech",
+      "suggests": ["workflow-db-context"],
+      "capabilities": ["sql server persistence", "transaction boundaries", "sql server verification"]
+    },
+    "tech-postgresql": {
+      "category": "tech",
+      "suggests": ["workflow-db-context"],
+      "capabilities": ["postgresql persistence", "transaction boundaries", "postgresql verification"]
+    },
+    "workflow-data-analysis": {
+      "category": "workflow",
+      "capabilities": ["analysis question framing", "reproducible analytical outputs"]
+    },
+    "workflow-data-processing": {
+      "category": "workflow",
+      "capabilities": ["data contracts", "transformation invariants", "failure handling"]
+    },
+    "workflow-etl": {
+      "category": "workflow",
+      "suggests": ["workflow-db-context"],
+      "capabilities": ["extract transform load", "restart idempotency", "schema drift"]
+    },
+    "workflow-db-context": {
+      "category": "workflow",
+      "capabilities": ["needs-db-context", "database shape gating", "database verification readiness"]
+    },
+    "workflow-web-development": {
+      "category": "workflow",
+      "capabilities": ["web UX states", "frontend verification", "responsive behavior"]
+    }
+  },
   "files": [
     {
       "path": "AGENTS.md",
@@ -17,6 +76,13 @@
       "policy": "harness-owned",
       "owner": "profile:generic",
       "profile": "generic"
+    },
+    {
+      "path": "docs/profiles/dotnet-etl-mssql.md",
+      "source": "harness/profiles/dotnet-etl-mssql/PROFILE.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl-mssql",
+      "profile": "dotnet-etl-mssql"
     },
     {
       "path": ".agents/skills/repository-evidence-research/SKILL.md",
@@ -59,6 +125,90 @@
       "policy": "harness-owned",
       "owner": "pack:workflow-core",
       "pack": "workflow-core"
+    },
+    {
+      "path": ".agents/skills/tech-python/SKILL.md",
+      "source": "harness/skill-packs/tech-python/tech-python/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-python",
+      "pack": "tech-python"
+    },
+    {
+      "path": ".agents/skills/tech-react/SKILL.md",
+      "source": "harness/skill-packs/tech-react/tech-react/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-react",
+      "pack": "tech-react"
+    },
+    {
+      "path": ".agents/skills/tech-typescript/SKILL.md",
+      "source": "harness/skill-packs/tech-typescript/tech-typescript/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-typescript",
+      "pack": "tech-typescript"
+    },
+    {
+      "path": ".agents/skills/tech-tailwind/SKILL.md",
+      "source": "harness/skill-packs/tech-tailwind/tech-tailwind/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-tailwind",
+      "pack": "tech-tailwind"
+    },
+    {
+      "path": ".agents/skills/tech-csharp/SKILL.md",
+      "source": "harness/skill-packs/tech-csharp/tech-csharp/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-csharp",
+      "pack": "tech-csharp"
+    },
+    {
+      "path": ".agents/skills/tech-mssql/SKILL.md",
+      "source": "harness/skill-packs/tech-mssql/tech-mssql/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-mssql",
+      "pack": "tech-mssql"
+    },
+    {
+      "path": ".agents/skills/tech-postgresql/SKILL.md",
+      "source": "harness/skill-packs/tech-postgresql/tech-postgresql/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:tech-postgresql",
+      "pack": "tech-postgresql"
+    },
+    {
+      "path": ".agents/skills/workflow-data-analysis/SKILL.md",
+      "source": "harness/skill-packs/workflow-data-analysis/workflow-data-analysis/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-data-analysis",
+      "pack": "workflow-data-analysis"
+    },
+    {
+      "path": ".agents/skills/workflow-data-processing/SKILL.md",
+      "source": "harness/skill-packs/workflow-data-processing/workflow-data-processing/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-data-processing",
+      "pack": "workflow-data-processing"
+    },
+    {
+      "path": ".agents/skills/workflow-etl/SKILL.md",
+      "source": "harness/skill-packs/workflow-etl/workflow-etl/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-etl",
+      "pack": "workflow-etl"
+    },
+    {
+      "path": ".agents/skills/workflow-db-context/SKILL.md",
+      "source": "harness/skill-packs/workflow-db-context/workflow-db-context/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-db-context",
+      "pack": "workflow-db-context"
+    },
+    {
+      "path": ".agents/skills/workflow-web-development/SKILL.md",
+      "source": "harness/skill-packs/workflow-web-development/workflow-web-development/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-web-development",
+      "pack": "workflow-web-development"
     },
     {
       "path": ".roomodes",

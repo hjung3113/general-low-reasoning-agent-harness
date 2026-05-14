@@ -51,6 +51,8 @@ class TargetHarnessSmokeTests(unittest.TestCase):
             required.append(".opencode/commands/plan.md")
         if "workflow-core" in packs:
             required.append(".agents/skills/skill-plugin-composition/SKILL.md")
+        for pack in sorted(packs - {"workflow-core"}):
+            required.append(f".agents/skills/{pack}/SKILL.md")
         for relative in required:
             self.assertTrue(Path(relative).exists(), relative)
 

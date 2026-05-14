@@ -156,6 +156,24 @@ The default `workflow-core` pack includes:
 - `data-workflow`
 - `integration-boundary`
 
+Additional shipped tech packs:
+
+- `tech-python`
+- `tech-react`
+- `tech-typescript`
+- `tech-tailwind`
+- `tech-csharp`
+- `tech-mssql`
+- `tech-postgresql`
+
+Additional shipped workflow packs:
+
+- `workflow-data-analysis`
+- `workflow-data-processing`
+- `workflow-etl`
+- `workflow-db-context`
+- `workflow-web-development`
+
 Selection rules:
 
 - use repository evidence first
@@ -164,11 +182,41 @@ Selection rules:
 - do not use inactive profile commands
 - create project-specific skills only after constraints are known
 
+## Specialization By Composition
+
+Specialized harness behavior must be reproduced through explicit profile and pack composition, not through core defaults.
+
+Example: a C#/.NET + MSSQL + ETL target uses:
+
+```bash
+python3 scripts/harness.py init \
+  --target /path/to/dotnet-etl-project \
+  --adapters roo,opencode \
+  --profiles generic,dotnet-etl-mssql \
+  --packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context
+```
+
+This composition must install:
+
+- `docs/profiles/dotnet-etl-mssql.md`
+- `.agents/skills/tech-csharp/SKILL.md`
+- `.agents/skills/tech-mssql/SKILL.md`
+- `.agents/skills/workflow-etl/SKILL.md`
+- `.agents/skills/workflow-db-context/SKILL.md`
+- verification and risk-review skills from `workflow-core`
+
+It must carry guardrails for .NET version confirmation, SQL Server persistence verification, DB context gating, row-by-row ETL write prohibition, transaction boundaries, restart/idempotency/replay, and `needs-db-context`.
+
 ## Profiles
 
 Profiles describe confirmed project facts and defaults. They do not change the phase lifecycle.
 
 Unknown project shape means generic profile only.
+
+Shipped profiles:
+
+- `generic`
+- `dotnet-etl-mssql`
 
 Profile records should include:
 
@@ -204,4 +252,3 @@ Before pushing a generalized harness release:
 7. Init and check target with default `workflow-core` skill pack.
 8. Confirm the README and clean skeleton are stack-neutral.
 9. Confirm stack-specific docs are adapter, profile, pack, or example material only.
-

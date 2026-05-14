@@ -267,6 +267,149 @@ progress:
             self.assertIn("Skills are composable plugins", skill.read_text(encoding="utf-8"))
             harness.run(["check", "--target", str(target)])
 
+    def test_requested_tech_and_workflow_packs_install_as_composable_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            packs = ",".join(
+                [
+                    "tech-python",
+                    "tech-react",
+                    "tech-typescript",
+                    "tech-tailwind",
+                    "tech-csharp",
+                    "tech-mssql",
+                    "tech-postgresql",
+                    "workflow-data-analysis",
+                    "workflow-data-processing",
+                    "workflow-etl",
+                    "workflow-db-context",
+                    "workflow-web-development",
+                ]
+            )
+
+            harness.run(["init", "--target", str(target), "--adapters", "none", "--packs", packs])
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(sorted(packs.split(",")), installed["packs"])
+            for skill_name in packs.split(","):
+                self.assertTrue((target / f".agents/skills/{skill_name}/SKILL.md").exists(), skill_name)
+            self.assertFalse((target / ".roo").exists())
+            harness.run(["check", "--target", str(target)])
+
+    def test_init_rejects_unknown_adapter_profile_or_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            for args, message in (
+                (["--adapters", "unknown-adapter"], "adapter: unknown-adapter"),
+                (["--profiles", "unknown-profile"], "profile: unknown-profile"),
+                (["--packs", "unknown-pack"], "pack: unknown-pack"),
+            ):
+                with self.subTest(args=args):
+                    with self.assertRaisesRegex(SystemExit, message):
+                        harness.run(["init", "--target", str(target), *args])
+                    self.assertFalse(target.exists())
+
+    def test_check_target_rejects_installed_state_with_unknown_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["packs"] = ["unknown-pack"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "pack: unknown-pack"):
+                harness.run(["check", "--target", str(target)])
+
+    def test_csharp_mssql_etl_pack_composition_recreates_specialized_guardrails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            harness.run(
+                [
+                    "init",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "roo,opencode",
+                    "--profiles",
+                    "generic,dotnet-etl-mssql",
+                    "--packs",
+                    "workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
+                ]
+            )
+
+            for skill_name in (
+                "tech-csharp",
+                "tech-mssql",
+                "workflow-etl",
+                "workflow-db-context",
+                "verification-contract",
+                "risk-review",
+            ):
+                self.assertTrue((target / f".agents/skills/{skill_name}/SKILL.md").exists(), skill_name)
+            profile = (target / "docs/profiles/dotnet-etl-mssql.md").read_text(encoding="utf-8")
+            self.assertIn("Target .NET 10 unless", profile)
+            self.assertIn("Testcontainers", profile)
+            self.assertIn("Row-by-row ETL writes are forbidden", profile)
+            self.assertIn("needs-db-context", profile)
+            etl = (target / ".agents/skills/workflow-etl/SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("C#/.NET 10 + MSSQL ETL", etl)
+            self.assertIn("tech-csharp", etl)
+            self.assertIn("tech-mssql", etl)
+            self.assertIn("workflow-db-context", etl)
+            db_context = (target / ".agents/skills/workflow-db-context/SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("needs-db-context", db_context)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("dotnet-etl-mssql", installed["profiles"])
+            self.assertEqual("workflow", installed["pack_metadata"]["workflow-db-context"]["category"])
+            self.assertIn("sql server verification", installed["pack_metadata"]["tech-mssql"]["capabilities"])
+            self.assertTrue((target / ".roo/skills/workflow-phase-gate/SKILL.md").exists())
+            self.assertTrue((target / ".opencode/commands/execute.md").exists())
+            harness.run(["check", "--target", str(target), "--adapter", "opencode"])
+
+    def test_default_roo_adapter_does_not_leak_specialized_stack_guardrails(self) -> None:
+        forbidden = (
+            ".NET 10",
+            "MSSQL",
+            "SQL Server",
+            "ETL",
+            "SqlBulkCopy",
+            "MERGE",
+            "EF Core",
+            "xUnit",
+            "testcontainers",
+            "FluentAssertions",
+            "NSubstitute",
+            "Dapper",
+            "SQLite",
+            "InMemory",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "roo", "--packs", "workflow-core"])
+
+            offenders = []
+            scan_roots = [
+                target / "AGENTS.md",
+                target / "README.md",
+                target / ".roomodes",
+                target / "scripts/harness.py",
+                *sorted((target / ".roo").rglob("*.md")),
+                *sorted((target / ".planning").rglob("*.md")),
+                *sorted((target / ".agents").rglob("*.md")),
+            ]
+            for path in scan_roots:
+                if not path.exists():
+                    continue
+                text = path.read_text(encoding="utf-8")
+                for phrase in forbidden:
+                    if phrase in text:
+                        offenders.append(f"{path.relative_to(target)}: {phrase}")
+
+            self.assertEqual([], offenders)
+
     def test_init_installs_first_action_and_phase_zero_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -750,14 +893,20 @@ progress:
 
         for phrase in (
             "discuss -> plan -> execute -> done",
-            "Core only:",
-            "OpenCode only:",
-            "Roo and OpenCode:",
-            "Workflow skills are composable plugins",
+            "core-only 하네스",
+            "OpenCode 전용 하네스",
+            "Roo + OpenCode 동시 지원",
+            "skill pack은 플러그인입니다",
             "repository-evidence-research",
             "skill-plugin-composition",
             "verification-contract",
             "integration-boundary",
+            "tech-csharp",
+            "tech-mssql",
+            "workflow-etl",
+            "tech-react",
+            "tech-typescript",
+            "tech-tailwind",
         ):
             self.assertIn(phrase, readme)
 
@@ -765,13 +914,13 @@ progress:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
 
         for phrase in (
-            "`.planning/**` is canonical project memory",
-            "`.scratch/phase-state.json` is only the live gate",
+            "`.planning/**`은 canonical memory입니다",
+            "`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다",
             "python3 scripts/harness.py init --target /path/to/project --adapters none",
             "python3 scripts/harness.py init --target /path/to/project --adapters opencode",
             "python3 scripts/harness.py check --target /path/to/project --adapter opencode",
-            "Modified harness-owned files are written to `.harness/conflicts/**`",
-            "Do not hard-code project categories",
+            "--packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
+            "--packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development",
         ):
             self.assertIn(phrase, readme)
 

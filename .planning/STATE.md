@@ -11,7 +11,7 @@ progress:
 
 - **Phase**: 1 - Generalized Harness Release.
 - **Plan**: Working implementation for stack-neutral core, OpenCode compatibility, and composable skill packs.
-- **Status**: Execute work is in progress in this new repository copy.
+- **Status**: Execute work is in progress; pack catalog, dotnet-etl-mssql composition, Korean README, and second-pass review are being verified.
 - **Progress**: Phase 1: 0/1 plan complete; 0/1 phases complete overall.
 
 ## Active Checkpoint
@@ -29,5 +29,4 @@ progress:
 
 ## Next Action
 
-Run release verification, initialize git, create the GitHub repository, and push after the completion audit passes.
-
+Run final release verification, commit, push, and complete the audit.

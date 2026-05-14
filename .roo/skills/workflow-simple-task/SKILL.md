@@ -14,7 +14,7 @@ Use this workflow only when all are true:
 
 - The request is narrow and can be completed in one short pass.
 - The expected answer or change is easy to inspect.
-- The task does not change data contracts, persistence, ETL ordering, security posture, deployment behavior, or architecture.
+- The task does not change data contracts, persistence ordering, security posture, deployment behavior, or architecture.
 - The task does not require a durable decision, new issue, migration, broad refactor, or multi-file design.
 - Verification is obvious: answer from local context, read the changed text, inspect a targeted diff, run a syntax check, run a focused test, or run a single command.
 
@@ -55,7 +55,7 @@ Good examples:
 Do not use this workflow for:
 
 - Ambiguous feature work, unknown-cause bug fixes, or behavior changes without immediate focused verification.
-- SQL, migration, ETL, ops, authentication, authorization, or data-processing changes.
+- persistence, migration, ops, authentication, authorization, or data-processing changes.
 - Generated files, dependency changes, or broad formatting.
 - Tasks that touch many files or require coordination with `.scratch/phase-state.json`.
 - Public API changes, data contract changes, cross-module refactors, or durable design choices.

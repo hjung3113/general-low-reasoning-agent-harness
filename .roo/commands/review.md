@@ -1,5 +1,5 @@
 ---
-description: Run the C#/.NET, SQL, ETL, and operations review workflow
+description: Run the read-only review workflow
 argument-hint: <file, directory, diff, or PR scope>
 mode: review
 ---

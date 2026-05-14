@@ -183,7 +183,9 @@ def install(
     adapters = adapters if adapters is not None else {"roo"}
     profiles = profiles if profiles is not None else {"generic"}
     packs = packs if packs is not None else set()
-    entries = select_entries(load_manifest(root), adapters=adapters, profiles=profiles, packs=packs)
+    all_entries = load_manifest(root)
+    validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
+    entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     target = target.resolve()
     destinations = [
         (entry, source_path(root, entry), destination_path(target, entry))
@@ -222,7 +224,9 @@ def upgrade(
     adapters = adapters if adapters is not None else set(installed.get("adapters", ["roo"]))
     profiles = profiles if profiles is not None else set(installed.get("profiles", ["generic"]))
     packs = packs if packs is not None else set(installed.get("packs", []))
-    entries = select_entries(load_manifest(root), adapters=adapters, profiles=profiles, packs=packs)
+    all_entries = load_manifest(root)
+    validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
+    entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     installed_paths = installed.get("files", {})
     if installed.get("version") is None:
         raise SystemExit("Target is not initialized. Run init before upgrade.")
@@ -276,6 +280,7 @@ def upgrade(
     installed["adapters"] = sorted(adapters)
     installed["profiles"] = sorted(profiles)
     installed["packs"] = sorted(packs)
+    installed["pack_metadata"] = selected_pack_metadata(root, packs)
     if not dry_run:
         write_json(target / INSTALL_STATE, installed)
     return 1 if conflicts else 0
@@ -330,6 +335,7 @@ def check(
         packs = set(installed.get("packs", []))
         if adapter:
             adapters.add(adapter)
+        validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
         expected = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
         check_installed_target(check_target, expected_entries=expected)
     if base:
@@ -339,7 +345,7 @@ def check(
 
 
 def load_manifest(root: Path) -> list[ManifestEntry]:
-    data = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    data = load_manifest_data(root)
     entries = []
     for item in data.get("files", []):
         entries.append(
@@ -355,6 +361,17 @@ def load_manifest(root: Path) -> list[ManifestEntry]:
             )
         )
     return entries
+
+
+def load_manifest_data(root: Path) -> dict[str, object]:
+    return json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+
+
+def selected_pack_metadata(root: Path, packs: set[str]) -> dict[str, object]:
+    metadata = load_manifest_data(root).get("packs", {})
+    if not isinstance(metadata, dict):
+        return {}
+    return {pack: metadata[pack] for pack in sorted(packs) if pack in metadata}
 
 
 def parse_optional_scope(value: str | None) -> set[str] | None:
@@ -419,6 +436,30 @@ def select_entries(
     return selected
 
 
+def validate_scope_names(
+    entries: Iterable[ManifestEntry],
+    *,
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+) -> None:
+    entries = list(entries)
+    available_adapters = {entry.adapter for entry in entries if entry.adapter}
+    available_profiles = {entry.profile for entry in entries if entry.profile}
+    available_packs = {entry.pack for entry in entries if entry.pack}
+    unknown = []
+    for kind, requested, available in (
+        ("adapter", adapters, available_adapters),
+        ("profile", profiles, available_profiles),
+        ("pack", packs, available_packs),
+    ):
+        missing = sorted(requested - available)
+        if missing:
+            unknown.append(f"{kind}: {', '.join(missing)}")
+    if unknown:
+        raise SystemExit("Unknown harness scope requested: " + "; ".join(unknown))
+
+
 def source_path(root: Path, entry: ManifestEntry) -> Path:
     if entry.source.is_absolute():
         raise SystemExit(f"Absolute manifest sources are not allowed: {entry.source}")
@@ -480,6 +521,7 @@ def write_install_state(
             "adapters": sorted(adapters),
             "profiles": sorted(profiles),
             "packs": sorted(packs),
+            "pack_metadata": selected_pack_metadata(root, packs),
             "files": files,
         },
     )
@@ -636,7 +678,7 @@ def check_phase_reference_drift(root: Path) -> None:
         "Phase 2 should add mechanical",
         "Future mechanical enforcement belongs to Phase 2",
         "Phase 3 for consumer onboarding",
-        "Phase 4 is reserved for an example ETL slice",
+        "Phase 4 is reserved for a project-specific example slice",
     )
     offenders = []
     for path in (root / ".planning").rglob("*.md"):

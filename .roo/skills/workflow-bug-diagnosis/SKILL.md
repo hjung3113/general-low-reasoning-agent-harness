@@ -1,11 +1,10 @@
 ---
 name: workflow-bug-diagnosis
-trigger: Use when something is broken, a test is failing, output is wrong, performance regressed, or the user invokes /bugfix.
-description: Runs the standard root-cause workflow for bugs, failing tests, wrong data, and performance regressions. Use when something is broken or when the user invokes /bugfix.
+trigger: Use when behavior is broken, tests fail, output is wrong, or the user invokes /bugfix.
+description: Reproduce, minimize, diagnose, fix, and regression-test bugs.
 ---
 
 # Workflow: Bug Diagnosis
-
 
 ## Execution Model
 
@@ -22,12 +21,11 @@ If the task cannot proceed because planning context is missing, stale, placehold
 1. Reproduce.
    - Run `workflow-phase-gate` first. Stop before implementation unless phase state is `execute`, `approved=true`, and tied to the approved `plan_id`.
    - Capture the failing command, input, log, test, or data example.
-   - If reproduction is unclear, inspect existing tests and logs before asking.
    - Stop if there is no observable failure yet; ask for the missing reproduction detail.
 
 2. Minimize.
-   - Reduce to the smallest failing test, file, query, or pipeline stage.
-   - For ETL bugs, trace the record through source -> parse -> normalize -> state -> merge -> buffer -> write -> observe.
+   - Reduce to the smallest failing test, file, query, or processing stage.
+   - For data bugs, trace the record through each confirmed processing stage.
 
 3. Hypothesize.
    - State the most likely cause and what evidence would prove it.
@@ -37,10 +35,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
 4. Red.
    - Add a regression test that fails for the bug before production edits.
    - Record red evidence: command, failing test name, and failure reason.
-   - Use xUnit + FluentAssertions for code behavior.
-   - Use `testcontainers-dotnet` with real MSSQL containers for SQL, EF Core query, Dapper query, migration, writer, restart-safety, idempotency, and transaction behavior.
-   - Use NSubstitute only when the bug is outside real persistence/integration behavior.
-   - Do not use mocks, in-memory providers, or SQLite as proof for MSSQL behavior.
+   - Use the repository's existing test framework and active pack guidance.
    - Stop if no red evidence exists; there is no "tests later" path for bug fixes.
 
 5. Fix.
@@ -51,17 +46,16 @@ If the task cannot proceed because planning context is missing, stale, placehold
    - Run regression tests and impacted suites.
    - Verify the original reproduction path is fixed.
    - Record green evidence for the regression test before refactoring.
-   - Refactor only after green evidence exists, then rerun focused tests.
    - Report Cause, Evidence, Fix, Files affected, and Tests run.
 
 ## Routing
 
 - Use `diagnose` by default.
-- Use `db-migration` for SQL/schema root causes.
-- Use `etl-pipeline` for ordering, state, merge, or write path causes.
+- Use active tech and workflow packs to refine ownership for specialized causes.
 
 ## Stop Conditions
 
 - Do not convert this workflow into feature work unless the root cause is proven and covered by a regression test.
 - Do not implement sample or domain code when the user is only configuring Roo workflows.
 - Do not edit production code without a failing reproduction or red regression test.
+

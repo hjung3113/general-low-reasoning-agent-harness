@@ -1,11 +1,10 @@
 ---
 name: workflow-docs-to-issues
 trigger: Use when the user asks to convert requirements, notes, or plans into a PRD or executable issue list, or invokes /issues.
-description: Converts requirements, design notes, and plans into PRDs and independently implementable issues. Use for planning from docs or when the user invokes /issues.
+description: Converts requirements, design notes, and plans into PRDs and independently implementable issues.
 ---
 
 # Workflow: Docs To Issues
-
 
 ## Execution Model
 
@@ -42,14 +41,14 @@ If the task cannot proceed because planning context is missing, stale, placehold
    - Status label
    - Dependencies
    - Recommended mode
-   - Test expectations, including xUnit TDD and MSSQL `testcontainers-dotnet` coverage when database behavior is part of the slice
+   - Verification expectations based on active packs and repository evidence
    - Done criteria
-   - State whether the slice is app code, ETL, DB, review, or architecture work.
+   - State whether the slice is application code, review, architecture, docs, operations, data, or integration work.
 
 ## Routing
 
 - Keep ownership with planning while drafting the PRD and issue set.
-- Route implementation slices to `tdd-code`, `etl-pipeline`, or `db-migration` only after the issue is written.
+- Route implementation slices only after the issue is written.
 - Route review-only work to `review` and design-only work to `architecture-decision`.
 
 ## Local Tracker
@@ -65,3 +64,4 @@ When this repo uses the default local tracker, create files under:
 
 - Do not implement the issues in this workflow.
 - Do not invent domain/sample project work that is not grounded in the source documents.
+

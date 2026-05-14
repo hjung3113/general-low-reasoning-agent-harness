@@ -7,7 +7,7 @@ description: Use for projects or phases involving data ingestion, transformation
 
 Use this skill when the work depends on data shape or data movement.
 
-This skill is intentionally not tied to Python, SQL Server, ETL, notebooks, or any specific framework.
+This skill is intentionally not tied to any language, database vendor, named pipeline style, notebook tool, or framework.
 
 ## Workflow
 
@@ -25,4 +25,3 @@ This skill is intentionally not tied to Python, SQL Server, ETL, notebooks, or a
 - dataframe library
 - orchestration tool
 - batch or streaming architecture
-

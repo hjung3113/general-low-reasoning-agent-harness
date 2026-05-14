@@ -1,6 +1,6 @@
 # Roo Slash Commands
 
-These commands are the user-facing entry points for the template.
+These commands are the user-facing entry points for the Roo adapter.
 
 ## Fresh Target First Actions
 
@@ -16,13 +16,11 @@ Before planning hydration finishes, keep the visible command set small:
 | `/simple` | `orchestrator` | Run the lightweight path for focused questions, small low-risk edits, docs tweaks, harmless command runs, mechanical cleanup, and tiny locally verified changes. |
 | `/feature` | `orchestrator` | Route ordinary application behavior or refactoring into the TDD workflow when no narrower owner applies. |
 | `/bugfix` | `orchestrator` | Run the root-cause workflow for broken behavior, failing tests, wrong output, regressions, or unknown cause. |
-| `/etl` | `orchestrator` | Run the ETL workflow for parser, normalization, correction, state, matching, merge, buffering, writer flow, replay, or restart safety. |
-| `/db` | `orchestrator` | Run the DB workflow for MSSQL schema, EF migration, SQL, indexes, transactions, Dapper, `SqlBulkCopy`, `MERGE`, or persistence migrations. |
-| `/ops` | `orchestrator` | Route operational work for logs, metrics, processing events, retry boundaries, worker polling, graceful shutdown, dashboards, or runbooks. |
+| `/ops` | `orchestrator` | Route operational work for logs, metrics, events, retry boundaries, lifecycle, dashboards, or runbooks. |
 | `/adr` | `architect` | Run the architecture workflow for durable design decisions, boundaries, state models, tradeoffs, or implementation planning. |
-| `/review` | `review` | Run the read-only review workflow for code, SQL, ETL, tests, performance, or operations risk. |
+| `/review` | `review` | Run the read-only review workflow for correctness, security, reliability, performance, or missing tests. |
 | `/issues` | `docs-issues` | Convert docs and plans into PRDs, local tracker issues, acceptance criteria, and implementation slices. |
-| `/doctor` | `orchestrator` | Run `workflow-harness-doctor` for read-only harness diagnostics covering planning, Roo command/mode, DB context config, and diff-before-mutation readiness. |
+| `/doctor` | `orchestrator` | Run `workflow-harness-doctor` for read-only harness diagnostics covering planning, Roo command/mode, and diff-before-mutation readiness. |
 | `/phase-discuss` | `architect` | Run the phase-gate discuss step only: read-only discovery, alignment, constraints, and open questions. |
 | `/phase-plan` | `architect` | Run the phase-gate plan step only: plan docs, scope, acceptance criteria, verification, and approval request. |
 | `/phase-execute` | `orchestrator` | Verify an approved execute gate and hand off implementation to the owning mode; the orchestrator does not implement inline. |
@@ -45,3 +43,4 @@ Flags do not skip phase-local `discuss`, alignment summary, adversarial review, 
 - One-pass automation: use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`.
 - Execute remains subtask-first: the orchestrator verifies the gate, creates the owning-mode handoff packet, and stops if `new_task` is unavailable.
 - `--chain` does not skip gate safety checks; if canonical conditions fail, stop before execute.
+

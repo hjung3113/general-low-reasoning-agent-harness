@@ -1,7 +1,7 @@
 # Orchestrator Rules
 
 - Do not write implementation code.
-- Do not edit agent-control files. Route `AGENTS.md`, `CLAUDE.md`, `.roo/**`, and `.roomodes` changes to `harness-maintainer`.
+- Do not edit agent-control files. Route `AGENTS.md`, `.roo/**`, and `.roomodes` changes to `harness-maintainer`.
 - Choose exactly one workflow skill or direct mode before choosing individual skills.
 - Slash commands are thin entry points. Treat their mode and referenced workflow as routing hints, then apply this decision table.
 
@@ -11,34 +11,29 @@ Use the first matching route. Do not run two workflow commands for one slice; sp
 
 | User entry | Primary scope | Workflow or mode | Owner |
 | --- | --- | --- | --- |
-| `/review` | Read-only review of code, SQL, tests, ETL, reliability, or operations risk | `workflow-code-review` | `review` |
+| `/review` | Read-only review of correctness, security, reliability, performance, or missing tests | `workflow-code-review` | `review` |
 | existing-project harness adoption, planning docs are missing/stale/placeholder-only, or user asks to fill `.planning/` from an existing repo | Durable planning memory hydration and stale planning reconciliation | `workflow-planning-hydration` | `architect` or `docs-issues` |
-| `/db` | MSSQL schema, EF migration, SQL query, index, transaction, Dapper, `SqlBulkCopy`, `MERGE`, or persistence migration | `workflow-db-change` | `db-migration` |
-| `/etl` | Parser, normalization, correction, state machine, event matching, merge/aggregate, buffering, bulk writer flow, replay, restart safety | `workflow-etl-pipeline` | `etl-pipeline` |
-| `/ops` or ops-observability request | Structured logs, metrics, processing events, retry boundaries, worker polling, graceful shutdown, dashboards, runbooks | `workflow-ops-observability` | `ops-observability` |
+| `/ops` or ops-observability request | Structured logs, metrics, events, retry boundaries, lifecycle, dashboards, runbooks | `workflow-ops-observability` | `ops-observability` |
 | `/simple` or obvious simple task | Focused question, small low-risk edit, docs tweak, harmless command run, mechanical cleanup, or tiny locally verified behavior change | `workflow-simple-task` | owning mode |
-| `/feature` | User-visible behavior or ordinary application refactor not owned by ETL, DB, ops, review, docs, architecture, or harness | `workflow-feature-tdd` | `tdd-code` |
+| `/feature` | User-visible behavior or ordinary application refactor | `workflow-feature-tdd` | `tdd-code` |
 | `/bugfix` | Broken behavior, failing tests, wrong output, regression, or unknown root cause | `workflow-bug-diagnosis` | `diagnose` |
 | `/adr` | Durable design decision, architecture boundary, state model, or tradeoff analysis | `workflow-architecture-decision` | `architect` |
 | `/issues` | PRD, local tracker issue, implementation slice, triage, acceptance criteria, or docs-to-work conversion | `workflow-docs-to-issues` | `docs-issues` |
-| `/doctor` | Read-only harness diagnostics for planning/Roo/DB context drift and mutation-readiness guidance | `workflow-harness-doctor` | `harness-maintainer` |
+| `/doctor` | Read-only harness diagnostics for planning/Roo drift and mutation-readiness guidance | `workflow-harness-doctor` | `harness-maintainer` |
 | `/phase-discuss` | Phase-local read-only discovery, repo-derived answers, constraints, recommended defaults, and blocking questions | `workflow-phase-gate` | `architect` |
 | `/phase-plan` | Phase-local planning docs, `plan_id`, allowed paths, acceptance criteria, verification, review gates, and execute approval request | `workflow-phase-gate` | `architect` |
 | `/phase-execute` | Verify approved execute gate, then create owning-mode implementation handoff; orchestrator must not implement inline | `workflow-phase-gate` | `orchestrator` then owning mode |
 | `/fsd-phase` | Recommended phase lifecycle entry through canonical phase gate and subtask handoffs; orchestrator must not implement inline | `workflow-phase-gate` | `orchestrator` then owning modes |
-| harness request | Roo mode, slash command, workflow rule, `AGENTS.md`, `CLAUDE.md`, `.roo/**`, or `.roomodes` change | direct mode | `harness-maintainer` |
+| harness request | Roo mode, slash command, workflow rule, `AGENTS.md`, `.roo/**`, or `.roomodes` change | direct mode | `harness-maintainer` |
 
 ## Tie Breakers
 
-- If the request says review, inspect, audit, scan, or pre-merge, use `/review` even when the files are ETL, DB, or ops files.
+- If the request says review, inspect, audit, scan, or pre-merge, use `/review`.
 - If the user asks to apply the harness to an existing project, fill planning docs, reconcile stale `.planning/` files, or make ADR work use existing project context, use `workflow-planning-hydration` before `/adr`, `/issues`, or implementation workflows.
 - If `/adr` is requested but `.planning/codebase/**` or active `.planning/phases/**` is missing, placeholder-only, stale, or unrelated to the current repo, run `workflow-planning-hydration` first and return to `/adr` only after planning context is usable.
-- If the change includes schema, SQL, migration, indexes, transaction boundaries, or persistence correctness, use `/db` for that slice.
-- If the change is pipeline-stage behavior without schema ownership, use `/etl`.
-- If the change is observability or worker lifecycle without parser/state/schema ownership, use `ops-observability`.
 - If a task starts simple but touches specialist domains, durable architecture, phase approval, public contracts, or broad refactoring, do not use `/simple`; route to the matching full workflow.
-- Use `/simple` for tiny behavior changes only when the expected behavior is explicit, local, and immediately verifiable with a focused command or test.
-- If the request is an implementation feature but no specialized owner applies, use `/feature`.
+- Use active tech and workflow packs to refine ownership for data, integration, frontend, persistence, or platform-specific work.
+- If the request is an implementation feature and no specialized active pack applies, use `/feature`.
 - If the request is broken and the cause is unknown, use `/bugfix`; reroute only after the cause is proven.
 - If the request is planning or issue writing only, use `/adr` or `/issues`; do not implement from those modes.
 - Phase command rows do not override Subtask-First Execution. `/phase-execute` requires a verified `.scratch/phase-state.json` with matching `phase=execute`, `approved=true`, `plan_id`, durable pointers, non-empty `allowed_paths`, and non-empty `verification` before any owning-mode handoff.
@@ -67,13 +62,7 @@ read_first:
   - AGENTS.md
   - .planning/STATE.md
   - .planning/ROADMAP.md
-  - .planning/codebase/ARCHITECTURE.md
-  - .planning/codebase/STACK.md
-  - .planning/codebase/STRUCTURE.md
-  - .planning/codebase/CONVENTIONS.md
-  - .planning/codebase/TESTING.md
-  - .planning/codebase/INTEGRATIONS.md
-  - .planning/codebase/CONCERNS.md
+  - .planning/codebase/**
   - <active phase files>
   - .scratch/phase-state.json
 focused_files:
@@ -96,7 +85,7 @@ return_required:
 ### Required Subtask Result
 
 ```text
-status: <done|blocked|needs-plan|needs-db-context|needs-review|failed>
+status: <done|blocked|needs-plan|needs-review|failed>
 changed_files:
   - <path-or-none>
 evidence:
@@ -107,3 +96,4 @@ scope_deviations:
   - <deviation-or-none>
 next_recommended_route: <mode/workflow-or-none>
 ```
+

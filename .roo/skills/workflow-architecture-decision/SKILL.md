@@ -53,7 +53,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
 
 5. Frame the decision.
    - State the problem, constraints, non-goals, and affected workflows.
-   - For ETL, include ordering, state, idempotency, persistence, and operations.
+   - For data-processing workflows, include ordering, state, idempotency, persistence, and operations.
    - State what this workflow will not decide.
 
 6. Compare options.
@@ -68,7 +68,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
    - Keep STATE frontmatter `progress.total_phases`, `progress.completed_phases`, and `progress.percent` derived from the ROADMAP phase checklist.
    - Keep `.scratch/phase-state.json` `state_path`, `checkpoint_path`, and `current_checkpoint` aligned with the active checkpoint recorded in `.planning/STATE.md`.
    - Update the matching `.planning/codebase/**` note when the decision changes architecture, stack, structure, conventions, testing, integrations, or known concerns.
-   - Call out when future work needs xUnit coverage or MSSQL integration coverage.
+   - Call out when future work needs focused unit, integration, or end-to-end coverage.
    - Preserve the alignment summary in the ADR or active phase context when it influenced the decision.
    - Preserve adversarial review findings and reinforcement points when they influenced the decision.
 
