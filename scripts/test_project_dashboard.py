@@ -83,6 +83,29 @@ progress:
             self.assertEqual(4, len(data.documents))
             self.assertEqual("CP-01", data.active_checkpoint)
             self.assertFalse(any("not listed in ROADMAP" in warning for warning in data.warnings))
+            self.assertTrue(any("phase-status blocking stale_execute_approval" in warning for warning in data.warnings))
+
+    def test_dashboard_uses_shared_active_checkpoint_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            write_fixture_repository(root)
+
+            from lib.planning_status import load_projection
+
+            data = project_dashboard.load_dashboard_data(root)
+            projection = load_projection(root)
+
+            self.assertEqual(projection.active_checkpoint_id, data.active_checkpoint)
+
+    def test_malformed_phase_state_becomes_dashboard_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            write_fixture_repository(root)
+            (root / ".scratch/phase-state.json").write_text("{not json", encoding="utf-8")
+
+            data = project_dashboard.load_dashboard_data(root)
+
+            self.assertTrue(any("phase status projection failed" in warning for warning in data.warnings))
 
     def test_generate_dashboard_writes_self_contained_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

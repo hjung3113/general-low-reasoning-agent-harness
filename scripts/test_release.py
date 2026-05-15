@@ -104,6 +104,20 @@ class ReleaseScriptTests(unittest.TestCase):
             commands = [" ".join(command) for command in runner.commands]
             self.assertIn("gh release create v0.4.3 --verify-tag --title v0.4.3 --notes Custom notes", commands)
 
+    def test_release_checks_readme_versions_before_mutating_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            release.subprocess.run(["git", "init"], cwd=root, check=True, stdout=release.subprocess.DEVNULL)
+            (root / "README.md").write_text("Install with v0.4.2\n", encoding="utf-8")
+            runner = release.CommandRunner(root=root, dry_run=True)
+
+            with mock.patch.object(release, "read_existing_tags", return_value=["v0.4.2"]):
+                with self.assertRaisesRegex(SystemExit, "README release version mismatch"):
+                    release.run_release(version="v0.5.0", bump="patch", runner=runner, assume_yes=True)
+
+            commands = [" ".join(command) for command in runner.commands]
+            self.assertEqual(["git fetch --tags origin"], commands)
+
 
 if __name__ == "__main__":
     unittest.main()

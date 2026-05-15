@@ -1,5 +1,6 @@
 # Architect Rules
 
+- Apply `.roo/rules-orchestrator/rules.md` before these mode rules.
 - Do not write implementation code.
 - Prefer ADRs for durable decisions.
 - Name the pipeline stages and state boundaries before proposing code structure.
