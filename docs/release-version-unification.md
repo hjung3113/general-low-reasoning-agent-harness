@@ -133,6 +133,21 @@ official release.
 
 ## Remote Repository Requirements
 
+### Main branch policy
+
+Treat `main` as the release branch. Merge into `main` only when creating a new
+release or applying an urgent hotfix.
+
+Allowed `main` merge sources:
+
+- `develop` for normal releases.
+- `hotfix/*` for urgent release-line fixes.
+
+Do not merge feature, docs, or experiment branches directly into `main`; merge
+them into `develop` first. Local git hooks enforce this by blocking `main`
+merge commits whose source is not `develop` or `hotfix/*`, and by blocking
+`main` pushes that contain bypassed merge commits from other sources.
+
 ### 1. Use release tags as the only human-managed version number
 
 Create releases from immutable annotated tags on `origin/main` only, after
@@ -140,15 +155,20 @@ Create releases from immutable annotated tags on `origin/main` only, after
 
 ```bash
 git fetch --tags origin
+git switch develop
+git pull --ff-only origin develop
 git switch main
 git pull --ff-only origin main
-test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+git merge --no-ff develop -m "merge: release v0.4.2"
+python3 -m unittest scripts/test_harness.py
+python3 scripts/harness.py check
+python3 scripts/release_smoke_test.py
+git push origin main
 git tag -a v0.4.2 -m "v0.4.2"
 python3 scripts/release_smoke_test.py --release --expected-version v0.4.2
 git push origin v0.4.2
-gh run watch --repo "$(gh repo view --json nameWithOwner --jq .nameWithOwner)" \
-  --workflow Release \
-  --ref v0.4.2
+RUN_ID="$(gh run list --workflow Release --branch v0.4.2 --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run watch "$RUN_ID" --exit-status
 ```
 
 The Git release name should match the tag:
