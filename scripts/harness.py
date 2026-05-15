@@ -380,6 +380,15 @@ def install(
         raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
 
     if dry_run:
+        print("init dry-run")
+        print(f"target={target}")
+        print(f"source={root.resolve()}")
+        print(f"version={HARNESS_VERSION}")
+        print("adapters=" + ",".join(sorted(adapters)))
+        print("profiles=" + ",".join(sorted(profiles)))
+        print("packs=" + ",".join(sorted(packs)))
+        print(f"planned_writes={len(destinations)}")
+        print("no mutation performed")
         return
 
     target.mkdir(parents=True, exist_ok=True)
@@ -442,6 +451,9 @@ def upgrade(
                 write_text_conflict(target, backup.path_text, backup.content)
         installed_paths = installed.get("files", {})
     conflicts = 0
+    conflict_paths: list[str] = []
+    planned_writes = 0
+    planned_removals = 0
     current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
 
     for entry in entries:
@@ -461,11 +473,14 @@ def upgrade(
             )
             if result.conflict:
                 conflicts += 1
+                conflict_paths.append(f"{entry.path}.new")
                 if not dry_run:
                     write_text_conflict(target, f"{entry.path}.new", result.proposed_block)
                 continue
             if not dry_run and result.updated_text is not None:
                 write_text_file(destination, result.updated_text)
+            if result.updated_text is not None:
+                planned_writes += 1
             if not dry_run:
                 installed.setdefault("files", {})[str(entry.path)] = file_state(
                     root=root,
@@ -481,11 +496,13 @@ def upgrade(
             current_hash = file_hash(destination)
             if not old_hash or current_hash != old_hash:
                 conflicts += 1
+                conflict_paths.append(f"{entry.path}.new")
                 conflict_path = target / ".harness/conflicts" / f"{entry.path}.new"
                 if not dry_run:
                     write_copy(source, conflict_path)
                 continue
 
+        planned_writes += 1
         if not dry_run:
             write_copy(source, destination)
             installed.setdefault("files", {})[str(entry.path)] = file_state(
@@ -505,6 +522,7 @@ def upgrade(
             result = plan_managed_append_retirement(destination=destination, path_text=path_text, installed_info=info)
             if result.conflict:
                 conflicts += 1
+                conflict_paths.append(f"{path_text}.retired")
                 if not dry_run:
                     write_text_conflict(target, f"{path_text}.retired", result.proposed_block)
                 continue
@@ -512,10 +530,13 @@ def upgrade(
                 if result.updated_text is not None:
                     write_text_file(destination, result.updated_text)
                 installed.setdefault("files", {}).pop(path_text, None)
+            if result.updated_text is not None:
+                planned_removals += 1
             continue
         old_hash = info.get("sha256")
         if destination.exists() and old_hash and file_hash(destination) != old_hash:
             conflicts += 1
+            conflict_paths.append(f"{path_text}.retired")
             conflict_path = target / ".harness/conflicts" / f"{path_text}.retired"
             if not dry_run:
                 write_copy(destination, conflict_path)
@@ -525,6 +546,8 @@ def upgrade(
                 destination.unlink()
                 remove_empty_parents(destination.parent, target)
                 installed.setdefault("files", {}).pop(path_text, None)
+        if destination.exists():
+            planned_removals += 1
 
     if not dry_run:
         normalize_selected_project_owned_state(root=root, target=target, entries=entries, installed=installed)
@@ -538,8 +561,26 @@ def upgrade(
     installed["available_scopes"] = available_scopes(root)
     installed["state_schema_version"] = 2
     installed["manifest_sha256"] = manifest_sha256(root)
+    installed["source"] = str(root.resolve())
+    provenance = delegated_source_provenance()
+    if provenance:
+        installed["source_provenance"] = provenance
     if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
+    if dry_run:
+        print("upgrade dry-run")
+        print(f"target={target}")
+        print(f"source={root.resolve()}")
+        print(f"version={HARNESS_VERSION}")
+        print("adapters=" + ",".join(sorted(adapters)))
+        print("profiles=" + ",".join(sorted(profiles)))
+        print("packs=" + ",".join(sorted(packs)))
+        print(f"planned_writes={planned_writes}")
+        print(f"planned_removals={planned_removals}")
+        print(f"conflicts={conflicts}")
+        for path in conflict_paths:
+            print(f"conflict={path}")
+        print("no mutation performed")
     return 1 if conflicts else 0
 
 
@@ -660,6 +701,23 @@ def scope_record(*, adapters: set[str], profiles: set[str], packs: set[str]) -> 
         "profiles": sorted(profiles),
         "packs": sorted(packs),
     }
+
+
+def delegated_source_provenance(env: dict[str, str] | None = None) -> dict[str, str] | None:
+    env = os.environ if env is None else env
+    kind = env.get("HARNESS_DELEGATED_SOURCE_KIND")
+    ref = env.get("HARNESS_DELEGATED_SOURCE_REF")
+    version = env.get("HARNESS_DELEGATED_SOURCE_VERSION")
+    if not kind and not ref and not version:
+        return None
+    data: dict[str, str] = {}
+    if kind:
+        data["kind"] = kind
+    if ref:
+        data["ref"] = ref
+    if version:
+        data["version"] = normalize_release_version(version)
+    return data
 
 
 def installed_scope(installed: dict[str, object], key: str, *, default: set[str]) -> set[str]:

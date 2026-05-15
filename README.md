@@ -452,6 +452,27 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/proj
 python3 /path/to/project/scripts/harness.py check
 ```
 
+설치된 target 안에서는 bootstrapper를 사용할 수 있습니다. 이 명령은 최신 source를 찾거나 내려받은 뒤 source-side `harness.py upgrade`에 위임하므로, stale target-local upgrade 정책을 복제하지 않습니다.
+
+```bash
+python3 scripts/upgrade_harness.py --version v0.5.0 --dry-run
+python3 scripts/upgrade_harness.py --version v0.5.0
+python3 scripts/check_harness.py
+python3 scripts/doctor_harness.py
+```
+
+local source를 직접 지정할 수도 있습니다.
+
+```bash
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.0 --dry-run
+```
+
+`scripts/check_harness.py`는 target self-check입니다. 최신 source manifest 기준으로 새 파일, retired file, policy change까지 확인하려면 source 쪽에서 다음 명령을 실행합니다.
+
+```bash
+python3 /path/to/newer-harness/scripts/harness.py check --target /path/to/project
+```
+
 충돌이 있으면 `.harness/conflicts/`에 새 파일이 생깁니다. 충돌 파일을 검토하기 전에는 `--force`를 쓰지 않습니다.
 
 `init`은 선택한 `--adapters`, `--profiles`, `--packs`를 `.harness/installed-manifest.json`의 `init_options`에 기록합니다. 이후 `upgrade`에서 scope 옵션을 생략하면 이 remembered scope를 그대로 사용합니다.

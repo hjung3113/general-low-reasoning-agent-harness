@@ -546,11 +546,15 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/proj
 python3 /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/project
 ```
 
-Do not use a stale target-local `scripts/harness.py` to infer or install the new preflight behavior.
+Do not use stale target-local policy code to infer or install the new preflight behavior. The compatibility command `scripts/harness.py upgrade --target .` may remain supported only if it resolves an external source, such as the recorded `.harness/installed-manifest.json` source, before mutating files.
 
-A future target-local `upgrade_harness.py` should be a tiny bootstrapper only. It should locate a source with `--source` or clone a source with `--repo --ref`, then delegate to the source-side upgrade implementation.
+A target-local `upgrade_harness.py` should be a tiny bootstrapper only. It should locate a source with `--source`, `--version`, or `--repo --ref`, then delegate to the source-side upgrade implementation.
 
 It must not duplicate upgrade policy in the installed target, because installed target scripts can be stale.
+
+When a target-local bootstrapper selects a release, it must pass the selected version to the delegated source command so `.harness/installed-manifest.json` records the intended installed version instead of a dev fallback. Delegated upgrades should also record source provenance such as source kind, ref, and selected version.
+
+Target-local `check_harness.py` is a self-check against the installed manifest. It does not replace source-side `python3 /path/to/newer-harness/scripts/harness.py check --target /path/to/project`, which validates the target against the current source manifest, new files, retired files, and policy changes.
 
 Existing project-owned instruction files must be preserved. In particular, installed target `README.md` may remain stale because it is project-owned. Upgrade should not overwrite it, but should report actionable instruction drift when old README guidance conflicts with upgraded `AGENTS.md`, adapter commands, or installed scripts.
 

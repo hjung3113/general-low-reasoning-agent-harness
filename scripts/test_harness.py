@@ -182,6 +182,230 @@ class HarnessToolTests(unittest.TestCase):
 
             self.assertEqual(0, result)
 
+    def test_installed_target_harness_upgrade_command_remains_compatible(self) -> None:
+        source = harness.repo_root()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["source"] = str(source)
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/harness.py"),
+                    "--version",
+                    "v1.0.1",
+                    "upgrade",
+                    "--target",
+                    str(target),
+                    "--dry-run",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("upgrade dry-run", result.stdout)
+            self.assertIn("version=1.0.1", result.stdout)
+            self.assertIn("no mutation performed", result.stdout)
+
+    def test_init_dry_run_reports_selected_scope_and_no_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/harness.py"),
+                    "init",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "opencode",
+                    "--packs",
+                    "workflow-core,workflow-tdd",
+                    "--dry-run",
+                ],
+                cwd=harness.repo_root(),
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("init dry-run", result.stdout)
+            self.assertIn("target=", result.stdout)
+            self.assertIn("adapters=opencode", result.stdout)
+            self.assertIn("packs=workflow-core,workflow-tdd", result.stdout)
+            self.assertIn("no mutation performed", result.stdout)
+            self.assertFalse(target.exists())
+
+    def test_upgrade_harness_source_option_delegates_with_version_and_records_provenance(self) -> None:
+        source = harness.repo_root()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+
+            dry_run = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--source",
+                    str(source),
+                    "--version",
+                    "v1.2.3",
+                    "--dry-run",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, dry_run.returncode, dry_run.stderr)
+            self.assertIn("selected version=v1.2.3", dry_run.stdout)
+            self.assertIn("delegating", dry_run.stdout)
+            self.assertIn("no mutation performed", dry_run.stdout)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--source",
+                    str(source),
+                    "--version",
+                    "v1.2.3",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual("1.2.3", installed["version"])
+            self.assertEqual(str(source), installed["source"])
+            self.assertEqual(
+                {"kind": "path", "ref": str(source), "version": "1.2.3"},
+                installed["source_provenance"],
+            )
+
+    def test_upgrade_harness_defaults_target_to_script_repo_not_cwd(self) -> None:
+        source = harness.repo_root()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            other_cwd = Path(tmpdir) / "other"
+            other_cwd.mkdir()
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--source",
+                    str(source),
+                    "--version",
+                    "v1.2.3",
+                    "--dry-run",
+                ],
+                cwd=other_cwd,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(f"--target {target.resolve()}", result.stdout)
+            self.assertNotIn(f"--target {other_cwd.resolve()}", result.stdout)
+
+    def test_upgrade_harness_version_dry_run_reports_download_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--version",
+                    "v1.2.3",
+                    "--repo",
+                    "https://example.invalid/harness.git",
+                    "--dry-run",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("would download source=https://example.invalid/harness.git@v1.2.3", result.stdout)
+            self.assertIn("no mutation performed", result.stdout)
+            self.assertFalse((target / ".harness/sources").exists())
+
+    def test_upgrade_harness_rejects_cache_with_mismatched_repo_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+            cache = target / ".harness/sources" / "v1.2.3-bad"
+            cache.mkdir(parents=True)
+            (cache / "harness").mkdir()
+            (cache / "harness/manifest.json").write_text(
+                json.dumps({"version": "__release__", "files": []}),
+                encoding="utf-8",
+            )
+            (cache / ".harness-source.json").write_text(
+                json.dumps({"repo": "repo-a", "ref": "v1.2.3"}),
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(harness.repo_root() / "scripts"))
+            try:
+                import upgrade_harness
+
+                with mock.patch.object(upgrade_harness, "repo_cache_key", return_value="v1.2.3-bad"):
+                    with self.assertRaisesRegex(SystemExit, "metadata does not match"):
+                        upgrade_harness.run(
+                            [
+                                "--target",
+                                str(target),
+                                "--version",
+                                "v1.2.3",
+                                "--repo",
+                                "repo-b",
+                            ]
+                        )
+            finally:
+                sys.path = [path for path in sys.path if path != str(harness.repo_root() / "scripts")]
+
+    def test_install_harness_wrapper_matches_init_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/install_harness.py"),
+                    "--version",
+                    "v2.0.0",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "none",
+                    "--packs",
+                    "workflow-core,workflow-tdd",
+                ],
+                cwd=harness.repo_root(),
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual("2.0.0", installed["version"])
+            self.assertEqual([], installed["adapters"])
+            self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
+
     def test_doctor_reports_structured_roadmap_state_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -1581,6 +1805,9 @@ progress:
 
         expected_sources = {
             "scripts/show_phase_status.py": "scripts/show_phase_status.py",
+            "scripts/upgrade_harness.py": "scripts/upgrade_harness.py",
+            "scripts/check_harness.py": "scripts/check_harness.py",
+            "scripts/doctor_harness.py": "scripts/doctor_harness.py",
             "scripts/lib/__init__.py": "scripts/lib/__init__.py",
             "scripts/lib/planning_status.py": "scripts/lib/planning_status.py",
         }

@@ -650,6 +650,21 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/upgrade_harness.py",
+      "source": "scripts/upgrade_harness.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/check_harness.py",
+      "source": "scripts/check_harness.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/doctor_harness.py",
+      "source": "scripts/doctor_harness.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/__init__.py",
       "source": "scripts/lib/__init__.py",
       "policy": "harness-owned"
