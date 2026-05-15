@@ -12,7 +12,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import project_dashboard
+from lib.project_dashboard import core as project_dashboard
+from lib.project_dashboard import renderer as dashboard_renderer
 
 
 class ProjectDashboardTests(unittest.TestCase):
@@ -63,7 +64,7 @@ progress:
             project_dashboard.RoadmapPhase("Phase 2: Second", "Not started.", False, ""),
         ]
 
-        columns = project_dashboard.group_phases_for_kanban(phases, "done")
+        columns = dashboard_renderer.group_phases_for_kanban(phases, "done")
 
         self.assertEqual(["Phase 1: First"], [phase.title for phase in columns["done"]])
         self.assertEqual([], columns["active"])
@@ -80,7 +81,7 @@ progress:
             self.assertEqual("done", data.phase_state["phase"])
             self.assertEqual(2, len(data.roadmap_phases))
             self.assertEqual(1, len(data.issues))
-            self.assertEqual(4, len(data.documents))
+            self.assertEqual(5, len(data.documents))
             self.assertEqual("CP-01", data.active_checkpoint)
             self.assertFalse(any("not listed in ROADMAP" in warning for warning in data.warnings))
             self.assertTrue(any("phase-status blocking stale_execute_approval" in warning for warning in data.warnings))
@@ -133,10 +134,25 @@ progress:
             self.assertIn("Automation", html)
             self.assertIn("chain", html)
             self.assertIn("human-chain-request", html)
+            self.assertIn("Project Memory", html)
+            self.assertIn("REQ-core-protocol", html)
+            self.assertIn("Decision Ledger", html)
+            self.assertIn("DEC-0001", html)
+            self.assertIn("Verification Ledger", html)
+            self.assertIn("Unit tests", html)
+            self.assertIn("Known Concerns", html)
+            self.assertIn("Core docs can drift.", html)
+
+    def test_entrypoint_stays_thin(self) -> None:
+        entrypoint = Path(__file__).resolve().parent / "project_dashboard.py"
+        line_count = len(entrypoint.read_text(encoding="utf-8").splitlines())
+
+        self.assertLessEqual(line_count, 40)
 
 
 def write_fixture_repository(root: Path) -> None:
     (root / ".planning/phases/01-first").mkdir(parents=True)
+    (root / ".planning/codebase").mkdir(parents=True)
     (root / ".scratch/example/issues").mkdir(parents=True)
     (root / "docs/agents").mkdir(parents=True)
     (root / ".scratch").mkdir(exist_ok=True)
@@ -217,6 +233,26 @@ Open a PR.
     (root / "AGENTS.md").write_text("# Agent Instructions\n\nRules.\n", encoding="utf-8")
     (root / "docs/phase-gate-harness.md").write_text("# Phase Gate Harness\n\nDetails.\n", encoding="utf-8")
     (root / "docs/agents/domain.md").write_text("# Domain Docs\n\nDetails.\n", encoding="utf-8")
+    (root / ".planning/PROJECT.md").write_text(
+        "# PROJECT\n\n## One-Liner\n\nExample harness.\n\n## Scope\n\n- Core protocol.\n",
+        encoding="utf-8",
+    )
+    (root / ".planning/REQUIREMENTS.md").write_text(
+        "# REQUIREMENTS\n\n## REQ-core-protocol\n\nPreserve workflow.\n",
+        encoding="utf-8",
+    )
+    (root / ".planning/DECISIONS.md").write_text(
+        "# DECISIONS\n\n| ID | Status | Decision | Source | Scope |\n| --- | --- | --- | --- | --- |\n| DEC-0001 | Accepted | Keep planning memory. | `.planning/PROJECT.md` | All phases |\n",
+        encoding="utf-8",
+    )
+    (root / ".planning/VERIFICATION.md").write_text(
+        "# VERIFICATION\n\n| Date | Phase | Check | Result | Notes |\n| --- | --- | --- | --- | --- |\n| 2026-05-14 | Phase 1 | Unit tests | PASS | Example. |\n",
+        encoding="utf-8",
+    )
+    (root / ".planning/codebase/CONCERNS.md").write_text(
+        "# CONCERNS\n\n- Core docs can drift.\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

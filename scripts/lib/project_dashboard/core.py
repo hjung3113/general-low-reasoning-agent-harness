@@ -1,0 +1,482 @@
+#!/usr/bin/env python3
+"""Generate a static HTML dashboard from planning and phase-state documents."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+from typing import Iterable
+
+from lib.planning_status import ProjectionError, load_projection, projection_to_dict
+from lib.project_dashboard.renderer import render_html
+from lib.project_dashboard.models import (
+    DashboardData,
+    DecisionRecord,
+    DocumentLink,
+    IssueCard,
+    PhaseDocument,
+    ProjectMemory,
+    RequirementCard,
+    RoadmapPhase,
+    StateSummary,
+    VerificationRecord,
+)
+
+
+DEFAULT_OUTPUT = Path(".scratch/reports/project-dashboard.html")
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    if not text.startswith("---"):
+        return {}
+    lines = text.splitlines()
+    values: dict[str, str] = {}
+    parents: list[tuple[int, str]] = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        key, sep, value = line.strip().partition(":")
+        if not sep:
+            continue
+        while parents and parents[-1][0] >= indent:
+            parents.pop()
+        clean_value = value.strip().strip('"').strip("'")
+        full_key = ".".join([item[1] for item in parents] + [key.strip()])
+        if clean_value:
+            values[full_key] = clean_value
+        else:
+            parents.append((indent, key.strip()))
+    return values
+
+
+def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
+    phases: list[RoadmapPhase] = []
+    pattern = re.compile(r"^- \[(?P<mark>[ xX])\] \*\*(?P<title>[^*]+)\*\*(?: - (?P<summary>.*))?$")
+    for line in text.splitlines():
+        match = pattern.match(line.strip())
+        if not match:
+            continue
+        phases.append(
+            RoadmapPhase(
+                title=match.group("title").strip(),
+                summary=(match.group("summary") or "").strip(),
+                completed=match.group("mark").lower() == "x",
+                raw_line=line.strip(),
+            )
+        )
+    return phases
+
+
+def parse_headings(text: str) -> list[str]:
+    headings: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("#"):
+            title = line.lstrip("#").strip()
+            if title:
+                headings.append(title)
+    return headings
+
+
+def first_heading(text: str, fallback: str) -> str:
+    headings = parse_headings(text)
+    return headings[0] if headings else fallback
+
+
+def checkpoint_id(value: str) -> str:
+    match = re.search(r"\bCP-[0-9]+(?:-[0-9]+)?\b", value)
+    return match.group(0) if match else value
+
+
+def load_dashboard_data(root: Path) -> DashboardData:
+    warnings: list[str] = []
+    state_path = root / ".planning/STATE.md"
+    roadmap_path = root / ".planning/ROADMAP.md"
+    phase_state_path = root / ".scratch/phase-state.json"
+
+    state_text = read_optional_text(state_path, warnings)
+    roadmap_text = read_optional_text(roadmap_path, warnings)
+    phase_state = load_phase_state(phase_state_path)
+
+    state = parse_state_summary(state_text)
+    roadmap_phases = parse_roadmap_phases(roadmap_text)
+    phase_documents = load_phase_documents(root)
+    issues = load_issues(root)
+    documents = load_documents(root)
+    memory = load_project_memory(root)
+
+    projection: dict[str, object] | None = None
+    try:
+        projection = projection_to_dict(load_projection(root))
+    except ProjectionError as exc:
+        warnings.append(f"phase status projection failed: {exc}")
+
+    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents))
+    if projection is not None:
+        warnings.extend(format_projection_warnings(projection))
+
+    return DashboardData(
+        root=root,
+        state=state,
+        roadmap_phases=roadmap_phases,
+        phase_documents=phase_documents,
+        phase_state=phase_state,
+        issues=issues,
+        documents=documents,
+        memory=memory,
+        warnings=warnings,
+        active_checkpoint=str(projection.get("active_checkpoint_id") if projection else checkpoint_id(state.active_checkpoint)),
+    )
+
+
+def read_optional_text(path: Path, warnings: list[str]) -> str:
+    if not path.exists():
+        warnings.append(f"Missing optional file: {path}")
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def parse_state_summary(text: str) -> StateSummary:
+    frontmatter = parse_frontmatter(text)
+    summary = StateSummary(
+        milestone=frontmatter.get("milestone", "Unknown milestone"),
+        milestone_name=frontmatter.get("milestone_name", "Unknown milestone"),
+        status=frontmatter.get("status", "Unknown status"),
+        last_updated=frontmatter.get("last_updated", "Unknown"),
+        progress_percent=parse_int(frontmatter.get("progress.percent"), 0),
+        total_phases=parse_int(frontmatter.get("progress.total_phases"), 0),
+        completed_phases=parse_int(frontmatter.get("progress.completed_phases"), 0),
+    )
+
+    checkpoint = re.search(r"- \*\*Checkpoint\*\*: (?P<value>.+)", text)
+    checkpoint_file = re.search(r"- \*\*Checkpoint file\*\*: `(?P<value>[^`]+)`", text)
+    if checkpoint:
+        summary.active_checkpoint = checkpoint.group("value").strip()
+    if checkpoint_file:
+        summary.checkpoint_file = checkpoint_file.group("value").strip()
+
+    summary.blockers = parse_section_bullets(text, "Blockers")
+    if not summary.blockers:
+        summary.blockers = ["No blockers recorded."]
+
+    next_action = parse_section_paragraph(text, "Next Action")
+    if next_action:
+        summary.next_action = next_action
+
+    return summary
+
+
+def parse_int(value: str | None, fallback: int) -> int:
+    if value is None:
+        return fallback
+    try:
+        return int(value)
+    except ValueError:
+        return fallback
+
+
+def parse_section_bullets(text: str, heading: str) -> list[str]:
+    lines = text.splitlines()
+    in_section = False
+    bullets: list[str] = []
+    for line in lines:
+        if line.startswith("#") and heading.lower() in line.lower():
+            in_section = True
+            continue
+        if in_section and line.startswith("#"):
+            break
+        if in_section and line.strip().startswith("- "):
+            bullets.append(line.strip()[2:].strip())
+    return bullets
+
+
+def parse_section_paragraph(text: str, heading: str) -> str:
+    lines = text.splitlines()
+    in_section = False
+    paragraph: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if line.startswith("#") and heading.lower() in line.lower():
+            in_section = True
+            continue
+        if in_section and line.startswith("#"):
+            break
+        if in_section and stripped:
+            paragraph.append(stripped)
+    return " ".join(paragraph)
+
+
+def parse_section_until_heading(text: str, heading: str) -> list[str]:
+    lines = text.splitlines()
+    in_section = False
+    section: list[str] = []
+    for line in lines:
+        if line.startswith("#") and heading.lower() in line.lower():
+            in_section = True
+            continue
+        if in_section and line.startswith("#"):
+            break
+        if in_section:
+            section.append(line)
+    return section
+
+
+def parse_markdown_table(text: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    table_lines = [line.strip() for line in text.splitlines() if line.strip().startswith("|") and line.strip().endswith("|")]
+    if len(table_lines) < 2:
+        return rows
+    headers = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
+    for line in table_lines[2:]:
+        values = [clean_inline_markdown(cell.strip()) for cell in line.strip("|").split("|")]
+        if len(values) != len(headers):
+            continue
+        rows.append(dict(zip(headers, values)))
+    return rows
+
+
+def clean_inline_markdown(value: str) -> str:
+    return value.replace("`", "").replace("\\|", "|")
+
+
+def load_project_memory(root: Path) -> ProjectMemory:
+    project_text = read_text_if_exists(root / ".planning/PROJECT.md")
+    requirements_text = read_text_if_exists(root / ".planning/REQUIREMENTS.md")
+    decisions_text = read_text_if_exists(root / ".planning/DECISIONS.md")
+    verification_text = read_text_if_exists(root / ".planning/VERIFICATION.md")
+    concerns_text = read_text_if_exists(root / ".planning/codebase/CONCERNS.md")
+    return ProjectMemory(
+        one_liner=parse_section_paragraph(project_text, "One-Liner") or "No project one-liner recorded.",
+        scope=parse_section_bullets(project_text, "Scope"),
+        requirements=parse_requirements(requirements_text),
+        decisions=parse_decisions(decisions_text),
+        verification=parse_verification(verification_text),
+        concerns=parse_section_bullets(concerns_text, "CONCERNS"),
+    )
+
+
+def read_text_if_exists(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def parse_requirements(text: str) -> list[RequirementCard]:
+    requirements: list[RequirementCard] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("## "):
+            continue
+        requirement_id = line.lstrip("#").strip()
+        paragraph: list[str] = []
+        for following in lines[index + 1 :]:
+            if following.startswith("#"):
+                break
+            if following.strip():
+                paragraph.append(following.strip())
+        requirements.append(RequirementCard(requirement_id=requirement_id, summary=" ".join(paragraph)))
+    return requirements
+
+
+def parse_decisions(text: str) -> list[DecisionRecord]:
+    records: list[DecisionRecord] = []
+    for row in parse_markdown_table(text):
+        records.append(
+            DecisionRecord(
+                decision_id=row.get("ID", ""),
+                status=row.get("Status", ""),
+                decision=row.get("Decision", ""),
+                source=row.get("Source", ""),
+                scope=row.get("Scope", ""),
+            )
+        )
+    return records
+
+
+def parse_verification(text: str) -> list[VerificationRecord]:
+    records: list[VerificationRecord] = []
+    for row in parse_markdown_table(text):
+        records.append(
+            VerificationRecord(
+                date=row.get("Date", ""),
+                phase=row.get("Phase", ""),
+                check=row.get("Check", ""),
+                result=row.get("Result", ""),
+                notes=row.get("Notes", ""),
+            )
+        )
+    return records
+
+
+def load_phase_state(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def format_projection_warnings(projection: dict[str, object]) -> list[str]:
+    warnings = projection.get("warnings")
+    if not isinstance(warnings, list):
+        return []
+    result: list[str] = []
+    for warning in warnings:
+        if not isinstance(warning, dict):
+            continue
+        code = str(warning.get("code", "unknown_projection_warning"))
+        severity = str(warning.get("severity", "warning"))
+        message = str(warning.get("message", "Planning projection warning."))
+        paths = warning.get("paths")
+        path_text = ", ".join(str(path) for path in paths) if isinstance(paths, list) else ""
+        suffix = f" ({path_text})" if path_text else ""
+        result.append(f"phase-status {severity} {code}: {message}{suffix}")
+    return result
+
+
+def load_phase_documents(root: Path) -> list[PhaseDocument]:
+    phases_root = root / ".planning/phases"
+    if not phases_root.exists():
+        return []
+    documents: list[PhaseDocument] = []
+    for phase_dir in sorted(item for item in phases_root.iterdir() if item.is_dir()):
+        files: dict[str, str] = {}
+        headings: list[str] = []
+        for path in sorted(phase_dir.glob("*.md")):
+            relative = path.relative_to(root).as_posix()
+            files[path.name] = relative
+            headings.extend(parse_headings(path.read_text(encoding="utf-8"))[:2])
+        documents.append(PhaseDocument(phase_dir=phase_dir.relative_to(root).as_posix(), files=files, headings=headings))
+    return documents
+
+
+def load_issues(root: Path) -> list[IssueCard]:
+    issues: list[IssueCard] = []
+    scratch = root / ".scratch"
+    if not scratch.exists():
+        return issues
+    for path in sorted(scratch.glob("**/issues/*.md")):
+        text = path.read_text(encoding="utf-8")
+        labels = [line.split(":", 1)[1].strip() for line in text.splitlines() if line.lower().startswith("- label:")]
+        issues.append(IssueCard(title=first_heading(text, path.stem), path=path.relative_to(root).as_posix(), labels=labels))
+    return issues
+
+
+def load_documents(root: Path) -> list[DocumentLink]:
+    candidates: list[Path] = []
+    for path in (root / "README.md", root / "AGENTS.md"):
+        if path.exists():
+            candidates.append(path)
+    docs_root = root / "docs"
+    if docs_root.exists():
+        candidates.extend(sorted(docs_root.glob("**/*.md")))
+    codebase_root = root / ".planning/codebase"
+    if codebase_root.exists():
+        candidates.extend(sorted(codebase_root.glob("*.md")))
+
+    documents: list[DocumentLink] = []
+    seen: set[str] = set()
+    for path in candidates:
+        relative = path.relative_to(root).as_posix()
+        if relative in seen:
+            continue
+        seen.add(relative)
+        text = path.read_text(encoding="utf-8")
+        documents.append(DocumentLink(title=first_heading(text, path.stem), path=relative, category=document_category(relative)))
+    return documents
+
+
+def document_category(relative_path: str) -> str:
+    if relative_path in {"README.md", "AGENTS.md"}:
+        return "root"
+    if relative_path.startswith(".planning/codebase/"):
+        return "codebase"
+    if relative_path.startswith("docs/agents/"):
+        return "agent docs"
+    if relative_path.startswith("docs/"):
+        return "docs"
+    return "other"
+
+
+def check_consistency(
+    root: Path,
+    state: StateSummary,
+    roadmap_phases: list[RoadmapPhase],
+    phase_documents: list[PhaseDocument],
+    phase_state: dict[str, object],
+    issues: list[IssueCard],
+    documents: list[DocumentLink],
+) -> list[str]:
+    warnings: list[str] = []
+    for key in ("state_path", "plan_path", "checkpoint_path"):
+        value = phase_state.get(key)
+        if isinstance(value, str) and not (root / value).exists():
+            warnings.append(f"phase-state references missing {key}: {value}")
+
+    checkpoint = phase_state.get("current_checkpoint")
+    if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
+        warnings.append(
+            f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}"
+        )
+
+    if roadmap_phases and state.total_phases and len(roadmap_phases) != state.total_phases:
+        warnings.append(f"STATE progress total_phases={state.total_phases} but ROADMAP lists {len(roadmap_phases)} phases")
+
+    completed_count = sum(1 for phase in roadmap_phases if phase.completed)
+    if roadmap_phases and state.completed_phases and completed_count != state.completed_phases:
+        warnings.append(
+            f"STATE progress completed_phases={state.completed_phases} but ROADMAP marks {completed_count} phases complete"
+        )
+
+    roadmap_text = " ".join(phase.title for phase in roadmap_phases)
+    for document in phase_documents:
+        phase_slug = Path(document.phase_dir).name
+        phase_number = phase_slug.split("-", 1)[0].lstrip("0")
+        if phase_number and f"Phase {phase_number}" not in roadmap_text:
+            warnings.append(f"Phase folder is present but not listed in ROADMAP: {document.phase_dir}")
+
+    if issues and not phase_documents:
+        warnings.append("Issue files are present but no phase documents were found.")
+
+    document_paths = {document.path for document in documents}
+    for required in ("README.md", "AGENTS.md", "docs/phase-gate-harness.md"):
+        if required not in document_paths:
+            warnings.append(f"Referenced core document is missing from inventory: {required}")
+
+    return warnings
+
+
+def generate_dashboard(*, root: Path, output: Path) -> Path:
+    data = load_dashboard_data(root)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_html(data), encoding="utf-8")
+    for warning in data.warnings:
+        print(f"warning: {warning}")
+    print(f"wrote {output}")
+    return output
+
+
+def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path("."), help="Repository root to read.")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="HTML file to write.")
+    return parser.parse_args(argv)
+
+
+def run(argv: Iterable[str] | None = None) -> int:
+    args = parse_args(argv)
+    root = args.root.resolve()
+    output = args.output
+    if not output.is_absolute():
+        output = root / output
+    generate_dashboard(root=root, output=output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
