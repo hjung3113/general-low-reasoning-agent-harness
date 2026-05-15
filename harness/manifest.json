@@ -655,6 +655,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/uninstall_harness.py",
+      "source": "scripts/uninstall_harness.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/check_harness.py",
       "source": "scripts/check_harness.py",
       "policy": "harness-owned"

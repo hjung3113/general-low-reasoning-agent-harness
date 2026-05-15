@@ -356,6 +356,12 @@ def run(argv: list[str] | None = None) -> int:
     doctor_parser.add_argument("--target", type=Path, default=None)
     doctor_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
 
+    uninstall_parser = subparsers.add_parser("uninstall", help="Remove selected installed harness scopes from a target.")
+    uninstall_parser.add_argument("--target", type=Path, default=None)
+    uninstall_parser.add_argument("--select", default="")
+    uninstall_parser.add_argument("--dry-run", action="store_true")
+    uninstall_parser.add_argument("--interactive", action="store_true")
+
     release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
     release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
     release_parser.add_argument(
@@ -393,11 +399,35 @@ def run(argv: list[str] | None = None) -> int:
             packs=parse_optional_scope(args.packs),
         )
     if args.command == "check":
-        check(root=root, target=args.target, base=args.base, worktree=args.worktree, adapter=args.adapter)
-        return 0
+        command = [sys.executable, str(root / "scripts/check_harness.py")]
+        if args.target:
+            command.extend(["--target", str(args.target)])
+        if args.adapter:
+            command.extend(["--adapter", args.adapter])
+        if args.base:
+            command.extend(["--base", args.base])
+        if args.worktree:
+            command.append("--worktree")
+        return run_delegated_command(command, root)
     if args.command == "doctor":
-        doctor(root=(args.target or root).resolve(), output_format=args.format)
-        return 0
+        command = [sys.executable, str(root / "scripts/doctor_harness.py"), "--format", args.format]
+        if args.target:
+            command.extend(["--target", str(args.target)])
+        return run_delegated_command(command, root)
+    if args.command == "uninstall":
+        command = [
+            sys.executable,
+            str(root / "scripts/uninstall_harness.py"),
+        ]
+        if args.target:
+            command.extend(["--target", str(args.target)])
+        if args.select:
+            command.extend(["--select", args.select])
+        if args.dry_run:
+            command.append("--dry-run")
+        if args.interactive:
+            command.append("--interactive")
+        return run_delegated_command(command, root)
     if args.command == "release-check":
         release_version = release_check(
             root=root,
@@ -407,6 +437,18 @@ def run(argv: list[str] | None = None) -> int:
         print(f"release-check PASS v{release_version}")
         return 0
     raise AssertionError(f"Unhandled command: {args.command}")
+
+
+def run_delegated_command(command: list[str], cwd: Path) -> int:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    if result.returncode:
+        message = (result.stderr or result.stdout).strip()
+        raise SystemExit(message or result.returncode)
+    return 0
 
 
 def install(

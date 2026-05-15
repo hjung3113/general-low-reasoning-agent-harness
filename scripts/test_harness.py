@@ -496,6 +496,112 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
 
+    def test_uninstall_harness_removes_selected_adapter_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "1",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertFalse((target / ".roo").exists())
+            self.assertFalse((target / ".roomodes").exists())
+            self.assertFalse((target / ".rooignore").exists())
+            self.assertTrue((target / ".opencode").exists())
+            self.assertTrue((target / ".planning").exists())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode"], installed["adapters"])
+            self.assertNotIn(".roo/README.md", installed["files"])
+            self.assertIn(".opencode/commands/discuss.md", installed["files"])
+
+    def test_uninstall_harness_removes_core_marker_blocks_without_adapters_or_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+            agents = target / "AGENTS.md"
+            agents.write_text("project notes\n\n" + agents.read_text(encoding="utf-8"), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "4",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertTrue((target / ".roo").exists())
+            self.assertTrue((target / ".opencode").exists())
+            self.assertTrue((target / ".planning").exists())
+            self.assertEqual("project notes\n\n", agents.read_text(encoding="utf-8"))
+            self.assertNotIn("low-reasoning-harness:AGENTS.md", agents.read_text(encoding="utf-8"))
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("AGENTS.md", installed["files"])
+            self.assertIn(".roo/README.md", installed["files"])
+
+    def test_uninstall_harness_docs_selection_warns_and_removes_planning_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "5",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertIn("WARNING: removing planning/docs is not recommended", result.stdout)
+            self.assertFalse((target / ".planning").exists())
+            self.assertFalse((target / "docs/phase-gate-harness.md").exists())
+            self.assertTrue((target / ".roo").exists())
+            self.assertTrue((target / ".opencode").exists())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn(".planning/STATE.md", installed["files"])
+            self.assertIn(".roo/README.md", installed["files"])
+
+    def test_harness_uninstall_command_delegates_to_uninstall_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = harness.run(["uninstall", "--target", str(target), "--select", "2"])
+
+            self.assertEqual(0, result)
+            self.assertTrue((target / ".roo").exists())
+            self.assertFalse((target / ".opencode").exists())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["roo"], installed["adapters"])
+
     def test_doctor_reports_structured_roadmap_state_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -1940,6 +2046,7 @@ progress:
         expected_sources = {
             "scripts/show_phase_status.py": "scripts/show_phase_status.py",
             "scripts/upgrade_harness.py": "scripts/upgrade_harness.py",
+            "scripts/uninstall_harness.py": "scripts/uninstall_harness.py",
             "scripts/check_harness.py": "scripts/check_harness.py",
             "scripts/doctor_harness.py": "scripts/doctor_harness.py",
             "scripts/lib/__init__.py": "scripts/lib/__init__.py",
