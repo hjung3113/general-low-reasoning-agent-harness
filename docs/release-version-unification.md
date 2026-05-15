@@ -153,6 +153,30 @@ merge commits whose source is not `develop` or `hotfix/*`, and by blocking
 Create releases from immutable annotated tags on `origin/main` only, after
 `develop` has been merged and pushed to `main`.
 
+Recommended command:
+
+```bash
+python3 scripts/release.py
+```
+
+By default, this fetches tags, finds the latest stable `vMAJOR.MINOR.PATCH`
+tag, and creates the next patch release. For example, if the latest release tag
+is `v0.4.2`, the script selects `v0.4.3`.
+
+Useful variants:
+
+```bash
+python3 scripts/release.py --dry-run
+python3 scripts/release.py --bump minor
+python3 scripts/release.py v0.5.0
+python3 scripts/release.py v0.4.3 --yes
+```
+
+The script prints the selected version and asks for confirmation unless
+`--yes` or `--dry-run` is used.
+
+Manual equivalent:
+
 ```bash
 git fetch --tags origin
 git switch develop
