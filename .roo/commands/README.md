@@ -2,6 +2,8 @@
 
 These commands are the user-facing entry points for the Roo adapter.
 
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+
 ## Fresh Target First Actions
 
 Before planning hydration finishes, keep the visible command set small:
@@ -43,4 +45,3 @@ Flags do not skip phase-local `discuss`, alignment summary, adversarial review, 
 - One-pass automation: use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`.
 - Execute remains subtask-first: the orchestrator verifies the gate, creates the owning-mode handoff packet, and stops if `new_task` is unavailable.
 - `--chain` does not skip gate safety checks; if canonical conditions fail, stop before execute.
-

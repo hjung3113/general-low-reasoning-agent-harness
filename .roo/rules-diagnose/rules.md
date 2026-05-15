@@ -1,5 +1,6 @@
 # Diagnose Rules
 
+- Apply `.roo/rules-orchestrator/rules.md` before these mode rules.
 - Reproduce before fixing.
 - Minimize the failing case.
 - State hypotheses and evidence.

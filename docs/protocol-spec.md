@@ -25,15 +25,9 @@ Agents must follow:
 3. `execute`
 4. `done`
 
-Fresh sessions must read:
+Fresh sessions must start with the status projection when it is installed:
 
-1. `AGENTS.md`
-2. `.planning/STATE.md`
-3. `.planning/ROADMAP.md`
-4. `.planning/codebase/**`
-5. active phase checkpoint
-6. active phase docs
-7. `.scratch/phase-state.json`
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 `.planning/**` explains the project. `.scratch/phase-state.json` only approves or blocks the current work.
 

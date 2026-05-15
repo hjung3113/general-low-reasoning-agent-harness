@@ -417,7 +417,7 @@ python3 scripts/harness.py doctor
 python3 scripts/project_dashboard.py
 ```
 
-Roo를 설치했다면 `/phase-discuss planning-hydration --pass 0`로 시작합니다. OpenCode만 설치했다면 `.opencode/commands/discuss.md`의 순서대로 `AGENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, active checkpoint, active phase docs, `.scratch/phase-state.json`을 읽고 hydration을 시작합니다.
+Roo를 설치했다면 `/phase-discuss planning-hydration --pass 0`로 시작합니다. OpenCode만 설치했다면 `.opencode/commands/discuss.md`를 사용하되 이 preflight를 먼저 적용합니다. Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 active phase docs는 다음 순서로 해석합니다.
 

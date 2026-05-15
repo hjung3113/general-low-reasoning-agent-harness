@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from lib.planning_status import ProjectionError, load_projection, projection_to_dict
+
 
 DEFAULT_OUTPUT = Path(".scratch/reports/project-dashboard.html")
 
@@ -153,7 +155,15 @@ def load_dashboard_data(root: Path) -> DashboardData:
     issues = load_issues(root)
     documents = load_documents(root)
 
+    projection: dict[str, object] | None = None
+    try:
+        projection = projection_to_dict(load_projection(root))
+    except ProjectionError as exc:
+        warnings.append(f"phase status projection failed: {exc}")
+
     warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents))
+    if projection is not None:
+        warnings.extend(format_projection_warnings(projection))
 
     return DashboardData(
         root=root,
@@ -164,7 +174,7 @@ def load_dashboard_data(root: Path) -> DashboardData:
         issues=issues,
         documents=documents,
         warnings=warnings,
-        active_checkpoint=checkpoint_id(state.active_checkpoint),
+        active_checkpoint=str(projection.get("active_checkpoint_id") if projection else checkpoint_id(state.active_checkpoint)),
     )
 
 
@@ -248,8 +258,30 @@ def parse_section_paragraph(text: str, heading: str) -> str:
 def load_phase_state(path: Path) -> dict[str, object]:
     if not path.exists():
         return {}
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with path.open(encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def format_projection_warnings(projection: dict[str, object]) -> list[str]:
+    warnings = projection.get("warnings")
+    if not isinstance(warnings, list):
+        return []
+    result: list[str] = []
+    for warning in warnings:
+        if not isinstance(warning, dict):
+            continue
+        code = str(warning.get("code", "unknown_projection_warning"))
+        severity = str(warning.get("severity", "warning"))
+        message = str(warning.get("message", "Planning projection warning."))
+        paths = warning.get("paths")
+        path_text = ", ".join(str(path) for path in paths) if isinstance(paths, list) else ""
+        suffix = f" ({path_text})" if path_text else ""
+        result.append(f"phase-status {severity} {code}: {message}{suffix}")
+    return result
 
 
 def load_phase_documents(root: Path) -> list[PhaseDocument]:

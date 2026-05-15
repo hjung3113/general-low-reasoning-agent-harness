@@ -6,7 +6,7 @@ This harness gives low-reasoning agents a small external state machine for work 
 
 Use `.scratch/phase-state.schema.json` to validate phase state. A typical live state file should be named `.scratch/phase-state.json`. See `.scratch/phase-state.example.json` for a complete example.
 
-The live state file is a gate, not the full project memory. Fresh sessions must read `.planning/STATE.md` first, then `.planning/ROADMAP.md`, then the active phase checkpoint file. The live state must point back to durable docs with:
+The live state file is a gate, not the full project memory. Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. The live state must point back to durable docs with:
 
 - `state_path`
 - `plan_path`

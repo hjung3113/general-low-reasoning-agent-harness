@@ -2,6 +2,8 @@
 
 Use this command only after the live gate is already approved.
 
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+
 Preflight checklist:
 
 - [ ] `.scratch/phase-state.json` says `phase=execute`.

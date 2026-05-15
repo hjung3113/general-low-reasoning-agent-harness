@@ -18,6 +18,54 @@ import harness
 
 
 class HarnessToolTests(unittest.TestCase):
+    SHOW_PHASE_STATUS_PREFLIGHT = (
+        "Start with `python3 scripts/show_phase_status.py` when available. "
+        "If it reports warnings, treat named files as minimum required reads before trusting the projection. "
+        "If it is missing, fails, emits malformed output, or reports an unsupported contract version, "
+        "use the legacy durable planning read order."
+    )
+
+    WORKFLOW_ENTRYPOINT_MATRIX = (
+        ("opencode-discuss", ".opencode/commands/discuss.md", ()),
+        ("opencode-plan", ".opencode/commands/plan.md", ()),
+        ("opencode-execute", ".opencode/commands/execute.md", ()),
+        ("opencode-done", ".opencode/commands/done.md", ()),
+        ("roo-phase-discuss", ".roo/commands/phase-discuss.md", (".roo/rules/phase-gate.md",)),
+        ("roo-phase-plan", ".roo/commands/phase-plan.md", (".roo/rules/phase-gate.md",)),
+        ("roo-phase-execute", ".roo/commands/phase-execute.md", (".roo/rules/phase-gate.md",)),
+        ("roo-fsd-phase", ".roo/commands/fsd-phase.md", (".roo/rules/phase-gate.md",)),
+        ("roo-simple", ".roo/commands/simple.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-review", ".roo/commands/review.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-doctor", ".roo/commands/doctor.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-feature", ".roo/commands/feature.md", (".roo/rules/phase-gate.md",)),
+        ("roo-bugfix", ".roo/commands/bugfix.md", (".roo/rules/phase-gate.md",)),
+        ("roo-adr", ".roo/commands/adr.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-issues", ".roo/commands/issues.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-ops", ".roo/commands/ops.md", (".roo/rules/phase-gate.md",)),
+        ("roo-auto", ".roo/commands/README.md", ()),
+        ("roo-chain", ".roo/commands/README.md", ()),
+        ("roo-rules-global", ".roo/rules/global.md", ()),
+        ("roo-rules-phase-gate", ".roo/rules/phase-gate.md", ()),
+        ("roo-rules-architect", ".roo/rules-architect/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-rules-diagnose", ".roo/rules-diagnose/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-rules-docs-issues", ".roo/rules-docs-issues/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-rules-ops-observability", ".roo/rules-ops-observability/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-rules-orchestrator", ".roo/rules-orchestrator/rules.md", ()),
+        ("roo-rules-review", ".roo/rules-review/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-rules-tdd-code", ".roo/rules-tdd-code/rules.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skills-readme", ".roo/skills/README.md", ()),
+        ("roo-skill-architecture-decision", ".roo/skills/workflow-architecture-decision/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-bug-diagnosis", ".roo/skills/workflow-bug-diagnosis/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-code-review", ".roo/skills/workflow-code-review/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-docs-to-issues", ".roo/skills/workflow-docs-to-issues/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-feature-tdd", ".roo/skills/workflow-feature-tdd/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-harness-doctor", ".roo/skills/workflow-harness-doctor/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-ops-observability", ".roo/skills/workflow-ops-observability/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+        ("roo-skill-phase-gate", ".roo/skills/workflow-phase-gate/SKILL.md", (".roo/rules/phase-gate.md",)),
+        ("roo-skill-planning-hydration", ".roo/skills/workflow-planning-hydration/SKILL.md", (".roo/rules/phase-gate.md",)),
+        ("roo-skill-simple-task", ".roo/skills/workflow-simple-task/SKILL.md", (".roo/rules-orchestrator/rules.md",)),
+    )
+
     def test_normalize_release_version_accepts_only_stable_semver(self) -> None:
         self.assertEqual("0.4.2", harness.normalize_release_version("v0.4.2"))
         self.assertEqual("0.4.2", harness.normalize_release_version("0.4.2"))
@@ -148,6 +196,35 @@ class HarnessToolTests(unittest.TestCase):
             self.assertIn("impact", sync_findings[0].to_dict())
             self.assertIn("fix", sync_findings[0].to_dict())
             self.assertFalse(sync_findings[0].connects_to_db)
+
+    def test_doctor_reports_shared_phase_status_warning_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_sync_fixture(root, phase_state_current_checkpoint="CP-04-99")
+
+            findings = harness.collect_doctor_findings(root)
+
+            self.assertTrue(
+                any(finding.code == "phase_status_state_checkpoint_drift" for finding in findings),
+                [finding.to_dict() for finding in findings],
+            )
+
+    def test_done_phase_is_unapproved_non_execute_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_sync_fixture(root)
+            state_path = root / ".scratch/phase-state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["phase"] = "done"
+            state["approved"] = False
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+
+            harness.check_phase_state_semantics(state_path)
+
+            state["approved"] = True
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "done phase requires approved=false"):
+                harness.check_phase_state_semantics(state_path)
 
     def test_doctor_json_output_is_deterministic_and_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1188,6 +1265,18 @@ progress:
             self.assertEqual("", completed.stderr)
             self.assertEqual(0, completed.returncode)
 
+    def test_installed_target_check_ignores_stale_target_local_source_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target)])
+            (target / "harness").mkdir()
+            (target / "harness/manifest.json").write_text(
+                json.dumps({"version": "0.3.2", "files": []}),
+                encoding="utf-8",
+            )
+
+            harness.check(root=target)
+
     def test_installed_target_doctor_does_not_report_generic_sync_p1(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -1438,6 +1527,72 @@ progress:
 
             with self.assertRaisesRegex(SystemExit, "contamination"):
                 harness.check(root=root)
+
+    def test_workflow_entrypoint_matrix_shares_show_phase_status_preflight(self) -> None:
+        root = harness.repo_root()
+        failures = []
+
+        for name, relative, delegates in self.WORKFLOW_ENTRYPOINT_MATRIX:
+            path = root / relative
+            text = path.read_text(encoding="utf-8")
+            has_preflight = self.SHOW_PHASE_STATUS_PREFLIGHT in text
+            delegated = []
+            for delegate in delegates:
+                delegate_text = (root / delegate).read_text(encoding="utf-8")
+                if delegate in text and self.SHOW_PHASE_STATUS_PREFLIGHT in delegate_text:
+                    delegated.append(delegate)
+            if not has_preflight and not delegated:
+                failures.append(f"{name}: {relative}")
+
+        self.assertEqual([], failures)
+
+        active_surfaces = [
+            *self._markdown_files(root / ".opencode/commands"),
+            *self._markdown_files(root / ".roo"),
+            root / "AGENTS.md",
+            root / "README.md",
+            root / "docs/protocol-spec.md",
+            root / "docs/phase-gate-harness.md",
+            root / "harness/skeleton/clean/AGENTS.md",
+            root / "harness/skeleton/clean/README.md",
+        ]
+        contradictory = []
+        contradictory_phrases = (
+            "Fresh sessions must read",
+            "Fresh sessions must start with `.planning/STATE.md`",
+            "read all planning docs first",
+            "read all planning first",
+        )
+        for path in active_surfaces:
+            relative = path.relative_to(root).as_posix()
+            if relative.startswith(".planning/phases/") or relative.startswith("docs/superpowers/"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for phrase in contradictory_phrases:
+                if phrase in text:
+                    contradictory.append(f"{relative}: {phrase}")
+
+        self.assertEqual([], contradictory)
+
+    def test_manifest_marks_phase_status_scripts_harness_owned(self) -> None:
+        root = harness.repo_root()
+        manifest = json.loads((root / "harness/manifest.json").read_text(encoding="utf-8"))
+        entries = {entry["path"]: entry for entry in manifest["files"]}
+
+        expected_sources = {
+            "scripts/show_phase_status.py": "scripts/show_phase_status.py",
+            "scripts/lib/__init__.py": "scripts/lib/__init__.py",
+            "scripts/lib/planning_status.py": "scripts/lib/planning_status.py",
+        }
+        for path, source in expected_sources.items():
+            self.assertIn(path, entries)
+            self.assertEqual(source, entries[path]["source"])
+            self.assertEqual("harness-owned", entries[path]["policy"])
+
+    def _markdown_files(self, root: Path) -> list[Path]:
+        if not root.exists():
+            return []
+        return sorted(path for path in root.rglob("*.md") if path.is_file())
 
     def test_allowed_paths_use_exact_files_and_directory_prefixes(self) -> None:
         allowed = [".roo/", "README.md"]

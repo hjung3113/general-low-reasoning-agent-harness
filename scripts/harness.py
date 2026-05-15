@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
+from lib.planning_status import ProjectionError, load_projection
+
 
 MANIFEST_SOURCE_VERSION = "__release__"
 HARNESS_VERSION = "0.0.0-dev+unknown"
@@ -550,7 +552,7 @@ def check(
     adapter: str | None = None,
 ) -> None:
     root = root.resolve()
-    if not (root / MANIFEST_PATH).exists():
+    if not (root / MANIFEST_PATH).exists() or should_check_as_installed_target(root):
         check_installed_target(root)
         if base:
             check_changed_paths(root, base)
@@ -597,6 +599,17 @@ def check(
         check_changed_paths(check_target, base)
     if worktree:
         check_worktree_paths(check_target)
+
+
+def should_check_as_installed_target(root: Path) -> bool:
+    if not (root / INSTALL_STATE).exists() or not (root / MANIFEST_PATH).exists():
+        return False
+    try:
+        manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return True
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version not in {MANIFEST_SOURCE_VERSION, HARNESS_VERSION}
 
 
 def load_manifest(root: Path) -> list[ManifestEntry]:
@@ -1450,7 +1463,7 @@ def check_phase_state_semantics(path: Path) -> None:
             missing.append("approved=false")
         if missing:
             raise SystemExit(f"{path} plan phase requires {', '.join(missing)}.")
-    if phase in {"execute", "done"}:
+    if phase == "execute":
         required_execute = (
             "plan_id",
             "allowed_paths",
@@ -1470,6 +1483,21 @@ def check_phase_state_semantics(path: Path) -> None:
             raise SystemExit(f"{path} execute approval requires {', '.join(missing)}.")
         if not UTC_TIMESTAMP.fullmatch(str(state.get("approved_at", ""))):
             raise SystemExit(f"{path} approved_at must be an ISO-8601 UTC timestamp.")
+    if phase == "done":
+        required_done = (
+            "plan_id",
+            "verification",
+            "state_path",
+            "plan_path",
+            "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
+        )
+        missing = [key for key in required_done if not state.get(key)]
+        if state.get("approved") is not False:
+            missing.append("approved=false")
+        if missing:
+            raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
     verification = state.get("verification", [])
     if verification:
         if not isinstance(verification, list):
@@ -1529,6 +1557,7 @@ def doctor(*, root: Path, output_format: str) -> None:
 
 def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings: list[DoctorFinding] = []
+    findings.extend(phase_status_projection_doctor_findings(root))
     findings.extend(roadmap_state_doctor_findings(root))
     findings.extend(phase_state_path_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
@@ -1545,6 +1574,46 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
         )
     )
     return sorted(findings, key=lambda item: (item.severity, item.code, item.path, item.cause))
+
+
+def phase_status_projection_doctor_findings(root: Path) -> list[DoctorFinding]:
+    try:
+        projection = load_projection(root)
+    except ProjectionError as exc:
+        return [
+            DoctorFinding(
+                severity="P1",
+                code="phase_status_projection_failed",
+                path=".scratch/phase-state.json",
+                cause=str(exc),
+                impact="Low-reasoning preflight must fall back to the legacy durable planning read order.",
+                fix="Repair the planning state files or use the legacy read order until `show_phase_status.py` succeeds.",
+                evidence=str(exc),
+            )
+        ]
+
+    findings: list[DoctorFinding] = []
+    for warning in projection.warnings:
+        findings.append(
+            DoctorFinding(
+                severity=projection_warning_severity(warning.severity),
+                code=f"phase_status_{warning.code}",
+                path=warning.paths[0] if warning.paths else ".scratch/phase-state.json",
+                cause=warning.message,
+                impact="Low-reasoning workflow preflight cannot trust the status projection without the required reads.",
+                fix="Inspect the warning paths and reconcile `.planning/**` with `.scratch/phase-state.json`.",
+                evidence=", ".join(warning.paths) if warning.paths else warning.code,
+            )
+        )
+    return findings
+
+
+def projection_warning_severity(severity: str) -> str:
+    if severity == "blocking":
+        return "P1"
+    if severity == "warning":
+        return "P2"
+    return "P3"
 
 
 def roadmap_state_doctor_findings(root: Path) -> list[DoctorFinding]:
@@ -1930,8 +1999,8 @@ def markdown_section(text: str, heading: str) -> str:
 def check_changed_paths(target: Path, base: str) -> None:
     state_path = target / ".scratch/phase-state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
-    if state.get("phase") not in {"execute", "done"} or state.get("approved") is not True:
-        raise SystemExit("Changed-path check requires phase=execute or phase=done with approved=true")
+    if not changed_path_gate_allows_state(state):
+        raise SystemExit("Changed-path check requires phase=execute with approved=true or phase=done with approved=false")
     changed = git_changed_paths(target, base)
     denied = [
         path
@@ -1944,8 +2013,8 @@ def check_changed_paths(target: Path, base: str) -> None:
 
 def check_worktree_paths(target: Path) -> None:
     state = json.loads((target / ".scratch/phase-state.json").read_text(encoding="utf-8"))
-    if state.get("phase") not in {"execute", "done"} or state.get("approved") is not True:
-        raise SystemExit("Worktree changed-path check requires phase=execute or phase=done with approved=true")
+    if not changed_path_gate_allows_state(state):
+        raise SystemExit("Worktree changed-path check requires phase=execute with approved=true or phase=done with approved=false")
     changed = sorted(set(git_worktree_paths(target)))
     denied = [
         path
@@ -1954,6 +2023,12 @@ def check_worktree_paths(target: Path) -> None:
     ]
     if denied:
         raise SystemExit("Worktree paths outside allowed_paths: " + ", ".join(denied))
+
+
+def changed_path_gate_allows_state(state: dict[str, object]) -> bool:
+    return (state.get("phase") == "execute" and state.get("approved") is True) or (
+        state.get("phase") == "done" and state.get("approved") is False
+    )
 
 
 def git_changed_paths(target: Path, base: str) -> list[str]:

@@ -8,20 +8,13 @@ description: Hydrates durable `.planning/` memory for an existing repository wit
 
 This workflow is the existing-repository adoption path. It is intentionally **not** named `project init` because it does not create a brand-new project. It hydrates and reconciles `.planning/` from a repository that already exists.
 
+Apply `.roo/rules/phase-gate.md` before this workflow.
+
 ## Goal
 
 Make the repository self-resumable before ADR, issue planning, or implementation work continues.
 
-After this workflow, a fresh agent should be able to read:
-
-1. `AGENTS.md`
-2. `.planning/STATE.md`
-3. `.planning/ROADMAP.md`
-4. `.planning/codebase/**`
-5. the active `.planning/phases/**` document set
-6. `.scratch/phase-state.json`
-
-…and understand the current project, current phase, next action, verification expectations, and stale artifact status without chat history.
+After this workflow, `python3 scripts/show_phase_status.py` should identify the current project, current phase, next action, verification expectations, and stale artifact status without chat history. If the script is unavailable or falls back, the durable planning docs must still support the legacy durable planning read order.
 
 ## When to Use
 

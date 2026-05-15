@@ -8,26 +8,22 @@ description: Runs the external phase gate for low-reasoning models: discuss is r
 
 Use this workflow before implementation to prevent accidental work before the user or orchestrator has approved a plan.
 
+Apply `.roo/rules/phase-gate.md` before this workflow.
+
 State lives outside the prompt in `.scratch/phase-state.json` or another file that follows `.scratch/phase-state.schema.json`. Durable project memory lives under `.planning/`; the live state file is a gate pointer, not the source of planning context.
 
 ## Required State Check
 
 Before doing any work:
 
-1. Read `AGENTS.md`.
-2. Read `.planning/STATE.md`.
-3. Read `.planning/ROADMAP.md`.
-4. Read the active phase checkpoint file named in `.planning/STATE.md`.
-5. Read `.planning/codebase/ARCHITECTURE.md`, `STACK.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `TESTING.md`, `INTEGRATIONS.md`, and `CONCERNS.md` when they exist.
-6. Read the active phase context, plan, review, verification, and summary files under `.planning/phases/` when they exist.
-7. Read the phase state file if one exists.
-8. Identify `phase`, `plan_id`, `approved`, `state_path`, `plan_path`, `checkpoint_path`, `current_checkpoint`, `allowed_paths`, and `verification`.
-9. For `plan`, `execute`, and `done`, read `state_path`, `plan_path`, and `checkpoint_path` before classifying allowed work. If any pointer is missing or stale, treat the state as incomplete and return to `plan`.
-10. If `.planning/codebase/**` or the active phase document set is missing, placeholder-only, or stale for the current repository, treat the gate as incomplete for existing-repository adoption and return to `plan` to hydrate planning memory.
-11. Confirm roadmap/state sync: ROADMAP phase checklist totals and completion count must match STATE frontmatter progress, STATE active phase/checkpoint must match the active roadmap phase, and `.scratch/phase-state.json` must point to the same STATE and checkpoint.
-12. Identify `automation_mode` from `.scratch/phase-state.json` or the user's command flags. Default to `manual`.
-13. If there is no state file, start in `discuss`.
-14. Do only the work allowed by the current phase and automation mode.
+1. Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+2. Identify `phase`, `plan_id`, `approved`, `state_path`, `plan_path`, `checkpoint_path`, `current_checkpoint`, `allowed_paths`, and `verification`.
+3. For `plan`, `execute`, and `done`, read `state_path`, `plan_path`, and `checkpoint_path` before classifying allowed work. If any pointer is missing or stale, treat the state as incomplete and return to `plan`.
+4. If `.planning/codebase/**` or the active phase document set is missing, placeholder-only, or stale for the current repository, treat the gate as incomplete for existing-repository adoption and return to `plan` to hydrate planning memory.
+5. Confirm roadmap/state sync: ROADMAP phase checklist totals and completion count must match STATE frontmatter progress, STATE active phase/checkpoint must match the active roadmap phase, and `.scratch/phase-state.json` must point to the same STATE and checkpoint.
+6. Identify `automation_mode` from `.scratch/phase-state.json` or the user's command flags. Default to `manual`.
+7. If there is no state file, start in `discuss`.
+8. Do only the work allowed by the current phase and automation mode.
 
 ## Phase-Local Lifecycle
 

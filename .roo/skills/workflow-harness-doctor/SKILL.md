@@ -6,6 +6,8 @@ description: Runs read-only harness diagnostics for planning, Roo command/mode, 
 
 # Workflow: Harness Doctor
 
+Apply `.roo/rules-orchestrator/rules.md` before this workflow.
+
 ## Purpose
 
 Use this workflow to diagnose harness drift before repair work starts. It is read-only and must not mutate files.

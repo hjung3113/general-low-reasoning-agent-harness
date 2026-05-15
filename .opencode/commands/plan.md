@@ -2,15 +2,17 @@
 
 Use this command for `phase=plan` work only.
 
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+
 Preflight checklist:
 
 - [ ] The current work is in `discuss` or `plan`.
-- [ ] Durable planning memory has been read before `.scratch/phase-state.json`.
+- [ ] Status projection is trusted, or fallback planning memory has been read before `.scratch/phase-state.json`.
 - [ ] The requested scope is clear enough to define allowed paths and verification.
 - [ ] Any unresolved product or safety question is listed instead of silently defaulted.
 
 1. Verify the current work is still in `discuss` or `plan`.
-2. Read durable planning memory before `.scratch/phase-state.json`.
+2. Use the status projection, or read durable planning memory before `.scratch/phase-state.json` during fallback.
 3. Write or update the phase plan, allowed path candidates, verification candidates, and review checks.
 4. Request execute approval instead of self-approving.
 
