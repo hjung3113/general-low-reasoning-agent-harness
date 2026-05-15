@@ -361,6 +361,7 @@ def run(argv: list[str] | None = None) -> int:
     uninstall_parser.add_argument("--select", default="")
     uninstall_parser.add_argument("--dry-run", action="store_true")
     uninstall_parser.add_argument("--interactive", action="store_true")
+    uninstall_parser.add_argument("--remove-install-state", action="store_true")
 
     release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
     release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
@@ -427,6 +428,8 @@ def run(argv: list[str] | None = None) -> int:
             command.append("--dry-run")
         if args.interactive:
             command.append("--interactive")
+        if args.remove_install_state:
+            command.append("--remove-install-state")
         return run_delegated_command(command, root)
     if args.command == "release-check":
         release_version = release_check(
