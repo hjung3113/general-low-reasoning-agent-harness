@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+branch="$(git branch --show-current)"
+
+if [ "$branch" != "main" ]; then
+  exit 0
+fi
+
+changed_paths="$(git diff --cached --name-only --diff-filter=ACMRT)"
+
+if [ -z "$changed_paths" ]; then
+  exit 0
+fi
+
+non_readme_paths="$(printf '%s\n' "$changed_paths" | awk '$0 != "README.md"')"
+
+if [ -n "$non_readme_paths" ]; then
+  cat >&2 <<'EOF'
+Blocked: commits on main are limited to README.md-only updates.
+
+Create a feature branch for code, harness, docs, and workflow changes:
+  git switch -c <branch-name>
+EOF
+  printf '\nNon-README staged paths:\n%s\n' "$non_readme_paths" >&2
+  exit 1
+fi
