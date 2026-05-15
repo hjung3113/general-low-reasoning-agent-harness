@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -495,6 +496,29 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual("2.0.0", installed["version"])
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
+
+    def test_install_harness_interactive_canonicalizes_parent_relative_target(self) -> None:
+        target = harness.repo_root().parent / "rooenvtest-interactive-dry-run"
+        if target.exists():
+            shutil.rmtree(target)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(harness.repo_root() / "scripts/install_harness.py"),
+                "--interactive",
+            ],
+            input="../rooenvtest-interactive-dry-run\nroo\ngeneric\nworkflow-core\nyes\n",
+            cwd=harness.repo_root(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(f"--target {target}", result.stdout)
+        self.assertNotIn("--target ..rooenvtest", result.stdout)
+        self.assertFalse(target.exists())
 
     def test_uninstall_harness_removes_selected_adapter_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
