@@ -7,6 +7,35 @@ if [ "$branch" != "main" ]; then
   exit 0
 fi
 
+if [ -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
+  merge_head="$(cat "$(git rev-parse --git-path MERGE_HEAD)")"
+  allowed_source=""
+
+  for ref in refs/heads/develop refs/remotes/origin/develop refs/heads/hotfix/* refs/remotes/origin/hotfix/*
+  do
+    for candidate in $(git for-each-ref --format='%(objectname)' "$ref")
+    do
+      if [ "$merge_head" = "$candidate" ]; then
+        allowed_source="$ref"
+        break 2
+      fi
+    done
+  done
+
+  if [ -n "$allowed_source" ]; then
+    exit 0
+  fi
+
+  cat >&2 <<'EOF'
+Blocked: merge commits on main are only allowed from develop or hotfix/*.
+
+Allowed:
+  git merge --no-ff develop
+  git merge --no-ff hotfix/<name>
+EOF
+  exit 1
+fi
+
 changed_paths="$(git diff --cached --name-only --diff-filter=ACMRT)"
 
 if [ -z "$changed_paths" ]; then
