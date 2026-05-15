@@ -796,6 +796,175 @@ progress:
 
             self.assertFalse((target / "AGENTS.md").exists())
 
+    def test_upgrade_adopt_existing_creates_install_state_for_manual_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+
+            result = harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(harness.HARNESS_VERSION, installed["version"])
+            self.assertEqual([], installed["adapters"])
+            self.assertIn("AGENTS.md", installed["files"])
+            self.assertIn(".gitignore", installed["files"])
+
+    def test_upgrade_adopt_existing_conflicts_changed_whole_file_without_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            agents = target / "AGENTS.md"
+            agents.write_text("manual agents\n", encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertEqual(1, result)
+            self.assertEqual("manual agents\n", agents.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/conflicts/AGENTS.md.new").exists())
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_force_overwrites_changed_whole_file_and_preserves_project_owned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            agents = target / "AGENTS.md"
+            agents.write_text("manual agents\n", encoding="utf-8")
+            state = target / ".planning/STATE.md"
+            state.write_text("real project state\n", encoding="utf-8")
+
+            result = harness.run(
+                ["upgrade", "--target", str(target), "--adopt-existing", "--force", "--adapters", "none"]
+            )
+
+            self.assertEqual(0, result)
+            self.assertNotEqual("manual agents\n", agents.read_text(encoding="utf-8"))
+            self.assertEqual(
+                "manual agents\n",
+                (target / ".harness/conflicts/AGENTS.md.adopted").read_text(encoding="utf-8"),
+            )
+            self.assertEqual("real project state\n", state.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_appends_gitignore_marker_and_preserves_project_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            gitignore = target / ".gitignore"
+            gitignore.write_text("node_modules/\n", encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            text = gitignore.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("node_modules/\n"))
+            self.assertEqual(1, text.count("# >>> low-reasoning-harness:.gitignore v"))
+            self.assertTrue((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_conflicts_local_gitignore_marker_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            gitignore = target / ".gitignore"
+            edited = gitignore.read_text(encoding="utf-8").replace(".env\n", ".env\nmanual-inside-block/\n")
+            gitignore.write_text(edited, encoding="utf-8")
+
+            result = harness.run(
+                ["upgrade", "--target", str(target), "--adopt-existing", "--force", "--adapters", "none"]
+            )
+
+            self.assertEqual(1, result)
+            self.assertEqual(edited, gitignore.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/conflicts/.gitignore.new").exists())
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_preflight_failure_leaves_earlier_files_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            agents = target / "AGENTS.md"
+            agents.write_text("manual agents\n", encoding="utf-8")
+            gitignore = target / ".gitignore"
+            malformed = gitignore.read_text(encoding="utf-8").replace("# <<< low-reasoning-harness:.gitignore\n", "")
+            gitignore.write_text(malformed, encoding="utf-8")
+
+            result = harness.run(
+                ["upgrade", "--target", str(target), "--adopt-existing", "--force", "--adapters", "none"]
+            )
+
+            self.assertEqual(1, result)
+            self.assertEqual("manual agents\n", agents.read_text(encoding="utf-8"))
+            self.assertEqual(malformed, gitignore.read_text(encoding="utf-8"))
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_dry_run_has_no_state_or_conflict_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            agents = target / "AGENTS.md"
+            agents.write_text("manual agents\n", encoding="utf-8")
+
+            result = harness.run(
+                ["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none", "--dry-run"]
+            )
+
+            self.assertEqual(1, result)
+            self.assertEqual("manual agents\n", agents.read_text(encoding="utf-8"))
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+            self.assertFalse((target / ".harness/conflicts/AGENTS.md.new").exists())
+
+    def test_upgrade_adopt_existing_rejects_target_missing_core_project_owned_planning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            (target / ".harness/installed-manifest.json").unlink()
+            (target / ".planning/STATE.md").unlink()
+
+            with self.assertRaisesRegex(SystemExit, "Cannot adopt target missing required project-owned files"):
+                harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_does_not_bootstrap_empty_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            target.mkdir()
+
+            with self.assertRaisesRegex(SystemExit, "Cannot adopt target missing required project-owned files"):
+                harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_upgrade_adopt_existing_rejects_planning_only_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_target = Path(tmpdir) / "source"
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(source_target), "--adapters", "none"])
+            for relative in (
+                ".planning/STATE.md",
+                ".planning/ROADMAP.md",
+                ".scratch/phase-state.json",
+            ):
+                destination = target / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text((source_target / relative).read_text(encoding="utf-8"), encoding="utf-8")
+            for source in (source_target / ".planning/codebase").glob("*"):
+                destination = target / ".planning/codebase" / source.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "Cannot adopt target without existing selected harness files"):
+                harness.run(["upgrade", "--target", str(target), "--adopt-existing", "--adapters", "none"])
+
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
     def test_installed_target_can_run_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"

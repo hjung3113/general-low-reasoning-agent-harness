@@ -132,6 +132,19 @@ class DoctorFinding:
         }
 
 
+@dataclass(frozen=True)
+class AdoptionConflict:
+    path_text: str
+    content: str
+
+
+@dataclass(frozen=True)
+class AdoptionPlan:
+    installed: dict[str, object]
+    conflicts: list[AdoptionConflict]
+    backups: list[AdoptionConflict]
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -163,6 +176,11 @@ def run(argv: list[str] | None = None) -> int:
     upgrade_parser.add_argument("--target", required=True, type=Path)
     upgrade_parser.add_argument("--dry-run", action="store_true")
     upgrade_parser.add_argument("--force", action="store_true", help="Overwrite locally modified harness-owned files.")
+    upgrade_parser.add_argument(
+        "--adopt-existing",
+        action="store_true",
+        help="Create install state for an existing manual harness target before upgrading.",
+    )
     upgrade_parser.add_argument("--adapters", default=None, help="Adapter scope for upgrade. Defaults to installed adapters.")
     upgrade_parser.add_argument("--profiles", default=None, help="Profile scope for upgrade. Defaults to installed profiles.")
     upgrade_parser.add_argument("--packs", default=None, help="Pack scope for upgrade. Defaults to installed packs.")
@@ -196,6 +214,7 @@ def run(argv: list[str] | None = None) -> int:
             target=args.target,
             dry_run=args.dry_run,
             force=args.force,
+            adopt_existing=args.adopt_existing,
             adapters=parse_optional_scope(args.adapters),
             profiles=parse_optional_scope(args.profiles),
             packs=parse_optional_scope(args.packs),
@@ -258,6 +277,7 @@ def upgrade(
     target: Path,
     dry_run: bool = False,
     force: bool = False,
+    adopt_existing: bool = False,
     adapters: set[str] | None = None,
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
@@ -273,8 +293,30 @@ def upgrade(
     validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     installed_paths = installed.get("files", {})
+    adopting_missing_state = False
     if installed.get("version") is None:
-        raise SystemExit("Target is not initialized. Run init before upgrade.")
+        if not adopt_existing:
+            raise SystemExit("Target is not initialized. Run init before upgrade.")
+        adopting_missing_state = True
+        adoption_plan = build_adopted_install_state(
+            root=root,
+            target=target,
+            entries=entries,
+            adapters=adapters,
+            profiles=profiles,
+            packs=packs,
+            force=force,
+        )
+        installed = adoption_plan.installed
+        if adoption_plan.conflicts:
+            if not dry_run:
+                for conflict in adoption_plan.conflicts:
+                    write_text_conflict(target, conflict.path_text, conflict.content)
+            return 1
+        if not dry_run:
+            for backup in adoption_plan.backups:
+                write_text_conflict(target, backup.path_text, backup.content)
+        installed_paths = installed.get("files", {})
     conflicts = 0
     current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
 
@@ -372,7 +414,7 @@ def upgrade(
     installed["available_scopes"] = available_scopes(root)
     installed["state_schema_version"] = 2
     installed["manifest_sha256"] = manifest_sha256(root)
-    if not dry_run:
+    if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
     return 1 if conflicts else 0
 
@@ -860,6 +902,118 @@ def normalize_selected_project_owned_state(
         )
 
 
+def build_adopted_install_state(
+    *,
+    root: Path,
+    target: Path,
+    entries: Iterable[ManifestEntry],
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+    force: bool,
+) -> AdoptionPlan:
+    files: dict[str, object] = {}
+    conflicts: list[AdoptionConflict] = []
+    backups: list[AdoptionConflict] = []
+    selected_entries = [entry for entry in entries if entry.policy != "exclude"]
+    required_project_owned = [
+        entry
+        for entry in selected_entries
+        if entry.policy == "project-owned" and is_required_adoption_project_owned_path(entry.path.as_posix())
+    ]
+    missing_project_owned = [
+        str(entry.path) for entry in required_project_owned if not destination_path(target, entry).exists()
+    ]
+    if missing_project_owned:
+        raise SystemExit(
+            "Cannot adopt target missing required project-owned files: " + ", ".join(sorted(missing_project_owned))
+        )
+    has_existing_harness_artifact = any(
+        entry.policy in {"harness-owned", "managed", "managed-append"} and destination_path(target, entry).exists()
+        for entry in selected_entries
+    )
+    if not has_existing_harness_artifact:
+        raise SystemExit("Cannot adopt target without existing selected harness files. Run init instead.")
+
+    for entry in selected_entries:
+        destination = destination_path(target, entry)
+        assert_safe_write_destination(destination)
+
+    for entry in selected_entries:
+        path_text = str(entry.path)
+        source = source_path(root, entry)
+        destination = destination_path(target, entry)
+
+        if entry.policy == "project-owned":
+            if destination.exists():
+                files[path_text] = file_state(root=root, target=target, entry=entry, source=source)
+            continue
+
+        if entry.policy == "managed-append":
+            block = render_append_block(source, entry)
+            if not destination.exists():
+                continue
+            text = destination.read_text(encoding="utf-8")
+            try:
+                parsed = parse_append_block(text, entry.path.as_posix())
+            except ValueError:
+                conflicts.append(AdoptionConflict(f"{entry.path}.new", block))
+                continue
+            if parsed is None:
+                continue
+            block_hash = sha256_text(block)
+            current_hash = sha256_text(parsed.text)
+            source_payload = source.read_text(encoding="utf-8")
+            if current_hash != block_hash and normalize_payload(parsed.payload) != normalize_payload(source_payload):
+                conflicts.append(AdoptionConflict(f"{entry.path}.new", block))
+                continue
+            files[path_text] = file_state(
+                root=root,
+                target=target,
+                entry=entry,
+                source=source,
+                applied_sha256=current_hash,
+            )
+            continue
+
+        if entry.policy in {"harness-owned", "managed"}:
+            if not destination.exists():
+                continue
+            if file_hash(destination) == file_hash(source):
+                files[path_text] = file_state(root=root, target=target, entry=entry, source=source)
+                continue
+            if force:
+                backups.append(AdoptionConflict(f"{entry.path}.adopted", destination.read_text(encoding="utf-8")))
+                continue
+            conflicts.append(AdoptionConflict(f"{entry.path}.new", source.read_text(encoding="utf-8")))
+
+    return AdoptionPlan(
+        installed={
+            "state_schema_version": 2,
+            "version": HARNESS_VERSION,
+            "manifest_sha256": manifest_sha256(root),
+            "source": str(root),
+            "adapters": sorted(adapters),
+            "profiles": sorted(profiles),
+            "packs": sorted(packs),
+            "init_options": scope_record(adapters=adapters, profiles=profiles, packs=packs),
+            "pack_metadata": selected_pack_metadata(root, packs),
+            "available_scopes": available_scopes(root),
+            "files": files,
+        },
+        conflicts=conflicts,
+        backups=backups,
+    )
+
+
+def is_required_adoption_project_owned_path(path_text: str) -> bool:
+    return path_text in {
+        ".planning/STATE.md",
+        ".planning/ROADMAP.md",
+        ".scratch/phase-state.json",
+    } or path_text.startswith(".planning/codebase/")
+
+
 def remove_empty_parents(path: Path, stop: Path) -> None:
     stop = stop.resolve()
     current = path.resolve()
@@ -952,13 +1106,21 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     if missing:
         raise SystemExit("Installed target is missing files: " + ", ".join(missing))
     if expected_entries is not None:
-        expected_paths = {str(entry.path) for entry in expected_entries if entry.policy != "exclude"}
+        expected_paths = {
+            str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
+        }
         missing_current = [
             path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
         ]
         if missing_current:
             raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
-        retired = [path_text for path_text in sorted(installed.get("files", {})) if path_text not in expected_paths]
+        retired = [
+            path_text
+            for path_text, info in sorted(installed.get("files", {}).items())
+            if path_text not in expected_paths
+            and isinstance(info, dict)
+            and info.get("policy") != "project-owned"
+        ]
         if retired:
             raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
     missing_phrases = []
