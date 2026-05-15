@@ -14,6 +14,7 @@ from pathlib import Path
 
 
 VERSION_PATTERN = re.compile(r"^v(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$")
+README_RELEASE_VERSION = re.compile(r"\bv\d+\.\d+\.\d+\b")
 
 
 def repo_root() -> Path:
@@ -92,6 +93,19 @@ def tag_exists(version: str, *, root: Path) -> bool:
     return completed.returncode == 0
 
 
+def check_readme_release_versions(*, root: Path, expected_version: str) -> None:
+    expected = validate_release_version(expected_version)
+    readme = root / "README.md"
+    versions = set(README_RELEASE_VERSION.findall(readme.read_text(encoding="utf-8"))) if readme.exists() else set()
+    mismatched = sorted(version for version in versions if version != expected)
+    if mismatched:
+        raise SystemExit(
+            "README release version mismatch: "
+            f"expected only {expected}, found {', '.join(mismatched)}. "
+            "Update README release/install examples before releasing."
+        )
+
+
 def confirm_release(version: str, *, assume_yes: bool) -> None:
     if assume_yes:
         return
@@ -145,6 +159,7 @@ def run_release(
     selected_version = validate_release_version(version) if version else next_release_version(read_existing_tags(runner.root), bump=bump)
     if tag_exists(selected_version, root=runner.root):
         raise SystemExit(f"Tag already exists: {selected_version}")
+    check_readme_release_versions(root=runner.root, expected_version=selected_version)
     confirm_release(selected_version, assume_yes=assume_yes or runner.dry_run)
 
     runner.run(["git", "switch", "develop"])

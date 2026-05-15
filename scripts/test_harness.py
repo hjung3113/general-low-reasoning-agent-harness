@@ -122,6 +122,7 @@ class HarnessToolTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         (root / "harness").mkdir()
         (root / "harness/manifest.json").write_text(json.dumps({"version": "__release__", "files": []}), encoding="utf-8")
+        (root / "README.md").write_text("Install with v1.2.3\n", encoding="utf-8")
 
         with mock.patch.object(harness, "git_output") as git_output, mock.patch.object(
             harness, "is_git_worktree_dirty", return_value=False
@@ -154,6 +155,19 @@ class HarnessToolTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(SystemExit, "dirty worktree"):
                 harness.release_check(root=root, expected_version="v1.2.3")
+
+    def test_release_check_rejects_readme_version_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "harness").mkdir()
+            (root / "harness/manifest.json").write_text(json.dumps({"version": "__release__", "files": []}), encoding="utf-8")
+            (root / "README.md").write_text("Install with v0.4.9\nUpgrade with v0.4.9\n", encoding="utf-8")
+
+            with mock.patch.object(harness, "git_output", return_value="v0.5.0"), mock.patch.object(
+                harness, "is_git_worktree_dirty", return_value=False
+            ):
+                with self.assertRaisesRegex(SystemExit, "README release version mismatch"):
+                    harness.release_check(root=root, expected_version="v0.5.0")
 
     def test_load_manifest_data_rejects_stale_hardcoded_source_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

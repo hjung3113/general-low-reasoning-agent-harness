@@ -48,6 +48,7 @@ KNOWN_PACKS = {
     "workflow-security-review",
 }
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+README_RELEASE_VERSION = re.compile(r"\bv\d+\.\d+\.\d+\b")
 VERIFICATION_PREFIXES = (
     "python3 ",
     "git ",
@@ -273,7 +274,26 @@ def release_check(*, root: Path, expected_version: str | None = None, require_or
     manifest = load_manifest_data(root, version=tag_version)
     if manifest.get("version") != tag_version:
         raise SystemExit(f"Manifest version mismatch: expected {tag_version}.")
+    check_readme_release_versions(root=root, expected_version=f"v{tag_version}")
     return tag_version
+
+
+def readme_release_versions(root: Path) -> set[str]:
+    readme = root / "README.md"
+    if not readme.exists():
+        return set()
+    return set(README_RELEASE_VERSION.findall(readme.read_text(encoding="utf-8")))
+
+
+def check_readme_release_versions(*, root: Path, expected_version: str) -> None:
+    expected = f"v{normalize_release_version(expected_version)}"
+    mismatched = sorted(version for version in readme_release_versions(root) if version != expected)
+    if mismatched:
+        raise SystemExit(
+            "README release version mismatch: "
+            f"expected only {expected}, found {', '.join(mismatched)}. "
+            "Update README release/install examples before releasing."
+        )
 
 
 def run(argv: list[str] | None = None) -> int:
