@@ -675,6 +675,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/workflow_static_checks.py",
+      "source": "scripts/lib/workflow_static_checks.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"

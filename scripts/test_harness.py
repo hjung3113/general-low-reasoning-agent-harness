@@ -523,6 +523,21 @@ class HarnessToolTests(unittest.TestCase):
                 [finding.to_dict() for finding in findings],
             )
 
+    def test_doctor_reports_projection_required_reads_as_projection_health(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_sync_fixture(root)
+
+            with mock.patch.object(harness, "load_projection") as load_projection:
+                load_projection.return_value = mock.Mock(required_reads=[], warnings=[])
+                findings = harness.collect_doctor_findings(root)
+
+            required_read_findings = [
+                finding for finding in findings if finding.code == "phase_status_required_reads_empty"
+            ]
+            self.assertTrue(required_read_findings, [finding.to_dict() for finding in findings])
+            self.assertIn("do not add required_reads to phase-state", required_read_findings[0].fix)
+
     def test_done_phase_is_unapproved_non_execute_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -556,6 +571,35 @@ class HarnessToolTests(unittest.TestCase):
     def test_doctor_rejects_unknown_output_format(self) -> None:
         with self.assertRaisesRegex(SystemExit, "doctor format"):
             harness.render_doctor_report([], output_format="xml")
+
+    def test_doctor_reports_selected_pack_without_installed_files_without_stack_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_sync_fixture(root)
+            (root / ".harness").mkdir()
+            (root / ".harness/installed-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "version": harness.HARNESS_VERSION,
+                        "adapters": [],
+                        "profiles": ["generic"],
+                        "packs": ["workflow-core"],
+                        "files": {
+                            "AGENTS.md": {"policy": "managed", "owner": "core"},
+                            ".planning/STATE.md": {"policy": "managed", "owner": "core"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            findings = harness.installed_scope_doctor_findings(root)
+
+            self.assertEqual(
+                ["installed_scope_without_files", "installed_scope_without_files"],
+                [finding.code for finding in findings],
+            )
+            self.assertTrue(all("infer stack support" in finding.fix for finding in findings))
 
     def write_sync_fixture(
         self,
@@ -1900,6 +1944,7 @@ progress:
             "scripts/doctor_harness.py": "scripts/doctor_harness.py",
             "scripts/lib/__init__.py": "scripts/lib/__init__.py",
             "scripts/lib/planning_status.py": "scripts/lib/planning_status.py",
+            "scripts/lib/workflow_static_checks.py": "scripts/lib/workflow_static_checks.py",
         }
         for path, source in expected_sources.items():
             self.assertIn(path, entries)
@@ -2079,11 +2124,81 @@ progress:
             with self.assertRaisesRegex(SystemExit, "approved_at must be an ISO-8601 UTC timestamp"):
                 harness.check_phase_state_semantics(path)
 
+    def test_phase_state_rejects_placeholder_verification_without_required_reads_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "phase": "execute",
+                        "approved": True,
+                        "automation_mode": "manual",
+                        "auto_selected": [],
+                        "plan_id": "manual-plan",
+                        "allowed_paths": ["scripts/harness.py"],
+                        "verification": ["TODO: add concrete verification"],
+                        "state_path": ".planning/STATE.md",
+                        "plan_path": ".planning/phases/01/PLAN.md",
+                        "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                        "current_checkpoint": "CP-01",
+                        "next_action": "Run verification.",
+                        "approved_by": "user",
+                        "approved_at": "2026-05-15T00:00:00Z",
+                        "updated_at": "2026-05-15T00:00:00Z",
+                        "updated_by": "test",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "placeholder verification entry"):
+                harness.check_phase_state_semantics(path)
+
             state = json.loads(path.read_text(encoding="utf-8"))
-            state["approved_at"] = "2026-05-15T00:00:00Z"
+            state["verification"] = ["Review phase verification file"]
+            path.write_text(json.dumps(state), encoding="utf-8")
+            harness.check_phase_state_semantics(path)
+
+            state = json.loads(path.read_text(encoding="utf-8"))
+            state["verification"] = ["definitely-not-a-command --nope"]
             path.write_text(json.dumps(state), encoding="utf-8")
 
             with self.assertRaisesRegex(SystemExit, "verification\\[0\\] must start with an allowed command"):
+                harness.check_phase_state_semantics(path)
+
+            state["verification"] = ["TODO add concrete verification"]
+            path.write_text(json.dumps(state), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "verification\\[0\\] must start with an allowed command"):
+                harness.check_phase_state_semantics(path)
+
+    def test_phase_state_allows_domain_words_that_look_like_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            base_state = {
+                "phase": "execute",
+                "approved": True,
+                "automation_mode": "manual",
+                "auto_selected": [],
+                "plan_id": "manual-plan",
+                "allowed_paths": ["scripts/harness.py"],
+                "state_path": ".planning/STATE.md",
+                "plan_path": ".planning/phases/01/PLAN.md",
+                "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                "current_checkpoint": "CP-01",
+                "next_action": "Run verification.",
+                "approved_by": "user",
+                "approved_at": "2026-05-15T00:00:00Z",
+                "updated_at": "2026-05-15T00:00:00Z",
+                "updated_by": "test",
+            }
+            for verification in (
+                "Inspect todo-list component behavior",
+                "Review manual test plan results in docs/verification.md",
+                "Review placeholder replacement in docs",
+            ):
+                state = dict(base_state)
+                state["verification"] = [verification]
+                path.write_text(json.dumps(state), encoding="utf-8")
                 harness.check_phase_state_semantics(path)
 
     def test_phase_state_execute_accepts_manual_mode_with_scope_and_provenance(self) -> None:

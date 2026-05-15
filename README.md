@@ -434,6 +434,10 @@ python scripts/check_harness.py
 python scripts/doctor_harness.py
 ```
 
+`check`는 live phase gate의 구조 오류를 실패로 처리합니다. 특히 `verification`이 비어 있거나 `TODO:`, `TBD`, `placeholder`, `manual test`처럼 실행 가능한 검증이 아닌 placeholder이면 실패합니다. 일반 도메인 문구(`todo-list`, `manual test plan`, `placeholder replacement`)는 막지 않습니다.
+
+`doctor`는 실패시키기보다 workflow 품질 신호를 보고합니다. 예를 들어 phase-status projection의 `required_reads` 누락, optional verification/summary pointer 누락, 설치 manifest의 adapter/profile/pack metadata 불일치를 warning으로 보여줍니다.
+
 ### Worktree scope check
 
 구현 변경은 다음을 통과해야 합니다.
@@ -467,6 +471,8 @@ python /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/proje
 python /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/project
 python /path/to/project/scripts/harness.py check
 ```
+
+새 버전으로 upgrade하면 공용 workflow 정적 검사 helper인 `scripts/lib/workflow_static_checks.py`도 target에 설치됩니다.
 
 ### Installed target bootstrapper로 upgrade
 

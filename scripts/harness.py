@@ -17,6 +17,12 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from lib.planning_status import ProjectionError, load_projection
+from lib.workflow_static_checks import (
+    installed_scope_issues,
+    optional_phase_pointer_keys,
+    verification_contract_issues,
+    verification_placeholder_reason,
+)
 
 
 MANIFEST_SOURCE_VERSION = "__release__"
@@ -1520,7 +1526,6 @@ def check_clean_skeleton(root: Path) -> None:
 def check_json(path: Path) -> None:
     json.loads(path.read_text(encoding="utf-8"))
 
-
 def check_phase_state_semantics(path: Path) -> None:
     state = json.loads(path.read_text(encoding="utf-8"))
     for key in ("updated_at",):
@@ -1620,6 +1625,9 @@ def check_phase_state_semantics(path: Path) -> None:
         for index, command in enumerate(verification):
             if not isinstance(command, str) or not command.strip():
                 raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
+            placeholder_reason = verification_placeholder_reason(command)
+            if placeholder_reason:
+                raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
             if not command.startswith(VERIFICATION_PREFIXES):
                 raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
 
@@ -1675,6 +1683,8 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(phase_status_projection_doctor_findings(root))
     findings.extend(roadmap_state_doctor_findings(root))
     findings.extend(phase_state_path_doctor_findings(root))
+    findings.extend(verification_contract_doctor_findings(root))
+    findings.extend(installed_scope_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
     findings.append(
@@ -1708,6 +1718,18 @@ def phase_status_projection_doctor_findings(root: Path) -> list[DoctorFinding]:
         ]
 
     findings: list[DoctorFinding] = []
+    if not getattr(projection, "required_reads", []):
+        findings.append(
+            DoctorFinding(
+                severity="P2",
+                code="phase_status_required_reads_empty",
+                path=".scratch/phase-state.json",
+                cause="Phase-status projection succeeded but returned no required reads.",
+                impact="A resumed low-reasoning agent may not know the minimum durable planning files to hydrate.",
+                fix="Inspect `scripts/lib/planning_status.py` and the live planning pointers; do not add required_reads to phase-state by hand.",
+                evidence="projection.required_reads is empty",
+            )
+        )
     for warning in projection.warnings:
         findings.append(
             DoctorFinding(
@@ -1789,7 +1811,61 @@ def phase_state_path_doctor_findings(root: Path) -> list[DoctorFinding]:
                     evidence=f"{key}={value}",
                 )
             )
+    phase = state.get("phase")
+    for key in optional_phase_pointer_keys(phase):
+        value = state.get(key)
+        if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
+            findings.append(
+                DoctorFinding(
+                    severity="P2",
+                    code="phase_state_optional_pointer_missing",
+                    path=".scratch/phase-state.json",
+                    cause=f"{key} points to missing path {value!r}.",
+                    impact="Workflow reports may omit verification or closure evidence, but the live gate remains controlled by required phase pointers.",
+                    fix="Restore the missing artifact or remove the optional pointer until the artifact exists.",
+                    evidence=f"{key}={value}",
+                )
+            )
     return findings
+
+
+def verification_contract_doctor_findings(root: Path) -> list[DoctorFinding]:
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return []
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    findings: list[DoctorFinding] = []
+    for issue in verification_contract_issues(state):
+        findings.append(
+            DoctorFinding(
+                severity="P2",
+                code="verification_placeholder",
+                path=".scratch/phase-state.json",
+                cause=f"verification[{issue['index']}] is a {issue['reason']}.",
+                impact="A low-reasoning agent may claim done without concrete evidence.",
+                fix="Replace the placeholder with an exact command or an observable review action that already fits the phase.",
+                evidence=issue["command"],
+            )
+        )
+    return findings
+
+
+def installed_scope_doctor_findings(root: Path) -> list[DoctorFinding]:
+    return [
+        DoctorFinding(
+            severity="P2",
+            code=issue["code"],
+            path=str(INSTALL_STATE),
+            cause=issue["cause"],
+            impact=issue["impact"],
+            fix=issue["fix"],
+            evidence=issue["evidence"],
+        )
+        for issue in installed_scope_issues(root / INSTALL_STATE)
+    ]
 
 
 def command_mode_doctor_findings(root: Path) -> list[DoctorFinding]:
