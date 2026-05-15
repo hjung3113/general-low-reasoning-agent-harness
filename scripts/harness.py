@@ -17,7 +17,8 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 
-HARNESS_VERSION = "0.4.1"
+MANIFEST_SOURCE_VERSION = "__release__"
+HARNESS_VERSION = "0.0.0-dev+unknown"
 MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
@@ -144,8 +145,93 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def normalize_release_version(value: str) -> str:
+    match = re.fullmatch(r"v?(\d+\.\d+\.\d+)", value.strip())
+    if not match:
+        raise ValueError("Release version must use vMAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH.")
+    return match.group(1)
+
+
+def git_output(root: Path, command: list[str]) -> str:
+    return subprocess.check_output(command, cwd=root, text=True, stderr=subprocess.DEVNULL).strip()
+
+
+def is_git_worktree_dirty(root: Path) -> bool:
+    try:
+        return bool(git_output(root, ["git", "status", "--porcelain"]))
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return True
+
+
+def exact_release_tag_version(root: Path) -> str | None:
+    try:
+        tag = git_output(root, ["git", "describe", "--tags", "--exact-match"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        return None
+    return tag[1:]
+
+
+def development_version(root: Path) -> str:
+    try:
+        sha = git_output(root, ["git", "rev-parse", "--short=12", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sha = "unknown"
+    suffix = ".dirty" if is_git_worktree_dirty(root) else ""
+    return f"0.0.0-dev+{sha}{suffix}"
+
+
+def resolve_harness_version(
+    root: Path,
+    *,
+    explicit: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    env = os.environ if env is None else env
+    if explicit:
+        return normalize_release_version(explicit)
+    env_version = env.get("HARNESS_VERSION")
+    if env_version:
+        return normalize_release_version(env_version)
+    tag_version = exact_release_tag_version(root)
+    if tag_version and not is_git_worktree_dirty(root):
+        return tag_version
+    return development_version(root)
+
+
+def release_check(*, root: Path, expected_version: str | None = None, require_origin_main: bool = False) -> str:
+    tag_version = exact_release_tag_version(root)
+    if tag_version is None:
+        raise SystemExit("Release check requires HEAD to be on an exact vMAJOR.MINOR.PATCH tag.")
+    if expected_version is not None and normalize_release_version(expected_version) != tag_version:
+        raise SystemExit(f"Release version mismatch: expected {normalize_release_version(expected_version)}, tag is {tag_version}.")
+    if is_git_worktree_dirty(root):
+        raise SystemExit("Release check requires a clean worktree; dirty worktree detected.")
+    if require_origin_main:
+        try:
+            head = git_output(root, ["git", "rev-parse", "HEAD"])
+            origin_main = git_output(root, ["git", "rev-parse", "origin/main"])
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise SystemExit("Release check requires origin/main to verify release provenance.") from None
+        if head != origin_main:
+            raise SystemExit("Release check requires the release tag commit to equal origin/main.")
+    manifest = load_manifest_data(root, version=tag_version)
+    if manifest.get("version") != tag_version:
+        raise SystemExit(f"Manifest version mismatch: expected {tag_version}.")
+    return tag_version
+
+
 def run(argv: list[str] | None = None) -> int:
+    global HARNESS_VERSION
+
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--version",
+        dest="release_version",
+        default=None,
+        help="Release tooling override. Accepts vMAJOR.MINOR.PATCH and stamps init/upgrade state with MAJOR.MINOR.PATCH.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Install the clean harness skeleton into a target project.")
@@ -190,8 +276,17 @@ def run(argv: list[str] | None = None) -> int:
     doctor_parser.add_argument("--target", type=Path, default=None)
     doctor_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
 
+    release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
+    release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
+    release_parser.add_argument(
+        "--require-origin-main",
+        action="store_true",
+        help="Fail unless the tagged commit equals origin/main.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
+    HARNESS_VERSION = resolve_harness_version(root, explicit=args.release_version)
 
     if args.command == "init":
         install(
@@ -219,6 +314,14 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "doctor":
         doctor(root=(args.target or root).resolve(), output_format=args.format)
+        return 0
+    if args.command == "release-check":
+        release_version = release_check(
+            root=root,
+            expected_version=args.expected_version,
+            require_origin_main=args.require_origin_main,
+        )
+        print(f"release-check PASS v{release_version}")
         return 0
     raise AssertionError(f"Unhandled command: {args.command}")
 
@@ -433,7 +536,7 @@ def check(
             check_worktree_paths(root)
         return
 
-    manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    manifest = load_manifest_data(root)
     if manifest.get("version") != HARNESS_VERSION:
         raise SystemExit(f"Manifest version mismatch: expected {HARNESS_VERSION}")
 
@@ -497,8 +600,16 @@ def load_manifest(root: Path) -> list[ManifestEntry]:
     return entries
 
 
-def load_manifest_data(root: Path) -> dict[str, object]:
-    return json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+def load_manifest_data(root: Path, *, version: str | None = None) -> dict[str, object]:
+    manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    resolved_version = version or HARNESS_VERSION
+    source_version = manifest.get("version")
+    if source_version not in {MANIFEST_SOURCE_VERSION, resolved_version}:
+        raise SystemExit(
+            f"Manifest source version must be {MANIFEST_SOURCE_VERSION!r} or the resolved version {resolved_version!r}."
+        )
+    manifest["version"] = resolved_version
+    return manifest
 
 
 def selected_pack_metadata(root: Path, packs: set[str]) -> dict[str, object]:

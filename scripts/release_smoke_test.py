@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -77,20 +78,35 @@ CASES = [
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--keep-temp", action="store_true", help="Keep the temporary matrix directory.")
+    parser.add_argument("--release", action="store_true", help="Require exact clean release tag before running the smoke matrix.")
+    parser.add_argument("--expected-version", default=None, help="Expected vMAJOR.MINOR.PATCH release tag for --release.")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
+    command_env = os.environ.copy()
+    version_args: list[str] = []
+    if args.release:
+        command_env.pop("HARNESS_VERSION", None)
+        if not args.expected_version:
+            raise SystemExit("--release requires --expected-version vMAJOR.MINOR.PATCH")
+        version_args = ["--version", args.expected_version]
     if args.keep_temp:
         matrix_root = Path(tempfile.mkdtemp(prefix="harness-release-smoke."))
     else:
         matrix_root = Path(tempfile.mkdtemp(prefix="harness-release-smoke."))
     try:
+        if args.release:
+            command = [sys.executable, "scripts/harness.py", "release-check"]
+            if args.expected_version:
+                command.extend(["--expected-version", args.expected_version])
+            command.append("--require-origin-main")
+            run(command, cwd=root, env=command_env)
         for name, options in CASES:
             target = matrix_root / name
-            run([sys.executable, "scripts/harness.py", "init", "--target", str(target), *options], cwd=root)
-            run([sys.executable, "scripts/harness.py", "check", "--target", str(target)], cwd=root)
-            run([sys.executable, "scripts/harness.py", "check"], cwd=target)
-            run([sys.executable, "scripts/test_harness.py"], cwd=target)
+            run([sys.executable, "scripts/harness.py", *version_args, "init", "--target", str(target), *options], cwd=root, env=command_env)
+            run([sys.executable, "scripts/harness.py", *version_args, "check", "--target", str(target)], cwd=root, env=command_env)
+            run([sys.executable, "scripts/harness.py", "check"], cwd=target, env=command_env)
+            run([sys.executable, "scripts/test_harness.py"], cwd=target, env=command_env)
             print(f"PASS {name} {target}")
         print(f"TMP {matrix_root}")
     finally:
@@ -99,8 +115,8 @@ def main() -> int:
     return 0
 
 
-def run(command: list[str], *, cwd: Path) -> None:
-    subprocess.run(command, cwd=cwd, check=True)
+def run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
+    subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
 if __name__ == "__main__":

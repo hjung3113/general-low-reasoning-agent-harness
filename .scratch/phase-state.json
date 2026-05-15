@@ -19,6 +19,7 @@
     ".scratch/phase-state.json",
     ".opencode/",
     ".roo/",
+    ".github/",
     "docs/",
     "harness/",
     "scripts/"

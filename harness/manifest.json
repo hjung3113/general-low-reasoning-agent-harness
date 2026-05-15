@@ -1,5 +1,5 @@
 {
-  "version": "0.4.1",
+  "version": "__release__",
   "packs": {
     "workflow-core": {
       "category": "workflow",
