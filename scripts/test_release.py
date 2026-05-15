@@ -62,7 +62,47 @@ class ReleaseScriptTests(unittest.TestCase):
             ],
             commands[:13],
         )
-        self.assertIn("gh release create v0.4.3 --verify-tag --title v0.4.3 --notes v0.4.3", commands)
+        self.assertIn("gh release create v0.4.3 --verify-tag --title v0.4.3 --generate-notes", commands)
+
+    def test_release_notes_file_overrides_generated_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            release.subprocess.run(["git", "init"], cwd=root, check=True, stdout=release.subprocess.DEVNULL)
+            runner = release.CommandRunner(root=root, dry_run=True)
+            notes_file = Path("docs/releases/v0.4.3.md")
+
+            with mock.patch.object(release, "read_existing_tags", return_value=["v0.4.2"]):
+                release.run_release(
+                    version=None,
+                    bump="patch",
+                    runner=runner,
+                    assume_yes=True,
+                    notes_file=notes_file,
+                )
+
+            commands = [" ".join(command) for command in runner.commands]
+            self.assertIn(
+                "gh release create v0.4.3 --verify-tag --title v0.4.3 --notes-file docs/releases/v0.4.3.md",
+                commands,
+            )
+
+    def test_release_notes_text_overrides_generated_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            release.subprocess.run(["git", "init"], cwd=root, check=True, stdout=release.subprocess.DEVNULL)
+            runner = release.CommandRunner(root=root, dry_run=True)
+
+            with mock.patch.object(release, "read_existing_tags", return_value=["v0.4.2"]):
+                release.run_release(
+                    version=None,
+                    bump="patch",
+                    runner=runner,
+                    assume_yes=True,
+                    notes="Custom notes",
+                )
+
+            commands = [" ".join(command) for command in runner.commands]
+            self.assertIn("gh release create v0.4.3 --verify-tag --title v0.4.3 --notes Custom notes", commands)
 
 
 if __name__ == "__main__":
