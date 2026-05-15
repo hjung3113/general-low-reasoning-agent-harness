@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "packs": {
     "workflow-core": {
       "category": "workflow",
@@ -304,7 +304,7 @@
     {
       "path": ".gitignore",
       "source": "harness/skeleton/clean/.gitignore",
-      "policy": "managed"
+      "policy": "managed-append"
     },
     {
       "path": ".opencode/commands/discuss.md",

@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+protected_branch="refs/heads/main"
+
+while read local_ref local_sha remote_ref remote_sha
+do
+  if [ "$local_ref" = "$protected_branch" ] || [ "$remote_ref" = "$protected_branch" ]; then
+    cat >&2 <<'EOF'
+Blocked: pushing main directly is not allowed.
+
+Use a feature branch and merge/version-bump deliberately:
+  git push -u origin <feature-branch>
+EOF
+    exit 1
+  fi
+done
