@@ -10,6 +10,16 @@ If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do n
 
 Every roadmap phase starts with its own `discuss` pass before `plan` or `execute`. Before finalizing phase commitments, run adversarial review and include the mandatory lens of whether the workflow is concrete enough for low-reasoning models.
 
+## Planning Document Reads
+
+Before broad planning reads, use `.planning/workflows/long-document-reading.md` when any of these are true: the task requires multiple top-level `.planning/**` docs, the same planning doc has already been read twice for one task, a subagent would be asked to inspect planning/spec docs, or search/read attempts are looping without a clear answer. Use targeted headings/ranges whenever possible.
+
+## Mid-Stream Phase Additions
+
+When the user asks to add a phase, create a next phase, split current scope into a later phase, defer work to future phase work, or record a decision that creates phase-sized follow-up scope, follow `.planning/workflows/mid-stream-phase-addition.md`.
+
+This routing rule does not change the active execute gate. Do not set `.scratch/phase-state.json` to `phase=execute` or `approved=true` unless the user has explicitly completed that phase's planning and approval flow.
+
 ## Current Repository
 
 This repository is the generalized low-reasoning agent harness source.

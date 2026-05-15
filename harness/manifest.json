@@ -655,6 +655,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/uninstall_harness.py",
+      "source": "scripts/uninstall_harness.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/check_harness.py",
       "source": "scripts/check_harness.py",
       "policy": "harness-owned"
@@ -672,6 +677,11 @@
     {
       "path": "scripts/lib/planning_status.py",
       "source": "scripts/lib/planning_status.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/workflow_static_checks.py",
+      "source": "scripts/lib/workflow_static_checks.py",
       "policy": "harness-owned"
     },
     {

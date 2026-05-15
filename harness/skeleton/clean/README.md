@@ -50,8 +50,8 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade --target .
 Or run the installed bootstrapper and select a release/source:
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.5.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.5.0
+python3 scripts/upgrade_harness.py --version v0.5.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.5.1
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -59,8 +59,8 @@ python3 scripts/doctor_harness.py
 If this project was installed from a git checkout, the bootstrapper uses the recorded harness repo as its default upgrade source. For an internal mirror or fallback source, override it explicitly:
 
 ```bash
-python3 scripts/upgrade_harness.py --repo git@github.company.com:team/general-low-reasoning-agent-harness.git --version v0.5.0 --dry-run
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.0 --dry-run
+python3 scripts/upgrade_harness.py --repo git@github.company.com:team/general-low-reasoning-agent-harness.git --version v0.5.1 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.1 --dry-run
 ```
 
 ## Workflow Prompts

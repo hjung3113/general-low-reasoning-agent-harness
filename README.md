@@ -30,7 +30,7 @@
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.5.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.5.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -38,7 +38,7 @@ python3 "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.5.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.5.1 {Repo git} "$tmp"
 python "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -130,7 +130,8 @@ skill pack은 플러그인입니다. Core는 작게 유지하고, debugging, TDD
 | React/TypeScript web app | web tech packs | `python3 scripts/harness.py init --target /path/to/project --packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development` | "UI 변경은 browser verification까지 포함해서 plan을 세워줘." |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` | "증상 재현부터 최소화, 가설, 계측, 회귀 테스트 순서로 진행해." |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` | "권한, secret exposure, rollback 관점으로 적대적 리뷰해." |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.5.0 --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.5.1 --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
+| 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` | "먼저 dry-run으로 뭐가 지워지는지 보여줘." |
 
 Python 실행명이 `python`인 환경에서는 위 명령의 `python3`만 `python`으로 바꾸면 됩니다.
 
@@ -182,7 +183,7 @@ python3 scripts/harness.py init --target /path/to/project --adapters roo,opencod
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.5.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.5.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -190,7 +191,7 @@ python3 "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.5.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.5.1 {Repo git} "$tmp"
 python "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -198,7 +199,7 @@ python "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.5.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.5.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -434,6 +435,10 @@ python scripts/check_harness.py
 python scripts/doctor_harness.py
 ```
 
+`check`는 live phase gate의 구조 오류를 실패로 처리합니다. 특히 `verification`이 비어 있거나 `TODO:`, `TBD`, `placeholder`, `manual test`처럼 실행 가능한 검증이 아닌 placeholder이면 실패합니다. 일반 도메인 문구(`todo-list`, `manual test plan`, `placeholder replacement`)는 막지 않습니다.
+
+`doctor`는 실패시키기보다 workflow 품질 신호를 보고합니다. 예를 들어 phase-status projection의 `required_reads` 누락, optional verification/summary pointer 누락, 설치 manifest의 adapter/profile/pack metadata 불일치를 warning으로 보여줍니다.
+
 ### Worktree scope check
 
 구현 변경은 다음을 통과해야 합니다.
@@ -468,11 +473,13 @@ python /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/proje
 python /path/to/project/scripts/harness.py check
 ```
 
+새 버전으로 upgrade하면 공용 workflow 정적 검사 helper인 `scripts/lib/workflow_static_checks.py`도 target에 설치됩니다.
+
 ### Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.5.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.5.0
+python3 scripts/upgrade_harness.py --version v0.5.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.5.1
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -480,8 +487,8 @@ python3 scripts/doctor_harness.py
 또는:
 
 ```bash
-python scripts/upgrade_harness.py --version v0.5.0 --dry-run
-python scripts/upgrade_harness.py --version v0.5.0
+python scripts/upgrade_harness.py --version v0.5.1 --dry-run
+python scripts/upgrade_harness.py --version v0.5.1
 python scripts/check_harness.py
 python scripts/doctor_harness.py
 ```
@@ -493,7 +500,7 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo {Repo git} \
-  --version v0.5.0 \
+  --version v0.5.1 \
   --dry-run
 ```
 
@@ -502,20 +509,20 @@ python3 scripts/upgrade_harness.py \
 ```bash
 python scripts/upgrade_harness.py \
   --repo {Repo git} \
-  --version v0.5.0 \
+  --version v0.5.1 \
   --dry-run
 ```
 
 ### Remote access가 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.0 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.1 --dry-run
 ```
 
 또는:
 
 ```bash
-python scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.0 --dry-run
+python scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.5.1 --dry-run
 ```
 
 ### 오래된 수동 설치 adopt
@@ -532,6 +539,39 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade \
 ```
 
 Conflict는 `.harness/conflicts/` 아래에 기록됩니다. 검토 전에는 `--force`를 쓰지 않습니다.
+
+## 제거
+
+Target-local uninstall은 전용 script를 씁니다.
+
+```bash
+python3 scripts/uninstall_harness.py --interactive
+```
+
+또는 source checkout에서 target을 지정합니다.
+
+```bash
+python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2 --dry-run
+python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2
+```
+
+`scripts/harness.py uninstall`도 같은 script로 위임합니다.
+
+```bash
+python3 scripts/harness.py uninstall --target /path/to/project --select 4 --dry-run
+```
+
+Interactive 선택지는 독립 범위입니다. 숫자를 여러 개 콤마로 입력할 수 있고, 앞 번호가 뒤 번호를 포함하지 않습니다.
+
+| 번호 | 제거 범위 |
+| --- | --- |
+| 1 | Roo 환경만 제거: `.roo/**`, `.roomodes`, `.rooignore` |
+| 2 | OpenCode 환경만 제거: `.opencode/**` |
+| 3 | Runtime harness만 제거: `.agents/skills/**`, harness scripts 등. Adapter와 core protocol은 보존 |
+| 4 | Core protocol만 제거: `AGENTS.md`/`.gitignore` managed block, `.scratch/**` 등. Adapter/runtime/docs는 보존 |
+| 5 | Planning/docs만 제거: `.planning/**`, harness docs/profiles 등. 권장하지 않음. 프로젝트 계획 기록이 사라집니다 |
+
+삭제 대상은 `.harness/installed-manifest.json`에 기록된 파일과 managed marker block 기준입니다. `--dry-run`으로 먼저 확인하고, conflict가 있으면 실제 삭제는 중단됩니다.
 
 ## 플랫폼별 참고사항
 
@@ -557,7 +597,7 @@ Clone/install 예시는 PowerShell temp directory 문법으로 바꿔 실행합�
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.5.0 {Repo git} $tmp.FullName
+git clone --depth 1 --branch v0.5.1 {Repo git} $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -565,7 +605,7 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.5.0 {Repo git} $tmp.FullName
+git clone --depth 1 --branch v0.5.1 {Repo git} $tmp.FullName
 python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -585,9 +625,10 @@ python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 - `harness/skill-packs/**`: source skill packs installed into target `.agents/skills/**`.
 - `.roo/**`: Roo adapter source.
 - `.opencode/**`: OpenCode adapter source.
-- `scripts/harness.py`: init, upgrade, check, doctor, release-check.
+- `scripts/harness.py`: init, upgrade, check, doctor, uninstall, release-check.
 - `scripts/install_harness.py`: human-facing interactive installer.
 - `scripts/upgrade_harness.py`: target-local upgrade bootstrapper.
+- `scripts/uninstall_harness.py`: target-local uninstall helper.
 - `scripts/check_harness.py`: target-local self-check.
 - `scripts/doctor_harness.py`: target-local diagnostics.
 - `scripts/show_phase_status.py`: live phase gate status.
@@ -610,7 +651,7 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.5.0
+python3 scripts/harness.py release-check --expected-version v0.5.1
 ```
 
 또는:
@@ -620,7 +661,7 @@ python -m unittest scripts/test_harness.py
 python scripts/harness.py check
 python scripts/harness.py check --worktree
 python scripts/release_smoke_test.py
-python scripts/harness.py release-check --expected-version v0.5.0
+python scripts/harness.py release-check --expected-version v0.5.1
 ```
 
 검증 evidence는 tag/push 전에 phase verification document에 기록합니다.
