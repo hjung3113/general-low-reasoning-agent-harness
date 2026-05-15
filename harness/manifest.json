@@ -1,5 +1,5 @@
 {
-  "version": "0.4.1",
+  "version": "__release__",
   "packs": {
     "workflow-core": {
       "category": "workflow",
@@ -91,12 +91,12 @@
     {
       "path": "AGENTS.md",
       "source": "harness/skeleton/clean/AGENTS.md",
-      "policy": "managed"
+      "policy": "managed-append"
     },
     {
       "path": "README.md",
       "source": "harness/skeleton/clean/README.md",
-      "policy": "managed"
+      "policy": "project-owned"
     },
     {
       "path": "docs/profiles/generic.md",

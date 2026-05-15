@@ -456,6 +456,23 @@ python3 /path/to/project/scripts/harness.py check
 
 `init`은 선택한 `--adapters`, `--profiles`, `--packs`를 `.harness/installed-manifest.json`의 `init_options`에 기록합니다. 이후 `upgrade`에서 scope 옵션을 생략하면 이 remembered scope를 그대로 사용합니다.
 
+오래된 수동 적용 target처럼 하네스 파일은 있지만 `.harness/installed-manifest.json`이 없다면 명시적으로 adopt한 뒤 upgrade합니다. 첫 adopt에는 remembered scope가 없으므로 target 형태가 기본 Roo + generic + workflow-core가 아니면 scope를 명시합니다.
+
+```bash
+python3 /path/to/newer-harness/scripts/harness.py upgrade \
+  --target "/path/to/manual project" \
+  --adopt-existing \
+  --adapters roo \
+  --profiles generic \
+  --packs workflow-core
+```
+
+`--adopt-existing`은 선택한 manifest 범위만 install state로 가져옵니다. 빈 target을 init처럼 bootstrap하지 않으며, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, `.scratch/phase-state.json`이 없는 target은 거부합니다.
+
+`--force`는 기존과 같이 whole-file `harness-owned`/`managed` 충돌 교체에만 적용되며, `.planning/**`이나 target `README.md` 같은 project-owned 문서는 덮어쓰지 않습니다. 첫 adopt에서 `--force`로 기존 whole-file 파일을 덮을 때는 원본을 `.harness/conflicts/<path>.adopted`에 먼저 남깁니다.
+
+Target `AGENTS.md`는 `.gitignore`처럼 marker block 안의 harness guidance만 upgrade합니다. 프로젝트별 agent 지침은 marker 밖에 둡니다.
+
 pack을 더 추가하거나 adapter 구성을 바꾸려면 upgrade 때 명시합니다. 이 경우 새 선택이 다음 upgrade의 remembered scope가 됩니다.
 
 ```bash

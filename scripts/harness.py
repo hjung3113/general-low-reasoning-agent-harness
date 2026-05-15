@@ -17,7 +17,8 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 
-HARNESS_VERSION = "0.4.1"
+MANIFEST_SOURCE_VERSION = "__release__"
+HARNESS_VERSION = "0.0.0-dev+unknown"
 MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
@@ -63,11 +64,6 @@ REQUIRED_TARGET_PHRASES = {
         "Karpathy-Inspired Coding Guidelines",
         "If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`",
         "Every roadmap phase starts with its own `discuss` pass",
-    ),
-    "README.md": (
-        "Fresh target first action",
-        "python3 scripts/harness.py check",
-        "project_dashboard.py",
     ),
 }
 CONTAMINATION_PATTERNS = (
@@ -132,12 +128,110 @@ class DoctorFinding:
         }
 
 
+@dataclass(frozen=True)
+class AdoptionConflict:
+    path_text: str
+    content: str
+
+
+@dataclass(frozen=True)
+class AdoptionPlan:
+    installed: dict[str, object]
+    conflicts: list[AdoptionConflict]
+    backups: list[AdoptionConflict]
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def normalize_release_version(value: str) -> str:
+    match = re.fullmatch(r"v?(\d+\.\d+\.\d+)", value.strip())
+    if not match:
+        raise ValueError("Release version must use vMAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH.")
+    return match.group(1)
+
+
+def git_output(root: Path, command: list[str]) -> str:
+    return subprocess.check_output(command, cwd=root, text=True, stderr=subprocess.DEVNULL).strip()
+
+
+def is_git_worktree_dirty(root: Path) -> bool:
+    try:
+        return bool(git_output(root, ["git", "status", "--porcelain"]))
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return True
+
+
+def exact_release_tag_version(root: Path) -> str | None:
+    try:
+        tag = git_output(root, ["git", "describe", "--tags", "--exact-match"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        return None
+    return tag[1:]
+
+
+def development_version(root: Path) -> str:
+    try:
+        sha = git_output(root, ["git", "rev-parse", "--short=12", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sha = "unknown"
+    suffix = ".dirty" if is_git_worktree_dirty(root) else ""
+    return f"0.0.0-dev+{sha}{suffix}"
+
+
+def resolve_harness_version(
+    root: Path,
+    *,
+    explicit: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    env = os.environ if env is None else env
+    if explicit:
+        return normalize_release_version(explicit)
+    env_version = env.get("HARNESS_VERSION")
+    if env_version:
+        return normalize_release_version(env_version)
+    tag_version = exact_release_tag_version(root)
+    if tag_version and not is_git_worktree_dirty(root):
+        return tag_version
+    return development_version(root)
+
+
+def release_check(*, root: Path, expected_version: str | None = None, require_origin_main: bool = False) -> str:
+    tag_version = exact_release_tag_version(root)
+    if tag_version is None:
+        raise SystemExit("Release check requires HEAD to be on an exact vMAJOR.MINOR.PATCH tag.")
+    if expected_version is not None and normalize_release_version(expected_version) != tag_version:
+        raise SystemExit(f"Release version mismatch: expected {normalize_release_version(expected_version)}, tag is {tag_version}.")
+    if is_git_worktree_dirty(root):
+        raise SystemExit("Release check requires a clean worktree; dirty worktree detected.")
+    if require_origin_main:
+        try:
+            head = git_output(root, ["git", "rev-parse", "HEAD"])
+            origin_main = git_output(root, ["git", "rev-parse", "origin/main"])
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise SystemExit("Release check requires origin/main to verify release provenance.") from None
+        if head != origin_main:
+            raise SystemExit("Release check requires the release tag commit to equal origin/main.")
+    manifest = load_manifest_data(root, version=tag_version)
+    if manifest.get("version") != tag_version:
+        raise SystemExit(f"Manifest version mismatch: expected {tag_version}.")
+    return tag_version
+
+
 def run(argv: list[str] | None = None) -> int:
+    global HARNESS_VERSION
+
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--version",
+        dest="release_version",
+        default=None,
+        help="Release tooling override. Accepts vMAJOR.MINOR.PATCH and stamps init/upgrade state with MAJOR.MINOR.PATCH.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Install the clean harness skeleton into a target project.")
@@ -163,6 +257,11 @@ def run(argv: list[str] | None = None) -> int:
     upgrade_parser.add_argument("--target", required=True, type=Path)
     upgrade_parser.add_argument("--dry-run", action="store_true")
     upgrade_parser.add_argument("--force", action="store_true", help="Overwrite locally modified harness-owned files.")
+    upgrade_parser.add_argument(
+        "--adopt-existing",
+        action="store_true",
+        help="Create install state for an existing manual harness target before upgrading.",
+    )
     upgrade_parser.add_argument("--adapters", default=None, help="Adapter scope for upgrade. Defaults to installed adapters.")
     upgrade_parser.add_argument("--profiles", default=None, help="Profile scope for upgrade. Defaults to installed profiles.")
     upgrade_parser.add_argument("--packs", default=None, help="Pack scope for upgrade. Defaults to installed packs.")
@@ -177,8 +276,17 @@ def run(argv: list[str] | None = None) -> int:
     doctor_parser.add_argument("--target", type=Path, default=None)
     doctor_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
 
+    release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
+    release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
+    release_parser.add_argument(
+        "--require-origin-main",
+        action="store_true",
+        help="Fail unless the tagged commit equals origin/main.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
+    HARNESS_VERSION = resolve_harness_version(root, explicit=args.release_version)
 
     if args.command == "init":
         install(
@@ -196,6 +304,7 @@ def run(argv: list[str] | None = None) -> int:
             target=args.target,
             dry_run=args.dry_run,
             force=args.force,
+            adopt_existing=args.adopt_existing,
             adapters=parse_optional_scope(args.adapters),
             profiles=parse_optional_scope(args.profiles),
             packs=parse_optional_scope(args.packs),
@@ -205,6 +314,14 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "doctor":
         doctor(root=(args.target or root).resolve(), output_format=args.format)
+        return 0
+    if args.command == "release-check":
+        release_version = release_check(
+            root=root,
+            expected_version=args.expected_version,
+            require_origin_main=args.require_origin_main,
+        )
+        print(f"release-check PASS v{release_version}")
         return 0
     raise AssertionError(f"Unhandled command: {args.command}")
 
@@ -233,7 +350,7 @@ def install(
     existing = [
         str(entry.path)
         for entry, _, destination in destinations
-        if entry.policy != "managed-append" and (destination.exists() or destination.is_symlink())
+        if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
     ]
     if existing:
         raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
@@ -246,6 +363,8 @@ def install(
         if not dry_run:
             if entry.policy == "managed-append":
                 write_managed_append(source=source, destination=destination, entry=entry)
+            elif entry.policy == "project-owned" and destination.exists():
+                continue
             else:
                 write_copy(source, destination)
 
@@ -258,6 +377,7 @@ def upgrade(
     target: Path,
     dry_run: bool = False,
     force: bool = False,
+    adopt_existing: bool = False,
     adapters: set[str] | None = None,
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
@@ -273,8 +393,30 @@ def upgrade(
     validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     installed_paths = installed.get("files", {})
+    adopting_missing_state = False
     if installed.get("version") is None:
-        raise SystemExit("Target is not initialized. Run init before upgrade.")
+        if not adopt_existing:
+            raise SystemExit("Target is not initialized. Run init before upgrade.")
+        adopting_missing_state = True
+        adoption_plan = build_adopted_install_state(
+            root=root,
+            target=target,
+            entries=entries,
+            adapters=adapters,
+            profiles=profiles,
+            packs=packs,
+            force=force,
+        )
+        installed = adoption_plan.installed
+        if adoption_plan.conflicts:
+            if not dry_run:
+                for conflict in adoption_plan.conflicts:
+                    write_text_conflict(target, conflict.path_text, conflict.content)
+            return 1
+        if not dry_run:
+            for backup in adoption_plan.backups:
+                write_text_conflict(target, backup.path_text, backup.content)
+        installed_paths = installed.get("files", {})
     conflicts = 0
     current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
 
@@ -372,7 +514,7 @@ def upgrade(
     installed["available_scopes"] = available_scopes(root)
     installed["state_schema_version"] = 2
     installed["manifest_sha256"] = manifest_sha256(root)
-    if not dry_run:
+    if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
     return 1 if conflicts else 0
 
@@ -394,7 +536,7 @@ def check(
             check_worktree_paths(root)
         return
 
-    manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    manifest = load_manifest_data(root)
     if manifest.get("version") != HARNESS_VERSION:
         raise SystemExit(f"Manifest version mismatch: expected {HARNESS_VERSION}")
 
@@ -458,8 +600,16 @@ def load_manifest(root: Path) -> list[ManifestEntry]:
     return entries
 
 
-def load_manifest_data(root: Path) -> dict[str, object]:
-    return json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+def load_manifest_data(root: Path, *, version: str | None = None) -> dict[str, object]:
+    manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    resolved_version = version or HARNESS_VERSION
+    source_version = manifest.get("version")
+    if source_version not in {MANIFEST_SOURCE_VERSION, resolved_version}:
+        raise SystemExit(
+            f"Manifest source version must be {MANIFEST_SOURCE_VERSION!r} or the resolved version {resolved_version!r}."
+        )
+    manifest["version"] = resolved_version
+    return manifest
 
 
 def selected_pack_metadata(root: Path, packs: set[str]) -> dict[str, object]:
@@ -860,6 +1010,135 @@ def normalize_selected_project_owned_state(
         )
 
 
+def build_adopted_install_state(
+    *,
+    root: Path,
+    target: Path,
+    entries: Iterable[ManifestEntry],
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+    force: bool,
+) -> AdoptionPlan:
+    files: dict[str, object] = {}
+    conflicts: list[AdoptionConflict] = []
+    backups: list[AdoptionConflict] = []
+    selected_entries = [entry for entry in entries if entry.policy != "exclude"]
+    required_project_owned = [
+        entry
+        for entry in selected_entries
+        if entry.policy == "project-owned" and is_required_adoption_project_owned_path(entry.path.as_posix())
+    ]
+    missing_project_owned = [
+        str(entry.path) for entry in required_project_owned if not destination_path(target, entry).exists()
+    ]
+    if missing_project_owned:
+        raise SystemExit(
+            "Cannot adopt target missing required project-owned files: " + ", ".join(sorted(missing_project_owned))
+        )
+    has_existing_harness_artifact = any(
+        is_existing_harness_artifact(root=root, target=target, entry=entry) for entry in selected_entries
+    )
+    if not has_existing_harness_artifact:
+        raise SystemExit("Cannot adopt target without existing selected harness files. Run init instead.")
+
+    for entry in selected_entries:
+        destination = destination_path(target, entry)
+        assert_safe_write_destination(destination)
+
+    for entry in selected_entries:
+        path_text = str(entry.path)
+        source = source_path(root, entry)
+        destination = destination_path(target, entry)
+
+        if entry.policy == "project-owned":
+            if destination.exists():
+                files[path_text] = file_state(root=root, target=target, entry=entry, source=source)
+            continue
+
+        if entry.policy == "managed-append":
+            block = render_append_block(source, entry)
+            if not destination.exists():
+                continue
+            text = destination.read_text(encoding="utf-8")
+            try:
+                parsed = parse_append_block(text, entry.path.as_posix())
+            except ValueError:
+                conflicts.append(AdoptionConflict(f"{entry.path}.new", block))
+                continue
+            if parsed is None:
+                continue
+            block_hash = sha256_text(block)
+            current_hash = sha256_text(parsed.text)
+            source_payload = source.read_text(encoding="utf-8")
+            if current_hash != block_hash and normalize_payload(parsed.payload) != normalize_payload(source_payload):
+                conflicts.append(AdoptionConflict(f"{entry.path}.new", block))
+                continue
+            files[path_text] = file_state(
+                root=root,
+                target=target,
+                entry=entry,
+                source=source,
+                applied_sha256=current_hash,
+            )
+            continue
+
+        if entry.policy in {"harness-owned", "managed"}:
+            if not destination.exists():
+                continue
+            if file_hash(destination) == file_hash(source):
+                files[path_text] = file_state(root=root, target=target, entry=entry, source=source)
+                continue
+            if force:
+                backups.append(AdoptionConflict(f"{entry.path}.adopted", destination.read_text(encoding="utf-8")))
+                continue
+            conflicts.append(AdoptionConflict(f"{entry.path}.new", source.read_text(encoding="utf-8")))
+
+    return AdoptionPlan(
+        installed={
+            "state_schema_version": 2,
+            "version": HARNESS_VERSION,
+            "manifest_sha256": manifest_sha256(root),
+            "source": str(root),
+            "adapters": sorted(adapters),
+            "profiles": sorted(profiles),
+            "packs": sorted(packs),
+            "init_options": scope_record(adapters=adapters, profiles=profiles, packs=packs),
+            "pack_metadata": selected_pack_metadata(root, packs),
+            "available_scopes": available_scopes(root),
+            "files": files,
+        },
+        conflicts=conflicts,
+        backups=backups,
+    )
+
+
+def is_required_adoption_project_owned_path(path_text: str) -> bool:
+    return path_text in {
+        ".planning/STATE.md",
+        ".planning/ROADMAP.md",
+        ".scratch/phase-state.json",
+    } or path_text.startswith(".planning/codebase/")
+
+
+def is_optional_project_owned_path(path_text: str) -> bool:
+    return path_text == "README.md"
+
+
+def is_existing_harness_artifact(*, root: Path, target: Path, entry: ManifestEntry) -> bool:
+    if entry.policy not in {"harness-owned", "managed", "managed-append"}:
+        return False
+    destination = destination_path(target, entry)
+    if not destination.exists():
+        return False
+    if entry.policy != "managed-append":
+        return True
+    try:
+        return parse_append_block(destination.read_text(encoding="utf-8"), entry.path.as_posix()) is not None
+    except ValueError:
+        return True
+
+
 def remove_empty_parents(path: Path, stop: Path) -> None:
     stop = stop.resolve()
     current = path.resolve()
@@ -944,6 +1223,13 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     for path_text in installed.get("files", {}):
         destination = target / normalize_path(path_text)
         if not destination.exists():
+            info = installed.get("files", {}).get(path_text)
+            if (
+                isinstance(info, dict)
+                and info.get("policy") == "project-owned"
+                and is_optional_project_owned_path(path_text)
+            ):
+                continue
             missing.append(path_text)
             continue
         info = installed.get("files", {}).get(path_text)
@@ -952,13 +1238,36 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     if missing:
         raise SystemExit("Installed target is missing files: " + ", ".join(missing))
     if expected_entries is not None:
-        expected_paths = {str(entry.path) for entry in expected_entries if entry.policy != "exclude"}
+        expected_by_path = {str(entry.path): entry for entry in expected_entries if entry.policy != "exclude"}
+        policy_mismatches = []
+        for path_text, entry in expected_by_path.items():
+            info = installed.get("files", {}).get(path_text)
+            if not isinstance(info, dict):
+                continue
+            if info.get("policy") != entry.policy:
+                policy_mismatches.append(f"{path_text}: installed {info.get('policy')} != current {entry.policy}")
+                continue
+            if entry.policy == "managed-append":
+                destination = target / normalize_path(path_text)
+                if destination.exists():
+                    validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
+        if policy_mismatches:
+            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches))
+        expected_paths = {
+            str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
+        }
         missing_current = [
             path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
         ]
         if missing_current:
             raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
-        retired = [path_text for path_text in sorted(installed.get("files", {})) if path_text not in expected_paths]
+        retired = [
+            path_text
+            for path_text, info in sorted(installed.get("files", {}).items())
+            if path_text not in expected_paths
+            and isinstance(info, dict)
+            and info.get("policy") != "project-owned"
+        ]
         if retired:
             raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
     missing_phrases = []
@@ -967,7 +1276,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         if not path.exists():
             missing_phrases.append(f"{relative}: missing file")
             continue
-        text = path.read_text(encoding="utf-8")
+        text = required_phrase_scope(path=path, relative=relative)
         for phrase in phrases:
             if phrase not in text:
                 missing_phrases.append(f"{relative}: {phrase}")
@@ -1020,6 +1329,19 @@ def validate_installed_managed_append(*, destination: Path, path_text: str, info
     applied_sha256 = info.get("applied_sha256")
     if applied_sha256 and sha256_text(parsed.text) != applied_sha256:
         raise SystemExit(f"Installed managed-append marker hash drift: {path_text}")
+
+
+def required_phrase_scope(*, path: Path, relative: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    if relative != "AGENTS.md":
+        return text
+    try:
+        parsed = parse_append_block(text, relative)
+    except ValueError as exc:
+        raise SystemExit(f"Installed managed-append marker is malformed: {relative}") from exc
+    if parsed is None:
+        raise SystemExit(f"Required guardrail phrases missing: {relative}: missing managed marker")
+    return parsed.payload
 
 
 def write_json(path: Path, data: object) -> None:
