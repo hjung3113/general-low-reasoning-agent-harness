@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ def prompt_value(label: str, default: str | None = None) -> str:
 def prompt_interactive(args: argparse.Namespace) -> argparse.Namespace:
     scopes = harness.available_scopes(harness.repo_root())
     print("Interactive harness install")
-    args.target = Path(prompt_value("Target path", str(args.target) if args.target else None))
+    args.target = prompt_value("Target path", str(args.target) if args.target else None)
     args.adapters = prompt_value("Adapters (roo, opencode, both, none)", args.adapters)
     args.profiles = prompt_value("Profiles (" + ", ".join(scopes["profiles"]) + ")", args.profiles)
     print("Available skill packs:")
@@ -65,7 +66,7 @@ def run(argv: list[str] | None = None) -> int:
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     delegated = build_harness_argv(args)
-    print("Equivalent command: python3 scripts/harness.py " + " ".join(delegated))
+    print("Equivalent command: " + shlex.join(["python3", "scripts/harness.py", *delegated]))
     return harness.run(delegated)
 
 

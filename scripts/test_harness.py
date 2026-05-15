@@ -496,6 +496,34 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
 
+    def test_install_harness_interactive_preserves_parent_relative_target(self) -> None:
+        target_name = "harness-interactive-relative-target"
+        target = harness.repo_root().parent / target_name
+        if target.exists():
+            shutil.rmtree(target)
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/install_harness.py"),
+                    "--interactive",
+                ],
+                input=f"../{target_name}\nroo\ndotnet-etl-mssql\n1,2,8,9,10,11,12,13,14,15,16,17\nyes\n",
+                cwd=harness.repo_root(),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(f"--target ../{target_name} --dry-run", result.stdout)
+            self.assertIn("target=" + str(target), result.stdout)
+            self.assertFalse((harness.repo_root() / f"..{target_name}").exists())
+            self.assertFalse((harness.repo_root() / f".{target_name}").exists())
+        finally:
+            if target.exists():
+                shutil.rmtree(target)
+
     def test_uninstall_harness_removes_selected_adapter_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
