@@ -10,6 +10,10 @@ If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do n
 
 Every roadmap phase starts with its own `discuss` pass before `plan` or `execute`. Before finalizing phase commitments, run adversarial review and include the mandatory lens of whether the workflow is concrete enough for low-reasoning models.
 
+## Planning Document Reads
+
+Before broad planning reads, use `.planning/workflows/long-document-reading.md` when any of these are true: the task requires multiple top-level `.planning/**` docs, the same planning doc has already been read twice for one task, a subagent would be asked to inspect planning/spec docs, or search/read attempts are looping without a clear answer. Use targeted headings/ranges whenever possible.
+
 ## Current Repository
 
 This repository is the generalized low-reasoning agent harness source.
