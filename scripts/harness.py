@@ -145,6 +145,25 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def upgrade_source_root(default_root: Path, target: Path) -> Path:
+    default_root = default_root.resolve()
+    target = target.resolve()
+    if default_root != target:
+        return default_root
+
+    installed = read_install_state(target)
+    source = installed.get("source")
+    if not isinstance(source, str) or not source:
+        return default_root
+
+    candidate = Path(source).expanduser().resolve()
+    if candidate == default_root:
+        return default_root
+    if not (candidate / MANIFEST_PATH).exists():
+        return default_root
+    return candidate
+
+
 def normalize_release_version(value: str) -> str:
     match = re.fullmatch(r"v?(\d+\.\d+\.\d+)", value.strip())
     if not match:
@@ -286,7 +305,10 @@ def run(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     root = repo_root()
-    HARNESS_VERSION = resolve_harness_version(root, explicit=args.release_version)
+    command_root = root
+    if args.command == "upgrade":
+        command_root = upgrade_source_root(root, args.target)
+    HARNESS_VERSION = resolve_harness_version(command_root, explicit=args.release_version)
 
     if args.command == "init":
         install(
@@ -300,7 +322,7 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "upgrade":
         return upgrade(
-            root=root,
+            root=command_root,
             target=args.target,
             dry_run=args.dry_run,
             force=args.force,
