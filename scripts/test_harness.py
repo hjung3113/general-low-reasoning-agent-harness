@@ -589,6 +589,105 @@ class HarnessToolTests(unittest.TestCase):
             self.assertNotIn(".planning/STATE.md", installed["files"])
             self.assertIn(".roo/README.md", installed["files"])
 
+    def test_uninstall_harness_all_scopes_preserves_install_state_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "1,2,3,4,5",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertFalse((target / ".roo").exists())
+            self.assertFalse((target / ".opencode").exists())
+            self.assertFalse((target / ".planning").exists())
+            installed_path = target / ".harness/installed-manifest.json"
+            self.assertTrue(installed_path.exists())
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual(["README.md"], sorted(installed["files"]))
+
+    def test_uninstall_harness_all_scopes_can_remove_install_state_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "1,2,3,4,5",
+                    "--remove-install-state",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertIn("WARNING: removing .harness/installed-manifest.json", result.stdout)
+            self.assertFalse((target / ".harness/installed-manifest.json").exists())
+
+    def test_uninstall_harness_interactive_all_scopes_asks_before_install_state_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--interactive",
+                ],
+                input=f"{target}\n1,2,3,4,5\nno\nno\n",
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual("", result.stderr)
+            self.assertEqual(0, result.returncode)
+            self.assertIn("Also remove .harness/installed-manifest.json?", result.stdout)
+            self.assertTrue((target / ".harness/installed-manifest.json").exists())
+
+    def test_uninstall_harness_install_state_removal_requires_all_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "both"])
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/uninstall_harness.py"),
+                    "--target",
+                    str(target),
+                    "--select",
+                    "1",
+                    "--remove-install-state",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("--remove-install-state requires selecting all uninstall scopes", result.stderr)
+
     def test_harness_uninstall_command_delegates_to_uninstall_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"

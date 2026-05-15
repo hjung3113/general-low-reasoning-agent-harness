@@ -21,6 +21,9 @@ CHOICES = {
 }
 
 DOCS_WARNING = "WARNING: removing planning/docs is not recommended; project planning history will be deleted."
+INSTALL_STATE_WARNING = (
+    "WARNING: removing .harness/installed-manifest.json disables normal harness upgrade/adopt tracking."
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,10 @@ def prompt_interactive(args: argparse.Namespace) -> argparse.Namespace:
     print("  4. Core protocol only, excluding adapters, runtime, and docs")
     print("  5. Planning/docs only (not recommended)")
     args.select = prompt_value("Selection", args.select)
+    selected = parse_selection(args.select)
+    if selects_all_scopes(selected):
+        manifest_answer = prompt_value("Also remove .harness/installed-manifest.json? (yes/no)", "no").lower()
+        args.remove_install_state = manifest_answer in {"y", "yes"}
     dry_answer = prompt_value("Dry-run first? (yes/no)", "yes").lower()
     args.dry_run = dry_answer not in {"n", "no"}
     return args
@@ -69,16 +76,34 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--select", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--interactive", action="store_true")
+    parser.add_argument(
+        "--remove-install-state",
+        action="store_true",
+        help="Also remove .harness/installed-manifest.json. Requires selecting all uninstall scopes.",
+    )
     args = parser.parse_args(argv)
     if args.interactive:
         args = prompt_interactive(args)
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     selected = parse_selection(args.select)
-    return uninstall(target=args.target, selected=selected, dry_run=args.dry_run)
+    if args.remove_install_state and not selects_all_scopes(selected):
+        raise SystemExit("--remove-install-state requires selecting all uninstall scopes: 1,2,3,4,5")
+    return uninstall(
+        target=args.target,
+        selected=selected,
+        dry_run=args.dry_run,
+        remove_install_state=args.remove_install_state,
+    )
 
 
-def uninstall(*, target: Path, selected: set[str], dry_run: bool = False) -> int:
+def uninstall(
+    *,
+    target: Path,
+    selected: set[str],
+    dry_run: bool = False,
+    remove_install_state: bool = False,
+) -> int:
     target = target.resolve()
     installed_path = target / harness.INSTALL_STATE
     if not installed_path.exists():
@@ -91,6 +116,8 @@ def uninstall(*, target: Path, selected: set[str], dry_run: bool = False) -> int
     plan = build_removal_plan(target=target, installed_files=files, selected=selected)
     for warning in plan.warnings:
         print(warning)
+    if remove_install_state:
+        print(INSTALL_STATE_WARNING)
     if plan.conflicts and not dry_run:
         print("uninstall conflicts")
         for path_text in plan.conflicts:
@@ -104,6 +131,7 @@ def uninstall(*, target: Path, selected: set[str], dry_run: bool = False) -> int
         print("selected=" + ",".join(sorted(selected)))
         print(f"planned_file_removals={len(plan.remove_paths)}")
         print(f"planned_block_removals={len(plan.remove_blocks)}")
+        print(f"planned_install_state_removal={str(remove_install_state).lower()}")
         print(f"conflicts={len(plan.conflicts)}")
         for path_text in plan.conflicts:
             print(f"conflict={path_text}")
@@ -130,16 +158,20 @@ def uninstall(*, target: Path, selected: set[str], dry_run: bool = False) -> int
         files.pop(path_text, None)
 
     update_installed_scopes(installed, selected)
-    if files:
-        harness.write_json(installed_path, installed)
-    else:
+    if remove_install_state:
         installed_path.unlink()
         harness.remove_empty_parents(installed_path.parent, target)
+    else:
+        harness.write_json(installed_path, installed)
 
     print("uninstall complete")
     print(f"removed_files={len(plan.remove_paths)}")
     print(f"removed_blocks={len(plan.remove_blocks)}")
     return 1 if plan.conflicts else 0
+
+
+def selects_all_scopes(selected: set[str]) -> bool:
+    return set(CHOICES.values()).issubset(selected)
 
 
 def build_removal_plan(*, target: Path, installed_files: dict[str, object], selected: set[str]) -> RemovalPlan:
