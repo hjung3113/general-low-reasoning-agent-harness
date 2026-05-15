@@ -12,11 +12,10 @@ Before creating or reshaping ROADMAP phases, phase folders, ADR decisions, or ph
 
 Every roadmap phase starts with its own `discuss` pass before `plan` or `execute`. Before finalizing ADR decisions or phase commitments, run an adversarial review with two relevant expert roles, three lenses each, and the mandatory lens of whether the questions are concrete enough for low-reasoning models. `--auto` may select recommended low-risk defaults and must record auditable `auto_selected` entries. `--chain` may continue through one phase's `discuss -> plan -> execute` only when `.scratch/phase-state.json` is verified or written with `phase=execute`, the same `plan_id`, `approved=true`, `automation_mode=chain`, durable pointers, allowed paths, verification, and review checks.
 
-## File Ownership
+## Project-Specific Instructions
 
-- Adapter folders such as `.roo/**`, `.opencode/**`, `.roomodes`, phase-state schema files, profile skill packs, and distributed `scripts/*.py` files are harness-owned.
-- `.planning/**` and `.scratch/phase-state.json` are project-owned after initialization.
-- `AGENTS.md` and `README.md` may contain managed harness guidance plus project-specific sections.
+Project-specific agent instructions belong outside this harness-managed marker block.
+Do not edit this marker block manually; use `harness.py upgrade` to update it.
 
 ## Skill Plugins
 

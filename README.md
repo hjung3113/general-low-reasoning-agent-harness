@@ -469,7 +469,9 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade \
 
 `--adopt-existing`은 선택한 manifest 범위만 install state로 가져옵니다. 빈 target을 init처럼 bootstrap하지 않으며, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, `.scratch/phase-state.json`이 없는 target은 거부합니다.
 
-`--force`는 기존과 같이 whole-file `harness-owned`/`managed` 충돌 교체에만 적용되며, `.planning/**` 같은 project-owned 진행 문서는 덮어쓰지 않습니다. 첫 adopt에서 `--force`로 기존 whole-file 파일을 덮을 때는 원본을 `.harness/conflicts/<path>.adopted`에 먼저 남깁니다.
+`--force`는 기존과 같이 whole-file `harness-owned`/`managed` 충돌 교체에만 적용되며, `.planning/**`이나 target `README.md` 같은 project-owned 문서는 덮어쓰지 않습니다. 첫 adopt에서 `--force`로 기존 whole-file 파일을 덮을 때는 원본을 `.harness/conflicts/<path>.adopted`에 먼저 남깁니다.
+
+Target `AGENTS.md`는 `.gitignore`처럼 marker block 안의 harness guidance만 upgrade합니다. 프로젝트별 agent 지침은 marker 밖에 둡니다.
 
 pack을 더 추가하거나 adapter 구성을 바꾸려면 upgrade 때 명시합니다. 이 경우 새 선택이 다음 upgrade의 remembered scope가 됩니다.
 

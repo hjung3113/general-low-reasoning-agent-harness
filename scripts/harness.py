@@ -64,11 +64,6 @@ REQUIRED_TARGET_PHRASES = {
         "If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`",
         "Every roadmap phase starts with its own `discuss` pass",
     ),
-    "README.md": (
-        "Fresh target first action",
-        "python3 scripts/harness.py check",
-        "project_dashboard.py",
-    ),
 }
 CONTAMINATION_PATTERNS = (
     re.compile(r"\bPR\s*#\d+\b", re.IGNORECASE),
@@ -252,7 +247,7 @@ def install(
     existing = [
         str(entry.path)
         for entry, _, destination in destinations
-        if entry.policy != "managed-append" and (destination.exists() or destination.is_symlink())
+        if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
     ]
     if existing:
         raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
@@ -265,6 +260,8 @@ def install(
         if not dry_run:
             if entry.policy == "managed-append":
                 write_managed_append(source=source, destination=destination, entry=entry)
+            elif entry.policy == "project-owned" and destination.exists():
+                continue
             else:
                 write_copy(source, destination)
 
@@ -929,8 +926,7 @@ def build_adopted_install_state(
             "Cannot adopt target missing required project-owned files: " + ", ".join(sorted(missing_project_owned))
         )
     has_existing_harness_artifact = any(
-        entry.policy in {"harness-owned", "managed", "managed-append"} and destination_path(target, entry).exists()
-        for entry in selected_entries
+        is_existing_harness_artifact(root=root, target=target, entry=entry) for entry in selected_entries
     )
     if not has_existing_harness_artifact:
         raise SystemExit("Cannot adopt target without existing selected harness files. Run init instead.")
@@ -1012,6 +1008,24 @@ def is_required_adoption_project_owned_path(path_text: str) -> bool:
         ".planning/ROADMAP.md",
         ".scratch/phase-state.json",
     } or path_text.startswith(".planning/codebase/")
+
+
+def is_optional_project_owned_path(path_text: str) -> bool:
+    return path_text == "README.md"
+
+
+def is_existing_harness_artifact(*, root: Path, target: Path, entry: ManifestEntry) -> bool:
+    if entry.policy not in {"harness-owned", "managed", "managed-append"}:
+        return False
+    destination = destination_path(target, entry)
+    if not destination.exists():
+        return False
+    if entry.policy != "managed-append":
+        return True
+    try:
+        return parse_append_block(destination.read_text(encoding="utf-8"), entry.path.as_posix()) is not None
+    except ValueError:
+        return True
 
 
 def remove_empty_parents(path: Path, stop: Path) -> None:
@@ -1098,6 +1112,13 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     for path_text in installed.get("files", {}):
         destination = target / normalize_path(path_text)
         if not destination.exists():
+            info = installed.get("files", {}).get(path_text)
+            if (
+                isinstance(info, dict)
+                and info.get("policy") == "project-owned"
+                and is_optional_project_owned_path(path_text)
+            ):
+                continue
             missing.append(path_text)
             continue
         info = installed.get("files", {}).get(path_text)
@@ -1106,6 +1127,21 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     if missing:
         raise SystemExit("Installed target is missing files: " + ", ".join(missing))
     if expected_entries is not None:
+        expected_by_path = {str(entry.path): entry for entry in expected_entries if entry.policy != "exclude"}
+        policy_mismatches = []
+        for path_text, entry in expected_by_path.items():
+            info = installed.get("files", {}).get(path_text)
+            if not isinstance(info, dict):
+                continue
+            if info.get("policy") != entry.policy:
+                policy_mismatches.append(f"{path_text}: installed {info.get('policy')} != current {entry.policy}")
+                continue
+            if entry.policy == "managed-append":
+                destination = target / normalize_path(path_text)
+                if destination.exists():
+                    validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
+        if policy_mismatches:
+            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches))
         expected_paths = {
             str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
         }
@@ -1129,7 +1165,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         if not path.exists():
             missing_phrases.append(f"{relative}: missing file")
             continue
-        text = path.read_text(encoding="utf-8")
+        text = required_phrase_scope(path=path, relative=relative)
         for phrase in phrases:
             if phrase not in text:
                 missing_phrases.append(f"{relative}: {phrase}")
@@ -1182,6 +1218,19 @@ def validate_installed_managed_append(*, destination: Path, path_text: str, info
     applied_sha256 = info.get("applied_sha256")
     if applied_sha256 and sha256_text(parsed.text) != applied_sha256:
         raise SystemExit(f"Installed managed-append marker hash drift: {path_text}")
+
+
+def required_phrase_scope(*, path: Path, relative: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    if relative != "AGENTS.md":
+        return text
+    try:
+        parsed = parse_append_block(text, relative)
+    except ValueError as exc:
+        raise SystemExit(f"Installed managed-append marker is malformed: {relative}") from exc
+    if parsed is None:
+        raise SystemExit(f"Required guardrail phrases missing: {relative}: missing managed marker")
+    return parsed.payload
 
 
 def write_json(path: Path, data: object) -> None:
