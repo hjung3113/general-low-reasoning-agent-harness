@@ -4,6 +4,7 @@
 - Do not edit agent-control files. Route `AGENTS.md`, `.roo/**`, and `.roomodes` changes to `harness-maintainer`.
 - Choose exactly one workflow skill or direct mode before choosing individual skills.
 - Slash commands are thin entry points. Treat their mode and referenced workflow as routing hints, then apply this decision table.
+- Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 ## Exclusive Routing Table
 
@@ -59,12 +60,8 @@ phase: <discuss|plan|execute|done>
 plan_id: <id-or-none>
 approved: <true|false>
 read_first:
-  - AGENTS.md
-  - .planning/STATE.md
-  - .planning/ROADMAP.md
-  - .planning/codebase/**
-  - <active phase files>
-  - .scratch/phase-state.json
+  - <exact paths from show_phase_status.required_reads>
+  - <exact warning paths when warnings are present>
 focused_files:
   - <task-specific files>
 allowed_writes:
@@ -96,4 +93,3 @@ scope_deviations:
   - <deviation-or-none>
 next_recommended_route: <mode/workflow-or-none>
 ```
-

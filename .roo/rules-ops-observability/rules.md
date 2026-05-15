@@ -1,5 +1,6 @@
 # Ops Observability Rules
 
+- Apply `.roo/rules-orchestrator/rules.md` before these mode rules.
 - Every operational workflow needs structured logs, stable fields, and failure signals.
 - Prefer explicit processing events for operator-visible failures.
 - Define retry ownership and boundaries.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -106,6 +107,7 @@ def main() -> int:
             run([sys.executable, "scripts/harness.py", *version_args, "init", "--target", str(target), *options], cwd=root, env=command_env)
             run([sys.executable, "scripts/harness.py", *version_args, "check", "--target", str(target)], cwd=root, env=command_env)
             run([sys.executable, "scripts/harness.py", "check"], cwd=target, env=command_env)
+            assert_installed_preflight(target, command_env)
             run([sys.executable, "scripts/test_harness.py"], cwd=target, env=command_env)
             print(f"PASS {name} {target}")
         print(f"TMP {matrix_root}")
@@ -117,6 +119,46 @@ def main() -> int:
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
     subprocess.run(command, cwd=cwd, env=env, check=True)
+
+
+def assert_installed_preflight(target: Path, env: dict[str, str]) -> None:
+    status = subprocess.run(
+        [sys.executable, "scripts/show_phase_status.py"],
+        cwd=target,
+        env=env,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    payload = json.loads(status.stdout)
+    if payload.get("contract_version") != "phase-status.v1":
+        raise SystemExit(f"{target}: unsupported phase status contract {payload.get('contract_version')!r}")
+    blocking = [
+        warning
+        for warning in payload.get("warnings", [])
+        if isinstance(warning, dict) and warning.get("severity") == "blocking"
+    ]
+    if blocking:
+        raise SystemExit(f"{target}: installed status script reported blocking warnings: {blocking!r}")
+
+    doctor = subprocess.run(
+        [sys.executable, "scripts/harness.py", "doctor", "--format", "json"],
+        cwd=target,
+        env=env,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    findings = json.loads(doctor.stdout).get("findings", [])
+    severe = [
+        finding
+        for finding in findings
+        if isinstance(finding, dict) and finding.get("severity") in {"P1", "P2"}
+    ]
+    if severe:
+        raise SystemExit(f"{target}: installed doctor reported P1/P2 findings: {severe!r}")
 
 
 if __name__ == "__main__":

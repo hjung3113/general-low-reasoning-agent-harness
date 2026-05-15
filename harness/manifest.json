@@ -645,6 +645,21 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/show_phase_status.py",
+      "source": "scripts/show_phase_status.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/__init__.py",
+      "source": "scripts/lib/__init__.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/planning_status.py",
+      "source": "scripts/lib/planning_status.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"

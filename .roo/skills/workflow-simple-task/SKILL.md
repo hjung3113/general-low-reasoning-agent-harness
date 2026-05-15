@@ -8,6 +8,8 @@ description: Handles small, reversible tasks without the full discuss -> plan ->
 
 Lightweight path for small tasks where a full phase plan would add more overhead than safety. This workflow is not a loophole around ownership, tests, or specialist workflows.
 
+Apply `.roo/rules-orchestrator/rules.md` before this workflow.
+
 ## Qualifying Tasks
 
 Use this workflow only when all are true:

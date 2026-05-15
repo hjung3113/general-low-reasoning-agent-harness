@@ -31,11 +31,45 @@ class TargetHarnessSmokeTests(unittest.TestCase):
         self.assertEqual("discuss", state["phase"])
         self.assertFalse(state["approved"])
 
+    def test_show_phase_status_preflight_has_no_blocking_warnings(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "scripts/show_phase_status.py"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual("phase-status.v1", payload["contract_version"])
+        self.assertFalse(
+            [warning for warning in payload["warnings"] if warning["severity"] == "blocking"],
+            payload["warnings"],
+        )
+
+    def test_harness_doctor_has_no_p1_or_p2_findings(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "scripts/harness.py", "doctor", "--format", "json"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        payload = json.loads(completed.stdout)
+        severe = [finding for finding in payload["findings"] if finding["severity"] in {"P1", "P2"}]
+        self.assertFalse(severe, severe)
+
     def test_required_target_files_exist(self) -> None:
+        state = json.loads(Path(".scratch/phase-state.json").read_text(encoding="utf-8"))
+        checkpoint_path = state.get("checkpoint_path")
+        self.assertIsInstance(checkpoint_path, str)
         required = [
             "AGENTS.md",
             "README.md",
-            ".planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
+            checkpoint_path,
             "scripts/harness.py",
         ]
         adapters = set(self.installed().get("adapters", []))

@@ -4,7 +4,7 @@ Project-local workflow skills live under `.agents/skills/` as composable plugins
 
 ## Planning State
 
-Fresh sessions must start with `.planning/STATE.md`, then `.planning/ROADMAP.md`, then `.planning/codebase/**`, then the active phase checkpoint under `.planning/phases/`. Use `.scratch/phase-state.json` as the live phase gate only after reading durable planning docs.
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, adapter, profile, and skill-pack changes are allowed only when explicitly requested.
 
@@ -55,4 +55,3 @@ Turn each task into a verifiable goal.
 - For behavior changes, add or run focused tests.
 - For refactors, verify behavior before and after.
 - For multi-step work, keep a brief plan tied to verification.
-

@@ -1,6 +1,6 @@
 {
   "phase": "done",
-  "approved": true,
+  "approved": false,
   "approved_by": "user",
   "approved_at": "2026-05-14T15:00:00Z",
   "plan_id": "generalized-harness-release-01",

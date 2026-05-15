@@ -2,19 +2,15 @@
 
 Use this command for `phase=discuss` work only.
 
+Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+
 Preflight checklist:
 
 - [ ] `.scratch/phase-state.json` is `phase=discuss`, or the user explicitly asked for read-only planning discovery from another non-execute state.
 - [ ] No application-code edits are needed for this command.
 - [ ] Any stack/profile/tool recommendation will be backed by repository evidence or explicit user input.
 
-1. Read `AGENTS.md`.
-2. Read `.planning/STATE.md`.
-3. Read `.planning/ROADMAP.md`.
-4. Read `.planning/codebase/**`.
-5. Read the active phase checkpoint under `.planning/phases/**`.
-6. Read active phase context, plan, review, verification, and summary files when present.
-7. Read `.scratch/phase-state.json` last.
+When the status projection is trustworthy, use it to resolve active phase docs. During fallback, use the deterministic order below. Read `.scratch/phase-state.json` last.
 
 Resolve active phase docs in this order:
 
