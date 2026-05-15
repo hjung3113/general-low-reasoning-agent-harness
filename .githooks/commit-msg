@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+branch="$(git branch --show-current)"
+
+if [ "$branch" != "main" ]; then
+  exit 0
+fi
+
+merge_head_path="$(git rev-parse --git-path MERGE_HEAD)"
+
+if [ ! -f "$merge_head_path" ]; then
+  exit 0
+fi
+
+merge_head="$(cat "$merge_head_path")"
+
+for ref in refs/heads/develop refs/remotes/origin/develop refs/heads/hotfix/* refs/remotes/origin/hotfix/*
+do
+  for candidate in $(git for-each-ref --format='%(objectname)' "$ref")
+  do
+    if [ "$merge_head" = "$candidate" ]; then
+      exit 0
+    fi
+  done
+done
+
+cat >&2 <<'EOF'
+Blocked: merge commits on main are only allowed from develop or hotfix/*.
+
+Allowed:
+  git merge --no-ff develop
+  git merge --no-ff hotfix/<name>
+EOF
+exit 1

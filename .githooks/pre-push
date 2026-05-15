@@ -3,15 +3,67 @@ set -eu
 
 protected_branch="refs/heads/main"
 
+is_allowed_main_commit() {
+  commit="$1"
+
+  parents="$(git rev-list --parents -n 1 "$commit")"
+  parent_count="$(printf '%s\n' "$parents" | wc -w | tr -d ' ')"
+
+  if [ "$parent_count" -lt 3 ]; then
+    return 1
+  fi
+
+  second_parent="$(printf '%s\n' "$parents" | awk '{print $3}')"
+
+  for ref in refs/heads/develop refs/remotes/origin/develop refs/heads/hotfix/* refs/remotes/origin/hotfix/*
+  do
+    for candidate in $(git for-each-ref --format='%(objectname)' "$ref")
+    do
+      if [ "$second_parent" = "$candidate" ]; then
+        return 0
+      fi
+    done
+  done
+
+  return 1
+}
+
 while read local_ref local_sha remote_ref remote_sha
 do
   if [ "$local_ref" = "$protected_branch" ] || [ "$remote_ref" = "$protected_branch" ]; then
-    cat >&2 <<'EOF'
-Blocked: pushing main directly is not allowed.
-
-Use a feature branch and merge/version-bump deliberately:
-  git push -u origin <feature-branch>
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+      cat >&2 <<'EOF'
+Blocked: deleting main is not allowed.
 EOF
-    exit 1
+      exit 1
+    fi
+
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      range="$local_sha"
+    else
+      range="$remote_sha..$local_sha"
+    fi
+
+    for commit in $(git rev-list --first-parent "$range")
+    do
+      if ! is_allowed_main_commit "$commit"; then
+        cat >&2 <<'EOF'
+Blocked: pushing main is only allowed for merge commits from develop or hotfix/*.
+
+Allowed release/hotfix flow:
+  git switch main
+  git merge --no-ff develop
+  git push origin main
+
+  git switch main
+  git merge --no-ff hotfix/<name>
+  git push origin main
+EOF
+        printf '\nRejected commit: %s\n' "$commit" >&2
+        exit 1
+      fi
+    done
+
+    exit 0
   fi
 done
