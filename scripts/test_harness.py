@@ -559,6 +559,39 @@ progress:
             self.assertEqual("existing project memory", state.read_text(encoding="utf-8"))
             self.assertFalse((target / "AGENTS.md").exists())
 
+    def test_init_appends_gitignore_block_to_existing_project_gitignore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            target.mkdir()
+            gitignore = target / ".gitignore"
+            gitignore.write_text("node_modules/\n", encoding="utf-8")
+
+            result = harness.run(["init", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            text = gitignore.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("node_modules/\n"))
+            self.assertEqual(1, text.count("# >>> low-reasoning-harness:.gitignore v"))
+            self.assertIn(".scratch/reports/", text)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            info = installed["files"][".gitignore"]
+            self.assertEqual("managed-append", info["policy"])
+            self.assertEqual(harness.HARNESS_VERSION, info["version"])
+            self.assertIn("source_sha256", info)
+            self.assertIn("applied_sha256", info)
+
+    def test_init_still_refuses_existing_non_append_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            agents = target / "AGENTS.md"
+            agents.parent.mkdir(parents=True)
+            agents.write_text("project agents", encoding="utf-8")
+
+            with self.assertRaisesRegex(SystemExit, "Refusing to overwrite"):
+                harness.run(["init", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual("project agents", agents.read_text(encoding="utf-8"))
+
     def test_init_dry_run_has_no_filesystem_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -625,6 +658,85 @@ progress:
             self.assertEqual("real project state", state.read_text(encoding="utf-8"))
             self.assertEqual("local command edit", command.read_text(encoding="utf-8"))
             self.assertTrue((target / ".harness/conflicts/.roo/commands/simple.md.new").exists())
+
+    def test_upgrade_migrates_unmodified_legacy_managed_gitignore_to_marker_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            legacy = (harness.repo_root() / "harness/skeleton/clean/.gitignore").read_text(encoding="utf-8")
+            gitignore.write_text(legacy, encoding="utf-8")
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["files"][".gitignore"] = {"policy": "managed", "sha256": harness.file_hash(gitignore)}
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            text = gitignore.read_text(encoding="utf-8")
+            self.assertEqual(1, text.count(".scratch/reports/"))
+            self.assertEqual(1, text.count("# >>> low-reasoning-harness:.gitignore v"))
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual("managed-append", installed["files"][".gitignore"]["policy"])
+
+    def test_upgrade_conflicts_modified_legacy_managed_gitignore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            gitignore.write_text("legacy\n", encoding="utf-8")
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["files"][".gitignore"] = {"policy": "managed", "sha256": harness.file_hash(gitignore)}
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            gitignore.write_text("legacy\nlocal edit\n", encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(1, result)
+            self.assertEqual("legacy\nlocal edit\n", gitignore.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/conflicts/.gitignore.new").exists())
+
+    def test_upgrade_conflicts_local_edits_inside_gitignore_marker_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            original = gitignore.read_text(encoding="utf-8")
+            gitignore.write_text(
+                original.replace(".scratch/reports/", ".scratch/reports/\nlocal-inside-block/"),
+                encoding="utf-8",
+            )
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(1, result)
+            self.assertIn("local-inside-block/", gitignore.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/conflicts/.gitignore.new").exists())
+
+    def test_same_version_upgrade_adds_new_pack_without_rewriting_existing_append_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none", "--packs", "workflow-core"])
+            gitignore = target / ".gitignore"
+            before = gitignore.read_text(encoding="utf-8")
+
+            result = harness.run(
+                [
+                    "upgrade",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "none",
+                    "--packs",
+                    "workflow-core,workflow-tdd",
+                ]
+            )
+
+            self.assertEqual(0, result)
+            self.assertEqual(before, gitignore.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".agents/skills/workflow-tdd/SKILL.md").exists())
 
     def test_init_records_scope_and_upgrade_reuses_it_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -748,6 +860,95 @@ progress:
             with self.assertRaisesRegex(SystemExit, "Required guardrail phrases missing"):
                 harness.run(["check", "--target", str(target)])
 
+    def test_check_target_rejects_gitignore_marker_hash_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            gitignore.write_text(
+                gitignore.read_text(encoding="utf-8").replace(".env\n", ".env\nmanual-inside-block/\n"),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "managed-append"):
+                harness.run(["check", "--target", str(target)])
+
+    def test_upgrade_normalizes_legacy_project_owned_state_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            state_path = target / ".planning/STATE.md"
+            installed["files"][".planning/STATE.md"] = {
+                "policy": "project-owned",
+                "sha256": harness.file_hash(state_path),
+            }
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            info = installed["files"][".planning/STATE.md"]
+            self.assertEqual("project-owned", info["policy"])
+            self.assertEqual(harness.HARNESS_VERSION, info["version"])
+            self.assertIn("source_sha256", info)
+            self.assertIn("owner", info)
+
+    def test_append_marker_version_only_change_does_not_rewrite_gitignore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, mock.patch.object(harness, "HARNESS_VERSION", "9.9.9"):
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            original = gitignore.read_text(encoding="utf-8")
+            downgraded = original.replace("v9.9.9", "v0.4.0")
+            gitignore.write_text(downgraded, encoding="utf-8")
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["files"][".gitignore"]["applied_sha256"] = harness.sha256_text(downgraded)
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            self.assertEqual(downgraded, gitignore.read_text(encoding="utf-8"))
+
+    def test_upgrade_dry_run_marker_conflict_has_no_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            installed_path = target / ".harness/installed-manifest.json"
+            original_gitignore = gitignore.read_text(encoding="utf-8")
+            original_state = installed_path.read_text(encoding="utf-8")
+            gitignore.write_text(original_gitignore.replace(".env\n", ".env\nmanual-inside-block/\n"), encoding="utf-8")
+            drifted_gitignore = gitignore.read_text(encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none", "--dry-run"])
+
+            self.assertEqual(1, result)
+            self.assertEqual(drifted_gitignore, gitignore.read_text(encoding="utf-8"))
+            self.assertEqual(original_state, installed_path.read_text(encoding="utf-8"))
+            self.assertFalse((target / ".harness/conflicts/.gitignore.new").exists())
+
+    def test_upgrade_malformed_gitignore_marker_conflicts_without_rewrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            gitignore = target / ".gitignore"
+            malformed = gitignore.read_text(encoding="utf-8").replace(
+                "# <<< low-reasoning-harness:.gitignore\n",
+                "",
+            )
+            gitignore.write_text(malformed, encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(1, result)
+            self.assertEqual(malformed, gitignore.read_text(encoding="utf-8"))
+            self.assertTrue((target / ".harness/conflicts/.gitignore.new").exists())
+
     def test_upgrade_removes_unmodified_retired_harness_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -791,6 +992,29 @@ progress:
             self.assertEqual(1, result)
             self.assertEqual("locally edited retired command", retired.read_text(encoding="utf-8"))
             self.assertTrue((target / ".harness/conflicts/.roo/commands/retired.md.retired").exists())
+
+    def test_upgrade_removes_unmodified_retired_managed_append_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["init", "--target", str(target), "--adapters", "none"])
+            retired = target / "old.append"
+            block = "# >>> low-reasoning-harness:old.append v0.4.0\nold/\n# <<< low-reasoning-harness:old.append\n"
+            retired.write_text("project-line\n\n" + block, encoding="utf-8")
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["files"]["old.append"] = {
+                "policy": "managed-append",
+                "sha256": harness.file_hash(retired),
+                "applied_sha256": harness.sha256_text(block),
+            }
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            result = harness.run(["upgrade", "--target", str(target), "--adapters", "none"])
+
+            self.assertEqual(0, result)
+            self.assertEqual("project-line\n\n", retired.read_text(encoding="utf-8"))
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertNotIn("old.append", installed["files"])
 
     def test_check_rejects_contaminated_clean_skeleton(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

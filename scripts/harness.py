@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
@@ -22,6 +23,7 @@ CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
 KNOWN_ADAPTERS = {"roo", "opencode"}
 KNOWN_PROFILES = {"generic", "dotnet-etl-mssql"}
+KNOWN_POLICIES = {"harness-owned", "managed", "managed-append", "project-owned", "exclude"}
 KNOWN_PACKS = {
     "workflow-core",
     "tech-python",
@@ -228,7 +230,11 @@ def install(
         for entry in entries
         if entry.policy != "exclude"
     ]
-    existing = [str(entry.path) for entry, _, destination in destinations if destination.exists() or destination.is_symlink()]
+    existing = [
+        str(entry.path)
+        for entry, _, destination in destinations
+        if entry.policy != "managed-append" and (destination.exists() or destination.is_symlink())
+    ]
     if existing:
         raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
 
@@ -236,9 +242,12 @@ def install(
         return
 
     target.mkdir(parents=True, exist_ok=True)
-    for _, source, destination in destinations:
+    for entry, source, destination in destinations:
         if not dry_run:
-            write_copy(source, destination)
+            if entry.policy == "managed-append":
+                write_managed_append(source=source, destination=destination, entry=entry)
+            else:
+                write_copy(source, destination)
 
     write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
 
@@ -270,12 +279,36 @@ def upgrade(
     current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
 
     for entry in entries:
-        if entry.policy not in {"harness-owned", "managed"}:
+        if entry.policy not in {"harness-owned", "managed", "managed-append"}:
             continue
 
         source = source_path(root, entry)
         destination = destination_path(target, entry)
         new_hash = file_hash(source)
+
+        if entry.policy == "managed-append":
+            result = plan_managed_append(
+                source=source,
+                destination=destination,
+                entry=entry,
+                installed_info=installed_paths.get(str(entry.path), {}),
+            )
+            if result.conflict:
+                conflicts += 1
+                if not dry_run:
+                    write_text_conflict(target, f"{entry.path}.new", result.proposed_block)
+                continue
+            if not dry_run and result.updated_text is not None:
+                write_text_file(destination, result.updated_text)
+            if not dry_run:
+                installed.setdefault("files", {})[str(entry.path)] = file_state(
+                    root=root,
+                    target=target,
+                    entry=entry,
+                    source=source,
+                    applied_sha256=result.applied_sha256,
+                )
+            continue
 
         if destination.exists() and not force:
             old_hash = installed_paths.get(str(entry.path), {}).get("sha256")
@@ -289,17 +322,31 @@ def upgrade(
 
         if not dry_run:
             write_copy(source, destination)
-            installed.setdefault("files", {})[str(entry.path)] = {
-                "policy": entry.policy,
-                "sha256": new_hash,
-            }
+            installed.setdefault("files", {})[str(entry.path)] = file_state(
+                root=root,
+                target=target,
+                entry=entry,
+                source=source,
+            )
 
     for path_text, info in list(installed_paths.items()):
         if path_text in current_paths:
             continue
-        if not isinstance(info, dict) or info.get("policy") not in {"harness-owned", "managed"}:
+        if not isinstance(info, dict) or info.get("policy") not in {"harness-owned", "managed", "managed-append"}:
             continue
         destination = target / normalize_path(path_text)
+        if info.get("policy") == "managed-append":
+            result = plan_managed_append_retirement(destination=destination, path_text=path_text, installed_info=info)
+            if result.conflict:
+                conflicts += 1
+                if not dry_run:
+                    write_text_conflict(target, f"{path_text}.retired", result.proposed_block)
+                continue
+            if not dry_run:
+                if result.updated_text is not None:
+                    write_text_file(destination, result.updated_text)
+                installed.setdefault("files", {}).pop(path_text, None)
+            continue
         old_hash = info.get("sha256")
         if destination.exists() and old_hash and file_hash(destination) != old_hash:
             conflicts += 1
@@ -311,7 +358,10 @@ def upgrade(
             if destination.exists():
                 destination.unlink()
                 remove_empty_parents(destination.parent, target)
-            installed.setdefault("files", {}).pop(path_text, None)
+                installed.setdefault("files", {}).pop(path_text, None)
+
+    if not dry_run:
+        normalize_selected_project_owned_state(root=root, target=target, entries=entries, installed=installed)
 
     installed["version"] = HARNESS_VERSION
     installed["adapters"] = sorted(adapters)
@@ -320,6 +370,8 @@ def upgrade(
     installed["init_options"] = scope_record(adapters=adapters, profiles=profiles, packs=packs)
     installed["pack_metadata"] = selected_pack_metadata(root, packs)
     installed["available_scopes"] = available_scopes(root)
+    installed["state_schema_version"] = 2
+    installed["manifest_sha256"] = manifest_sha256(root)
     if not dry_run:
         write_json(target / INSTALL_STATE, installed)
     return 1 if conflicts else 0
@@ -387,11 +439,14 @@ def load_manifest(root: Path) -> list[ManifestEntry]:
     data = load_manifest_data(root)
     entries = []
     for item in data.get("files", []):
+        policy = item["policy"]
+        if policy not in KNOWN_POLICIES:
+            raise SystemExit(f"Unknown manifest policy: {policy}")
         entries.append(
             ManifestEntry(
                 path=PurePosixPath(item["path"]),
                 source=PurePosixPath(item["source"]),
-                policy=item["policy"],
+                policy=policy,
                 owner=item.get("owner") or infer_owner(item["path"]),
                 adapter=item.get("adapter") or infer_adapter(item["path"]),
                 profile=item.get("profile"),
@@ -399,6 +454,7 @@ def load_manifest(root: Path) -> list[ManifestEntry]:
                 retired_action=item.get("retired_action", "remove_if_unmodified"),
             )
         )
+    validate_managed_append_destinations(entries)
     return entries
 
 
@@ -557,6 +613,253 @@ def write_copy(source: Path, destination: Path) -> None:
     shutil.copyfile(source, destination)
 
 
+def write_text_file(destination: Path, text: str) -> None:
+    assert_safe_write_destination(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(text, encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class AppendBlockPlan:
+    updated_text: str | None
+    proposed_block: str
+    applied_sha256: str | None
+    conflict: bool = False
+
+
+@dataclass(frozen=True)
+class ParsedAppendBlock:
+    start: int
+    end: int
+    text: str
+    payload: str
+
+
+def validate_managed_append_destinations(entries: Iterable[ManifestEntry]) -> None:
+    seen: dict[str, ManifestEntry] = {}
+    duplicates: list[str] = []
+    for entry in entries:
+        if entry.policy != "managed-append":
+            continue
+        path_text = str(entry.path)
+        if path_text in seen:
+            duplicates.append(path_text)
+        seen[path_text] = entry
+    if duplicates:
+        raise SystemExit("Duplicate managed-append destinations: " + ", ".join(sorted(set(duplicates))))
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def manifest_sha256(root: Path) -> str:
+    return file_hash(root / MANIFEST_PATH)
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def normalize_payload(text: str) -> str:
+    return text.rstrip("\n") + "\n"
+
+
+def marker_start(entry: ManifestEntry) -> str:
+    return f"# >>> low-reasoning-harness:{entry.path.as_posix()} v{HARNESS_VERSION}"
+
+
+def marker_end_for_path(path_text: str) -> str:
+    return f"# <<< low-reasoning-harness:{path_text}"
+
+
+def marker_end(entry: ManifestEntry) -> str:
+    return marker_end_for_path(entry.path.as_posix())
+
+
+def render_append_block(source: Path, entry: ManifestEntry) -> str:
+    return (
+        marker_start(entry)
+        + "\n"
+        + normalize_payload(source.read_text(encoding="utf-8"))
+        + marker_end(entry)
+        + "\n"
+    )
+
+
+def parse_append_block(text: str, path_text: str) -> ParsedAppendBlock | None:
+    escaped = re.escape(path_text)
+    start_pattern = re.compile(rf"^# >>> low-reasoning-harness:{escaped} v(?P<version>[^\s]+)$")
+    end_line = marker_end_for_path(path_text)
+    lines = text.splitlines(keepends=True)
+    start_indexes: list[int] = []
+    end_indexes: list[int] = []
+    offset = 0
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if start_pattern.fullmatch(stripped):
+            start_indexes.append(offset)
+        if stripped == end_line:
+            end_indexes.append(offset + len(line))
+        offset += len(line)
+    if not start_indexes and not end_indexes:
+        return None
+    if len(start_indexes) != 1 or len(end_indexes) != 1 or start_indexes[0] >= end_indexes[0]:
+        raise ValueError(f"Malformed managed-append block for {path_text}")
+    block_text = text[start_indexes[0] : end_indexes[0]]
+    block_lines = block_text.splitlines(keepends=True)
+    payload = "".join(block_lines[1:-1])
+    return ParsedAppendBlock(start=start_indexes[0], end=end_indexes[0], text=block_text, payload=payload)
+
+
+def append_block_to_text(existing: str, block: str) -> str:
+    if not existing:
+        return block
+    separator = "" if existing.endswith("\n\n") else "\n" if existing.endswith("\n") else "\n\n"
+    return existing + separator + block
+
+
+def replace_block(text: str, parsed: ParsedAppendBlock, block: str) -> str:
+    return text[: parsed.start] + block + text[parsed.end :]
+
+
+def write_managed_append(*, source: Path, destination: Path, entry: ManifestEntry) -> str:
+    plan = plan_managed_append(source=source, destination=destination, entry=entry, installed_info={})
+    if plan.conflict:
+        raise SystemExit(f"Refusing to write malformed managed-append destination: {entry.path}")
+    if plan.updated_text is not None:
+        write_text_file(destination, plan.updated_text)
+    return plan.applied_sha256 or sha256_text(plan.proposed_block)
+
+
+def plan_managed_append(
+    *,
+    source: Path,
+    destination: Path,
+    entry: ManifestEntry,
+    installed_info: object,
+) -> AppendBlockPlan:
+    block = render_append_block(source, entry)
+    block_hash = sha256_text(block)
+    info = installed_info if isinstance(installed_info, dict) else {}
+    if not destination.exists():
+        return AppendBlockPlan(updated_text=block, proposed_block=block, applied_sha256=block_hash)
+
+    text = destination.read_text(encoding="utf-8")
+    try:
+        parsed = parse_append_block(text, entry.path.as_posix())
+    except ValueError:
+        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
+
+    if parsed is None:
+        if info.get("policy") == "managed":
+            old_hash = info.get("sha256")
+            if old_hash and file_hash(destination) == old_hash:
+                return AppendBlockPlan(updated_text=block, proposed_block=block, applied_sha256=block_hash)
+            return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
+        return AppendBlockPlan(
+            updated_text=append_block_to_text(text, block),
+            proposed_block=block,
+            applied_sha256=block_hash,
+        )
+
+    current_hash = sha256_text(parsed.text)
+    old_applied_hash = info.get("applied_sha256")
+    if old_applied_hash and current_hash != old_applied_hash:
+        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
+    if not old_applied_hash and current_hash != block_hash:
+        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
+    if current_hash == block_hash:
+        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=block_hash)
+    if normalize_payload(parsed.payload) == normalize_payload(source.read_text(encoding="utf-8")):
+        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=current_hash)
+    return AppendBlockPlan(
+        updated_text=replace_block(text, parsed, block),
+        proposed_block=block,
+        applied_sha256=block_hash,
+    )
+
+
+def plan_managed_append_retirement(
+    *,
+    destination: Path,
+    path_text: str,
+    installed_info: dict[str, object],
+) -> AppendBlockPlan:
+    proposed = ""
+    if not destination.exists():
+        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None)
+    text = destination.read_text(encoding="utf-8")
+    try:
+        parsed = parse_append_block(text, path_text)
+    except ValueError:
+        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None, conflict=True)
+    if parsed is None:
+        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None)
+    old_applied_hash = installed_info.get("applied_sha256")
+    if old_applied_hash and sha256_text(parsed.text) != old_applied_hash:
+        return AppendBlockPlan(updated_text=None, proposed_block=parsed.text, applied_sha256=None, conflict=True)
+    if not old_applied_hash:
+        return AppendBlockPlan(updated_text=None, proposed_block=parsed.text, applied_sha256=None, conflict=True)
+    updated = text[: parsed.start] + text[parsed.end :]
+    return AppendBlockPlan(updated_text=updated, proposed_block=parsed.text, applied_sha256=None)
+
+
+def write_text_conflict(target: Path, path_text: str, content: str) -> None:
+    destination = target / ".harness/conflicts" / normalize_path(path_text)
+    write_text_file(destination, content)
+
+
+def file_state(
+    *,
+    root: Path,
+    target: Path,
+    entry: ManifestEntry,
+    source: Path,
+    applied_sha256: str | None = None,
+) -> dict[str, object]:
+    destination = destination_path(target, entry)
+    state: dict[str, object] = {
+        "policy": entry.policy,
+        "version": HARNESS_VERSION,
+        "installed_at": now_utc(),
+        "source_sha256": file_hash(source),
+        "sha256": file_hash(destination),
+        "owner": entry.owner,
+        "adapter": entry.adapter,
+        "profile": entry.profile,
+        "pack": entry.pack,
+    }
+    if applied_sha256 is not None:
+        state["applied_sha256"] = applied_sha256
+    return state
+
+
+def normalize_selected_project_owned_state(
+    *,
+    root: Path,
+    target: Path,
+    entries: Iterable[ManifestEntry],
+    installed: dict[str, object],
+) -> None:
+    files = installed.setdefault("files", {})
+    if not isinstance(files, dict):
+        return
+    for entry in entries:
+        if entry.policy != "project-owned":
+            continue
+        path_text = str(entry.path)
+        destination = destination_path(target, entry)
+        if not destination.exists():
+            continue
+        files[path_text] = file_state(
+            root=root,
+            target=target,
+            entry=entry,
+            source=source_path(root, entry),
+        )
+
+
 def remove_empty_parents(path: Path, stop: Path) -> None:
     stop = stop.resolve()
     current = path.resolve()
@@ -590,14 +893,26 @@ def write_install_state(
         if entry.policy == "exclude":
             continue
         destination = target / entry.path
-        files[str(entry.path)] = {
-            "policy": entry.policy,
-            "sha256": file_hash(destination),
-        }
+        source = source_path(root, entry)
+        applied_sha256 = None
+        if entry.policy == "managed-append":
+            parsed = parse_append_block(destination.read_text(encoding="utf-8"), entry.path.as_posix())
+            if parsed is None:
+                raise SystemExit(f"Installed managed-append file is missing marker: {entry.path}")
+            applied_sha256 = sha256_text(parsed.text)
+        files[str(entry.path)] = file_state(
+            root=root,
+            target=target,
+            entry=entry,
+            source=source,
+            applied_sha256=applied_sha256,
+        )
     write_json(
         target / INSTALL_STATE,
         {
+            "state_schema_version": 2,
             "version": HARNESS_VERSION,
+            "manifest_sha256": manifest_sha256(root),
             "source": str(root),
             "adapters": sorted(adapters),
             "profiles": sorted(profiles),
@@ -630,6 +945,10 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         destination = target / normalize_path(path_text)
         if not destination.exists():
             missing.append(path_text)
+            continue
+        info = installed.get("files", {}).get(path_text)
+        if isinstance(info, dict) and info.get("policy") == "managed-append":
+            validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
     if missing:
         raise SystemExit("Installed target is missing files: " + ", ".join(missing))
     if expected_entries is not None:
@@ -689,6 +1008,18 @@ def validate_installed_scope_names(installed: dict[str, object]) -> None:
             unknown.append(f"{kind}: {', '.join(missing)}")
     if unknown:
         raise SystemExit("Unknown installed harness scope: " + "; ".join(unknown))
+
+
+def validate_installed_managed_append(*, destination: Path, path_text: str, info: dict[str, object]) -> None:
+    try:
+        parsed = parse_append_block(destination.read_text(encoding="utf-8"), path_text)
+    except ValueError as exc:
+        raise SystemExit(f"Installed managed-append marker is malformed: {path_text}") from exc
+    if parsed is None:
+        raise SystemExit(f"Installed managed-append marker is missing: {path_text}")
+    applied_sha256 = info.get("applied_sha256")
+    if applied_sha256 and sha256_text(parsed.text) != applied_sha256:
+        raise SystemExit(f"Installed managed-append marker hash drift: {path_text}")
 
 
 def write_json(path: Path, data: object) -> None:
