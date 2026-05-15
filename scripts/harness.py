@@ -203,6 +203,39 @@ def development_version(root: Path) -> str:
     return f"0.0.0-dev+{sha}{suffix}"
 
 
+def git_source_provenance(root: Path) -> dict[str, str] | None:
+    try:
+        repo = git_output(root, ["git", "config", "--get", "remote.origin.url"])
+        commit = git_output(root, ["git", "rev-parse", "HEAD"])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    if not repo:
+        return None
+    tag = exact_release_tag_version(root)
+    if tag:
+        ref = f"v{tag}"
+    else:
+        try:
+            ref = git_output(root, ["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            ref = "HEAD"
+        if ref == "HEAD":
+            ref = commit
+    return {"kind": "git", "repo": repo, "ref": ref, "commit": commit}
+
+
+def source_provenance(root: Path) -> dict[str, str] | None:
+    provenance = delegated_source_provenance()
+    if provenance is None:
+        provenance = git_source_provenance(root)
+    if provenance is None:
+        return None
+    if "version" not in provenance:
+        provenance = dict(provenance)
+        provenance["version"] = HARNESS_VERSION
+    return provenance
+
+
 def resolve_harness_version(
     root: Path,
     *,
@@ -562,7 +595,7 @@ def upgrade(
     installed["state_schema_version"] = 2
     installed["manifest_sha256"] = manifest_sha256(root)
     installed["source"] = str(root.resolve())
-    provenance = delegated_source_provenance()
+    provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
     if not dry_run and not (adopting_missing_state and conflicts):
@@ -706,13 +739,16 @@ def scope_record(*, adapters: set[str], profiles: set[str], packs: set[str]) -> 
 def delegated_source_provenance(env: dict[str, str] | None = None) -> dict[str, str] | None:
     env = os.environ if env is None else env
     kind = env.get("HARNESS_DELEGATED_SOURCE_KIND")
+    repo = env.get("HARNESS_DELEGATED_SOURCE_REPO")
     ref = env.get("HARNESS_DELEGATED_SOURCE_REF")
     version = env.get("HARNESS_DELEGATED_SOURCE_VERSION")
-    if not kind and not ref and not version:
+    if not kind and not repo and not ref and not version:
         return None
     data: dict[str, str] = {}
     if kind:
         data["kind"] = kind
+    if repo:
+        data["repo"] = repo
     if ref:
         data["ref"] = ref
     if version:
@@ -1279,22 +1315,23 @@ def write_install_state(
             source=source,
             applied_sha256=applied_sha256,
         )
-    write_json(
-        target / INSTALL_STATE,
-        {
-            "state_schema_version": 2,
-            "version": HARNESS_VERSION,
-            "manifest_sha256": manifest_sha256(root),
-            "source": str(root),
-            "adapters": sorted(adapters),
-            "profiles": sorted(profiles),
-            "packs": sorted(packs),
-            "init_options": scope_record(adapters=adapters, profiles=profiles, packs=packs),
-            "pack_metadata": selected_pack_metadata(root, packs),
-            "available_scopes": available_scopes(root),
-            "files": files,
-        },
-    )
+    installed = {
+        "state_schema_version": 2,
+        "version": HARNESS_VERSION,
+        "manifest_sha256": manifest_sha256(root),
+        "source": str(root),
+        "adapters": sorted(adapters),
+        "profiles": sorted(profiles),
+        "packs": sorted(packs),
+        "init_options": scope_record(adapters=adapters, profiles=profiles, packs=packs),
+        "pack_metadata": selected_pack_metadata(root, packs),
+        "available_scopes": available_scopes(root),
+        "files": files,
+    }
+    provenance = source_provenance(root)
+    if provenance:
+        installed["source_provenance"] = provenance
+    write_json(target / INSTALL_STATE, installed)
 
 
 def read_install_state(target: Path) -> dict[str, object]:

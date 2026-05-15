@@ -344,6 +344,82 @@ class HarnessToolTests(unittest.TestCase):
             self.assertIn("no mutation performed", result.stdout)
             self.assertFalse((target / ".harness/sources").exists())
 
+    def test_init_records_detected_git_source_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+
+            with mock.patch.object(
+                harness,
+                "git_source_provenance",
+                return_value={
+                    "kind": "git",
+                    "repo": "git@github.company.com:team/harness.git",
+                    "ref": "v1.0.0",
+                    "commit": "abc123",
+                },
+            ):
+                harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                {
+                    "kind": "git",
+                    "repo": "git@github.company.com:team/harness.git",
+                    "ref": "v1.0.0",
+                    "commit": "abc123",
+                    "version": "1.0.0",
+                },
+                installed["source_provenance"],
+            )
+
+    def test_upgrade_harness_defaults_repo_to_installed_source_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v1.0.0", "init", "--target", str(target), "--adapters", "none"])
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["source_provenance"] = {
+                "kind": "git",
+                "repo": "git@github.company.com:team/harness.git",
+                "ref": "v1.0.0",
+                "version": "1.0.0",
+            }
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            defaulted = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--version",
+                    "v1.2.3",
+                    "--dry-run",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, defaulted.returncode, defaulted.stderr)
+            self.assertIn("would download source=git@github.company.com:team/harness.git@v1.2.3", defaulted.stdout)
+
+            explicit = subprocess.run(
+                [
+                    sys.executable,
+                    str(target / "scripts/upgrade_harness.py"),
+                    "--version",
+                    "v1.2.3",
+                    "--repo",
+                    "ssh://override.example/harness.git",
+                    "--dry-run",
+                ],
+                cwd=target,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, explicit.returncode, explicit.stderr)
+            self.assertIn("would download source=ssh://override.example/harness.git@v1.2.3", explicit.stdout)
+
     def test_upgrade_harness_rejects_cache_with_mismatched_repo_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"

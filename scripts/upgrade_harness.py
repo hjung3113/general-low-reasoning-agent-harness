@@ -73,6 +73,23 @@ def read_installed_source(target: Path) -> Path | None:
     return None
 
 
+def read_installed_source_repo(target: Path) -> str | None:
+    path = target / INSTALL_STATE
+    if not path.exists():
+        return None
+    try:
+        installed = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    provenance = installed.get("source_provenance")
+    if not isinstance(provenance, dict):
+        return None
+    repo = provenance.get("repo")
+    if not isinstance(repo, str) or not repo:
+        return None
+    return repo
+
+
 def ensure_git_source(target: Path, repo: str, ref: str, *, dry_run: bool) -> Path | None:
     cache = target / ".harness/sources" / repo_cache_key(repo, ref)
     if (cache / MANIFEST_PATH).exists():
@@ -130,7 +147,7 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", type=Path, default=None)
     parser.add_argument("--source", type=Path, default=None)
     parser.add_argument("--version", dest="release_version", default=None)
-    parser.add_argument("--repo", default=DEFAULT_HARNESS_REPO)
+    parser.add_argument("--repo", default=None)
     parser.add_argument("--ref", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -141,6 +158,8 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     target = (args.target.expanduser() if args.target else Path(__file__).resolve().parents[1]).resolve()
+    selected_repo = args.repo or read_installed_source_repo(target) or DEFAULT_HARNESS_REPO
+    args.repo = selected_repo
     source, kind, ref, version = resolve_source(args, target)
     print(f"selected source={source}")
     print(f"selected source_kind={kind}")
@@ -155,6 +174,8 @@ def run(argv: list[str] | None = None) -> int:
     print("delegating: " + " ".join(command))
     env = os.environ.copy()
     env["HARNESS_DELEGATED_SOURCE_KIND"] = kind
+    if kind in {"release", "ref"}:
+        env["HARNESS_DELEGATED_SOURCE_REPO"] = args.repo
     env["HARNESS_DELEGATED_SOURCE_REF"] = ref
     if version:
         env["HARNESS_DELEGATED_SOURCE_VERSION"] = version

@@ -83,6 +83,16 @@ OpenCode에서 버그/리뷰/보안 같은 세부 workflow를 수행할 때는 �
 python3 scripts/harness.py init --target /path/to/project
 ```
 
+source repository를 직접 열어보지 않고 원격에서 받아 설치하려면 임시 checkout에서 installer를 실행합니다.
+
+```bash
+tmp="$(mktemp -d)"
+git clone --depth 1 --branch v0.5.0 <HARNESS_REPO_URL> "$tmp"
+python3 "$tmp/scripts/install_harness.py"
+```
+
+사내 mirror나 fork에서 받은 git checkout은 `remote.origin.url`, release tag 또는 현재 ref, commit을 target의 `.harness/installed-manifest.json`에 기록합니다. 이후 `scripts/upgrade_harness.py --version ...`는 그 repo를 기본값으로 사용합니다.
+
 기본 설치 내용:
 
 - core planning skeleton
@@ -459,6 +469,15 @@ python3 scripts/upgrade_harness.py --version v0.5.0 --dry-run
 python3 scripts/upgrade_harness.py --version v0.5.0
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
+```
+
+설치 당시 git source provenance가 있으면 bootstrapper는 그 repo를 기본값으로 씁니다. public repo 접근이 막힌 사내 환경에서는 최초 설치를 사내 mirror에서 수행하거나, upgrade 때 repo를 명시합니다.
+
+```bash
+python3 scripts/upgrade_harness.py \
+  --repo git@github.company.com:team/general-low-reasoning-agent-harness.git \
+  --version v0.5.0 \
+  --dry-run
 ```
 
 local source를 직접 지정할 수도 있습니다.
