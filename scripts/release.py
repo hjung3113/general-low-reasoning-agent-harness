@@ -137,6 +137,9 @@ def run_release(
     bump: str,
     runner: CommandRunner,
     assume_yes: bool,
+    notes: str | None = None,
+    notes_file: Path | None = None,
+    generate_notes: bool = True,
 ) -> str:
     runner.run(["git", "fetch", "--tags", "origin"])
     selected_version = validate_release_version(version) if version else next_release_version(read_existing_tags(runner.root), bump=bump)
@@ -157,7 +160,16 @@ def run_release(
     runner.run(["python3", "scripts/release_smoke_test.py", "--release", "--expected-version", selected_version])
     runner.run(["git", "push", "origin", selected_version])
     wait_for_release_workflow(runner, selected_version)
-    runner.run(["gh", "release", "create", selected_version, "--verify-tag", "--title", selected_version, "--notes", selected_version])
+    release_command = ["gh", "release", "create", selected_version, "--verify-tag", "--title", selected_version]
+    if notes_file is not None:
+        release_command.extend(["--notes-file", str(notes_file)])
+    elif notes is not None:
+        release_command.extend(["--notes", notes])
+    elif generate_notes:
+        release_command.append("--generate-notes")
+    else:
+        release_command.extend(["--notes", selected_version])
+    runner.run(release_command)
     runner.run(["gh", "release", "view", selected_version])
     return selected_version
 
@@ -166,12 +178,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version", nargs="?", help="Release version. Defaults to next patch tag, for example v0.4.3.")
     parser.add_argument("--bump", choices=("patch", "minor", "major"), default="patch", help="Auto-bump type when version is omitted.")
+    parser.add_argument("--notes", default=None, help="Release notes text. Overrides --generate-notes.")
+    parser.add_argument("--notes-file", type=Path, default=None, help="Markdown file to use as release notes. Overrides --notes and --generate-notes.")
+    parser.add_argument("--no-generate-notes", action="store_true", help="Disable GitHub generated notes and use the version string as release notes.")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them.")
     parser.add_argument("--yes", action="store_true", help="Skip interactive version confirmation.")
     args = parser.parse_args(argv)
 
     runner = CommandRunner(root=repo_root(), dry_run=args.dry_run)
-    version = run_release(version=args.version, bump=args.bump, runner=runner, assume_yes=args.yes)
+    version = run_release(
+        version=args.version,
+        bump=args.bump,
+        runner=runner,
+        assume_yes=args.yes,
+        notes=args.notes,
+        notes_file=args.notes_file,
+        generate_notes=not args.no_generate_notes,
+    )
     print(f"Release complete: {version}" if not args.dry_run else f"Release dry run complete: {version}")
     return 0
 

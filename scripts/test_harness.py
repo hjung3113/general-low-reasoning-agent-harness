@@ -116,6 +116,24 @@ class HarnessToolTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "Manifest source version"):
                 harness.load_manifest_data(root, version="1.2.3")
 
+    def test_upgrade_from_installed_target_uses_recorded_source_tree(self) -> None:
+        source = harness.repo_root()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(["--version", "v9.8.7", "init", "--target", str(target), "--adapters", "none"])
+            stale_manifest = target / "harness/manifest.json"
+            stale_manifest.parent.mkdir(parents=True)
+            stale_manifest.write_text(json.dumps({"version": "0.1.0", "files": []}), encoding="utf-8")
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["source"] = str(source)
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+            with mock.patch.object(harness, "repo_root", return_value=target):
+                result = harness.run(["--version", "v9.8.8", "upgrade", "--target", str(target), "--dry-run"])
+
+            self.assertEqual(0, result)
+
     def test_doctor_reports_structured_roadmap_state_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

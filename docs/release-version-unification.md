@@ -169,11 +169,15 @@ Useful variants:
 python3 scripts/release.py --dry-run
 python3 scripts/release.py --bump minor
 python3 scripts/release.py v0.5.0
+python3 scripts/release.py --notes "Release notes text"
+python3 scripts/release.py --notes-file docs/releases/v0.5.0.md
 python3 scripts/release.py v0.4.3 --yes
 ```
 
 The script prints the selected version and asks for confirmation unless
-`--yes` or `--dry-run` is used.
+`--yes` or `--dry-run` is used. It uses GitHub generated release notes by
+default. Use `--notes-file` for curated Markdown release notes, or `--notes` for
+short inline notes.
 
 Manual equivalent:
 
