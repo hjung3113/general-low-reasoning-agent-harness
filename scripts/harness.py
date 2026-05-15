@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 
-HARNESS_VERSION = "0.4.0"
+HARNESS_VERSION = "0.4.1"
 MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")

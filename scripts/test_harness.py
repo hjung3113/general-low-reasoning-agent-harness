@@ -902,7 +902,7 @@ progress:
             harness.run(["init", "--target", str(target), "--adapters", "none"])
             gitignore = target / ".gitignore"
             original = gitignore.read_text(encoding="utf-8")
-            downgraded = original.replace("v9.9.9", "v0.4.0")
+            downgraded = original.replace("v9.9.9", "v0.4.1")
             gitignore.write_text(downgraded, encoding="utf-8")
             installed_path = target / ".harness/installed-manifest.json"
             installed = json.loads(installed_path.read_text(encoding="utf-8"))
@@ -998,7 +998,7 @@ progress:
             target = Path(tmpdir) / "target"
             harness.run(["init", "--target", str(target), "--adapters", "none"])
             retired = target / "old.append"
-            block = "# >>> low-reasoning-harness:old.append v0.4.0\nold/\n# <<< low-reasoning-harness:old.append\n"
+            block = "# >>> low-reasoning-harness:old.append v0.4.1\nold/\n# <<< low-reasoning-harness:old.append\n"
             retired.write_text("project-line\n\n" + block, encoding="utf-8")
             installed_path = target / ".harness/installed-manifest.json"
             installed = json.loads(installed_path.read_text(encoding="utf-8"))
