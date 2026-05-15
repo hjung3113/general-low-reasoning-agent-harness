@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -62,6 +63,7 @@ class CommandRunner:
     root: Path
     dry_run: bool = False
     commands: list[list[str]] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=lambda: {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
 
     def run(self, command: list[str], *, capture: bool = False) -> str:
         self.commands.append(command)
@@ -71,6 +73,7 @@ class CommandRunner:
         completed = subprocess.run(
             command,
             cwd=self.root,
+            env=self.env,
             check=True,
             text=True,
             stdout=subprocess.PIPE if capture else None,

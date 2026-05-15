@@ -18,6 +18,8 @@ jobs:
   verify:
     name: Verify release tag
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@v4
