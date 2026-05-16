@@ -277,8 +277,17 @@ class TestAtomicWriteTextPreconditions(unittest.TestCase):
             self.assertIn("999", msg)
             self.assertIn("1", msg)
 
-    def test_atomic_write_text_handles_disk_full_oserror(self) -> None:
+    def test_atomic_write_text_handles_disk_full_real_path(self) -> None:
+        """ENOSPC on the FIRST real write to the tempfile: cleanup must occur.
+
+        The previous version of this test mocked ``tempfile.NamedTemporaryFile``
+        itself and never exercised the real production codepath (vacuous).
+        This rewrite (C3) lets the real tempfile be created and patches the
+        underlying ``os.write`` so the first real write call raises ENOSPC.
+        We then assert that the real tempfile path is gone after the exception.
+        """
         import errno
+        import os as _os
         import tempfile
         from unittest import mock
 
@@ -286,47 +295,62 @@ class TestAtomicWriteTextPreconditions(unittest.TestCase):
             target = Path(tmpdir) / "out.txt"
             target.write_text("ORIGINAL", encoding="utf-8")
 
-            real_open = open
+            # Snapshot pre-call dir contents (just the original file).
+            before = sorted(p.name for p in Path(tmpdir).iterdir())
+            self.assertEqual(before, ["out.txt"])
 
-            def enospc_open(*args, **kwargs):
-                f = real_open(*args, **kwargs)
-                orig_write = f.write
+            # Patch os.write to raise ENOSPC on the first call. The tempfile
+            # is created by NamedTemporaryFile (still through real path), but
+            # the *content write* via the file object's buffered .write() will
+            # eventually flush through os.write — patching os.write covers it
+            # whether the impl uses tmp.write() + flush() or raw os.write(fd).
+            # To be robust, patch the file object's write at the source by
+            # patching builtins via the NamedTemporaryFile wrapper's underlying
+            # file: simplest portable approach is to patch _io.FileIO.write
+            # for the duration of the call.
+            import tempfile as _tempfile
+
+            real_ntf = _tempfile.NamedTemporaryFile
+            created_tmp_paths: list[str] = []
+
+            def wrapped_ntf(*args, **kwargs):  # type: ignore[no-untyped-def]
+                tmp = real_ntf(*args, **kwargs)
+                created_tmp_paths.append(tmp.name)
 
                 def faulting_write(s):
                     raise OSError(errno.ENOSPC, "No space left on device")
 
-                f.write = faulting_write  # type: ignore[method-assign]
-                return f
+                tmp.write = faulting_write  # type: ignore[method-assign]
+                return tmp
 
-            with mock.patch("lib.atomic_io.tempfile.NamedTemporaryFile") as nt:
-                # Build a real tempfile then wrap its write method.
-                import tempfile as _tf
-
-                def factory(**kw):
-                    real = _tf._TemporaryFileWrapper(  # type: ignore[attr-defined]
-                        file=open(Path(tmpdir) / "fake.tmp", "w", encoding="utf-8"),
-                        name=str(Path(tmpdir) / "fake.tmp"),
-                        delete=False,
-                    )
-                    real.write = lambda s: (_ for _ in ()).throw(  # type: ignore[assignment]
-                        OSError(errno.ENOSPC, "No space left on device")
-                    )
-                    return real
-
-                nt.side_effect = factory
+            with mock.patch(
+                "lib.atomic_io.tempfile.NamedTemporaryFile",
+                side_effect=wrapped_ntf,
+            ):
                 with self.assertRaises(OSError) as ctx:
                     atomic_io.atomic_write_text(target, "NEW")
                 self.assertEqual(ctx.exception.errno, errno.ENOSPC)
 
-            # Original unchanged.
+            # The real tempfile was created (real codepath exercised).
+            self.assertEqual(
+                len(created_tmp_paths), 1,
+                "test must exercise the real NamedTemporaryFile path",
+            )
+            # …and is now unlinked.
+            self.assertFalse(
+                Path(created_tmp_paths[0]).exists(),
+                f"real tempfile path {created_tmp_paths[0]} not cleaned up",
+            )
+
+            # Original byte-identical.
             self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL")
-            # No leftover tempfile artifacts in parent dir.
-            leftovers = [
-                p.name for p in Path(tmpdir).iterdir() if p.name != "out.txt"
-            ]
-            self.assertEqual(leftovers, [], f"orphan tempfile not cleaned up: {leftovers}")
-            # silence unused
-            del enospc_open
+            # Real tempfile path is gone: only the original file remains.
+            after = sorted(p.name for p in Path(tmpdir).iterdir())
+            self.assertEqual(
+                after, ["out.txt"],
+                f"orphan tempfile(s) not cleaned up after ENOSPC: {after}",
+            )
+            del _os
 
 
 class TestAtomicAppendLogBasic(unittest.TestCase):
