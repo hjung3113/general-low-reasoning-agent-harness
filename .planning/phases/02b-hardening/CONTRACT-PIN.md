@@ -40,6 +40,8 @@ All modules live under `scripts/lib/` unless otherwise noted. Filenames are pinn
 | Malformed-state diagnostics | `scripts/lib/state_diagnostics.py` | `load_state_json(path) -> dict`, raises `UnparseableStateError` | `02b-09-T1-M-PLAN.md` |
 | Forward/reverse state migrator | `scripts/lib/state_migrate.py` | `forward(state) -> dict`, `reverse(state) -> dict`, `migrate(path, *, direction, resume=False)` | `02b-02-T0-1-PLAN.md` |
 | Phase CLI verb dispatch | `scripts/lib/phase_cli.py` | `cmd_phase_set(argv)`, `cmd_phase_approve(argv)`, `cmd_session_unlock(argv)` | `02b-04-T0-3-PLAN.md` |
+| Timestamp helpers | `scripts/lib/timestamps.py` | `now_iso_nanos()`, `parse_iso_nanos(s)` (extracted from `session.py` + `phase_cli.py` duplication) | `02b-04-T0-3-PLAN.md` |
+| Doctor diagnostics | `scripts/lib/doctor.py` | `run_doctor()` and per-check helpers | `02b-05-T0-4-PLAN.md` |
 
 **Rule:** `operational_paths.py` is the sole declarer of the path-tuple literals. T0-A's grep gate (`scripts/check_path_writers.py` or equivalent) imports from this module. If `02b-01-T0-A-PLAN.md` chooses to re-export the names from another helper (`scripts/lib/paths.py`), the re-export must be a simple `from .operational_paths import *` — no duplication of literals.
 
