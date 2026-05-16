@@ -3166,5 +3166,86 @@ class InstallerInteractiveTests(unittest.TestCase):
             self.assertIn("workflow-db-context", plan["packs"])
 
 
+class UpgradeMigrationTests(unittest.TestCase):
+    def test_upgrade_migrates_dotnet_etl_mssql_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            # Bootstrap a working install first so the upgrade has files to
+            # operate on; then forcibly rewrite the manifest to look like
+            # a pre-migration v0.6.0 install.
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["dotnet-etl-mssql"]
+            installed["profiles"] = ["dotnet-etl-mssql"]
+            # Strip the auto-added db packs so we can verify migration adds them.
+            installed["packs"] = ["workflow-core", "workflow-etl", "tech-csharp"]
+            installed["init_options"]["packs"] = ["workflow-core", "workflow-etl", "tech-csharp"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target)],
+                check=True,
+            )
+            migrated = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual(migrated["init_options"]["profiles"], ["dotnet-etl"])
+            self.assertEqual(migrated["profiles"], ["dotnet-etl"])
+            self.assertIn("tech-mssql", migrated["packs"])
+            self.assertIn("workflow-db-context", migrated["packs"])
+
+    def test_upgrade_dry_run_reports_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["dotnet-etl-mssql"]
+            installed["profiles"] = ["dotnet-etl-mssql"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target), "--dry-run"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            combined = result.stdout + result.stderr
+            self.assertIn("dotnet-etl-mssql", combined)
+            self.assertIn("dotnet-etl", combined)
+
+    def test_upgrade_preserves_non_legacy_profiles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            before = json.loads(installed_path.read_text(encoding="utf-8"))
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target)],
+                check=True,
+            )
+            after = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual(after["init_options"]["profiles"], before["init_options"]["profiles"])
+            self.assertEqual(set(after["packs"]), set(before["packs"]))
+
+
 if __name__ == "__main__":
     unittest.main()

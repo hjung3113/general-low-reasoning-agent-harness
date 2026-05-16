@@ -613,6 +613,52 @@ def install(
     write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
 
 
+def migrate_install_state(state: dict) -> dict:
+    """Rewrite a v0.6.0-style install record to the post-unification shape.
+
+    Returns the (possibly mutated) state. Also returns it through the in-place
+    dict for callers that prefer the side-effect.
+    """
+    options = state.setdefault("init_options", {})
+    profiles = list(options.get("profiles") or [])
+    new_profiles: list[str] = []
+    added_packs: set[str] = set()
+    for p in profiles:
+        if p == "dotnet-etl-mssql":
+            new_profiles.append("dotnet-etl")
+            added_packs.update(("tech-mssql", "workflow-db-context"))
+        elif p in LEGACY_PROFILE_ALIASES:
+            new_profiles.append(LEGACY_PROFILE_ALIASES[p])
+        else:
+            new_profiles.append(p)
+    if new_profiles != profiles:
+        options["profiles"] = new_profiles
+        state["profiles"] = new_profiles
+    if added_packs:
+        packs = set(state.get("packs") or [])
+        packs.update(added_packs)
+        state["packs"] = sorted(packs)
+        opt_packs = set(options.get("packs") or [])
+        opt_packs.update(added_packs)
+        options["packs"] = sorted(opt_packs)
+    return state
+
+
+def install_state_migration_report(before: dict, after: dict) -> list[str]:
+    """Return human-readable lines describing what migrate_install_state changed."""
+    lines: list[str] = []
+    before_profiles = list((before.get("init_options") or {}).get("profiles") or [])
+    after_profiles = list((after.get("init_options") or {}).get("profiles") or [])
+    if before_profiles != after_profiles:
+        lines.append(f"profiles: {before_profiles} -> {after_profiles}")
+    before_packs = set(before.get("packs") or [])
+    after_packs = set(after.get("packs") or [])
+    added = sorted(after_packs - before_packs)
+    if added:
+        lines.append(f"packs added: {', '.join(added)}")
+    return lines
+
+
 def upgrade(
     *,
     root: Path,
@@ -624,10 +670,19 @@ def upgrade(
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
 ) -> int:
+    import copy
+
     if not (root / MANIFEST_PATH).exists():
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
     target = target.resolve()
     installed = read_install_state(target)
+    before_migration = copy.deepcopy(installed)
+    migrate_install_state(installed)
+    report = install_state_migration_report(before_migration, installed)
+    if report:
+        print("MIGRATION:")
+        for line in report:
+            print(f"  {line}")
     adapters = adapters if adapters is not None else installed_scope(installed, "adapters", default={"roo"})
     profiles = profiles if profiles is not None else installed_scope(installed, "profiles", default={"generic"})
     packs = packs if packs is not None else installed_scope(installed, "packs", default=set())
