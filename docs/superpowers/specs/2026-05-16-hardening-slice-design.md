@@ -81,6 +81,8 @@ This slice does NOT make the harness publicly installable. Specifically:
 
 All four items are deferred to the `02c-hardening` slice. A downstream reader who needs a public-installable release MUST wait for `02c`, not retrofit this slice.
 
+**On-disk footprint note (per ADR-bundle commit `b57250f`):** the hardening slice introduces operational state under `.harness/` — specifically `.harness/audit.log` (newline-delimited JSON), `.harness/session.lock`, and `.harness/backups/` (timestamped `.bak` artifacts, capped at 10 per original). These paths are enumerated by `OPERATIONAL_PATHS` (ADR-003a artifact) and MUST appear in the project `.gitignore` template. They are NOT packaging metadata and do not change the public-installable status; they are listed here so a downstream operator knows new directories will appear on disk after first lifecycle verb invocation.
+
 ### 2.8 Known residual risks
 
 Carried forward without fix in this slice. Each is documented so adopters and future-`02c` planners do not rediscover them.
@@ -206,7 +208,7 @@ Decision question: How does a phase transition (e.g., `plan` -> `execute` with a
 
 Hard constraints on the candidate option set:
 
-- **≤2 CLI verbs total** for the lifecycle path (e.g., `harness phase set`, `harness phase approve`; or a single `harness phase`).
+- **≤2 lifecycle verbs + ≤1 operational verb** (e.g., `harness phase set`, `harness phase approve` as lifecycle verbs; `harness session unlock` as an operational verb for lockfile-staleness recovery). The operational verb MUST NOT write `.scratch/phase-state.json`; it manipulates only operational state (e.g., `.harness/session.lock`). Per ADR-bundle commit `b57250f` (revision note G1-B), the lifecycle/operational distinction is explicit: lifecycle verbs advance phase state; the operational verb is a recovery utility.
 - **Zero required flags** on the lifecycle path. Optional flags allowed. Rationale: a low-reasoning agent that cannot remember a flag fails the transition; muscle memory should be "type the verb, answer the prompt".
 - Cryptographic signing is OUT (already out of scope per §4); it is removed from this ballot.
 
@@ -242,7 +244,7 @@ Candidate options:
 
 1. Two fields: `verification` (machine, array of strings matching a tightened allowlist that requires an executable prefix and a registered command verb) and `review` (human, array of objects with `actor`, `at`, `evidence_path`, `summary`).
 2. One field with discriminated union: each entry is either `{type: "command", cmd: "..."}` or `{type: "review", actor, at, evidence_path, summary}`.
-3. Tighten the string allowlist in place (remove `"Confirm "`, `"Review "`, `"Inspect "`, `"Validate "`, `"Roo"` from `scripts/lib/check.py:99-111`), and add a parallel `review_evidence` field for human notes.
+3. Tighten the string allowlist in place (remove `"Confirm "`, `"Review "`, `"Inspect "`, `"Validate "`, `"Roo"` from `scripts/lib/check.py:99-111`), and add a parallel `review_evidence` field for human notes. Example tightened allowlist (per ADR-bundle commit `b57250f`, D-G4): **7 verbs** — `python3`, `git`, `jq`, `npx`, `pytest`, `harness`, `make`. `bash ` is explicitly EXCLUDED because a bare `bash ` prefix permits arbitrary shell content; entries previously using `bash scripts/foo.sh` migrate to `make foo` or `python3 scripts/foo.py`.
 4. Move command allowlist into a config file (`.harness/verification-prefixes.json`) and require the schema to point at a versioned allowlist.
 
 Hard sub-constraints on whichever option wins:
@@ -261,8 +263,12 @@ Candidate options:
 
 1. Preserve verbatim outside the managed markers; never rewrite non-managed regions.
 2. Refuse to operate when non-managed content is detected; require the user to first remove or relocate it.
-3. Preserve verbatim AND write a backup file (`.bak` with timestamp) before any rewrite.
+3. Preserve verbatim AND write a backup file (`.bak` with timestamp) before any rewrite. **Backup location (per ADR-bundle commit `b57250f` revision G1-D): `.harness/backups/<basename>.pre-repair.<ISO-8601-nanos>.<pid>.bak`** — RELOCATED out of `.planning/` (which is user-edit territory and frequently `git add .`-ed) into operational state under `.harness/` (covered by `OPERATIONAL_PATHS` and the project `.gitignore` template). The `.bak` write uses the T0-A atomic primitive AND `O_EXCL`; if the target `.bak` path already exists the write aborts before touching the original. **Retention cap: 10 most recent per original**, auto-pruned on each `state repair` write after successful new-backup creation.
 4. Detect content outside markers as a recoverable error class, route through a new `state repair --interactive` flow that asks the user.
+
+Sub-decision (mandatory if option 3 is selected): backup path policy. ADR-005 MUST select between:
+- **(3-loc-a)** `.planning/`-co-located backups (`.planning/<basename>.<timestamp>.bak`). Simpler but at risk of accidental `git add`.
+- **(3-loc-b)** `.harness/backups/`-relocated backups (per ADR-bundle G1-D). Scoped operational state, gitignored by default. **Spec preference** post-bundle revision.
 
 Decision-source: T0-5 in §7. This is a new T0 promoted from v2 T1-4 / v2 backlog footnote because it represents silent data loss, not recovery.
 
@@ -324,7 +330,7 @@ Reversibility legend:
 - Migration writes (T0-1) MUST write the new path BEFORE unlinking the legacy path. No window where neither file exists.
 - T0-A is dependency-zero. It can land FIRST and SHOULD land first. All other T0 rows depend on T0-A for state writes; the §8 graph is updated accordingly.
 - Acceptance: a single helper `scripts/lib/atomic.py:write_json_atomic(path, data)` exists; every site that previously called `path.write_text` for managed JSON is migrated; a regression test injects a crash between write and replace and asserts the legacy file is intact.
-- Acceptance (grep gate cross-reference): the §11 T0-A worked example's grep gate iterates over the `STATE_FILE_PATHS` list defined by ADR-003a (see §6 ADR-003a sub-decisions). T0-A MAY land before ADR-003a locks by using the pre-decision default `STATE_FILE_PATHS = (".scratch/phase-state.json",)`; once ADR-003a locks, the grep gate, T1-S, and the uninstall flow MUST be updated in lockstep to the ADR-003a-published list.
+- Acceptance (grep gate cross-reference): the §11 T0-A worked example's grep gate iterates over BOTH the `STATE_FILE_PATHS` list AND the `OPERATIONAL_PATHS` tuple defined by ADR-003a (see §6 ADR-003a sub-decisions). Per ADR-bundle commit `b57250f` (revision G1-C), `OPERATIONAL_PATHS = (".harness/audit.log", ".harness/session.lock", ".harness/backups/")` enumerates operational state that is also written atomically (or with `O_EXCL` discipline) and must be covered by the same grep gate. T0-A MAY land before ADR-003a locks by using the pre-decision defaults `STATE_FILE_PATHS = (".scratch/phase-state.json",)` and `OPERATIONAL_PATHS = ()`; once ADR-003a locks, the grep gate, T1-S, and the uninstall flow MUST be updated in lockstep to the ADR-003a-published lists.
 
 **T0-1 (`phase=done` contract).**
 
@@ -334,6 +340,13 @@ Reversibility legend:
 - Sub-requirement: all state writes performed by the migrator use the T0-A primitive.
 - Sub-requirement: the existing test that asserts "`done` requires `approved=false`" (currently in `scripts/test_harness.py`) MUST be deleted or rewritten. Deleting a passing test is normally a smell; this is intentional and is noted in the PR description.
 - T0-1 is `partial` reversible because the live state is rewritten to the new shape; the `--reverse` migrator and the `.pre-*.bak` artifact are the mitigations.
+- Sub-requirement (migrator order-of-operations, per ADR-bundle commit `b57250f`): the migrator MUST follow this numbered protocol on every forward and reverse migration:
+  1. Write `.harness/backups/<basename>.pre-repair.<ISO-8601-nanos>.<pid>.bak.resume.json` sidecar containing `{pre_hash, expected_post_hash, target_path, migrator_version, started_at}` via T0-A atomic-write.
+  2. Write `.harness/backups/<basename>.pre-repair.<ISO-8601-nanos>.<pid>.bak` (byte-identical copy of the pre-migration target) using `os.open(..., O_WRONLY | O_CREAT | O_EXCL, 0o644)`. On `FileExistsError`, abort with a diagnostic instructing the operator to run `harness migrate state --resume` or to remove the stale backup.
+  3. Write the new target shape via the T0-A atomic-write primitive.
+  4. Delete the sidecar `.resume.json` (signaling clean completion).
+
+  Recovery: `harness migrate state --resume` reads any surviving sidecar to determine which step crashed and resumes from the recorded state. A sidecar present on a clean tree indicates an incomplete prior migration; the resume verb is the only sanctioned recovery path. The retention cap (10 per original) applies to the `.bak` artifacts; sidecars are not retained beyond the lifetime of the migration they describe.
 - Sub-requirement (CHANGELOG `Breaking` skeleton): T0-1 MUST ensure `CHANGELOG.md` exists at repo root and contains a `## [Unreleased]` (or already-present equivalent unreleased) section with a `### Breaking` subsection skeleton. If the file already exists with an unreleased section but no `### Breaking` subsection, T0-1 adds the subsection. T0-1 appends the entry for the `done` contract change (and any other breaking change it introduces, e.g., `state_schema_version` introduction if interpreted as breaking) under that subsection. Backfilling `Breaking` subsections into historical released versions is OUT of scope per §2.4.
 
 **T0-3 (CLI transition primitive).**
@@ -621,12 +634,15 @@ same filesystem as the target.
 
 ## Verification
 - `python3 -m pytest scripts/tests/test_atomic.py -v`
-- Grep gate iterates over the `STATE_FILE_PATHS` list published by ADR-003a (see §6 ADR-003a sub-decisions). Reference shape:
+- Grep gate iterates over BOTH the `STATE_FILE_PATHS` list AND the `OPERATIONAL_PATHS` tuple published by ADR-003a (see §6 ADR-003a sub-decisions; per ADR-bundle commit `b57250f` revision G1-C). Reference shape:
   ```sh
-  # STATE_FILE_PATHS is sourced from the ADR-003a-locked CLI contract document.
-  # Pre-ADR-003a default: STATE_FILE_PATHS=(".scratch/phase-state.json")
-  STATE_FILE_PATHS=(".scratch/phase-state.json")  # update per ADR-003a output
-  for p in "${STATE_FILE_PATHS[@]}"; do
+  # Both tuples are sourced from the ADR-003a-locked CLI contract document.
+  # Pre-ADR-003a defaults:
+  #   STATE_FILE_PATHS=(".scratch/phase-state.json")
+  #   OPERATIONAL_PATHS=()  # populated post-ADR with .harness/audit.log, .harness/session.lock, .harness/backups/
+  STATE_FILE_PATHS=(".scratch/phase-state.json")
+  OPERATIONAL_PATHS=(".harness/audit.log" ".harness/session.lock" ".harness/backups/")
+  for p in "${STATE_FILE_PATHS[@]}" "${OPERATIONAL_PATHS[@]}"; do
     ! grep -rn "write_text" scripts/ | grep -F "$p"
   done
   ```
