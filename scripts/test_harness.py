@@ -2739,7 +2739,7 @@ progress:
             for phrase in phrases:
                 self.assertIn(phrase, text, filename)
 
-    def test_root_readme_documents_general_install_check_and_upgrade_hardening(self) -> None:
+    def test_readme_documents_unified_profiles_and_db_flag(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
 
         for phrase in (
@@ -2752,9 +2752,10 @@ progress:
             "python3 scripts/harness.py check --worktree",
             "python3 scripts/release_smoke_test.py",
             "push 전에 서브에이전트 적대적 리뷰를 해줘",
-            "installer preset `dotnet-etl`",
-            "installer preset `react-tailwind-typescript-web`",
-            "`tech-mssql` 또는 `tech-postgresql`",
+            "`dotnet-etl`",
+            "`react-web`",
+            "`--db`",
+            "`--db mssql` 또는 `--db postgresql`",
             "workflow-tdd",
             "workflow-debugging",
             "workflow-code-review",
