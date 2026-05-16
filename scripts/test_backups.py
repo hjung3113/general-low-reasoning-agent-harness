@@ -107,6 +107,39 @@ class WriteBackupNofollowTests(unittest.TestCase):
                 self.assertEqual(decoy.read_bytes(), b"DECOY")
 
 
+class CollisionRetryTests(unittest.TestCase):
+    """T0-1 CC4: O_EXCL collision must be retried up to 3 times before erroring."""
+
+    def test_write_backup_retries_on_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups_dir = tmp / ".harness" / "backups"
+            backups_dir.mkdir(parents=True)
+            target = tmp / "phase-state.json"
+            target.write_bytes(b"x")
+
+            # Pre-create a colliding .bak at the first timestamp value the
+            # generator will return; the second call must produce a fresh
+            # name and succeed.
+            collide_ts = "20260516T193045000000000Z"
+            fresh_ts = "20260516T193046000000000Z"
+            collided = backups_dir / f"phase-state.json.pre-repair.{collide_ts}.42.bak"
+            collided.write_bytes(b"PRE-EXISTING")
+
+            timestamps = iter([collide_ts, fresh_ts, fresh_ts])
+            with mock.patch.object(backups, "_compact_utc_nanos",
+                                   side_effect=lambda: next(timestamps)), \
+                 mock.patch.object(backups, "_pid", return_value=42):
+                bak = backups.write_backup_with_excl_and_prune(
+                    target, source_bytes=b"x", backups_dir=backups_dir,
+                )
+            # Distinct path from the colliding pre-existing one.
+            self.assertNotEqual(bak, collided)
+            self.assertTrue(bak.exists())
+            self.assertEqual(bak.read_bytes(), b"x")
+            self.assertEqual(collided.read_bytes(), b"PRE-EXISTING")
+
+
 class RetentionPruneTests(unittest.TestCase):
     def test_retention_prunes_oldest_above_limit(self) -> None:
         """Eleventh backup of the same basename evicts the oldest."""
