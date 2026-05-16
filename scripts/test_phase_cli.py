@@ -56,6 +56,44 @@ class PhaseSetTests(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertIn("approve", r.stderr.lower())
 
+    def test_invalid_transition_message_matches_artifact_1_template(self) -> None:
+        """C3: stderr must match Artifact 1 template byte-exactly for all 3 remediations."""
+        # Case 1: needs_approval (plan -> execute without approve).
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        r = run_harness(["phase", "set", "execute"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 2)
+        expected = (
+            "error: cannot set phase=execute from phase=plan "
+            "(see ADR-001 transition table). "
+            "Run 'harness phase approve' first."
+        )
+        self.assertEqual(r.stderr.strip(), expected)
+
+        # Case 2: needs_reset (execute -> plan without --reset-approval).
+        # Get into execute first.
+        run_harness(["phase", "approve"], cwd=self.tmp)
+        run_harness(["phase", "set", "execute"], cwd=self.tmp)
+        r = run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 2)
+        expected = (
+            "error: cannot set phase=plan from phase=execute "
+            "(see ADR-001 transition table). "
+            "Pass --reset-approval to clear prior approval and proceed."
+        )
+        self.assertEqual(r.stderr.strip(), expected)
+
+        # Case 3: undefined (discuss -> done).
+        run_harness(["phase", "set", "discuss", "--reset-approval"], cwd=self.tmp)
+        r = run_harness(["phase", "set", "done"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 2)
+        expected = (
+            "error: cannot set phase=done from phase=discuss "
+            "(see ADR-001 transition table). "
+            "Transition is undefined; choose discuss/plan/execute/done as the next step."
+        )
+        self.assertEqual(r.stderr.strip(), expected)
+
     def test_plan_to_execute_with_approval_ok(self) -> None:
         run_harness(["phase", "set", "discuss"], cwd=self.tmp)
         run_harness(["phase", "set", "plan"], cwd=self.tmp)
