@@ -5,6 +5,7 @@ Plan: .planning/phases/02b-hardening/plans/02b-07-T1-1-PLAN.md.
 from __future__ import annotations
 
 import json
+import stat
 import subprocess
 import sys
 import tempfile
@@ -107,6 +108,32 @@ class InstallTests(unittest.TestCase):
         body = hook.read_text()
         self.assertIn("echo user-hook", body)
         self.assertIn(hooks.BEGIN_MARKER, body)
+
+
+class InstallPermissionsTests(unittest.TestCase):
+    """T1-1-SecM1: installer MUST only add owner-execute, not group/other.
+
+    Granting world-execute on a git hook lets unprivileged users on a
+    shared box trigger arbitrary harness logic during another user's
+    commit. The hook needs S_IXUSR; group/other-execute respect the
+    caller's umask.
+    """
+
+    def test_install_preserves_user_umask_on_group_other_exec(self):
+        tmp = _make_target([".scratch/"])
+        hook = tmp / ".git/hooks/pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        # Pre-create with rw------- so the existing-hook code path runs;
+        # only the bits we explicitly OR in should differ afterwards.
+        hook.write_text("#!/bin/sh\necho user\n")
+        hook.chmod(0o600)
+        hooks.install_pre_commit_hook(tmp)
+        mode = stat.S_IMODE(hook.stat().st_mode)
+        # Owner execute SET.
+        self.assertTrue(mode & stat.S_IXUSR, f"owner-exec missing: {oct(mode)}")
+        # Group/other execute NOT set by the installer.
+        self.assertFalse(mode & stat.S_IXGRP, f"group-exec was added: {oct(mode)}")
+        self.assertFalse(mode & stat.S_IXOTH, f"other-exec was added: {oct(mode)}")
 
 
 class InstallTargetValidationTests(unittest.TestCase):

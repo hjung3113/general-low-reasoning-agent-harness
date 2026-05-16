@@ -80,8 +80,12 @@ def _read_skeleton() -> str:
 
 
 def _make_executable(path: Path) -> None:
+    # SecM1: only set owner-execute. Group/other-execute respect the
+    # caller's umask — granting world-execute on a git hook would let
+    # unprivileged users on a shared box trigger arbitrary harness
+    # logic during another user's commit.
     mode = path.stat().st_mode
-    path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    path.chmod(mode | stat.S_IXUSR)
 
 
 def hook_is_installed(target: Path) -> bool:
