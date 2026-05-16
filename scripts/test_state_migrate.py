@@ -302,6 +302,74 @@ class StateMigrateFileProtocolTests(unittest.TestCase):
             self.assertEqual(list(backups.glob("*.bak.resume.json")), [])
 
 
+class StateMigrateResumeDirectionTests(unittest.TestCase):
+    """T0-1 CC3+SM1: sidecar must record direction; resume must dispatch on it."""
+
+    def test_sidecar_payload_includes_direction(self) -> None:
+        payload = state_migrate.sidecar_payload(
+            target_path="/tmp/foo.json",
+            pre_hash="a" * 64,
+            expected_post_hash="b" * 64,
+            direction="reverse",
+        )
+        self.assertEqual(payload.get("direction"), "reverse")
+
+    def test_resume_dispatches_to_reverse_when_sidecar_reverse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups = tmp / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            target = tmp / "phase-state.json"
+            # Start with a v2-shape (post forward); reverse should yield v0.
+            v2_bytes = (FIXTURES / "phase_state_v0_to_v2_golden.json").read_bytes()
+            target.write_bytes(v2_bytes)
+            v0_bytes = state_migrate.serialize(
+                state_migrate.reverse(json.loads(v2_bytes.decode("utf-8")))
+            )
+            pre_hash = hashlib.sha256(v2_bytes).hexdigest()
+            post_hash = hashlib.sha256(v0_bytes).hexdigest()
+
+            sidecar = backups / "phase-state.json.pre-repair.fixed.0.bak.resume.json"
+            sidecar.write_text(
+                json.dumps({
+                    "pre_hash": pre_hash,
+                    "expected_post_hash": post_hash,
+                    "target_path": str(target),
+                    "migrator_version": "t0-1-v1",
+                    "started_at": "2026-05-16T19:30:45.000000000Z",
+                    "direction": "reverse",
+                }),
+                encoding="utf-8",
+            )
+            state_migrate.resume(target, backups_dir=backups)
+            self.assertEqual(target.read_bytes(), v0_bytes)
+            self.assertEqual(list(backups.glob("*.bak.resume.json")), [])
+
+    def test_resume_refuses_legacy_sidecar_without_direction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups = tmp / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            target = tmp / "phase-state.json"
+            target.write_bytes(b"{}\n")
+            sidecar = backups / "phase-state.json.pre-repair.fixed.0.bak.resume.json"
+            # No `direction` key.
+            sidecar.write_text(
+                json.dumps({
+                    "pre_hash": "0" * 64,
+                    "expected_post_hash": "1" * 64,
+                    "target_path": str(target),
+                    "migrator_version": "t0-1-v1",
+                    "started_at": "2026-05-16T19:30:45.000000000Z",
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                state_migrate.resume(target, backups_dir=backups)
+            self.assertEqual(ctx.exception.code, 7)
+            self.assertIn("direction", str(ctx.exception))
+
+
 class StateMigrateCLITests(unittest.TestCase):
     def test_cli_forward_dry_run_on_input_fixture(self) -> None:
         """migrate_state.py --forward --dry-run runs and prints expected JSON.
