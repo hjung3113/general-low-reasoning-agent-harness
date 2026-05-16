@@ -24,7 +24,9 @@ Contract:
 """
 from __future__ import annotations
 
+import errno
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -130,6 +132,37 @@ def _remediation_hint(path: Path) -> str:
     return _DEFAULT_HINT
 
 
+def _read_text_no_symlinks(path: Path) -> str:
+    """Read `path` as UTF-8 text, refusing to traverse symlinks (T1-M-SecM1).
+
+    Uses `os.open(path, O_RDONLY | O_NOFOLLOW)` so that an ELOOP fires the
+    moment the kernel detects a symlink at the final path component. On
+    ELOOP we surface a SystemExit(5) with "symlink not permitted" so the
+    operator cannot be fooled into reading attacker-controlled content via
+    a planted symlink in `.scratch/` or `.harness/`.
+    """
+    flags = os.O_RDONLY
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags |= nofollow
+    try:
+        fd = os.open(str(path), flags)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.EMLINK):
+            _emit_and_exit(path, f"symlink not permitted at {path}")
+        # Re-raise as UnicodeDecodeError-compatible OSError; caller wraps.
+        raise
+    try:
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    return b"".join(chunks).decode("utf-8")
+
+
 def _emit_and_exit(path: Path, summary: str, *, hint: str | None = None) -> None:
     """Write the diagnostic line(s) to stderr and SystemExit(5)."""
     if hint is None:
@@ -153,7 +186,7 @@ def load_state_json(path: Path) -> dict:
     """
     path = Path(path)
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _read_text_no_symlinks(path)
     except UnicodeDecodeError as exc:
         _emit_and_exit(path, f"{path} is unparseable (invalid UTF-8: {exc.reason})")
         return  # pragma: no cover
@@ -304,7 +337,7 @@ def parse_state_markdown(path: Path) -> ParsedStateDoc:
     """
     path = Path(path)
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _read_text_no_symlinks(path)
     except OSError as exc:
         _emit_and_exit(
             path,

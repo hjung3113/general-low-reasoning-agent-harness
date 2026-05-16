@@ -296,6 +296,40 @@ class TestParseStateMarkdownFrontmatter(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+class TestStateReadRefusesSymlink(unittest.TestCase):
+    """T1-M-SecM1: state readers must refuse to traverse symlinks."""
+
+    def test_load_state_json_refuses_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            real = tmp / "real.json"
+            real.write_text('{"phase": "discuss"}', encoding="utf-8")
+            link = tmp / "phase-state.json"
+            link.symlink_to(real)
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.load_state_json(link)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("symlink not permitted", buf.getvalue())
+            self.assertIn(str(link), buf.getvalue())
+
+    def test_parse_state_markdown_refuses_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            real = tmp / "real.md"
+            real.write_text("# title\n", encoding="utf-8")
+            link = tmp / "STATE.md"
+            link.symlink_to(real)
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(link)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("symlink not permitted", buf.getvalue())
+            self.assertIn(str(link), buf.getvalue())
+
+
 class TestNoUncaughtExceptionFuzz(unittest.TestCase):
     """Spec §7: 'diagnostic exit not traceback' sweep."""
 
