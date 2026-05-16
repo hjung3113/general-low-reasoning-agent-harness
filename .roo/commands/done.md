@@ -29,8 +29,8 @@ Run `python3 scripts/harness.py check --worktree` before marking done.
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-python3 scripts/harness.py phase set done                        # execute → done (CLI preserves approved fields verbatim, G2-C)
-python3 scripts/harness.py phase set discuss --reset-approval    # from done, start a new cycle (safety prompt required)
+harness phase set done                               # long form: python3 scripts/harness.py phase set done; execute → done (CLI preserves approved fields verbatim, G2-C)
+harness phase set discuss --reset-approval           # long form: python3 scripts/harness.py phase set discuss --reset-approval; from done, start a new cycle (safety prompt required)
 ```
 
 `python3 scripts/harness.py phase approve` in `phase=done` is a no-op error (exit 6 / `EXIT_WRONG_PHASE_FOR_VERB`, G2-C). Do NOT re-issue it.

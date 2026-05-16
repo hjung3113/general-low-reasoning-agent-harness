@@ -37,7 +37,7 @@ Run `python3 scripts/harness.py check --worktree` before committing.
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-python3 scripts/harness.py phase set done      # execute → done (CLI preserves approved fields per G2-C)
+harness phase set done                               # long form: python3 scripts/harness.py phase set done; execute → done (CLI preserves approved fields per G2-C)
 ```
 
 Execution output checklist:

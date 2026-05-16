@@ -37,8 +37,8 @@ Forbidden work:
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-python3 scripts/harness.py phase set plan      # discuss → plan
-python3 scripts/harness.py phase approve       # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+harness phase set plan                              # long form: python3 scripts/harness.py phase set plan; discuss → plan
+harness phase approve                                # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
 ```
 
 Output checklist:

@@ -21,6 +21,6 @@ Do not restate or weaken `--chain` safety rules here. The canonical conditions a
 Move forward in the phase lifecycle via the CLI:
 
 ```text
-python3 scripts/harness.py phase set <discuss|plan|execute|done>
-python3 scripts/harness.py phase approve   # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+harness phase set <discuss|plan|execute|done>       # long form: python3 scripts/harness.py phase set <X>
+harness phase approve                                # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
 ```

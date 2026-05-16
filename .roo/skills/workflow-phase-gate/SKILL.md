@@ -243,13 +243,13 @@ Move forward in the phase lifecycle via the CLI; do NOT direct-edit `.scratch/ph
 
 ```text
 # Advance phase (writes phase, updated_at, updated_by; audits the write):
-python3 scripts/harness.py phase set <discuss|plan|execute|done>
+harness phase set <discuss|plan|execute|done>     # long form: python3 scripts/harness.py phase set <X>
 
 # Approve in phase=plan or phase=execute (writes approved=true, approved_by, approved_at):
-python3 scripts/harness.py phase approve
+harness phase approve                              # long form: python3 scripts/harness.py phase approve
 
 # From phase=done, start a new cycle (safety prompt required):
-python3 scripts/harness.py phase set discuss --reset-approval
+harness phase set discuss --reset-approval         # long form: python3 scripts/harness.py phase set discuss --reset-approval
 ```
 
 `python3 scripts/harness.py phase approve` in `phase=done` is a no-op error (exit 6, G2-C). Direct-editing the state file still works but emits an ADR-003a drift warning on the next `harness check` run.

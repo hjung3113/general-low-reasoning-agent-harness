@@ -30,8 +30,8 @@ Do not advance the gate to `phase=execute` unless explicit approval provenance e
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-python3 scripts/harness.py phase approve       # plan / execute: writes approved=true, approved_by, approved_at
-python3 scripts/harness.py phase set execute   # plan → execute (requires approve first)
+harness phase approve                                # long form: python3 scripts/harness.py phase approve; plan / execute: writes approved=true, approved_by, approved_at
+harness phase set execute                            # long form: python3 scripts/harness.py phase set execute; plan → execute (requires approve first)
 ```
 
 Plan output checklist:
