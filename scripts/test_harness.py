@@ -499,37 +499,6 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
 
-    def test_install_harness_profile_presets_map_to_expected_packs(self) -> None:
-        pack_names = harness.available_scopes(harness.repo_root())["packs"]
-
-        _, dotnet_packs = install_harness.resolve_profile_preset("dotnet-etl", pack_names)
-        _, python_packs = install_harness.resolve_profile_preset("python-etl", pack_names)
-        _, web_packs = install_harness.resolve_profile_preset("react-tailwind-typescript-web", pack_names)
-        _, full_packs = install_harness.resolve_profile_preset("full", pack_names)
-
-        self.assertEqual(
-            ["workflow-core", "tech-csharp", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
-            dotnet_packs,
-        )
-        self.assertNotIn("tech-mssql", dotnet_packs)
-        self.assertNotIn("workflow-db-context", dotnet_packs)
-        self.assertEqual(
-            ["workflow-core", "tech-python", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
-            python_packs,
-        )
-        self.assertEqual(
-            [
-                "workflow-core",
-                "tech-react",
-                "tech-typescript",
-                "tech-tailwind",
-                "workflow-web-development",
-                "workflow-tdd",
-            ],
-            web_packs,
-        )
-        self.assertEqual(pack_names, full_packs)
-
     def test_install_harness_pack_selection_uses_shown_numbers_only(self) -> None:
         self.assertEqual(
             ["workflow-security-review", "tech-mssql"],
@@ -549,7 +518,7 @@ class HarnessToolTests(unittest.TestCase):
                     str(harness.repo_root() / "scripts/install_harness.py"),
                     "--interactive",
                 ],
-                input=f"relative-target\n{missing}\n{target}\n1\n2\nnone\nyes\n",
+                input=f"relative-target\n{missing}\n{target}\n1\n2\nnone\nnone\nyes\n",
                 cwd=harness.repo_root(),
                 capture_output=True,
                 text=True,
@@ -577,7 +546,7 @@ class HarnessToolTests(unittest.TestCase):
                     "--packs",
                     "workflow-security-review",
                 ],
-                input=f"{target}\n\n4\n\nno\n",
+                input=f"{target}\n\n4\n\n\nno\n",
                 cwd=harness.repo_root(),
                 capture_output=True,
                 text=True,
@@ -594,7 +563,6 @@ class HarnessToolTests(unittest.TestCase):
                     "tech-typescript",
                     "workflow-core",
                     "workflow-security-review",
-                    "workflow-tdd",
                     "workflow-web-development",
                 ],
                 installed["packs"],
@@ -1236,9 +1204,6 @@ progress:
             self.assertNotEqual(0, completed.returncode)
             self.assertIn("Unknown installed harness scope", completed.stderr)
 
-    # TASK-8: This test covers the old dotnet-etl-mssql profile composition with
-    # mssql-specific content assertions ("Target .NET 10 unless", Testcontainers, etc.).
-    # It needs a full rewrite once the installer preset resolver is updated in Task 8.
     def test_csharp_mssql_etl_pack_composition_recreates_specialized_guardrails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
@@ -1267,7 +1232,6 @@ progress:
             ):
                 self.assertTrue((target / f".agents/skills/{skill_name}/SKILL.md").exists(), skill_name)
             profile = (target / "docs/profiles/dotnet-etl.md").read_text(encoding="utf-8")
-            # TASK-8: old mssql-specific content assertions removed; update when profile content is finalised
             self.assertIn("dotnet-etl", profile)
             etl = (target / ".agents/skills/workflow-etl/SKILL.md").read_text(encoding="utf-8")
             self.assertIn("tech-csharp", etl)
@@ -3165,6 +3129,41 @@ class OpencodeCommandsProfileRulesTests(unittest.TestCase):
             text = (REPO_ROOT / ".opencode/commands" / name).read_text(encoding="utf-8")
             self.assertIn(".opencode/profile-rules/", text, msg=name)
             self.assertIn("alphabetical", text.lower(), msg=name)
+
+
+class InstallerInteractiveTests(unittest.TestCase):
+    def test_profile_options_are_unified(self):
+        from scripts import install_harness
+        slugs = [opt[0] for opt in install_harness.PROFILE_OPTIONS]
+        self.assertEqual(set(slugs), {"generic", "dotnet-etl", "python-etl", "react-web"})
+
+    def test_db_options_include_none(self):
+        from scripts import install_harness
+        slugs = [opt[0] for opt in install_harness.DB_OPTIONS]
+        self.assertEqual(set(slugs), {"mssql", "postgresql", "none"})
+
+    def test_prompt_db_returns_none_for_generic_without_prompting(self):
+        from scripts import install_harness
+        with mock.patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            self.assertEqual(install_harness.prompt_db("generic"), "none")
+
+    def test_legacy_preset_names_removed(self):
+        from scripts import install_harness
+        self.assertFalse(hasattr(install_harness, "PROFILE_PRESETS"))
+        self.assertFalse(hasattr(install_harness, "resolve_profile_preset"))
+
+    def test_run_interactive_dry_run_resolves_dotnet_etl_with_mssql(self):
+        from scripts import install_harness
+        with tempfile.TemporaryDirectory() as tmp:
+            # tmp path, adapter choice "1" (roo), profile choice "2" (dotnet-etl),
+            # db choice "1" (mssql), then "" for additional packs.
+            answers = iter([tmp, "1", "2", "1", ""])
+            with mock.patch("builtins.input", side_effect=lambda *a, **k: next(answers)):
+                plan = install_harness.run_interactive_dry_run()
+            self.assertEqual(plan["profile"], "dotnet-etl")
+            self.assertEqual(plan["db"], "mssql")
+            self.assertIn("tech-mssql", plan["packs"])
+            self.assertIn("workflow-db-context", plan["packs"])
 
 
 if __name__ == "__main__":

@@ -11,40 +11,18 @@ from pathlib import Path
 import harness
 
 
-PROFILE_PRESETS = {
-    "minimal": {
-        "description": "Core planning guardrails with the stack-neutral workflow core.",
-        "profiles": "generic",
-        "packs": ("workflow-core",),
-    },
-    "dotnet-etl": {
-        "description": ".NET/C# ETL work without assuming a database engine.",
-        "profiles": "generic",
-        "packs": ("workflow-core", "tech-csharp", "workflow-etl", "workflow-data-processing", "workflow-tdd"),
-    },
-    "python-etl": {
-        "description": "Python ETL and data pipeline work.",
-        "profiles": "generic",
-        "packs": ("workflow-core", "tech-python", "workflow-etl", "workflow-data-processing", "workflow-tdd"),
-    },
-    "react-tailwind-typescript-web": {
-        "description": "React, TypeScript, and Tailwind web application work.",
-        "profiles": "generic",
-        "packs": (
-            "workflow-core",
-            "tech-react",
-            "tech-typescript",
-            "tech-tailwind",
-            "workflow-web-development",
-            "workflow-tdd",
-        ),
-    },
-    "full": {
-        "description": "All shipped skill packs. Adapters are still selected separately.",
-        "profiles": "generic",
-        "packs": "ALL",
-    },
-}
+PROFILE_OPTIONS = (
+    ("generic", "Stack-neutral baseline."),
+    ("dotnet-etl", ".NET/C# ETL projects."),
+    ("python-etl", "Python ETL/data pipeline projects."),
+    ("react-web", "React + TypeScript + Tailwind web apps."),
+)
+
+DB_OPTIONS = (
+    ("mssql", "SQL Server."),
+    ("postgresql", "PostgreSQL."),
+    ("none", "No database / not applicable."),
+)
 
 ADAPTER_OPTIONS = (
     ("roo", "Roo only"),
@@ -124,16 +102,49 @@ def parse_pack_selection(raw: str, pack_options: list[str]) -> list[str]:
     return selected
 
 
-def resolve_profile_preset(name: str, pack_names: list[str]) -> tuple[str, list[str]]:
-    if name not in PROFILE_PRESETS:
-        raise SystemExit(f"Unknown profile preset: {name}")
-    preset = PROFILE_PRESETS[name]
-    profiles = str(preset["profiles"])
-    packs = pack_names if preset["packs"] == "ALL" else list(preset["packs"])
-    missing = sorted(set(packs) - set(pack_names))
-    if missing:
-        raise SystemExit(f"Profile preset {name} references unknown skill packs: {', '.join(missing)}")
-    return profiles, packs
+def prompt_profile() -> str:
+    return prompt_choice("Profile", list(PROFILE_OPTIONS), default="generic")
+
+
+def prompt_db(profile: str) -> str:
+    if profile == "generic":
+        return "none"
+    return prompt_choice("Database", list(DB_OPTIONS), default="none")
+
+
+def prompt_additional_packs(already_included: list[str]) -> list[str]:
+    pack_names = harness.available_scopes(harness.repo_root())["packs"]
+    available = sorted(set(pack_names) - set(already_included))
+    if not available:
+        return []
+    print("Already included packs: " + ", ".join(already_included))
+    print("Additional skill packs:")
+    for index, pack in enumerate(available, start=1):
+        print(f"  {index}. {pack}")
+    raw = prompt_value("Additional packs by shown number or name (comma-separated, none to skip)", "none")
+    if not raw.strip() or raw.strip().lower() in {"none", "no", "skip"}:
+        return []
+    return parse_pack_selection(raw, available)
+
+
+def run_interactive_dry_run() -> dict:
+    """Walk the prompts and return the resolved install plan without installing."""
+    target = prompt_existing_absolute_target()
+    adapter = prompt_choice("Adapter", list(ADAPTER_OPTIONS), default="roo")
+    profile = prompt_profile()
+    db = prompt_db(profile)
+    auto_packs = set(harness.default_packs_for_profile(profile))
+    if profile != "generic" and db != "none":
+        auto_packs.update(harness.db_packs(db))
+    extras = prompt_additional_packs(sorted(auto_packs))
+    packs = sorted(set(auto_packs) | set(extras))
+    return {
+        "target": str(target),
+        "adapter": adapter,
+        "profile": profile,
+        "db": db,
+        "packs": packs,
+    }
 
 
 def pack_capability_summary(scopes: dict[str, list[str]], pack: str) -> str:
@@ -154,9 +165,12 @@ def prompt_interactive(args: argparse.Namespace) -> argparse.Namespace:
     print("Interactive harness install")
     args.target = prompt_existing_absolute_target(args.target)
     args.adapters = prompt_choice("Adapter", list(ADAPTER_OPTIONS), normalize_adapter_choice(args.adapters))
-    preset_options = [(name, str(config["description"])) for name, config in PROFILE_PRESETS.items()]
-    preset = prompt_choice("Profile", preset_options, "minimal")
-    args.profiles, included_packs = resolve_profile_preset(preset, pack_names)
+    profile = prompt_profile()
+    args.profiles = profile
+    db = prompt_db(profile)
+    included_packs = list(harness.default_packs_for_profile(profile))
+    if profile != "generic" and db != "none":
+        included_packs = list(dict.fromkeys([*included_packs, *harness.db_packs(db)]))
     print("Included skill packs:")
     for pack in included_packs:
         summary = pack_capability_summary(scopes, pack)
@@ -176,6 +190,8 @@ def prompt_interactive(args: argparse.Namespace) -> argparse.Namespace:
         print("Additional skill packs: none available")
         extra_packs = []
     args.packs = ",".join(dict.fromkeys([*included_packs, *extra_packs]))
+    if db != "none":
+        args.db = db
     dry_answer = prompt_value("Dry-run first? (yes/no)", "yes").lower()
     args.dry_run = dry_answer not in {"n", "no"}
     return args
@@ -193,6 +209,9 @@ def build_harness_argv(args: argparse.Namespace) -> list[str]:
         argv.extend(["--profiles", args.profiles])
     if args.packs:
         argv.extend(["--packs", args.packs])
+    db = getattr(args, "db", None)
+    if db and db != "none":
+        argv.extend(["--db", db])
     return argv
 
 
