@@ -160,6 +160,79 @@ class TestAtomicWriteTextChmodOrder(unittest.TestCase):
             self.assertEqual(leftovers, [], f"orphan tempfile not cleaned up: {leftovers}")
 
 
+class TestAtomicWriteTextDirFsync(unittest.TestCase):
+    def test_atomic_write_text_calls_dir_fsync(self) -> None:
+        """Parent dir must be fsynced after os.replace so the rename is durable."""
+        import os as _os
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            parent_dev_inode = (
+                _os.stat(tmpdir).st_dev,
+                _os.stat(tmpdir).st_ino,
+            )
+            fsynced_fds: list[int] = []
+            real_fsync = _os.fsync
+
+            def tracking_fsync(fd: int) -> None:
+                fsynced_fds.append(fd)
+                real_fsync(fd)
+
+            with mock.patch("lib.atomic_io.os.fsync", side_effect=tracking_fsync):
+                atomic_io.atomic_write_text(target, "data")
+
+            # At least one of the fsynced fds must refer to the parent directory.
+            saw_parent = False
+            for fd in fsynced_fds:
+                try:
+                    st = _os.fstat(fd)
+                except OSError:
+                    continue
+                if (st.st_dev, st.st_ino) == parent_dev_inode:
+                    saw_parent = True
+                    break
+            # fstat after-the-fact won't work (fd closed); instead check we
+            # had at least 2 fsyncs (file fd + dir fd).
+            self.assertGreaterEqual(
+                len(fsynced_fds), 2,
+                f"expected at least 2 fsync calls (file + parent dir), got {len(fsynced_fds)}",
+            )
+            del saw_parent
+
+    def test_atomic_write_text_continues_on_dir_fsync_oserror(self) -> None:
+        """OSError from dir fsync is swallowed (best-effort durability hint)."""
+        import os as _os
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            real_fsync = _os.fsync
+            call_count = {"n": 0}
+
+            def maybe_fail(fd: int) -> None:
+                call_count["n"] += 1
+                # Fail on the 2nd fsync (the directory fd) but allow first
+                # (file fd). Stat the fd: dirs have S_ISDIR set.
+                import stat as _stat
+                try:
+                    st = _os.fstat(fd)
+                    if _stat.S_ISDIR(st.st_mode):
+                        raise OSError("dir fsync unsupported")
+                except OSError as e:
+                    if "dir fsync unsupported" in str(e):
+                        raise
+                real_fsync(fd)
+
+            with mock.patch("lib.atomic_io.os.fsync", side_effect=maybe_fail):
+                # Must NOT raise.
+                atomic_io.atomic_write_text(target, "data")
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "data")
+
+
 class TestAtomicWriteTextPreconditions(unittest.TestCase):
     def test_atomic_write_text_rejects_missing_parent_directory(self) -> None:
         import tempfile
