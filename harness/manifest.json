@@ -699,6 +699,66 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/version.py",
+      "source": "scripts/lib/version.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/profiles.py",
+      "source": "scripts/lib/profiles.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/manifest.py",
+      "source": "scripts/lib/manifest.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/append_block.py",
+      "source": "scripts/lib/append_block.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state.py",
+      "source": "scripts/lib/state.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/roadmap_state.py",
+      "source": "scripts/lib/roadmap_state.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/worktree.py",
+      "source": "scripts/lib/worktree.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/adoption.py",
+      "source": "scripts/lib/adoption.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/check.py",
+      "source": "scripts/lib/check.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/doctor.py",
+      "source": "scripts/lib/doctor.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/install.py",
+      "source": "scripts/lib/install.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/upgrade.py",
+      "source": "scripts/lib/upgrade.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"

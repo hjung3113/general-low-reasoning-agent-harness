@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness
 import install_harness
+from lib import version
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -82,18 +83,18 @@ class HarnessToolTests(unittest.TestCase):
 
         self.assertEqual("3.0.0", harness.resolve_harness_version(root, explicit="v3.0.0", env=env))
 
-        with mock.patch.object(harness, "git_output") as git_output:
+        with mock.patch.object(version, "git_output") as git_output:
             git_output.return_value = "v1.2.3"
             self.assertEqual("2.0.0", harness.resolve_harness_version(root, env=env))
             git_output.assert_not_called()
 
-        with mock.patch.object(harness, "git_output") as git_output, mock.patch.object(
-            harness, "is_git_worktree_dirty", return_value=False
+        with mock.patch.object(version, "git_output") as git_output, mock.patch.object(
+            version, "is_git_worktree_dirty", return_value=False
         ):
             git_output.return_value = "v1.2.3"
             self.assertEqual("1.2.3", harness.resolve_harness_version(root, env={}))
 
-        with mock.patch.object(harness, "git_output") as git_output:
+        with mock.patch.object(version, "git_output") as git_output:
             git_output.return_value = "1.2.3"
             self.assertIsNone(harness.exact_release_tag_version(root))
 
@@ -106,7 +107,7 @@ class HarnessToolTests(unittest.TestCase):
                 return ""
             raise AssertionError(command)
 
-        with mock.patch.object(harness, "git_output", side_effect=fake_git_output):
+        with mock.patch.object(version, "git_output", side_effect=fake_git_output):
             self.assertEqual("0.0.0-dev+abc123def456", harness.resolve_harness_version(root, env={}))
 
     def test_init_records_cli_resolved_release_version(self) -> None:
@@ -127,8 +128,8 @@ class HarnessToolTests(unittest.TestCase):
         (root / "harness/manifest.json").write_text(json.dumps({"version": "__release__", "files": []}), encoding="utf-8")
         (root / "README.md").write_text("Install with v1.2.3\n", encoding="utf-8")
 
-        with mock.patch.object(harness, "git_output") as git_output, mock.patch.object(
-            harness, "is_git_worktree_dirty", return_value=False
+        with mock.patch.object(version, "git_output") as git_output, mock.patch.object(
+            version, "is_git_worktree_dirty", return_value=False
         ):
             git_output.return_value = "v1.2.3"
             harness.release_check(root=root, expected_version="v1.2.3")
@@ -142,19 +143,19 @@ class HarnessToolTests(unittest.TestCase):
                 return "def"
             raise AssertionError(command)
 
-        with mock.patch.object(harness, "git_output", side_effect=origin_main_git_output), mock.patch.object(
-            harness, "is_git_worktree_dirty", return_value=False
+        with mock.patch.object(version, "git_output", side_effect=origin_main_git_output), mock.patch.object(
+            version, "is_git_worktree_dirty", return_value=False
         ):
             with self.assertRaisesRegex(SystemExit, "origin/main"):
                 harness.release_check(root=root, expected_version="v1.2.3", require_origin_main=True)
 
-        with mock.patch.object(harness, "git_output") as git_output:
+        with mock.patch.object(version, "git_output") as git_output:
             git_output.side_effect = subprocess.CalledProcessError(128, ["git", "describe"])
             with self.assertRaisesRegex(SystemExit, "exact vMAJOR.MINOR.PATCH tag"):
                 harness.release_check(root=root, expected_version="v1.2.3")
 
-        with mock.patch.object(harness, "git_output", return_value="v1.2.3"), mock.patch.object(
-            harness, "is_git_worktree_dirty", return_value=True
+        with mock.patch.object(version, "git_output", return_value="v1.2.3"), mock.patch.object(
+            version, "is_git_worktree_dirty", return_value=True
         ):
             with self.assertRaisesRegex(SystemExit, "dirty worktree"):
                 harness.release_check(root=root, expected_version="v1.2.3")
@@ -166,8 +167,8 @@ class HarnessToolTests(unittest.TestCase):
             (root / "harness/manifest.json").write_text(json.dumps({"version": "__release__", "files": []}), encoding="utf-8")
             (root / "README.md").write_text("Install with v0.4.9\nUpgrade with v0.4.9\n", encoding="utf-8")
 
-            with mock.patch.object(harness, "git_output", return_value="v0.5.0"), mock.patch.object(
-                harness, "is_git_worktree_dirty", return_value=False
+            with mock.patch.object(version, "git_output", return_value="v0.5.0"), mock.patch.object(
+                version, "is_git_worktree_dirty", return_value=False
             ):
                 with self.assertRaisesRegex(SystemExit, "README release version mismatch"):
                     harness.release_check(root=root, expected_version="v0.5.0")
@@ -366,7 +367,7 @@ class HarnessToolTests(unittest.TestCase):
             target = Path(tmpdir) / "target"
 
             with mock.patch.object(
-                harness,
+                version,
                 "git_source_provenance",
                 return_value={
                     "kind": "git",
@@ -805,7 +806,8 @@ class HarnessToolTests(unittest.TestCase):
             root = Path(tmpdir)
             self.write_sync_fixture(root)
 
-            with mock.patch.object(harness, "load_projection") as load_projection:
+            import lib.doctor as _doctor_mod
+            with mock.patch.object(_doctor_mod, "load_projection") as load_projection:
                 load_projection.return_value = mock.Mock(required_reads=[], warnings=[])
                 findings = harness.collect_doctor_findings(root)
 
