@@ -56,7 +56,7 @@ The acceptance properties below are non-negotiable for the hardening tag. Proper
 - The hardening slice is permitted to introduce breaking changes to (a) the `phase=done` contract, (b) verification field shape, (c) scope-pattern syntax, and (d) the direct-edit trust model.
 - All four are pre-1.0 contract changes. The repository remains in 0.x and SemVer 0.x rules apply: minor version bumps may break.
 - Migration tooling is REQUIRED for the live `.scratch/phase-state.json` (see §9 backward-compat criteria and T0-1 sub-requirements). Migration tooling for `.planning/**` content is NOT required if no schema is published over it.
-- Each breaking change MUST be enumerated in CHANGELOG under a `Breaking` heading. CHANGELOG format itself is out of this slice (T3) but the discipline of listing each break is in scope.
+- Each breaking change MUST be enumerated in CHANGELOG under a `Breaking` heading. The `Breaking` heading requirement applies ONLY to the `## [Unreleased]` (or equivalent unreleased) section as of this slice; backfilling `Breaking` subsections into historical released versions is out of scope and remains deferred to T3 / `02c-hardening`. CHANGELOG format itself is out of this slice (T3) but the discipline of listing each break under the unreleased section is in scope, and T0-1 creates the minimal `### Breaking` subsection skeleton under `## [Unreleased]` if not already present (see §7 T0-1 sub-requirements).
 
 ### 2.5 Support window
 
@@ -169,6 +169,14 @@ Candidate options:
 
 Sub-decision (mandatory regardless of option): ADR-001 MUST name the new `state_schema_version` value the migration writes.
 
+Sub-decision (mandatory IF option 3 is selected): the `--reverse` migrator (T0-1) MUST re-introduce a value for `approved` on the v1 → v0 downgrade path to satisfy the older schema's `done`-branch constraint. ADR-001 MUST pick exactly one of the following:
+
+- **(3a)** `approved=false` — preserves the current live-state value byte-for-byte; the downgraded record will be schema-invalid under the OLD schema's stated intent but identical to what shipped pre-slice (matches the §3 `approved=false recorded at .scratch/phase-state.json:3` reality).
+- **(3b)** `approved=true` — interprets `done` as approved completion; the downgraded record is schema-valid under the OLD schema's stated intent but does not round-trip an existing pre-slice file's `approved=false` value.
+- **(3c)** Refuse downgrade with a documented error citing the dropped-field semantics and instructing the operator to hand-edit if downgrade is genuinely required.
+
+If option 1 or option 2 is selected, this sub-decision does not apply (the field is retained on the `done` branch and the `--reverse` value is determined by the source record).
+
 Decision-source: T0-1 in §7.
 
 ### ADR-002 - Scope Pattern Syntax
@@ -212,6 +220,7 @@ Sub-decisions (mandatory):
 
 - **Session lockfile.** ADR-003a establishes `.harness/session.lock` as the convention for an active session lockfile. The lockfile is touched by the CLI on entry and removed on clean exit. The upgrade path (per D2) detects this file and refuses to proceed mid-session with a clear instruction to finish or kill the session. The chosen transition primitive MUST be compatible with this convention.
 - **State file location.** If the chosen option moves the state file out of the working tree (e.g., to `.harness/state.json`), `--remove-install-state` MUST handle BOTH the legacy `.scratch/phase-state.json` path AND the new path, or REFUSE with a diagnostic naming both paths. No silent partial cleanup.
+- **`STATE_FILE_PATHS` artifact (mandatory).** ADR-003a's locked output MUST include the post-decision authoritative list of state file paths, named `STATE_FILE_PATHS` (a tuple/list of relative paths). This list is the single source of truth that the §10.2 grep gate, T1-S SKILL updates, and the uninstall flow (`--remove-install-state`) MUST track. If the ADR keeps the legacy path, `STATE_FILE_PATHS = (".scratch/phase-state.json",)`. If the ADR relocates, the list contains both the new path and any legacy path that remains in scope for migration/uninstall. The list is published as part of the CLI contract document (see "Critical artifact" below) so downstream rows do not re-derive it.
 
 Decision-source: T0-3 in §7. ADR-003a constrains the option space of ADR-003b.
 
@@ -315,15 +324,17 @@ Reversibility legend:
 - Migration writes (T0-1) MUST write the new path BEFORE unlinking the legacy path. No window where neither file exists.
 - T0-A is dependency-zero. It can land FIRST and SHOULD land first. All other T0 rows depend on T0-A for state writes; the §8 graph is updated accordingly.
 - Acceptance: a single helper `scripts/lib/atomic.py:write_json_atomic(path, data)` exists; every site that previously called `path.write_text` for managed JSON is migrated; a regression test injects a crash between write and replace and asserts the legacy file is intact.
+- Acceptance (grep gate cross-reference): the §11 T0-A worked example's grep gate iterates over the `STATE_FILE_PATHS` list defined by ADR-003a (see §6 ADR-003a sub-decisions). T0-A MAY land before ADR-003a locks by using the pre-decision default `STATE_FILE_PATHS = (".scratch/phase-state.json",)`; once ADR-003a locks, the grep gate, T1-S, and the uninstall flow MUST be updated in lockstep to the ADR-003a-published list.
 
 **T0-1 (`phase=done` contract).**
 
 - Sub-requirement: introduce the `state_schema_version` field in the schema with initial value `1`. The ADR-001 chosen `done` shape bumps the value (e.g., to `2`). The ENFORCEMENT GUARD (refuse newer versions) is NOT in this row; it is deferred to `02c-hardening`. See §2.2.
 - Sub-requirement: the migrator writes `.scratch/phase-state.json.pre-<old-schema-version>.bak` BEFORE calling `os.replace`. The backup is byte-identical to the pre-migration file.
-- Sub-requirement: the migrator supports `--reverse` for at least the version 1 → 0 downgrade path (where "0" is the pre-`state_schema_version` shape, treated as version 0 for the purpose of migration arithmetic). The downgrade path MAY drop fields the older shape did not understand; it MUST not silently corrupt.
+- Sub-requirement: the migrator supports `--reverse` for at least the version 1 → 0 downgrade path (where "0" is the pre-`state_schema_version` shape, treated as version 0 for the purpose of migration arithmetic). The downgrade path MAY drop fields the older shape did not understand; it MUST not silently corrupt. The value the reverse migrator writes for `approved` (if ADR-001 option 3 is selected and the field was dropped from the `done` branch) is dictated by the ADR-001 sub-decision (3a / 3b / 3c); if option 1 or 2 is selected, the value round-trips from the source record.
 - Sub-requirement: all state writes performed by the migrator use the T0-A primitive.
 - Sub-requirement: the existing test that asserts "`done` requires `approved=false`" (currently in `scripts/test_harness.py`) MUST be deleted or rewritten. Deleting a passing test is normally a smell; this is intentional and is noted in the PR description.
 - T0-1 is `partial` reversible because the live state is rewritten to the new shape; the `--reverse` migrator and the `.pre-*.bak` artifact are the mitigations.
+- Sub-requirement (CHANGELOG `Breaking` skeleton): T0-1 MUST ensure `CHANGELOG.md` exists at repo root and contains a `## [Unreleased]` (or already-present equivalent unreleased) section with a `### Breaking` subsection skeleton. If the file already exists with an unreleased section but no `### Breaking` subsection, T0-1 adds the subsection. T0-1 appends the entry for the `done` contract change (and any other breaking change it introduces, e.g., `state_schema_version` introduction if interpreted as breaking) under that subsection. Backfilling `Breaking` subsections into historical released versions is OUT of scope per §2.4.
 
 **T0-3 (CLI transition primitive).**
 
@@ -610,7 +621,16 @@ same filesystem as the target.
 
 ## Verification
 - `python3 -m pytest scripts/tests/test_atomic.py -v`
-- `! grep -rn "write_text" scripts/ | grep "phase-state.json"`
+- Grep gate iterates over the `STATE_FILE_PATHS` list published by ADR-003a (see §6 ADR-003a sub-decisions). Reference shape:
+  ```sh
+  # STATE_FILE_PATHS is sourced from the ADR-003a-locked CLI contract document.
+  # Pre-ADR-003a default: STATE_FILE_PATHS=(".scratch/phase-state.json")
+  STATE_FILE_PATHS=(".scratch/phase-state.json")  # update per ADR-003a output
+  for p in "${STATE_FILE_PATHS[@]}"; do
+    ! grep -rn "write_text" scripts/ | grep -F "$p"
+  done
+  ```
+- Note: the grep gate is the same gate referenced by §10.2 static grep gate and the §7 T1-S allowlist; all three MUST track the same `STATE_FILE_PATHS` list. ADR-003a's locked output is the single source of truth (see §6 ADR-003a "`STATE_FILE_PATHS` artifact" sub-decision).
 
 ## Reversibility
 yes (helper can be deleted; sites can be reverted to `write_text`).
@@ -667,8 +687,9 @@ This spec is accepted when:
 6. T1-S is scheduled to begin no earlier than the CLI contract artifact lock, and to complete before §10 smoke runs.
 7. Downstream documents (plans, ADRs, issues) cite this spec by path.
 8. §2.7 (Public-installable status) and §2.8 (Known residual risks) are acknowledged in the implementation plan introduction.
+9. `CHANGELOG.md` exists at repo root with a `## [Unreleased]` (or existing equivalent unreleased) section containing a `### Breaking` subsection. As of T0-1 completion, the `done` contract change is enumerated under that subsection. Historical-version backfill is NOT required (per §2.4).
 
-If any of the eight conditions is not met before code work begins, this spec has been violated and the slice MUST be re-spec'd, not silently expanded.
+If any of the nine conditions is not met before code work begins (or, for condition 9, before T0-1 lands), this spec has been violated and the slice MUST be re-spec'd, not silently expanded.
 
 ---
 
