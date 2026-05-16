@@ -47,8 +47,8 @@ def render_block(slug: str, payload: str) -> str:
 @dataclass(frozen=True)
 class ParsedBlock:
     slug: str
-    start: int   # byte offset of begin-marker line
-    end: int     # byte offset just after end-marker line's trailing newline
+    start: int   # character index of begin-marker line
+    end: int     # character index just after end-marker line's trailing newline
     payload: str
     hash: str
 
