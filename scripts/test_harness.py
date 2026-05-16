@@ -2950,6 +2950,104 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(h.normalize_profiles(["react-web", "generic"]), ["react-web", "generic"])
 
 
+class DbFlagTests(unittest.TestCase):
+    def test_init_with_db_mssql_adds_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                    "--db", "mssql",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("tech-mssql", installed["packs"])
+            self.assertIn("workflow-db-context", installed["packs"])
+
+    def test_init_with_db_postgresql_adds_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "python-etl",
+                    "--db", "postgresql",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("tech-postgresql", installed["packs"])
+            self.assertIn("workflow-db-context", installed["packs"])
+
+    def test_init_db_none_does_not_add_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                    "--db", "none",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+            self.assertNotIn("tech-postgresql", installed["packs"])
+
+    def test_init_db_with_generic_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            result = subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "generic",
+                    "--db", "mssql",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("ignored", (result.stderr + result.stdout).lower())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+
+    def test_init_without_db_omits_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+            self.assertNotIn("tech-postgresql", installed["packs"])
+
+
 class RoomodesWriterTests(unittest.TestCase):
     def test_read_baseline_returns_eight_base_modes(self):
         from scripts.lib import roomodes_writer

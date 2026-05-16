@@ -386,8 +386,14 @@ def run(argv: list[str] | None = None) -> int:
     )
     init_parser.add_argument(
         "--packs",
-        default="workflow-core",
-        help="Comma-separated optional skill/capability packs to install. Defaults to workflow-core.",
+        default=None,
+        help="Comma-separated optional skill/capability packs to install. Defaults to profile-appropriate packs.",
+    )
+    init_parser.add_argument(
+        "--db",
+        choices=("mssql", "postgresql", "none"),
+        default=None,
+        help="Optional database axis. Ignored when profile is 'generic'.",
     )
 
     upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
@@ -437,13 +443,29 @@ def run(argv: list[str] | None = None) -> int:
 
     if args.command == "init":
         raw_profiles = parse_scope(args.profiles, default={"generic"})
+        profiles_resolved = normalize_profiles(list(raw_profiles))
+        if args.packs is not None:
+            # User explicitly provided --packs: honour it as-is.
+            final_packs: set[str] = parse_scope(args.packs, default={"workflow-core"})
+        else:
+            # Auto-derive packs from profile defaults + optional db axis.
+            auto_packs: set[str] = set()
+            for profile in profiles_resolved:
+                auto_packs.update(default_packs_for_profile(profile))
+            db = args.db
+            if db is not None:
+                if profiles_resolved == ["generic"]:
+                    print("NOTE: --db is ignored for the 'generic' profile.", file=sys.stderr)
+                else:
+                    auto_packs.update(db_packs(db))
+            final_packs = auto_packs
         install(
             root=root,
             target=args.target,
             dry_run=args.dry_run,
             adapters=parse_scope(args.adapters, default={"roo"}),
-            profiles=set(normalize_profiles(list(raw_profiles))),
-            packs=parse_scope(args.packs, default={"workflow-core"}),
+            profiles=set(profiles_resolved),
+            packs=final_packs,
         )
         return 0
     if args.command == "upgrade":
