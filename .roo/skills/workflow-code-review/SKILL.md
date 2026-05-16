@@ -49,3 +49,13 @@ If the task cannot proceed because planning context is missing, stale, placehold
 - If no findings exist, state residual risks and test gaps.
 - Do not expand the task into feature implementation or sample project construction.
 
+
+
+## Canonical CLI Invocation
+
+Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
+
+```text
+python3 scripts/harness.py phase set <discuss|plan|execute|done>
+python3 scripts/harness.py phase approve   # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+```
