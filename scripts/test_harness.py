@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness
 import install_harness
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 class HarnessToolTests(unittest.TestCase):
     SHOW_PHASE_STATUS_PREFLIGHT = (
@@ -2842,6 +2844,56 @@ progress:
             "sha256": harness.file_hash(path),
         }
         installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+
+class RoomodesWriterTests(unittest.TestCase):
+    def test_read_baseline_returns_eight_base_modes(self):
+        from scripts.lib import roomodes_writer
+        baseline = roomodes_writer.read(REPO_ROOT / ".roomodes")
+        self.assertEqual(
+            [m["slug"] for m in baseline.base_modes],
+            [
+                "orchestrator",
+                "architect",
+                "tdd-code",
+                "diagnose",
+                "review",
+                "docs-issues",
+                "ops-observability",
+                "harness-maintainer",
+            ],
+        )
+        self.assertEqual(baseline.profile_modes, [])
+
+    def test_set_profile_modes_round_trip(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / ".roomodes"
+            target.write_text((REPO_ROOT / ".roomodes").read_text(encoding="utf-8"), encoding="utf-8")
+            ui_engineer = {"slug": "ui-engineer", "name": "UI Engineer"}
+            roomodes_writer.set_profile_modes(target, [ui_engineer])
+            again = roomodes_writer.read(target)
+            self.assertEqual(len(again.base_modes), 8)
+            self.assertEqual([m["slug"] for m in again.profile_modes], ["ui-engineer"])
+            roomodes_writer.set_profile_modes(target, [])
+            again2 = roomodes_writer.read(target)
+            self.assertEqual(again2.profile_modes, [])
+            self.assertEqual(len(again2.base_modes), 8)
+
+    def test_unmanaged_modes_preserved(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / ".roomodes"
+            target.write_text(json.dumps({"customModes": [
+                {"slug": "orchestrator"},
+                {"slug": "tdd-code"},
+                {"slug": "my-custom-mode", "name": "Project-owned"},
+            ]}), encoding="utf-8")
+            c = roomodes_writer.read(target)
+            self.assertEqual([m["slug"] for m in c.unmanaged_modes], ["my-custom-mode"])
+            roomodes_writer.set_profile_modes(target, [{"slug": "ui-engineer"}])
+            c2 = roomodes_writer.read(target)
+            self.assertEqual([m["slug"] for m in c2.unmanaged_modes], ["my-custom-mode"])
 
 
 if __name__ == "__main__":
