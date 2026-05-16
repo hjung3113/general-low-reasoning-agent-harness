@@ -485,7 +485,7 @@ echo '{"next_action":"...", "current_checkpoint":"CP-01-04"}' | harness phase se
 - `1` — generic error (write failure, IO).
 - `2` — invalid transition (per ADR-001 state machine).
 - `3` — session lockfile present (`.harness/session.lock` exists; another session active).
-- `4` — schema-version refusal (reserved for `02c-hardening` guard; not active in this slice).
+- `4` — `SCOPE_VIOLATION` — assigned to T1-1 (scope enforcement: write outside `allowed_paths` or matching `blocked_paths`). Reservation for "schema-version refusal" is lifted; that signal will use a code in the 9..15 range when `02c-hardening` ships. See ledger entry L16 and `.planning/phases/02b-hardening/CONTRACT-PIN.md` §4.
 - `5` — unparseable JSON (state file or stdin).
 - `6` — wrong phase for verb (e.g., `harness phase approve` when current phase is `done`).
 - `7` — stale-detection-uncertain (used by `harness session unlock`; not normally raised by `phase set`).
@@ -914,7 +914,7 @@ Ready to copy under `CHANGELOG.md` → `## [Unreleased]` → `### Breaking`.
 13. **Paused phases (e.g., `02-skill-pack-expansion`) are first-class** in `.planning/STATE.md`'s managed `state-current` block under a `### Paused Phases` subsection.
 14. **`approved_at` and `updated_at` precision is nanoseconds.** Format: `YYYY-MM-DDThh:mm:ss.nnnnnnnnnZ`. Migrator pads second-precision values with `.000000000`.
 15. **`--at` argument validation:** values not within 24h of `datetime.now(UTC)` are rejected with exit 8.
-16. **Exit code split:** 2=invalid-transition, 3=lockfile-active, 5=unparseable-json, 6=wrong-phase-for-verb, 7=stale-detection-uncertain, 8=timestamp-out-of-range.
+16. **Exit code split:** 2=invalid-transition, 3=lockfile-active, **4=scope-violation (reservation lifted; assigned to T1-1)**, 5=unparseable-json, 6=wrong-phase-for-verb, 7=stale-detection-uncertain, 8=timestamp-out-of-range. Code 4 was previously reserved for "schema-version refusal"; that signal is deferred to `02c-hardening` and will use a code in the 9..15 range.
 17. **Uninstall flags split (G4-C):** `--remove-state` (live JSON), `--remove-operational` (audit/lock/backups), `--remove-install-state` (manifest), `--remove-all`.
 18. **`.gitignore` mandatory entries** added by installer: `.harness/audit.log`, `.harness/audit.log.*`, `.harness/audit.overflow/`, `.harness/backups/`, `.harness/session.lock`.
 19. **Verification trust boundary (G4-B):** core CLI never executes `verification[*]` strings; smoke runners document developer-trusted-input boundary.
