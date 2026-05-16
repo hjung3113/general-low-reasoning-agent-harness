@@ -24,3 +24,19 @@ Move forward in the phase lifecycle via the CLI:
 harness phase set <discuss|plan|execute|done>       # long form: python3 scripts/harness.py phase set <X>
 harness phase approve                                # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
 ```
+
+## Pre-commit (REQUIRED — symmetric with `.opencode/commands/execute.md`)
+
+Before the owning mode commits:
+
+1. Run `python3 scripts/harness.py check --worktree`.
+2. On exit 4 (scope violation): the command names every violating file
+   and points at `docs/protocol-spec.md#scope-enforcement`. Reduce the
+   commit (e.g. `git restore --staged <file>`) OR edit
+   `.scratch/phase-state.json` `allowed_paths`. Do NOT use
+   `git commit --no-verify`.
+3. On exit 0: proceed with the commit.
+
+The pre-commit hook installable via `python3 scripts/harness.py install
+--pre-commit` enforces the same contract from the git-hook boundary
+(spec §10.4 adapter mirroring).

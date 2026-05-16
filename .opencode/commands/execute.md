@@ -26,13 +26,19 @@ Before editing, verify via `python3 scripts/harness.py check` that the live gate
 
 Stop if requested work falls outside `allowed_paths` or if phase, checkpoint, plan, or allowed paths changed during the session.
 
-Before committing, run:
+## Pre-commit (REQUIRED — T1-1 scope enforcement)
 
-```bash
-python3 scripts/harness.py check --worktree
-```
+1. Run: `python3 scripts/harness.py check --worktree`.
+2. If exit code is 4 (scope violation): the command names the violating
+   files and prints a remediation block. Either
+   (a) `git restore --staged <file>` and exclude it from the commit, OR
+   (b) edit `.scratch/phase-state.json` `allowed_paths` (and re-run).
+   Do NOT bypass with `git commit --no-verify`.
+3. If exit code is 0: proceed with `git commit`.
 
-Run `python3 scripts/harness.py check --worktree` before committing.
+The same exit-4 contract is enforced by the pre-commit hook installable
+via `python3 scripts/harness.py install --pre-commit`; running the check
+yourself here lets you see the diagnostic before the hook fires.
 
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 

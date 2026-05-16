@@ -174,5 +174,42 @@ class E2ECommitTests(unittest.TestCase):
         )
 
 
+class AdapterCommandFileMirrorTests(unittest.TestCase):
+    """T1-1 Task 5: both lifecycle `execute` adapter command files MUST
+    promote `harness.py check --worktree` to a numbered pre-commit step
+    and MUST NOT suggest `git commit --no-verify` as a workaround."""
+
+    EXECUTE_FILES = (
+        REPO_ROOT / ".opencode/commands/execute.md",
+        REPO_ROOT / ".roo/commands/phase-execute.md",
+    )
+
+    def test_each_execute_file_invokes_check_worktree(self):
+        for path in self.EXECUTE_FILES:
+            with self.subTest(path=str(path)):
+                body = path.read_text()
+                self.assertIn(
+                    "harness.py check --worktree", body,
+                    f"{path} must invoke `harness.py check --worktree`",
+                )
+
+    def test_no_execute_file_recommends_no_verify(self):
+        # Mentions of `git commit --no-verify` are permitted only inside
+        # a "Do NOT ... --no-verify" sentence (multi-line tolerated).
+        for path in self.EXECUTE_FILES:
+            with self.subTest(path=str(path)):
+                body = path.read_text()
+                lines = body.splitlines()
+                for index, line in enumerate(lines):
+                    if "git commit --no-verify" in line:
+                        # Look at line and the previous line (markdown wraps).
+                        window = " ".join(lines[max(0, index - 1):index + 1]).lower()
+                        self.assertTrue(
+                            "do not" in window,
+                            f"{path}: line {index+1} mentions --no-verify "
+                            f"outside of a 'Do NOT' instruction: {line!r}",
+                        )
+
+
 if __name__ == "__main__":
     unittest.main()
