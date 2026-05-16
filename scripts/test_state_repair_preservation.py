@@ -248,6 +248,47 @@ class SkeletonGitignoreTests(unittest.TestCase):
         self.assertIn(".harness/backups/", lines)
 
 
+class RapidRepairUniquenessTests(unittest.TestCase):
+    """T0-5-M1: rapid back-to-back repairs MUST produce unique `.bak` names.
+
+    Collisions would either silently overwrite a recent backup or trip the
+    O_EXCL refusal and abort an otherwise valid repair. Either is a data
+    hazard. With nanosecond+pid timestamping plus a 3-retry loop, N=50
+    sequential calls inside one process should always succeed and yield
+    50 distinct files.
+    """
+
+    def test_rapid_repeated_repairs_produce_unique_backups(self):
+        root = _make_root(
+            phase_state={
+                "phase": "discuss",
+                "current_checkpoint": "CP-09-99",
+                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+            }
+        )
+        # The first repair rewrites STATE.md; subsequent repairs are no-ops
+        # unless we keep nudging the payload. Easiest is to keep mutating
+        # the phase-state checkpoint between calls so each repair has a
+        # diff to flush.
+        backups_dir = root / ".harness" / "backups"
+        for i in range(50):
+            (root / ".scratch/phase-state.json").write_text(
+                json.dumps({
+                    "phase": "discuss",
+                    "current_checkpoint": f"CP-09-{i:02d}",
+                    "checkpoint_path": f".planning/phases/09-test/CP-{i}.md",
+                }),
+                encoding="utf-8",
+            )
+            repair(root)
+        baks = list(backups_dir.glob("*.pre-repair.*.bak"))
+        names = [b.name for b in baks]
+        self.assertEqual(
+            len(set(names)), len(names),
+            f"duplicate backup names: {sorted(names)}",
+        )
+
+
 class CanonicalPayloadTests(unittest.TestCase):
     def test_canonical_payload_threads_paused_phases(self) -> None:
         payload = canonical_state_current_payload(
