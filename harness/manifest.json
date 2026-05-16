@@ -759,6 +759,21 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/managed_block.py",
+      "source": "scripts/lib/managed_block.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_repair.py",
+      "source": "scripts/lib/state_repair.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_cli.py",
+      "source": "scripts/lib/state_cli.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"

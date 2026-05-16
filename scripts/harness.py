@@ -173,20 +173,14 @@ from lib.upgrade import (
     install_state_migration_report,
 )
 from lib.planning_status import ProjectionError, load_projection
-try:
-    from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair
-    from lib.state_repair import repair as state_repair_fn, RepairReport as StateRepairReport
-    from lib.managed_block import (
-        render_block as managed_render_block,
-        parse_blocks as managed_parse_blocks,
-        replace_block as managed_replace_block,
-        canonicalize as managed_canonicalize,
-    )
-except ModuleNotFoundError:
-    state_run_show = state_run_repair = None  # type: ignore[assignment]
-    state_repair_fn = None  # type: ignore[assignment]
-    StateRepairReport = None  # type: ignore[assignment]
-    managed_render_block = managed_parse_blocks = managed_replace_block = managed_canonicalize = None  # type: ignore[assignment]
+from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair
+from lib.state_repair import repair as state_repair_fn, RepairReport as StateRepairReport
+from lib.managed_block import (
+    render_block as managed_render_block,
+    parse_blocks as managed_parse_blocks,
+    replace_block as managed_replace_block,
+    canonicalize as managed_canonicalize,
+)
 from lib.workflow_static_checks import (
     installed_scope_issues,
     optional_phase_pointer_keys,
