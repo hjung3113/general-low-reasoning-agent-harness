@@ -3309,5 +3309,53 @@ class DoctorOpencodeProfileRulesTests(unittest.TestCase):
             self.assertIn("profile-rules", result.stdout + result.stderr)
 
 
+class StateSubcommandTests(unittest.TestCase):
+    def test_state_show_runs(self):
+        from pathlib import Path
+        import tempfile, json as _json
+        root = Path(tempfile.mkdtemp())
+        (root / ".planning").mkdir()
+        (root / ".scratch").mkdir()
+        (root / ".planning/ROADMAP.md").write_text(
+            "# R\n\n## Phases\n\n- [ ] **Phase 0: A**\n", encoding="utf-8"
+        )
+        (root / ".planning/STATE.md").write_text(
+            "---\nprogress:\n  total_phases: 1\n  completed_phases: 0\n  percent: 0\n---\n\n"
+            "# S\n\n## Current Position\n\n- **Phase**: 0\n",
+            encoding="utf-8",
+        )
+        (root / ".scratch/phase-state.json").write_text(
+            _json.dumps({"phase": "discuss", "state_path": ".planning/STATE.md"}),
+            encoding="utf-8",
+        )
+
+        import harness
+        rc = harness.run(["state", "show", "--root", str(root)])
+        self.assertEqual(rc, 0)
+
+    def test_state_repair_runs(self):
+        from pathlib import Path
+        import tempfile, json as _json
+        root = Path(tempfile.mkdtemp())
+        (root / ".planning").mkdir()
+        (root / ".scratch").mkdir()
+        (root / ".planning/ROADMAP.md").write_text(
+            "# R\n\n## Phases\n\n- [ ] **Phase 0: A**\n", encoding="utf-8"
+        )
+        (root / ".planning/STATE.md").write_text(
+            "---\nprogress:\n  total_phases: 1\n  completed_phases: 0\n  percent: 0\n---\n\n"
+            "# S\n\n## Current Position\n\n- **Phase**: 0\n",
+            encoding="utf-8",
+        )
+        (root / ".scratch/phase-state.json").write_text(
+            _json.dumps({"phase": "discuss"}), encoding="utf-8"
+        )
+        import harness
+        rc = harness.run(["state", "repair", "--root", str(root)])
+        self.assertEqual(rc, 0)
+        roadmap = (root / ".planning/ROADMAP.md").read_text(encoding="utf-8")
+        self.assertIn("HARNESS:BEGIN managed:roadmap-phases", roadmap)
+
+
 if __name__ == "__main__":
     unittest.main()

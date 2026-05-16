@@ -173,6 +173,20 @@ from lib.upgrade import (
     install_state_migration_report,
 )
 from lib.planning_status import ProjectionError, load_projection
+try:
+    from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair
+    from lib.state_repair import repair as state_repair_fn, RepairReport as StateRepairReport
+    from lib.managed_block import (
+        render_block as managed_render_block,
+        parse_blocks as managed_parse_blocks,
+        replace_block as managed_replace_block,
+        canonicalize as managed_canonicalize,
+    )
+except ModuleNotFoundError:
+    state_run_show = state_run_repair = None  # type: ignore[assignment]
+    state_repair_fn = None  # type: ignore[assignment]
+    StateRepairReport = None  # type: ignore[assignment]
+    managed_render_block = managed_parse_blocks = managed_replace_block = managed_canonicalize = None  # type: ignore[assignment]
 from lib.workflow_static_checks import (
     installed_scope_issues,
     optional_phase_pointer_keys,
@@ -247,6 +261,10 @@ __all__ = [
     # workflow_static_checks
     "installed_scope_issues", "optional_phase_pointer_keys",
     "verification_contract_issues", "verification_placeholder_reason",
+    # state CLI
+    "state_run_show", "state_run_repair", "state_repair_fn", "StateRepairReport",
+    "managed_render_block", "managed_parse_blocks", "managed_replace_block",
+    "managed_canonicalize",
     # local
     "HARNESS_VERSION", "CLEAN_SKELETON", "UTC_TIMESTAMP", "VERIFICATION_PREFIXES",
     "REQUIRED_TARGET_PHRASES", "CONTAMINATION_PATTERNS",
@@ -409,6 +427,19 @@ def run(argv: list[str] | None = None) -> int:
         help="Fail unless the tagged commit equals origin/main.",
     )
 
+    state_parser = subparsers.add_parser(
+        "state",
+        help="Inspect and repair managed planning state.",
+    )
+    state_sub = state_parser.add_subparsers(dest="state_command", required=True)
+
+    state_show = state_sub.add_parser("show", help="Print phase-state projection (read-only).")
+    state_show.add_argument("--root", type=Path, default=None)
+    state_show.add_argument("--format", dest="state_format", choices=("text", "json"), default="text")
+
+    state_repair_p = state_sub.add_parser("repair", help="Canonicalize managed marker blocks.")
+    state_repair_p.add_argument("--root", type=Path, default=None)
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -495,6 +526,13 @@ def run(argv: list[str] | None = None) -> int:
         )
         print(f"release-check PASS v{release_version}")
         return 0
+    if args.command == "state":
+        state_root = Path(args.root) if args.root else root
+        if args.state_command == "show":
+            return state_run_show(root=state_root, stream=sys.stdout, fmt=args.state_format)
+        if args.state_command == "repair":
+            return state_run_repair(root=state_root, stream=sys.stdout)
+        raise AssertionError(f"Unhandled state subcommand: {args.state_command}")
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
