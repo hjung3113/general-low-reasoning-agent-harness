@@ -3953,6 +3953,59 @@ class T04TrustBoundaryTests(unittest.TestCase):
                 REPO_ROOT / ".scratch" / "phase-state.json"
             )
 
+    def test_main_check_does_not_execute_verification_strings(self) -> None:
+        # CodeM1: even allowlist-passing verification entries (e.g. `python3
+        # -c "<canary>"`) must never be executed by the core check path.
+        # `harness.run(["check"])` ultimately funnels every verification
+        # consumer through `check_phase_state_semantics`; we exercise that
+        # surface with a fixture whose verification would create a canary
+        # file if naively executed via shell or subprocess.
+        import os as _os
+        import subprocess as _subprocess
+        canary = Path("/tmp/canary_t04_trust_boundary")
+        if canary.exists():
+            canary.unlink()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            verification_cmd = (
+                f"python3 -c \"open('{canary}','w').write('x')\""
+            )
+            state = {
+                "phase": "execute",
+                "state_schema_version": 2,
+                "approved": True,
+                "automation_mode": "manual",
+                "auto_selected": [],
+                "plan_id": "p",
+                "allowed_paths": ["scripts/harness.py"],
+                "verification": [verification_cmd],
+                "review": [],
+                "state_path": ".planning/STATE.md",
+                "plan_path": ".planning/PLAN.md",
+                "checkpoint_path": ".planning/CP.md",
+                "current_checkpoint": "CP-1",
+                "next_action": "Run verification.",
+                "approved_by": "user",
+                "approved_at": "2026-05-15T00:00:00Z",
+                "updated_at": "2026-05-15T00:00:00Z",
+                "updated_by": "test",
+            }
+            path = tmp / "phase-state.json"
+            path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch.object(_subprocess, "run", side_effect=AssertionError("subprocess.run called")), \
+                 mock.patch.object(_subprocess, "Popen", side_effect=AssertionError("subprocess.Popen called")), \
+                 mock.patch.object(_subprocess, "call", side_effect=AssertionError("subprocess.call called")), \
+                 mock.patch.object(_subprocess, "check_call", side_effect=AssertionError("subprocess.check_call called")), \
+                 mock.patch.object(_subprocess, "check_output", side_effect=AssertionError("subprocess.check_output called")), \
+                 mock.patch.object(_os, "system", side_effect=AssertionError("os.system called")):
+                # The verification-consuming surface reachable from `main(["check"])`.
+                harness.check_phase_state_semantics(path)
+            # Trust boundary holds: no canary side-effect.
+            self.assertFalse(
+                canary.exists(),
+                f"verification string was executed (canary present at {canary})",
+            )
+
     def test_check_validates_prefix_without_invoking_command(self) -> None:
         # A nonexistent path inside the verification entry must not be probed.
         with tempfile.TemporaryDirectory() as tmpdir:
