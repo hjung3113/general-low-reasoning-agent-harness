@@ -320,5 +320,82 @@ class TestAtomicAppendLogConcurrency(unittest.TestCase):
                 )
 
 
+class TestGrepGate(unittest.TestCase):
+    """Grep gate: no write_text() against managed state / operational paths in scripts/.
+
+    Reads STATE_FILE_PATHS, OPERATIONAL_PATHS, INSTALL_PATHS from
+    scripts/lib/operational_paths.py (sole declaration site per
+    CONTRACT-PIN §2). Scans scripts/ recursively for lines matching
+    `.write_text(` AND containing any tracked path literal. Each match
+    is a violation.
+    """
+
+    @staticmethod
+    def _gate_scan(scripts_root: Path, tracked_paths: tuple[str, ...]) -> list[str]:
+        import re
+
+        pattern = re.compile(r"\.write_text\(")
+        violations: list[str] = []
+        for py_path in scripts_root.rglob("*.py"):
+            # Skip test files: they write fixture state under tempdirs, NOT
+            # the real on-disk state paths. The atomicity contract applies
+            # only to production writers (scripts/lib/*.py and CLI entries).
+            # The synthetic-fixture test (test 13) exercises the gate against
+            # a planted file in a temp scripts/ tree to prove the gate works.
+            if py_path.name.startswith("test_"):
+                continue
+            try:
+                text = py_path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if not pattern.search(line):
+                    continue
+                for tracked in tracked_paths:
+                    if tracked in line:
+                        violations.append(f"{py_path}:{lineno}: {line.strip()} (matches {tracked})")
+        return violations
+
+    def test_grep_gate_clean_against_live_tree(self) -> None:
+        from lib.operational_paths import (
+            INSTALL_PATHS,
+            OPERATIONAL_PATHS,
+            STATE_FILE_PATHS,
+        )
+
+        tracked = STATE_FILE_PATHS + OPERATIONAL_PATHS + INSTALL_PATHS
+        scripts_root = Path(__file__).resolve().parent
+        violations = self._gate_scan(scripts_root, tracked)
+        self.assertEqual(violations, [], f"grep-gate violations: {violations}")
+
+    def test_grep_gate_fails_when_write_text_added_against_state_path(self) -> None:
+        """Plant a synthetic violation in a temp scripts/ tree; gate must flag it."""
+        import tempfile
+
+        from lib.operational_paths import (
+            INSTALL_PATHS,
+            OPERATIONAL_PATHS,
+            STATE_FILE_PATHS,
+        )
+
+        tracked = STATE_FILE_PATHS + OPERATIONAL_PATHS + INSTALL_PATHS
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_scripts = Path(tmpdir) / "scripts"
+            fake_scripts.mkdir()
+            planted = fake_scripts / "bad.py"
+            planted.write_text(
+                'from pathlib import Path\n'
+                'Path(".scratch/phase-state.json").write_text("x")\n',
+                encoding="utf-8",
+            )
+            violations = self._gate_scan(fake_scripts, tracked)
+            self.assertTrue(violations, "grep gate failed to detect planted violation")
+            self.assertTrue(
+                any(".scratch/phase-state.json" in v for v in violations),
+                f"expected violation naming the tracked path, got: {violations}",
+            )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
