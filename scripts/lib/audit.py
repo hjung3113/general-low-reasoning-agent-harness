@@ -137,18 +137,36 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
 
-        # Rotation pre-check.
+        # Rotation pre-check. Per C4: rename(s) MUST run while the flock
+        # is held. POSIX rename is atomic and flock binds to the inode
+        # (which moves with rename), so racing openers that arrive between
+        # our rename and the new-file open block on the inode under the
+        # old pathname (the lock still applies). After _rotate, the old
+        # fd points at audit.log.1 (same inode); we re-open the new
+        # audit.log for the actual write. The new open() must wait for any
+        # racing writer holding flock on the just-rotated inode; the open
+        # itself is unblocked (the path is fresh), but the LOCK_EX call
+        # blocks correctly because we still hold the old fd's flock.
         st_size = os.fstat(fd).st_size
         last_idx = _read_last_index(audit_path)
         if st_size >= ROTATION_BYTES or last_idx >= ROTATION_ENTRIES:
-            # Release lock + close before rename; re-open + re-lock on the
-            # new file. Per POSIX, the rename of the open file is atomic;
-            # we drop the lock so the rotated file does not retain it.
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            os.close(fd)
             _rotate(audit_path)
-            fd = _open_append_fd(audit_path)
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            # Open the new (empty) audit.log. The old fd (still flocked)
+            # now refers to audit.log.1; closing it releases the old-inode
+            # lock. We acquire the new-inode lock BEFORE closing the old
+            # fd so any racing acquirer that beats us to the new file
+            # serializes correctly.
+            new_fd = _open_append_fd(audit_path)
+            fcntl.flock(new_fd, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            fd = new_fd
             last_idx = 0
 
         index = last_idx + 1
