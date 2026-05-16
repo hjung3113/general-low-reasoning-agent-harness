@@ -12,6 +12,18 @@ Start with `python3 scripts/show_phase_status.py` when available — execute it 
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, and setup changes are allowed only when explicitly requested.
 
+### Managed marker blocks
+
+`.planning/ROADMAP.md` and `.planning/STATE.md` contain regions wrapped in
+`<!-- HARNESS:BEGIN managed:<slug> v1 -->` ... `<!-- HARNESS:END managed:<slug> -->`
+markers. Treat those regions as machine-owned: do not edit them by hand.
+
+- To view the live projection: `python3 scripts/harness.py state show`
+- To fix drifted or unmarked managed regions: `python3 scripts/harness.py state repair`
+
+Free-form sections (Notes, Session Continuity, free prose outside the marker
+block) remain agent-editable as before.
+
 Before creating or reshaping ROADMAP phases, phase folders, ADR decisions, or phase success criteria, run a `grill-me` style alignment pass: ask one question at a time, give the recommended answer and reason, inspect the repo instead of asking when the repo can answer, and record an alignment summary with confirmed facts, inferred facts, user preferences, recommended defaults, open questions, and blocked decisions. Do not turn unconfirmed preferences into phase commitments.
 
 Every roadmap phase starts with its own `discuss` pass before `plan` or `execute`. Before finalizing ADR decisions or phase commitments, run an adversarial review with two relevant expert roles, three lenses each, and the mandatory lens of whether the questions are concrete enough for low-reasoning models. `--auto` may select recommended low-risk defaults and must record auditable `auto_selected` entries. `--chain` may continue through one phase's `discuss -> plan -> execute` only when `.scratch/phase-state.json` is verified or written with `phase=execute`, the same `plan_id`, `approved=true`, `automation_mode=chain`, durable pointers, allowed paths, verification, and review checks.
