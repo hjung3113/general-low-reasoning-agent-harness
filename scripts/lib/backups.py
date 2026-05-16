@@ -110,18 +110,16 @@ def _bak_name(target: Path) -> str:
 _DEFAULT_RETENTION = 10
 
 
+def _open_excl(bak_path: Path) -> int:
+    """Open ``bak_path`` with O_EXCL + O_NOFOLLOW; return fd. Propagates errors."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    return os.open(str(bak_path), flags, 0o644)
+
+
 def _write_bak_excl(bak_path: Path, content: bytes) -> None:
-    """Write ``content`` to ``bak_path`` with O_EXCL + O_NOFOLLOW semantics.
-
-    Retries up to 3 times on FileExistsError to defeat same-process timestamp
-    collisions (CC4). Raises a _CodedSystemExit(1) if all retries collide.
-    """
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    flags |= nofollow
-
+    """Write ``content`` to ``bak_path`` with O_EXCL + O_NOFOLLOW (single attempt)."""
     try:
-        fd = os.open(str(bak_path), flags, 0o644)
+        fd = _open_excl(bak_path)
     except FileExistsError:
         raise _exit1(
             f"error: backup file already exists at {bak_path}; this typically "
@@ -172,8 +170,35 @@ def write_backup_with_excl_and_prune(
         backups_dir = default_backups_dir(target)
     _ensure_backups_dir(backups_dir)
 
-    bak_path = backups_dir / _bak_name(target)
-    _write_bak_excl(bak_path, source_bytes)
+    # CC4: retry up to 3 times on O_EXCL collision (regenerate the name each
+    # time via _compact_utc_nanos / _pid). Pre-existing legitimate .bak
+    # collisions still surface as exit-1 from _write_bak_excl after the last
+    # retry, preserving the original "stale backup" guidance.
+    bak_path: Optional[Path] = None
+    last_exc: Optional[BaseException] = None
+    for attempt in range(3):
+        candidate = backups_dir / _bak_name(target)
+        try:
+            fd = _open_excl(candidate)
+        except FileExistsError as exc:
+            last_exc = exc
+            continue
+        try:
+            os.write(fd, source_bytes)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        bak_path = candidate
+        break
+
+    if bak_path is None:
+        # All retries collided -- fall through to the canonical exit-1 message
+        # using the most recent candidate path (last_exc carries the original).
+        _write_bak_excl(backups_dir / _bak_name(target), source_bytes)
+        # _write_bak_excl always either succeeds or raises; we should not reach
+        # here, but keep type-checkers happy.
+        raise AssertionError(f"unreachable; last exc was {last_exc!r}")
+
     _prune_old_backups(target.name, backups_dir, retention)
     return bak_path
 
