@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 # Public skeleton location — single source of truth for the hook body.
@@ -39,6 +40,39 @@ END_MARKER = "# HARNESS:scope-check-end"
 
 def _hook_path(target: Path) -> Path:
     return target / ".git" / "hooks" / "pre-commit"
+
+
+def _assert_is_git_worktree(target: Path) -> None:
+    """T1-1-C1: refuse to install if ``target`` is not a git worktree.
+
+    The hook lives at ``<target>/.git/hooks/pre-commit`` — git only invokes
+    it when commits happen INSIDE that worktree. Plain directories silently
+    accept the file but never run it, producing a false sense of safety.
+
+    A ``.git`` directory check alone misses the case where ``target`` is a
+    subdirectory of an outer repo (here ``.git`` doesn't exist locally but
+    ``git rev-parse --show-toplevel`` resolves UP to the outer root, which
+    the caller almost certainly did not mean). Combining both checks yields
+    a tight "this exact path is a worktree root" predicate.
+    """
+    git_dir = target / ".git"
+    if not git_dir.is_dir():
+        raise SystemExit(
+            f"target {target} is not a git worktree; "
+            f"--pre-commit requires a git repo"
+        )
+    try:
+        subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--git-dir"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise SystemExit(
+            f"target {target} is not a git worktree; "
+            f"--pre-commit requires a git repo"
+        )
 
 
 def _read_skeleton() -> str:
@@ -89,6 +123,7 @@ def install_pre_commit_hook(target: Path) -> None:
         body.
     """
     target = target.resolve()
+    _assert_is_git_worktree(target)
     hook = _hook_path(target)
     hook.parent.mkdir(parents=True, exist_ok=True)
     skeleton = _read_skeleton()

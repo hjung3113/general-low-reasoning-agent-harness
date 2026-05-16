@@ -94,6 +94,39 @@ class InstallTests(unittest.TestCase):
         self.assertIn(hooks.BEGIN_MARKER, body)
 
 
+class InstallTargetValidationTests(unittest.TestCase):
+    """T1-1-C1: --target MUST be a git worktree before any mutation.
+
+    Without this guard the installer happily writes `.git/hooks/pre-commit`
+    inside a plain directory, producing a hook that git will never invoke.
+    """
+
+    def test_install_pre_commit_refuses_non_git_target(self):
+        tmp = Path(tempfile.mkdtemp(prefix="t1-1-nongit-"))
+        # Deliberately do NOT `git init` -- tmp is a plain directory.
+        with self.assertRaises(SystemExit) as ctx:
+            hooks.install_pre_commit_hook(tmp)
+        msg = str(ctx.exception)
+        self.assertIn("not a git worktree", msg)
+        self.assertIn(str(tmp), msg)
+        # No `.git/hooks/` directory should have been created either.
+        self.assertFalse((tmp / ".git").exists())
+
+    def test_install_rejects_nested_git_repo_pointing_to_outer(self):
+        # A bare subdirectory inside a git repo is NOT itself a worktree --
+        # `git rev-parse` from within it resolves to the OUTER repo, so the
+        # caller almost certainly meant the outer root. Refuse it.
+        outer = Path(tempfile.mkdtemp(prefix="t1-1-outer-"))
+        _git_init(outer)
+        nested = outer / "subdir"
+        nested.mkdir()
+        with self.assertRaises(SystemExit) as ctx:
+            hooks.install_pre_commit_hook(nested)
+        self.assertIn("not a git worktree", str(ctx.exception))
+        # Nothing written under nested/.git.
+        self.assertFalse((nested / ".git").exists())
+
+
 class UninstallTests(unittest.TestCase):
     def test_uninstall_removes_block_keeps_user_content(self):
         tmp = _make_target([".scratch/"])
