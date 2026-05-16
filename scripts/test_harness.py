@@ -3396,5 +3396,69 @@ class ManagedBlockCheckWarningTests(unittest.TestCase):
         self.assertIn("missing_managed_block", codes)
 
 
+class ChangelogStructureTests(unittest.TestCase):
+    """T0-1 (02b-02) — CHANGELOG ### Breaking subsection (Block 0).
+
+    Per plan .planning/phases/02b-hardening/plans/02b-02-T0-1-PLAN.md and
+    CONTRACT-PIN §7 (ledger L1, L2, L12 owned by 02b-02 and land in Block 0).
+    """
+
+    def _read_changelog(self) -> str:
+        return (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    def _breaking_body(self, text: str) -> str:
+        # Scan lines from the literal heading '## Unreleased (develop)' to the
+        # next '## ' boundary; within that scan, capture the body of the
+        # '### Breaking' subsection until the next '### ' or '## ' boundary.
+        lines = text.splitlines()
+        in_unreleased = False
+        in_breaking = False
+        body: list[str] = []
+        for line in lines:
+            if line.startswith("## "):
+                if line.strip() == "## Unreleased (develop)":
+                    in_unreleased = True
+                    in_breaking = False
+                    continue
+                if in_unreleased:
+                    break  # left the Unreleased section
+            if not in_unreleased:
+                continue
+            if line.startswith("### "):
+                if line.strip() == "### Breaking":
+                    in_breaking = True
+                    continue
+                else:
+                    in_breaking = False
+                    continue
+            if in_breaking:
+                body.append(line)
+        return "\n".join(body)
+
+    def test_changelog_unreleased_section_has_breaking_subsection(self) -> None:
+        text = self._read_changelog()
+        self.assertIn("## Unreleased (develop)", text)
+        body = self._breaking_body(text)
+        # Body present (string-non-empty) — the seed file is allowed but the
+        # T0-1 Block 0 commit MUST populate the body with ledger rows. Any
+        # non-comment content is required.
+        non_comment = [
+            ln for ln in body.splitlines()
+            if ln.strip() and not ln.strip().startswith("<!--")
+        ]
+        self.assertTrue(
+            non_comment,
+            "### Breaking subsection under ## Unreleased (develop) is empty or only contains HTML comments",
+        )
+
+    def test_changelog_breaking_subsection_mentions_done_contract_and_state_schema_version(self) -> None:
+        text = self._read_changelog()
+        body = self._breaking_body(text)
+        self.assertIn("phase=done", body)
+        self.assertIn("state_schema_version", body)
+        # Ledger L12 — migrator --resume verb mention required.
+        self.assertIn("--resume", body)
+
+
 if __name__ == "__main__":
     unittest.main()
