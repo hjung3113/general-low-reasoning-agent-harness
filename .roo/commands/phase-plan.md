@@ -17,3 +17,10 @@ Use `/phase-plan` for phase planning only:
 5. Do not edit implementation files.
 
 For one-pass automation, use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`; canonical automation rules live in `workflow-phase-gate`.
+
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase approve       # record approval provenance (CLI writes approved_by, approved_at)
+python3 scripts/harness.py phase set execute   # plan → execute (must be approved first)
+```

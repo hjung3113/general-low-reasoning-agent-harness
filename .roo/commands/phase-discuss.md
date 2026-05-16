@@ -17,3 +17,10 @@ Use `/phase-discuss` for phase-local discovery only:
 5. Do not edit implementation files.
 
 For one-pass automation, use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`; canonical automation rules live in `workflow-phase-gate`.
+
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase set plan      # discuss → plan
+python3 scripts/harness.py phase approve       # in plan or execute only
+```
