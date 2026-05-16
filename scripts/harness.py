@@ -110,6 +110,7 @@ KNOWN_PACKS = {
     "workflow-skill-authoring",
     "workflow-security-review",
 }
+PROFILE_MODE_OWNERS: dict[str, str] = {"ui-engineer": "react-web"}
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 README_RELEASE_VERSION = re.compile(r"\bv\d+\.\d+\.\d+\b")
 VERIFICATION_PREFIXES = (
@@ -1585,6 +1586,9 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")
     validate_installed_scope_names(installed)
+    profile_sync_errs = _check_roomodes_profile_sync(target, installed)
+    if profile_sync_errs:
+        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs))
     missing = []
     for path_text in installed.get("files", {}):
         destination = target / normalize_path(path_text)
@@ -1663,6 +1667,39 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             check_phase_state_semantics(path)
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
+
+
+def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
+    roomodes_path = target / ".roomodes"
+    if not roomodes_path.exists():
+        return []
+    try:
+        from lib import roomodes_writer
+        profile_modes = roomodes_writer.read(roomodes_path).profile_modes
+    except ImportError:
+        # roomodes_writer is not installed to targets; parse directly using the
+        # same slug-based classification as the writer.
+        _BASE_SLUGS = {
+            "orchestrator", "architect", "tdd-code", "diagnose", "review",
+            "docs-issues", "ops-observability", "harness-maintainer",
+        }
+        _KNOWN_PROFILE_SLUGS = frozenset(PROFILE_MODE_OWNERS.keys())
+        data = json.loads(roomodes_path.read_text(encoding="utf-8"))
+        profile_modes = [
+            m for m in data.get("customModes", [])
+            if m.get("slug") not in _BASE_SLUGS and m.get("slug") in _KNOWN_PROFILE_SLUGS
+        ]
+    installed_profiles = set((installed.get("init_options") or {}).get("profiles") or [])
+    errs: list[str] = []
+    for mode in profile_modes:
+        slug = mode.get("slug")
+        owner = PROFILE_MODE_OWNERS.get(slug)
+        if owner and owner not in installed_profiles:
+            errs.append(
+                f".roomodes contains profile-contributed mode {slug!r} but "
+                f"owning profile {owner!r} is not installed"
+            )
+    return errs
 
 
 def validate_installed_scope_names(installed: dict[str, object]) -> None:
@@ -1897,6 +1934,7 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(installed_scope_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
+    findings.extend(opencode_profile_rules_doctor_findings(root))
     findings.append(
         DoctorFinding(
             severity="P3",
@@ -2180,6 +2218,30 @@ def db_context_doctor_findings(root: Path) -> list[DoctorFinding]:
                         evidence="include_jobs present; agent_jobs missing",
                     )
                 )
+    return findings
+
+
+def opencode_profile_rules_doctor_findings(root: Path) -> list[DoctorFinding]:
+    findings: list[DoctorFinding] = []
+    cmd_dir = root / ".opencode/commands"
+    if not cmd_dir.exists():
+        return findings
+    for name in ("discuss.md", "plan.md", "execute.md", "done.md"):
+        path = cmd_dir / name
+        if not path.exists():
+            continue
+        if ".opencode/profile-rules/" not in path.read_text(encoding="utf-8"):
+            findings.append(
+                DoctorFinding(
+                    severity="P2",
+                    code="opencode_profile_rules_missing",
+                    path=f".opencode/commands/{name}",
+                    cause=f"{name} is missing the .opencode/profile-rules/ read instruction.",
+                    impact="Profile-specific rules will not be loaded when the command is invoked.",
+                    fix=f"Add the profile-rules read instruction to .opencode/commands/{name}.",
+                    evidence=f"{name}: missing .opencode/profile-rules/ read instruction",
+                )
+            )
     return findings
 
 

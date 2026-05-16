@@ -3247,5 +3247,64 @@ class UpgradeMigrationTests(unittest.TestCase):
             self.assertEqual(set(after["packs"]), set(before["packs"]))
 
 
+class CheckProfileSyncTests(unittest.TestCase):
+    def test_check_fails_when_ui_engineer_present_without_react_web(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"], check=True)
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["generic"]
+            installed["profiles"] = ["generic"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "check", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ui-engineer", result.stdout + result.stderr)
+
+    def test_check_passes_for_clean_react_web_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"], check=True)
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "check", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+
+
+class DoctorOpencodeProfileRulesTests(unittest.TestCase):
+    def test_doctor_warns_when_profile_rules_line_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "opencode", "--profiles", "dotnet-etl"], check=True)
+            execute = target / ".opencode/commands/execute.md"
+            text = execute.read_text(encoding="utf-8")
+            mangled = "\n".join(
+                line for line in text.splitlines()
+                if ".opencode/profile-rules/" not in line
+            ) + "\n"
+            execute.write_text(mangled, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "doctor", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertIn("profile-rules", result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
