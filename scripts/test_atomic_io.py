@@ -208,5 +208,40 @@ class TestAtomicAppendLogBasic(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "A\nB\n")
 
 
+class TestAtomicAppendLogErrors(unittest.TestCase):
+    def test_atomic_append_log_refuses_oversized_line(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            # 600 bytes payload (>512 even before trailing newline).
+            payload = "x" * 600
+            with self.assertRaises(ValueError) as ctx:
+                atomic_io.atomic_append_log(target, payload)
+            msg = str(ctx.exception)
+            self.assertIn("512", msg)
+            self.assertIn("601", msg)  # 600 + newline = 601
+            # Log file must be unchanged (and not created).
+            self.assertFalse(target.exists())
+
+    def test_atomic_append_log_releases_lock_on_exception(self) -> None:
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            atomic_io.atomic_append_log(target, "seed")
+            # Make os.write raise; assert flock released and follow-up works.
+            with mock.patch("lib.atomic_io.os.write", side_effect=OSError("boom")):
+                with self.assertRaises(OSError):
+                    atomic_io.atomic_append_log(target, "should-fail")
+            # Follow-up append succeeds (flock released).
+            atomic_io.atomic_append_log(target, "after")
+            contents = target.read_text(encoding="utf-8")
+            self.assertIn("seed\n", contents)
+            self.assertIn("after\n", contents)
+            self.assertNotIn("should-fail", contents)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
