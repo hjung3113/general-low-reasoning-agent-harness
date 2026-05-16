@@ -3925,6 +3925,49 @@ class T04ReviewEvidenceTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 harness.check_phase_state_semantics(path)
 
+    def test_review_evidence_path_rejects_traversal(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "../etc/passwd", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            msg = str(ctx.exception)
+            self.assertIn("review[0].evidence_path", msg)
+            self.assertIn("traversal or absolute path not allowed", msg)
+
+    def test_review_evidence_path_rejects_absolute(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "/etc/passwd", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].evidence_path", str(ctx.exception))
+
+    def test_review_evidence_path_rejects_url_scheme(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "https://example.com/x", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].evidence_path", str(ctx.exception))
+
+    def test_review_evidence_path_accepts_relative(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "docs/reviews/r.md", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            harness.check_phase_state_semantics(path)
+
+    def test_review_evidence_path_accepts_empty(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            harness.check_phase_state_semantics(path)
+
     def test_done_with_nonempty_verification_and_empty_review_is_valid(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write(Path(tmpdir),
