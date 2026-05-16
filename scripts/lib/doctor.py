@@ -73,6 +73,7 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
     findings.extend(opencode_profile_rules_doctor_findings(root))
+    findings.extend(scope_double_star_doctor_findings(root))
     findings.append(
         DoctorFinding(
             severity="P3",
@@ -418,6 +419,56 @@ def opencode_profile_rules_doctor_findings(root: Path) -> list[DoctorFinding]:
                     impact="Profile-specific rules will not be loaded when the command is invoked.",
                     fix=f"Add the profile-rules read instruction to .opencode/commands/{name}.",
                     evidence=f"{name}: missing .opencode/profile-rules/ read instruction",
+                )
+            )
+    return findings
+
+
+def scope_double_star_doctor_findings(root: Path) -> list[DoctorFinding]:
+    """T0-2-SecM1: warn when a scope entry contains literal `**`.
+
+    Per ADR-002 (G2-E) the loader treats `**` as a single-level `*`; this is
+    an easy misconception for operators familiar with gitignore/rsync. We
+    surface a P3 finding (non-failing) per offending entry so the operator
+    can rewrite the pattern using explicit deeper paths if recursion was
+    intended.
+    """
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return []
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    findings: list[DoctorFinding] = []
+    for field in ("allowed_paths", "blocked_paths"):
+        entries = state.get(field, []) or []
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, str):
+                continue
+            if "**" not in entry:
+                continue
+            findings.append(
+                DoctorFinding(
+                    severity="P3",
+                    code="scope_double_star_treated_as_single_star",
+                    path=".scratch/phase-state.json",
+                    cause=(
+                        f"scope entry {entry!r} uses `**` which is treated as `*` "
+                        f"(single-level); use deeper paths if recursion intended."
+                    ),
+                    impact=(
+                        "Operators expecting gitignore-style recursive globbing may "
+                        "see fewer matches than intended; the loader silently treats "
+                        "`**` as a single segment per ADR-002."
+                    ),
+                    fix=(
+                        f"Rewrite {field}[{index}] using explicit deeper paths "
+                        f"(e.g., 'docs/a/*.md', 'docs/a/b/*.md') instead of `**`."
+                    ),
+                    evidence=f"{field}[{index}]={entry}",
                 )
             )
     return findings

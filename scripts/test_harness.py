@@ -3321,6 +3321,39 @@ class DoctorOpencodeProfileRulesTests(unittest.TestCase):
             self.assertIn("profile-rules", result.stdout + result.stderr)
 
 
+class DoctorDoubleStarScopeWarningTests(unittest.TestCase):
+    """T0-2-SecM1: doctor warns when scope entry uses literal `**`."""
+
+    def test_doctor_warns_on_double_star_scope_entry(self):
+        import lib.doctor as _doctor_mod
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".scratch").mkdir()
+            (root / ".scratch/phase-state.json").write_text(
+                json.dumps({
+                    "phase": "execute",
+                    "state_schema_version": 2,
+                    "approved": True,
+                    "allowed_paths": ["docs/**/*.md", "src/**.py"],
+                    "blocked_paths": ["secrets/**"],
+                    "verification": ["true"],
+                    "updated_at": "2026-05-15T00:00:00Z",
+                    "updated_by": "test",
+                }),
+                encoding="utf-8",
+            )
+            findings = _doctor_mod.collect_doctor_findings(root)
+            scope_findings = [
+                f for f in findings if f.code == "scope_double_star_treated_as_single_star"
+            ]
+            # All three entries contain `**`.
+            self.assertEqual(len(scope_findings), 3, [f.to_dict() for f in scope_findings])
+            for f in scope_findings:
+                self.assertEqual(f.severity, "P3")
+                self.assertIn("**", f.cause)
+                self.assertIn("single-level", f.cause)
+
+
 class StateSubcommandTests(unittest.TestCase):
     def test_state_show_runs(self):
         from pathlib import Path
