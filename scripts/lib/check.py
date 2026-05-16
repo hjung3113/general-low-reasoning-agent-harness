@@ -386,6 +386,15 @@ def check_phase_state_semantics(path: Path) -> None:
     phase = state.get("phase")
     if phase not in {"discuss", "plan", "execute", "done"}:
         raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
+    # SM5: `approved`, when present, MUST be a bool. Reject string truthy
+    # values like "yes"/"true" across all phases. (Note: isinstance(x, bool)
+    # is the only correct test in Python; bool is a subclass of int so the
+    # ordering matters but `int` is not an accepted approval type either.)
+    if "approved" in state and not isinstance(state["approved"], bool):
+        raise SystemExit(
+            f"{path} approved must be a JSON boolean (true/false); got "
+            f"{type(state['approved']).__name__}={state['approved']!r}."
+        )
     if phase == "discuss" and state.get("approved") is not False:
         raise SystemExit(f"{path} discuss phase requires approved=false.")
     if phase == "plan":
