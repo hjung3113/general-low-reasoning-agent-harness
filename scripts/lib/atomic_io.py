@@ -11,6 +11,7 @@ Exports (skeleton — bodies filled in subsequent commits per plan task order):
 
 from __future__ import annotations
 
+import fcntl
 import os
 import tempfile
 from pathlib import Path
@@ -79,8 +80,22 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
     path = Path(path)
     payload = line if line.endswith("\n") else line + "\n"
     encoded = payload.encode("utf-8")
+    # Precondition: enforce PIPE_BUF-safe budget BEFORE any FS work (no
+    # partial state, no log file created on oversize input).
+    if len(encoded) > max_bytes_per_line:
+        raise ValueError(
+            f"atomic_append_log: encoded line length {len(encoded)} exceeds "
+            f"max_bytes_per_line={max_bytes_per_line} (PIPE_BUF-safe budget)"
+        )
     fd = os.open(str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
     try:
-        os.write(fd, encoded)
+        # flock(LOCK_EX) serializes writers across processes. POSIX O_APPEND
+        # already gives <PIPE_BUF atomicity but flock guards against non-POSIX
+        # FS variants and ensures the documented semantics hold portably.
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            os.write(fd, encoded)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
