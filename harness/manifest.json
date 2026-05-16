@@ -419,6 +419,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": ".roo/commands/done.md",
+      "source": ".roo/commands/done.md",
+      "policy": "harness-owned"
+    },
+    {
       "path": ".roo/rules/global.md",
       "source": ".roo/rules/global.md",
       "policy": "harness-owned"
