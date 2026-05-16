@@ -12,3 +12,4 @@ db-context.config.json
 !.env.example
 routines.sql
 jobs.md
+.harness/backups/

@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lib.atomic_io import atomic_write_text
+from lib.backups import write_backup_with_excl_and_prune
+from lib.exitcodes import EXIT_UNPARSEABLE_JSON
 from lib.managed_block import (
     BEGIN_MARKER_FMT,
     END_MARKER_FMT,
@@ -42,6 +44,16 @@ ROADMAP_PHASES_SLUG = "roadmap-phases"
 STATE_CURRENT_SLUG = "state-current"
 
 
+class RepairRefusedError(Exception):
+    """Raised when state_repair declines to rewrite due to malformed input
+    or ambiguous source state. Caller (CLI) translates to exit code 5
+    (EXIT_UNPARSEABLE_JSON) per CONTRACT-PIN §4 and §5.1.
+
+    Owning slice: T0-5.
+    Plan: .planning/phases/02b-hardening/plans/02b-06-T0-5-PLAN.md
+    """
+
+
 @dataclass
 class RepairReport:
     files_updated: list[str] = field(default_factory=list)
@@ -58,12 +70,37 @@ def canonical_roadmap_phases_payload(phases: list[RoadmapPhase]) -> str:
     return "".join(lines)
 
 
+def _render_paused_phases(paused_phases: list[dict] | None) -> str:
+    """T0-5 / L13: render the `### Paused Phases` subsection.
+
+    Returns "" when the list is empty / None so pre-slice phase-state.json
+    files (which lack a `paused_phases` key) round-trip unchanged.
+    Entries lacking either field are skipped silently — schema validation
+    of paused_phases is out of scope for T0-5.
+    """
+    if not paused_phases:
+        return ""
+    lines: list[str] = []
+    for entry in paused_phases:
+        if not isinstance(entry, dict):
+            continue
+        slug = entry.get("slug")
+        date = entry.get("paused_since")
+        if not slug or not date:
+            continue
+        lines.append(f"- {slug} (paused since {date})\n")
+    if not lines:
+        return ""
+    return "\n### Paused Phases\n\n" + "".join(lines)
+
+
 def canonical_state_current_payload(
     *,
     phase: int | None,
     phase_title: str,
     checkpoint: str | None,
     checkpoint_path: str | None,
+    paused_phases: list[dict] | None = None,
 ) -> str:
     lines = ["## Current Position\n\n"]
     if phase is not None:
@@ -74,6 +111,7 @@ def canonical_state_current_payload(
         lines.append(f"- **Checkpoint**: {checkpoint}\n")
     if checkpoint_path:
         lines.append(f"- **Checkpoint file**: `{checkpoint_path}`\n")
+    lines.append(_render_paused_phases(paused_phases))
     return "".join(lines)
 
 
@@ -184,6 +222,32 @@ def repair(root: Path) -> RepairReport:
     roadmap_text = roadmap_path.read_text(encoding="utf-8")
     state_text = state_path.read_text(encoding="utf-8")
 
+    # T0-5: parse managed blocks under guard so duplicate slugs surface as
+    # RepairRefusedError (exit 5) instead of a bare ValueError traceback.
+    try:
+        roadmap_blocks_pre = parse_blocks(roadmap_text)
+    except ValueError as exc:
+        raise RepairRefusedError(
+            f"state repair: refusing to rewrite — {exc}. "
+            "Fix ROADMAP.md or restore from .harness/backups/."
+        ) from exc
+    try:
+        state_blocks_pre = parse_blocks(state_text)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg.startswith("Duplicate managed-block slug:"):
+            m = re.search(r"'([^']+)'", msg)
+            slug = m.group(1) if m else "<unknown>"
+            raise RepairRefusedError(
+                f"state repair: refusing to rewrite — duplicate managed block "
+                f"'{slug}'. Remove one block manually or restore from "
+                ".harness/backups/."
+            ) from exc
+        raise RepairRefusedError(
+            f"state repair: refusing to rewrite — {exc}. "
+            "Fix STATE.md or restore from .harness/backups/."
+        ) from exc
+
     # Use phases inside the block when it already exists, to avoid pulling in
     # orphan phase lines from elsewhere in the file.
     phases_from_block = _phases_inside_block(roadmap_text, ROADMAP_PHASES_SLUG)
@@ -194,15 +258,29 @@ def repair(root: Path) -> RepairReport:
     snapshot = parse_state_snapshot(state_text)
     phase_state: dict = {}
     if phase_state_path.exists():
-        # T1-M: route through state_diagnostics.load_state_json so malformed
-        # phase-state.json exits with code 5 + structured diagnostic instead
-        # of being silently swallowed into report.warnings. T0-5 owns the
-        # RepairRefusedError wrapper at this site (CONTRACT-PIN §5.1); T1-M
-        # only provides the helper and replaces the bare json.loads call.
-        # TODO(T0-5): wrap UnparseableStateError in RepairRefusedError.
-        # See: .planning/phases/02b-hardening/plans/02b-06-T0-5-PLAN.md
-        from lib.state_diagnostics import load_state_json
-        phase_state = load_state_json(phase_state_path)
+        # T0-5: wrap T1-M's load_state_json so malformed phase-state.json
+        # surfaces as RepairRefusedError (programmatic catch) instead of
+        # leaking SystemExit(5). The CLI translates RepairRefusedError back
+        # to exit 5 (EXIT_UNPARSEABLE_JSON) per CONTRACT-PIN §4 / §5.1.
+        # The diagnostic always names ".harness/backups/" so operators have
+        # a stable substring to grep for.
+        from lib.state_diagnostics import load_state_json, UnparseableStateError
+        try:
+            phase_state = load_state_json(phase_state_path)
+        except UnparseableStateError as exc:
+            raise RepairRefusedError(
+                "state repair: refusing to rewrite — "
+                f"phase-state.json invalid: {exc}. "
+                "Fix the JSON or restore from .harness/backups/."
+            ) from exc
+        except SystemExit as exc:
+            if getattr(exc, "code", None) == EXIT_UNPARSEABLE_JSON:
+                raise RepairRefusedError(
+                    "state repair: refusing to rewrite — "
+                    f"phase-state.json at {phase_state_path} is unparseable. "
+                    "Fix the JSON or restore from .harness/backups/."
+                ) from exc
+            raise
 
     roadmap_payload = canonical_roadmap_phases_payload(phases)
 
@@ -225,10 +303,10 @@ def repair(root: Path) -> RepairReport:
         phase_title=_phase_title_lookup(phases, snapshot.active_phase),
         checkpoint=snapshot.checkpoint or phase_state.get("current_checkpoint"),
         checkpoint_path=snapshot.checkpoint_path or phase_state.get("checkpoint_path"),
+        paused_phases=phase_state.get("paused_phases"),
     )
 
-    blocks = parse_blocks(state_text)
-    if STATE_CURRENT_SLUG in blocks:
+    if STATE_CURRENT_SLUG in state_blocks_pre:
         new_state = replace_block(state_text, STATE_CURRENT_SLUG, state_payload)
         state_changed = new_state != state_text
     else:
@@ -243,20 +321,30 @@ def repair(root: Path) -> RepairReport:
             report.markers_added.append(STATE_PATH)
 
     if roadmap_changed:
+        # T0-5: snapshot pre-rewrite bytes to .harness/backups/ BEFORE the
+        # atomic_write_text so a backup collision aborts ahead of any
+        # mutation of the original file. Filename grammar per CONTRACT-PIN
+        # §6.1; retention=10 enforced by lib.backups.
+        write_backup_with_excl_and_prune(
+            roadmap_path, source_bytes=roadmap_text.encode("utf-8"),
+        )
         # T0-A atomic write: tempfile + fsync + os.replace.
         atomic_write_text(roadmap_path, new_roadmap)
         report.files_updated.append(ROADMAP_PATH)
-        if ROADMAP_PHASES_SLUG not in parse_blocks(roadmap_text):
+        if ROADMAP_PHASES_SLUG not in roadmap_blocks_pre:
             report.markers_added.append(ROADMAP_PATH)
         else:
             report.payloads_canonicalized.append(ROADMAP_PATH)
 
     if state_changed:
+        write_backup_with_excl_and_prune(
+            state_path, source_bytes=state_text.encode("utf-8"),
+        )
         # T0-A atomic write: tempfile + fsync + os.replace.
         atomic_write_text(state_path, new_state)
         if STATE_PATH not in report.files_updated:
             report.files_updated.append(STATE_PATH)
-        if STATE_CURRENT_SLUG in blocks:
+        if STATE_CURRENT_SLUG in state_blocks_pre:
             report.payloads_canonicalized.append(STATE_PATH)
 
     return report

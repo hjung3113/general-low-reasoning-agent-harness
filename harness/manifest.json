@@ -724,6 +724,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/backups.py",
+      "source": "scripts/lib/backups.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/exitcodes.py",
       "source": "scripts/lib/exitcodes.py",
       "policy": "harness-owned"

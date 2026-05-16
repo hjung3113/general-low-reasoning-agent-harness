@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import TextIO
 
 from lib import state_repair
+from lib.exitcodes import EXIT_OPERATIONAL, EXIT_UNPARSEABLE_JSON
 from lib.planning_status import ProjectionError, load_projection
 
 
@@ -53,7 +55,28 @@ def run_show(*, root: Path, stream: TextIO, fmt: str = "text") -> int:
 
 
 def run_repair(*, root: Path, stream: TextIO) -> int:
-    report = state_repair.repair(root)
+    """Translate state_repair exceptions to CLI exit codes (T0-5).
+
+    - state_repair.RepairRefusedError → exit 5 (EXIT_UNPARSEABLE_JSON) per
+      CONTRACT-PIN §4. Diagnostic written to both `stream` and stderr.
+    - SystemExit(1) propagating from a backup-collision in lib.backups →
+      exit 1 (EXIT_OPERATIONAL). The pre-existing files are untouched
+      because backups precede atomic_write_text.
+    """
+    try:
+        report = state_repair.repair(root)
+    except state_repair.RepairRefusedError as exc:
+        stream.write(str(exc) + "\n")
+        print(str(exc), file=sys.stderr)
+        return EXIT_UNPARSEABLE_JSON
+    except SystemExit as exc:
+        if getattr(exc, "code", None) == EXIT_OPERATIONAL:
+            msg = str(exc)
+            if msg:
+                stream.write(msg + "\n")
+                print(msg, file=sys.stderr)
+            return EXIT_OPERATIONAL
+        raise
     if report.files_updated:
         stream.write("updated:\n")
         for path in report.files_updated:
