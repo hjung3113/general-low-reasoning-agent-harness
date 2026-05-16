@@ -6,6 +6,10 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
+### Breaking
+
+<!-- T0-A: no breaking changes; populated by T0-1+ -->
+
 ### Added
 
 - `python3 scripts/harness.py state show` — phase-state projection 출력 (text 또는 `--format json`).
