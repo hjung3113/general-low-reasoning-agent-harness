@@ -142,10 +142,30 @@ class BreakageScannerTests(unittest.TestCase):
 
 
 class MalformedPatternTests(unittest.TestCase):
-    # Test 14
+    # Test 14 (legacy contract; matches_any no longer re-validates after
+    # T0-2-M2 so this test now asserts the pre-validate contract instead).
     def test_malformed_pattern_fails_loudly(self):
+        # _validate_pattern itself still raises ScopePatternError when called
+        # directly by the eager validator.
         with self.assertRaises(worktree.ScopePatternError):
-            worktree.matches_any("anything", ["[abc"])
+            worktree._validate_pattern("[abc")
+
+    def test_matches_any_does_not_revalidate(self):
+        """T0-2-M2: matches_any must NOT invoke _validate_pattern.
+
+        Callers MUST call _validate_state_patterns(state) eagerly before
+        invoking matchers; matches_any is on the hot path and must be total.
+        Patching _validate_pattern to fail proves matches_any never calls it.
+        """
+        from unittest import mock
+
+        def _boom(_pattern: str) -> None:  # pragma: no cover - asserts non-call
+            raise AssertionError("matches_any must not call _validate_pattern")
+
+        with mock.patch.object(worktree, "_validate_pattern", side_effect=_boom):
+            # Valid pattern: should match cleanly without invoking validator.
+            self.assertTrue(worktree.matches_any("foo.md", ["*.md"]))
+            self.assertFalse(worktree.matches_any("foo.py", ["*.md"]))
 
     def test_malformed_pattern_loud_fails_before_collision_scan(self):
         """T0-2-M1: validation must run BEFORE the collision scan so a

@@ -93,6 +93,14 @@ def _glob_match(path: str, pattern: str) -> bool:
 
 
 def matches_any(path: str, patterns: Iterable[str]) -> bool:
+    """Return True iff `path` matches any entry in `patterns`.
+
+    Total function on the hot path: NEVER raises. Callers MUST call
+    `_validate_state_patterns(state)` BEFORE invoking this matcher so any
+    malformed pattern surfaces as `SystemExit(5)` at the check boundary
+    (T0-2-M2). Eager validation is sufficient; revalidating per call would
+    cost O(patterns) per path on every changed-path lookup.
+    """
     for pattern in patterns:
         normalized = normalize_path(pattern)
         if normalized.endswith("/"):
@@ -105,7 +113,6 @@ def matches_any(path: str, patterns: Iterable[str]) -> bool:
         elif path == normalized:
             return True
         elif _has_glob_metachars(normalized):
-            _validate_pattern(normalized)
             if _glob_match(path, normalized):
                 return True
     return False
