@@ -130,6 +130,18 @@ def write_copy(source: Path, destination: Path) -> None:
 
 
 def write_text_file(destination: Path, text: str) -> None:
+    # NOTE (T0-A, deliberate exclusion): this writer targets SKILL-pack
+    # content (user-facing files installed from harness/manifest.json),
+    # NOT paths in STATE_FILE_PATHS / OPERATIONAL_PATHS / INSTALL_PATHS
+    # per scripts/lib/operational_paths.py. The T0-A atomic-write grep
+    # gate (scripts/test_atomic_io.py) explicitly excludes these
+    # destinations because (a) they are user-content overwrites, not
+    # operational/state writes, and (b) the conflict-detection path
+    # already produces a `.new` sidecar for any divergence so partial
+    # writes are recoverable. If a future commit retargets this helper
+    # at a managed state path, the grep gate WILL fail and the call
+    # must move to lib.atomic_io.atomic_write_text.
+    # See .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md task 16.
     assert_safe_write_destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(text, encoding="utf-8")

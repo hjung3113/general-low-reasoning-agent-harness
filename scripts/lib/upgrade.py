@@ -17,6 +17,13 @@ from lib.install import (
     install as _install_run,
     sync_roomodes_profile_modes,
     write_copy,
+    # NOTE (T0-A, deliberate exclusion): write_text_file / write_text_conflict
+    # are SKILL-pack content writers. They re-enter lib.install.write_text_file,
+    # which is annotated in install.py as a non-state/non-operational writer
+    # excluded from the T0-A atomic-write grep gate. Upgrade flow's call sites
+    # (lines 184 and 235 in the pre-T0-A tree) therefore inherit the same
+    # exclusion. See plan task 17 in
+    # .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md.
     write_text_file,
     write_text_conflict,
     remove_empty_parents,
