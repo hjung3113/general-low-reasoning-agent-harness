@@ -136,10 +136,14 @@ def sidecar_payload(
     pre_hash: str,
     expected_post_hash: str,
     migrator_version: str = MIGRATOR_VERSION,
+    direction: str = "forward",
 ) -> dict:
     """Build the G1-E sidecar JSON payload.
 
-    Schema: ``{pre_hash, expected_post_hash, target_path, migrator_version, started_at}``.
+    Schema: ``{pre_hash, expected_post_hash, target_path, migrator_version,
+    started_at, direction}``. ``direction`` is one of ``"forward"`` or
+    ``"reverse"`` and is consumed by ``resume()`` to dispatch the correct
+    in-memory transform (CC3+SM1).
     """
     return {
         "pre_hash": pre_hash,
@@ -147,6 +151,7 @@ def sidecar_payload(
         "target_path": target_path,
         "migrator_version": migrator_version,
         "started_at": _iso_utc_nanos(),
+        "direction": direction,
     }
 
 
@@ -274,11 +279,12 @@ def migrate_file(
     pre_hash = _sha256(pre_bytes)
     expected_post_hash = _sha256(post_bytes)
 
-    # Step 1: sidecar via T0-A.
+    # Step 1: sidecar via T0-A. Record direction so resume() can dispatch.
     sidecar = sidecar_payload(
         target_path=str(target),
         pre_hash=pre_hash,
         expected_post_hash=expected_post_hash,
+        direction=direction,
     )
     atomic_write_text(sidecar_path, json.dumps(sidecar, indent=2) + "\n")
 
@@ -333,8 +339,25 @@ def resume(target: Path, *, backups_dir: Optional[Path] = None) -> None:
         )
 
     sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    if "direction" not in sidecar:
+        # Legacy sidecar -- pre-CC3 format had no direction field.
+        # We cannot safely dispatch forward vs. reverse without it.
+        raise _CodedSystemExit(
+            7,
+            f"resume: sidecar {sidecar_path} is missing the 'direction' field "
+            f"(legacy pre-CC3 format). Cannot dispatch forward vs. reverse "
+            f"safely. Inspect manually and either delete the sidecar or "
+            f"reconstruct it with the appropriate direction.",
+        )
     pre_hash = sidecar["pre_hash"]
     expected_post_hash = sidecar["expected_post_hash"]
+    direction = sidecar["direction"]
+    if direction not in {"forward", "reverse"}:
+        raise _CodedSystemExit(
+            7,
+            f"resume: sidecar {sidecar_path} has invalid direction "
+            f"{direction!r} (expected 'forward' or 'reverse').",
+        )
 
     current_bytes = target.read_bytes()
     current_hash = _sha256(current_bytes)
@@ -345,15 +368,9 @@ def resume(target: Path, *, backups_dir: Optional[Path] = None) -> None:
         return
 
     if current_hash == pre_hash:
-        # Re-run step 3 + step 4. The sidecar contains the pre-image; apply
-        # the in-memory transform to reconstruct the canonical post bytes.
+        # Re-run step 3 + step 4. Dispatch transform on recorded direction.
         state = json.loads(current_bytes.decode("utf-8"))
-        # Direction is implicit in the sidecar's hash structure; we choose
-        # ``forward`` because that is the only direction T0-1 writes
-        # sidecars for in practice. (``reverse`` follows the same protocol
-        # but T0-1 lands forward + reverse symmetrically; resuming a partial
-        # reverse is an out-of-scope concern.)
-        post = forward(state)
+        post = _transform(state, direction=direction)
         post_bytes = serialize(post)
         if _sha256(post_bytes) != expected_post_hash:
             raise _CodedSystemExit(

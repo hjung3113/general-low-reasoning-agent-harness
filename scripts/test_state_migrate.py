@@ -118,8 +118,11 @@ class StateMigrateSidecarTests(unittest.TestCase):
         )
         self.assertEqual(
             set(payload.keys()),
-            {"pre_hash", "expected_post_hash", "target_path", "migrator_version", "started_at"},
+            {"pre_hash", "expected_post_hash", "target_path", "migrator_version",
+             "started_at", "direction"},
         )
+        # Default direction is "forward" when not explicitly passed.
+        self.assertEqual(payload["direction"], "forward")
         self.assertEqual(payload["pre_hash"], "a" * 64)
         self.assertEqual(payload["expected_post_hash"], "b" * 64)
         self.assertEqual(payload["target_path"], "/tmp/foo.json")
@@ -292,6 +295,7 @@ class StateMigrateFileProtocolTests(unittest.TestCase):
                         "target_path": str(target),
                         "migrator_version": "t0-1-v1",
                         "started_at": "2026-05-16T19:30:45.000000000Z",
+                        "direction": "forward",
                     }
                 ),
                 encoding="utf-8",
