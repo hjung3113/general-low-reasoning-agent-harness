@@ -150,6 +150,39 @@ class MalformedPatternTests(unittest.TestCase):
         with self.assertRaises(worktree.ScopePatternError):
             worktree._validate_pattern("[abc")
 
+    def test_pattern_with_dotdot_loud_fails(self):
+        """T0-2-SecM2: any `..` segment in a scope pattern must loud-fail.
+
+        Prevents path-traversal-shaped patterns from sneaking into the
+        allowed/blocked scope: `..` segments cannot map to a legitimate
+        repo-relative path under our normalization rules.
+        """
+        # Direct _validate_pattern rejection (segment-aware).
+        for bad in ("..", "../etc/passwd", "docs/../etc", "a/b/../c"):
+            with self.assertRaises(worktree.ScopePatternError, msg=bad):
+                worktree._validate_pattern(bad)
+        # And via the state validator (surfaces as SystemExit).
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            (target / ".scratch").mkdir()
+            state = {
+                "phase": "execute",
+                "approved": True,
+                "allowed_paths": ["docs/../etc"],
+                "blocked_paths": [],
+            }
+            (target / ".scratch/phase-state.json").write_text(json.dumps(state))
+            import subprocess as sp
+            sp.check_call(["git", "init", "-q"], cwd=target)
+            sp.check_call(
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                 "commit", "--allow-empty", "-q", "-m", "x"],
+                cwd=target,
+            )
+            with self.assertRaises(SystemExit) as cm:
+                worktree.check_worktree_paths(target)
+            self.assertIn("..", str(cm.exception))
+
     def test_matches_any_does_not_revalidate(self):
         """T0-2-M2: matches_any must NOT invoke _validate_pattern.
 

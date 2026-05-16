@@ -47,11 +47,23 @@ def _has_glob_metachars(pattern: str) -> bool:
 def _validate_pattern(pattern: str) -> None:
     """Reject malformed glob patterns the stdlib silently swallows.
 
-    Today: unterminated `[` (stdlib `fnmatchcase` treats this as a literal
-    `[`, silently zero-matching for patterns the user clearly intended as
-    a class). Raises `ScopePatternError` with the offending pattern in the
-    message.
+    Today:
+      - unterminated `[` (stdlib `fnmatchcase` treats this as a literal
+        `[`, silently zero-matching for patterns the user clearly intended
+        as a class).
+      - any segment equal to `..` (path-traversal-shaped patterns must not
+        appear in scope; T0-2-SecM2). Splits on `/`.
+
+    Raises `ScopePatternError` with the offending pattern in the message.
     """
+    # Reject `..` segments first — these have no legitimate use in a
+    # repo-relative scope entry and may slip past normalize_path when the
+    # `..` is "collapsed" by interior segments (e.g., `docs/../etc`).
+    for segment in pattern.split("/"):
+        if segment == "..":
+            raise ScopePatternError(
+                f"unsafe scope pattern (contains '..' segment): {pattern!r}"
+            )
     i = 0
     n = len(pattern)
     while i < n:
@@ -169,11 +181,24 @@ def _run_glob_collision_scan(target: Path, state: dict) -> None:
 
 
 def _validate_state_patterns(state: dict) -> None:
-    """Apply `_validate_pattern` to every scope entry; surface as SystemExit."""
+    """Apply `_validate_pattern` to every scope entry; surface as SystemExit.
+
+    Validates every entry — even those without glob metachars — so that
+    `..` traversal segments (T0-2-SecM2) cannot slip through via literal
+    patterns. Patterns whose `normalize_path` raises (e.g., leading `..`)
+    are inspected against the RAW entry so the segment-aware check still
+    fires.
+    """
     for field in ("allowed_paths", "blocked_paths"):
         for index, entry in enumerate(state.get(field, []) or []):
             if not isinstance(entry, str):
                 continue
+            # Always run the dotdot/glob-shape check against the raw entry;
+            # normalize_path would collapse interior `..` and hide them.
+            try:
+                _validate_pattern(entry)
+            except ScopePatternError as exc:
+                raise SystemExit(f"{field}[{index}]: {exc}") from exc
             try:
                 normalized = normalize_path(entry)
             except ValueError:
