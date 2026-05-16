@@ -361,6 +361,17 @@ def run(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install harness add-ons such as the pre-commit scope-check hook (T1-1).",
+    )
+    install_parser.add_argument("--target", required=True, type=Path)
+    install_parser.add_argument(
+        "--pre-commit",
+        action="store_true",
+        help="Install the pre-commit scope-check hook into <target>/.git/hooks/pre-commit (T1-1).",
+    )
+
     init_parser = subparsers.add_parser("init", help="Install the clean harness skeleton into a target project.")
     init_parser.add_argument("--target", required=True, type=Path)
     init_parser.add_argument("--dry-run", action="store_true")
@@ -415,6 +426,11 @@ def run(argv: list[str] | None = None) -> int:
     uninstall_parser.add_argument("--dry-run", action="store_true")
     uninstall_parser.add_argument("--interactive", action="store_true")
     uninstall_parser.add_argument("--remove-install-state", action="store_true")
+    uninstall_parser.add_argument(
+        "--pre-commit",
+        action="store_true",
+        help="Uninstall the pre-commit scope-check hook from <target>/.git/hooks/pre-commit (T1-1).",
+    )
 
     release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
     release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
@@ -509,6 +525,17 @@ def run(argv: list[str] | None = None) -> int:
         command_root = upgrade_source_root(root, args.target)
     HARNESS_VERSION = resolve_harness_version(command_root, explicit=args.release_version)
 
+    if args.command == "install":
+        # T1-1 pre-commit hook installer. Other install scopes may be wired
+        # here in future slices.
+        from lib.hooks import install_pre_commit_hook
+        if args.pre_commit:
+            install_pre_commit_hook(args.target)
+            return 0
+        raise SystemExit(
+            "harness install: at least one install scope is required "
+            "(e.g., --pre-commit)"
+        )
     if args.command == "init":
         raw_profiles = parse_scope(args.profiles, default={"generic"})
         profiles_resolved = normalize_profiles(list(raw_profiles))
@@ -565,6 +592,14 @@ def run(argv: list[str] | None = None) -> int:
             command.extend(["--target", str(args.target)])
         return run_delegated_command(command, root)
     if args.command == "uninstall":
+        # T1-1 pre-commit hook removal short-circuits the standard
+        # uninstaller (which requires INSTALL_STATE in target).
+        if args.pre_commit:
+            from lib.hooks import uninstall_pre_commit_hook
+            if args.target is None:
+                raise SystemExit("--target is required for --pre-commit")
+            uninstall_pre_commit_hook(args.target)
+            return 0
         command = [
             sys.executable,
             str(root / "scripts/uninstall_harness.py"),

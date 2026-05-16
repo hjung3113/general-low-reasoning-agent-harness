@@ -1,0 +1,17 @@
+#!/bin/sh
+# HARNESS:scope-check-begin
+# Installed by `python3 scripts/harness.py install --pre-commit`.
+# See docs/protocol-spec.md#scope-enforcement.
+#
+# Resolve repo root robustly — git invokes hooks from arbitrary cwd
+# subtrees (interactive rebase, partial commits, etc.).
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "harness pre-commit hook: not inside a git repo; skipping scope check (non-fatal)" >&2
+    exit 0
+}
+if [ -f "$REPO_ROOT/scripts/harness.py" ] && [ -f "$REPO_ROOT/.scratch/phase-state.json" ]; then
+    (cd "$REPO_ROOT" && python3 scripts/harness.py check --worktree) || exit $?
+else
+    echo "harness pre-commit hook: scripts/harness.py or .scratch/phase-state.json not found at repo root; skipping scope check (non-fatal warning)" >&2
+fi
+# HARNESS:scope-check-end
