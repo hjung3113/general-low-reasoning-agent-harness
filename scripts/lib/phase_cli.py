@@ -408,6 +408,32 @@ def _do_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
 # --------------------------------------------------------------------------
 
 
+def _audit_session_unlock(payload: dict, *, force: bool) -> None:
+    """Append a session.unlock audit entry recording the stolen payload.
+
+    Per T0-3 C2 amendment: every removal path of the lockfile (normal
+    dead-pid, --force, boot_id mismatch) writes an audit row capturing the
+    pre-removal payload so post-hoc forensic reconstruction is possible.
+    Failures to write the audit entry are swallowed (unlock is best-effort
+    and must not block on .harness/audit.log being unavailable — the
+    operational write_probe in entry points covers the steady-state path).
+    """
+    try:
+        audit_append(
+            {
+                "verb": "session.unlock",
+                "args": {"force": bool(force), "stolen_payload": payload},
+                "before_sha256": "",
+                "after_sha256": "",
+                "at": now_iso_nanos(),
+                "by": _identify(),
+            },
+            audit_path=AUDIT_PATH,
+        )
+    except OSError:
+        pass
+
+
 def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
     if not LOCK_PATH.exists():
         return EXIT_OK
@@ -428,6 +454,7 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
         return EXIT_OK
 
     if getattr(args, "force", False):
+        _audit_session_unlock(payload, force=True)
         try:
             LOCK_PATH.unlink()
         except FileNotFoundError:
@@ -460,6 +487,7 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
         and recorded_boot != current_boot
     ):
         # Host rebooted — pid is definitely stale.
+        _audit_session_unlock(payload, force=False)
         try:
             LOCK_PATH.unlink()
         except FileNotFoundError:
@@ -473,6 +501,7 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
         )
         return EXIT_SESSION_LOCKED
 
+    _audit_session_unlock(payload, force=False)
     try:
         LOCK_PATH.unlink()
     except FileNotFoundError:
