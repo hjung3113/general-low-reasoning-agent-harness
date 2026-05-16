@@ -165,8 +165,23 @@ def acquire_lock(*, lock_path: Path) -> Iterator[Path]:
                 pass
             raise LockfileExists(str(lock_path))
         payload_bytes = (json.dumps(_build_payload()) + "\n").encode("utf-8")
-        os.write(fd, payload_bytes)
-        os.fsync(fd)
+        # M2: a write failure (ENOSPC, EIO, etc.) leaves an empty/partial
+        # lockfile that jams every subsequent harness invocation with
+        # LockfileExists. Close the fd, unlink the lockfile, then re-raise
+        # so the caller sees the original errno.
+        try:
+            os.write(fd, payload_bytes)
+            os.fsync(fd)
+        except OSError:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            raise
     finally:
         try:
             os.close(fd)
