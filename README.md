@@ -6,6 +6,7 @@
 
 ## 목차
 
+- [v0.6.1에서 달라진 점](#v061에서-달라진-점)
 - [빠른 시작](#빠른-시작)
 - [이 하네스가 하는 일](#이-하네스가-하는-일)
 - [왜 필요한가](#왜-필요한가)
@@ -22,6 +23,50 @@
 - [업그레이드](#업그레이드)
 - [플랫폼별 참고사항](#플랫폼별-참고사항)
 - [레퍼런스](#레퍼런스)
+
+## v0.6.1에서 달라진 점
+
+### Profile 통합 + profile별 augment rules
+
+Installer preset과 manifest profile이 단일 개념으로 합쳐졌습니다. Installer는 profile 하나를 받고, `generic`이 아닐 때만 database 축을 묻습니다.
+
+- Profile 4종: `generic`, `dotnet-etl`, `python-etl`, `react-web`.
+- `--db {mssql|postgresql|none}`이 대응하는 `tech-*`와 `workflow-db-context` pack을 자동 추가.
+- `react-web` profile은 Roo adapter 설치 시 `ui-engineer` 모드를 추가합니다(브라우저 우선 UI 작업용).
+- Profile-scoped augment rule은 `.roo/rules-<mode>/`(Roo)와 `.opencode/profile-rules/`(OpenCode)에 선택한 adapter 기준으로만 설치됩니다.
+
+폐기:
+
+- Installer preset `full`.
+- Manifest profile `dotnet-etl-mssql` (legacy 설치는 `upgrade` 시 `dotnet-etl` + `tech-mssql` + `workflow-db-context`로 자동 마이그레이션).
+
+OpenCode core 명령(`discuss`, `plan`, `execute`, `done`)은 시작 시 `.opencode/profile-rules/` 아래 모든 파일을 알파벳 순으로 읽습니다.
+
+### `scripts/harness.py` 리팩토링
+
+`scripts/harness.py`가 2561 lines → ~500 lines로 줄었습니다. 모든 비-CLI 로직은 `scripts/lib/`로 분할:
+
+- `lib/version.py`, `lib/profiles.py`, `lib/manifest.py`, `lib/append_block.py`
+- `lib/state.py`, `lib/roadmap_state.py`, `lib/worktree.py`
+- `lib/adoption.py`, `lib/check.py`, `lib/doctor.py`
+- `lib/install.py`, `lib/upgrade.py`
+
+Public surface 보존: 이전에 `scripts.harness.X`로 import 가능했던 모든 심볼은 그대로 유지됩니다. `harness.py`의 `__all__` 블록이 계약을 명시합니다.
+
+### 진단 강화
+
+- `harness.py check`: `.roomodes`가 owning profile이 설치되지 않은 profile-contributed mode를 포함하면 실패합니다.
+- `harness.py doctor`: OpenCode command 파일에서 `.opencode/profile-rules/` 읽기 지시가 빠지면 경고합니다.
+
+### Upgrade 마이그레이션
+
+이전 버전에서 `profile=dotnet-etl-mssql`로 설치된 target은 `upgrade` 실행 시 자동 마이그레이션됩니다. `--dry-run`과 실제 실행 모두 마이그레이션 결과를 다음과 같이 출력합니다:
+
+```
+MIGRATION:
+  profiles: ['dotnet-etl-mssql'] -> ['dotnet-etl']
+  packs added: tech-mssql, workflow-db-context
+```
 
 ## 빠른 시작
 
@@ -657,7 +702,13 @@ python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 - `harness/skill-packs/**`: source skill packs installed into target `.agents/skills/**`.
 - `.roo/**`: Roo adapter source.
 - `.opencode/**`: OpenCode adapter source.
-- `scripts/harness.py`: init, upgrade, check, doctor, uninstall, release-check.
+- `scripts/harness.py`: thin CLI dispatcher (init, upgrade, check, doctor, uninstall, release-check). Implementation lives in `scripts/lib/**`; the file re-exports every public symbol so existing `from scripts.harness import X` callers keep working.
+- `scripts/lib/**`: role-split modules used by `scripts/harness.py`.
+  - `version.py`, `profiles.py`, `manifest.py`, `append_block.py`
+  - `state.py`, `roadmap_state.py`, `worktree.py`
+  - `adoption.py`, `check.py`, `doctor.py`
+  - `install.py`, `upgrade.py`
+  - `roomodes_writer.py`, `planning_status.py`, `workflow_static_checks.py`
 - `scripts/install_harness.py`: human-facing interactive installer.
 - `scripts/upgrade_harness.py`: target-local upgrade bootstrapper.
 - `scripts/uninstall_harness.py`: target-local uninstall helper.
@@ -665,6 +716,7 @@ python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 - `scripts/doctor_harness.py`: target-local diagnostics.
 - `scripts/show_phase_status.py`: live phase gate status.
 - `scripts/release_smoke_test.py`: release matrix smoke test.
+- `scripts/release.py`: develop → main → tag → push → GitHub release automation.
 
 ### Manifest and install state
 
