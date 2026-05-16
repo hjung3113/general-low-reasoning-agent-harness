@@ -6,6 +6,7 @@
 
 ## 목차
 
+- [v0.6.1에서 달라진 점](#v061에서-달라진-점)
 - [빠른 시작](#빠른-시작)
 - [이 하네스가 하는 일](#이-하네스가-하는-일)
 - [왜 필요한가](#왜-필요한가)
@@ -15,12 +16,57 @@
 - [설치 후 첫 작업](#설치-후-첫-작업)
 - [워크플로우 모델](#워크플로우-모델)
 - [클라이언트별 커맨드 모델](#클라이언트별-커맨드-모델)
+- [Roo modes](#roo-modes)
 - [스킬 팩](#스킬-팩)
 - [프롬프트 레시피](#프롬프트-레시피)
 - [점검, Doctor, 검증](#점검-doctor-검증)
 - [업그레이드](#업그레이드)
 - [플랫폼별 참고사항](#플랫폼별-참고사항)
 - [레퍼런스](#레퍼런스)
+
+## v0.6.1에서 달라진 점
+
+### Profile 통합 + profile별 augment rules
+
+Installer preset과 manifest profile이 단일 개념으로 합쳐졌습니다. Installer는 profile 하나를 받고, `generic`이 아닐 때만 database 축을 묻습니다.
+
+- Profile 4종: `generic`, `dotnet-etl`, `python-etl`, `react-web`.
+- `--db {mssql|postgresql|none}`이 대응하는 `tech-*`와 `workflow-db-context` pack을 자동 추가.
+- `react-web` profile은 Roo adapter 설치 시 `ui-engineer` 모드를 추가합니다(브라우저 우선 UI 작업용).
+- Profile-scoped augment rule은 `.roo/rules-<mode>/`(Roo)와 `.opencode/profile-rules/`(OpenCode)에 선택한 adapter 기준으로만 설치됩니다.
+
+폐기:
+
+- Installer preset `full`.
+- Manifest profile `dotnet-etl-mssql` (legacy 설치는 `upgrade` 시 `dotnet-etl` + `tech-mssql` + `workflow-db-context`로 자동 마이그레이션).
+
+OpenCode core 명령(`discuss`, `plan`, `execute`, `done`)은 시작 시 `.opencode/profile-rules/` 아래 모든 파일을 알파벳 순으로 읽습니다.
+
+### `scripts/harness.py` 리팩토링
+
+`scripts/harness.py`가 2561 lines → ~500 lines로 줄었습니다. 모든 비-CLI 로직은 `scripts/lib/`로 분할:
+
+- `lib/version.py`, `lib/profiles.py`, `lib/manifest.py`, `lib/append_block.py`
+- `lib/state.py`, `lib/roadmap_state.py`, `lib/worktree.py`
+- `lib/adoption.py`, `lib/check.py`, `lib/doctor.py`
+- `lib/install.py`, `lib/upgrade.py`
+
+Public surface 보존: 이전에 `scripts.harness.X`로 import 가능했던 모든 심볼은 그대로 유지됩니다. `harness.py`의 `__all__` 블록이 계약을 명시합니다.
+
+### 진단 강화
+
+- `harness.py check`: `.roomodes`가 owning profile이 설치되지 않은 profile-contributed mode를 포함하면 실패합니다.
+- `harness.py doctor`: OpenCode command 파일에서 `.opencode/profile-rules/` 읽기 지시가 빠지면 경고합니다.
+
+### Upgrade 마이그레이션
+
+이전 버전에서 `profile=dotnet-etl-mssql`로 설치된 target은 `upgrade` 실행 시 자동 마이그레이션됩니다. `--dry-run`과 실제 실행 모두 마이그레이션 결과를 다음과 같이 출력합니다:
+
+```
+MIGRATION:
+  profiles: ['dotnet-etl-mssql'] -> ['dotnet-etl']
+  packs added: tech-mssql, workflow-db-context
+```
 
 ## 빠른 시작
 
@@ -30,7 +76,7 @@
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.6.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.6.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -38,7 +84,7 @@ python3 "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.6.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.6.1 {Repo git} "$tmp"
 python "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -63,13 +109,18 @@ python scripts/harness.py init --target /path/to/project
 - generic profile
 - `workflow-core` skill pack
 
-Interactive profile presets are installer-only UX presets. They map to existing manifest profiles and skill packs; they are not valid values for `scripts/harness.py init --profiles`.
+The installer accepts a single profile (`generic`, `dotnet-etl`, `python-etl`,
+`react-web`). When the profile is not `generic`, the installer asks which
+database to wire in (`mssql`, `postgresql`, `none`). Profile names are also
+valid values for `scripts/harness.py init --profiles`. The `dotnet-etl-mssql`
+profile is deprecated; existing installs upgrade automatically to `dotnet-etl`
+plus `tech-mssql`.
 
-- `minimal`: stack-neutral planning guardrails plus `workflow-core`.
-- `dotnet-etl`: .NET/C# ETL packs without assuming a database engine.
+- `generic`: stack-neutral planning guardrails plus `workflow-core`.
+- `dotnet-etl`: .NET/C# ETL packs. Pair with `--db` if a database engine is used.
 - `python-etl`: Python ETL/data pipeline packs.
-- `react-tailwind-typescript-web`: React, TypeScript, Tailwind, and web workflow packs.
-- `full`: all shipped skill packs; adapters are still selected separately.
+- `react-web`: React, TypeScript, and Tailwind web workflow packs. Adds the
+  `ui-engineer` Roo mode when the Roo adapter is installed.
 
 ### 빠른 검증
 
@@ -121,7 +172,7 @@ skill pack은 플러그인입니다. Core는 작게 유지하고, debugging, TDD
 
 - **Core protocol**: `.planning/**`, `.scratch/phase-state.json`, checks, doctor, dashboard, AGENTS guidance.
 - **Adapters**: `.roo/**`, `.opencode/**`, client-specific command surfaces.
-- **Profiles**: `generic`, `dotnet-etl-mssql` 같은 확인된 project environment.
+- **Profiles**: `generic`, `dotnet-etl`, `python-etl`, `react-web` 같은 확인된 project environment.
 - **Skill packs**: `.agents/skills/**` 아래에 설치되는 composable workflow/tech skills.
 
 중요한 ownership rule: source repository에는 `.agents/skills/**`가 없어도 정상입니다. Source에는 `harness/skill-packs/**`가 있고, target install 시 선택한 pack만 `.agents/skills/**`로 복사됩니다.
@@ -134,13 +185,14 @@ skill pack은 플러그인입니다. Core는 작게 유지하고, debugging, TDD
 | core-only 하네스 | adapter 없음 | `python3 scripts/harness.py init --target /path/to/project --adapters none` | "core planning docs만 만들고 adapter command는 설치하지 마." |
 | OpenCode만 쓰기 | OpenCode adapter | `python3 scripts/harness.py init --target /path/to/project --adapters opencode` | "OpenCode discuss command 순서대로 읽고 phase 후보만 제안해." |
 | Roo + OpenCode 동시 지원 | both adapters | `python3 scripts/harness.py init --target /path/to/project --adapters both` | "Roo/OpenCode 모두 같은 `.planning/**`과 live gate를 쓰는지 확인해." |
-| .NET ETL | installer preset `dotnet-etl` | `python3 scripts/install_harness.py --interactive` | ".NET ETL restart/idempotency와 TDD 검증 계획을 세워줘." |
-| Python ETL | installer preset `python-etl` | `python3 scripts/install_harness.py --interactive` | "Python 데이터 파이프라인의 입력/변환/재시작 검증 계획을 세워줘." |
-| React/Tailwind/TypeScript web app | installer preset `react-tailwind-typescript-web` | `python3 scripts/install_harness.py --interactive` | "UI 변경은 browser verification까지 포함해서 plan을 세워줘." |
-| DB가 중요한 ETL | ETL profile + 추가 DB pack | interactive에서 `tech-mssql` 또는 `tech-postgresql`, 필요 시 `workflow-db-context` 추가 | "DB별 transaction/idempotency 검증도 포함해줘." |
+| .NET ETL | `dotnet-etl` profile | `python3 scripts/install_harness.py --interactive` | ".NET ETL restart/idempotency와 TDD 검증 계획을 세워줘." |
+| Python ETL | `python-etl` profile | `python3 scripts/install_harness.py --interactive` | "Python 데이터 파이프라인의 입력/변환/재시작 검증 계획을 세워줘." |
+| React/TypeScript/Tailwind web app | `react-web` profile | `python3 scripts/install_harness.py --interactive` | "UI 변경은 browser verification까지 포함해서 plan을 세워줘." |
+| ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/install_harness.py --interactive` (또는 `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql`) | "MSSQL transaction/idempotency 검증도 포함해줘." |
+| DB가 중요한 ETL | ETL profile + `--db` flag | interactive에서 `--db mssql` 또는 `--db postgresql`, 필요 시 `workflow-db-context` 추가 | "DB별 transaction/idempotency 검증도 포함해줘." |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` | "증상 재현부터 최소화, 가설, 계측, 회귀 테스트 순서로 진행해." |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` | "권한, secret exposure, rollback 관점으로 적대적 리뷰해." |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.6.0 --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.6.1 --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` | "먼저 dry-run으로 뭐가 지워지는지 보여줘." |
 
 Python 실행명이 `python`인 환경에서는 위 명령의 `python3`만 `python`으로 바꾸면 됩니다.
@@ -193,7 +245,7 @@ python3 scripts/harness.py init --target /path/to/project --adapters roo,opencod
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.6.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.6.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -201,7 +253,7 @@ python3 "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.6.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.6.1 {Repo git} "$tmp"
 python "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -209,7 +261,7 @@ python "$tmp/scripts/install_harness.py" --interactive
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.6.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.6.1 {Repo git} "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -286,6 +338,15 @@ Use `.opencode/commands/discuss.md` first.
 Then use installed skills workflow-debugging,workflow-tdd.
 Do not edit application code until the plan names allowed_paths and I approve execute.
 ```
+
+## Roo modes
+
+The harness ships 8 base modes (`orchestrator`, `architect`, `tdd-code`,
+`diagnose`, `review`, `docs-issues`, `ops-observability`, `harness-maintainer`).
+Profile-contributed modes are added on top:
+
+- `ui-engineer` (added by `react-web` profile when Roo is installed): browser-
+  first UI implementation. Drops out automatically when the profile is removed.
 
 ## 스킬 팩
 
@@ -488,8 +549,8 @@ python /path/to/project/scripts/harness.py check
 ### Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.6.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.6.0
+python3 scripts/upgrade_harness.py --version v0.6.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.6.1
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -497,8 +558,8 @@ python3 scripts/doctor_harness.py
 또는:
 
 ```bash
-python scripts/upgrade_harness.py --version v0.6.0 --dry-run
-python scripts/upgrade_harness.py --version v0.6.0
+python scripts/upgrade_harness.py --version v0.6.1 --dry-run
+python scripts/upgrade_harness.py --version v0.6.1
 python scripts/check_harness.py
 python scripts/doctor_harness.py
 ```
@@ -510,7 +571,7 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo {Repo git} \
-  --version v0.6.0 \
+  --version v0.6.1 \
   --dry-run
 ```
 
@@ -519,20 +580,20 @@ python3 scripts/upgrade_harness.py \
 ```bash
 python scripts/upgrade_harness.py \
   --repo {Repo git} \
-  --version v0.6.0 \
+  --version v0.6.1 \
   --dry-run
 ```
 
 ### Remote access가 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.6.0 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.6.1 --dry-run
 ```
 
 또는:
 
 ```bash
-python scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.6.0 --dry-run
+python scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.6.1 --dry-run
 ```
 
 ### 오래된 수동 설치 adopt
@@ -613,7 +674,7 @@ Clone/install 예시는 PowerShell temp directory 문법으로 바꿔 실행합�
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.6.0 {Repo git} $tmp.FullName
+git clone --depth 1 --branch v0.6.1 {Repo git} $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -621,7 +682,7 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.6.0 {Repo git} $tmp.FullName
+git clone --depth 1 --branch v0.6.1 {Repo git} $tmp.FullName
 python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -641,7 +702,13 @@ python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 - `harness/skill-packs/**`: source skill packs installed into target `.agents/skills/**`.
 - `.roo/**`: Roo adapter source.
 - `.opencode/**`: OpenCode adapter source.
-- `scripts/harness.py`: init, upgrade, check, doctor, uninstall, release-check.
+- `scripts/harness.py`: thin CLI dispatcher (init, upgrade, check, doctor, uninstall, release-check). Implementation lives in `scripts/lib/**`; the file re-exports every public symbol so existing `from scripts.harness import X` callers keep working.
+- `scripts/lib/**`: role-split modules used by `scripts/harness.py`.
+  - `version.py`, `profiles.py`, `manifest.py`, `append_block.py`
+  - `state.py`, `roadmap_state.py`, `worktree.py`
+  - `adoption.py`, `check.py`, `doctor.py`
+  - `install.py`, `upgrade.py`
+  - `roomodes_writer.py`, `planning_status.py`, `workflow_static_checks.py`
 - `scripts/install_harness.py`: human-facing interactive installer.
 - `scripts/upgrade_harness.py`: target-local upgrade bootstrapper.
 - `scripts/uninstall_harness.py`: target-local uninstall helper.
@@ -649,6 +716,7 @@ python "$($tmp.FullName)\scripts\install_harness.py" --interactive
 - `scripts/doctor_harness.py`: target-local diagnostics.
 - `scripts/show_phase_status.py`: live phase gate status.
 - `scripts/release_smoke_test.py`: release matrix smoke test.
+- `scripts/release.py`: develop → main → tag → push → GitHub release automation.
 
 ### Manifest and install state
 
@@ -667,7 +735,7 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.6.0
+python3 scripts/harness.py release-check --expected-version v0.6.1
 ```
 
 또는:
@@ -677,7 +745,7 @@ python -m unittest scripts/test_harness.py
 python scripts/harness.py check
 python scripts/harness.py check --worktree
 python scripts/release_smoke_test.py
-python scripts/harness.py release-check --expected-version v0.6.0
+python scripts/harness.py release-check --expected-version v0.6.1
 ```
 
 검증 evidence는 tag/push 전에 phase verification document에 기록합니다.
