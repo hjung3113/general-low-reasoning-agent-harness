@@ -1,5 +1,6 @@
 {
   "phase": "execute",
+  "state_schema_version": 2,
   "plan_id": "phase-gate-docs-001",
   "approved": true,
   "approved_by": "human",

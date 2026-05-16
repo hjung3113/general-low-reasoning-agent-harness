@@ -1,5 +1,6 @@
 {
   "phase": "discuss",
+  "state_schema_version": 2,
   "plan_id": null,
   "approved": false,
   "summary": "Roo harness initialized; project planning memory needs hydration.",

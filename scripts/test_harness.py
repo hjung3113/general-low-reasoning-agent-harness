@@ -817,22 +817,11 @@ class HarnessToolTests(unittest.TestCase):
             self.assertTrue(required_read_findings, [finding.to_dict() for finding in findings])
             self.assertIn("do not add required_reads to phase-state", required_read_findings[0].fix)
 
-    def test_done_phase_is_unapproved_non_execute_state(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            self.write_sync_fixture(root)
-            state_path = root / ".scratch/phase-state.json"
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-            state["phase"] = "done"
-            state["approved"] = False
-            state_path.write_text(json.dumps(state), encoding="utf-8")
-
-            harness.check_phase_state_semantics(state_path)
-
-            state["approved"] = True
-            state_path.write_text(json.dumps(state), encoding="utf-8")
-            with self.assertRaisesRegex(SystemExit, "done phase requires approved=false"):
-                harness.check_phase_state_semantics(state_path)
+    # NOTE: ``test_done_phase_is_unapproved_non_execute_state`` removed per
+    # ADR-001 option 3 (drop ``approved`` constant from the ``done`` branch
+    # of the schema) and spec §9.4. Replacement assertions live in
+    # ``PhaseStateCheckerV2Tests`` (tests T-6/T-8 below).
+    # See docs/adr/2026-05-16-hardening-bundle.md ADR-001.
 
     def test_doctor_json_output_is_deterministic_and_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -903,6 +892,7 @@ class HarnessToolTests(unittest.TestCase):
             json.dumps(
                 {
                     "phase": "discuss",
+                    "state_schema_version": 2,
                     "approved": False,
                     "automation_mode": "manual",
                     "auto_selected": [],
@@ -916,6 +906,7 @@ class HarnessToolTests(unittest.TestCase):
             json.dumps(
                 {
                     "phase": "execute",
+                    "state_schema_version": 2,
                     "approved": True,
                     "plan_id": "harness-sync-doctor-04-01",
                     "automation_mode": "manual",
@@ -2272,6 +2263,7 @@ progress:
             json.dumps(
                 {
                     "phase": "execute",
+                    "state_schema_version": 2,
                     "approved": True,
                     "automation_mode": "manual",
                     "auto_selected": [],
@@ -2299,6 +2291,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "discuss",
+                        "state_schema_version": 2,
                         "approved": False,
                         "automation_mode": "auto",
                         "auto_selected": ["too vague"],
@@ -2319,6 +2312,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "execute",
+                        "state_schema_version": 2,
                         "approved": True,
                         "automation_mode": "manual",
                         "auto_selected": [],
@@ -2340,6 +2334,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "plan",
+                        "state_schema_version": 2,
                         "approved": False,
                         "automation_mode": "manual",
                         "auto_selected": [],
@@ -2357,6 +2352,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "plan",
+                        "state_schema_version": 2,
                         "approved": False,
                         "automation_mode": "manual",
                         "auto_selected": [],
@@ -2377,6 +2373,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "execute",
+                        "state_schema_version": 2,
                         "approved": True,
                         "automation_mode": "manual",
                         "auto_selected": [],
@@ -2407,6 +2404,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "execute",
+                        "state_schema_version": 2,
                         "approved": True,
                         "automation_mode": "manual",
                         "auto_selected": [],
@@ -2452,6 +2450,7 @@ progress:
             path = Path(tmpdir) / "phase-state.json"
             base_state = {
                 "phase": "execute",
+                "state_schema_version": 2,
                 "approved": True,
                 "automation_mode": "manual",
                 "auto_selected": [],
@@ -2484,6 +2483,7 @@ progress:
                 json.dumps(
                     {
                         "phase": "execute",
+                        "state_schema_version": 2,
                         "approved": True,
                         "automation_mode": "manual",
                         "auto_selected": [],

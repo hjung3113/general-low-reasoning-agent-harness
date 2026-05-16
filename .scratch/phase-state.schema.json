@@ -9,10 +9,15 @@
     "approved",
     "automation_mode",
     "auto_selected",
+    "state_schema_version",
     "updated_at",
     "updated_by"
   ],
   "properties": {
+    "state_schema_version": {
+      "type": "integer",
+      "description": "Migrator-owned schema version. v2 is the post-T0-1 shape (ADR-001)."
+    },
     "phase": {
       "type": "string",
       "enum": [
@@ -370,9 +375,6 @@
           "verification"
         ],
         "properties": {
-          "approved": {
-            "const": true
-          },
           "plan_id": {
             "type": "string"
           },

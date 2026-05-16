@@ -342,6 +342,14 @@ def check_json(path: Path) -> None:
 
 def check_phase_state_semantics(path: Path) -> None:
     state = json.loads(path.read_text(encoding="utf-8"))
+    # ADR-001: state_schema_version is required (v2 = post-T0-1 shape). A
+    # record without this field is a pre-slice (v0) record and must be
+    # migrated forward before the rest of the checker runs.
+    if state.get("state_schema_version") != 2:
+        raise SystemExit(
+            f"{path} missing or stale state_schema_version (expected 2). "
+            f"Run: python3 scripts/harness.py migrate state --forward"
+        )
     for key in ("updated_at",):
         if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
             raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
@@ -428,8 +436,9 @@ def check_phase_state_semantics(path: Path) -> None:
             "next_action",
         )
         missing = [key for key in required_done if not state.get(key)]
-        if state.get("approved") is not False:
-            missing.append("approved=false")
+        # ADR-001 option 3: the schema constraint on ``approved`` is dropped
+        # from the ``done`` branch — both ``approved=true`` and ``approved=false``
+        # are valid. See docs/adr/2026-05-16-hardening-bundle.md ADR-001.
         if missing:
             raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
     verification = state.get("verification", [])
