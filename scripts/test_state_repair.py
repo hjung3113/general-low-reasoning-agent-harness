@@ -123,5 +123,64 @@ class RepairEndToEndTests(unittest.TestCase):
         self.assertEqual(report.files_updated, [])
 
 
+ROADMAP_WITH_BLOCK_AND_ORPHAN = """# ROADMAP
+
+## Phases
+
+<!-- HARNESS:BEGIN managed:roadmap-phases v1 -->
+- [x] **Phase 0: A**
+- [ ] **Phase 1: B**
+<!-- HARNESS:END managed:roadmap-phases -->
+
+## Notes
+
+- [ ] **Phase 2: Stray**
+
+Free-form notes.
+"""
+
+
+class OrphanPhaseDetectionTests(unittest.TestCase):
+    def _make_target(self) -> Path:
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / ".planning").mkdir()
+        (tmp / ".scratch").mkdir()
+        (tmp / ".planning/ROADMAP.md").write_text(
+            ROADMAP_WITH_BLOCK_AND_ORPHAN, encoding="utf-8"
+        )
+        (tmp / ".planning/STATE.md").write_text(
+            "---\nprogress:\n  total_phases: 2\n  completed_phases: 1\n  percent: 50\n---\n\n"
+            "# S\n\n"
+            "<!-- HARNESS:BEGIN managed:state-current v1 -->\n"
+            "## Current Position\n\n- **Phase**: 1 - B\n\n"
+            "## Active Checkpoint\n\n- **Checkpoint**: CP-01-01\n"
+            "<!-- HARNESS:END managed:state-current -->\n",
+            encoding="utf-8",
+        )
+        (tmp / ".scratch/phase-state.json").write_text(
+            json.dumps({"phase": "discuss"}), encoding="utf-8"
+        )
+        return tmp
+
+    def test_repair_does_not_fold_orphan_phase_into_block(self):
+        root = self._make_target()
+        report = repair(root)
+        roadmap = (root / ".planning/ROADMAP.md").read_text(encoding="utf-8")
+        from lib.managed_block import parse_blocks
+        blocks = parse_blocks(roadmap)
+        block_payload = blocks["roadmap-phases"].payload
+        # Phase 2 must NOT have been pulled into the block payload.
+        self.assertNotIn("Phase 2: Stray", block_payload)
+        # And the orphan line must still be in the file outside the block.
+        self.assertIn("Phase 2: Stray", roadmap)
+
+    def test_repair_warns_on_orphan_phase(self):
+        root = self._make_target()
+        report = repair(root)
+        joined = " | ".join(report.warnings)
+        self.assertIn("Phase 2: Stray", joined)
+        self.assertIn("outside managed block", joined)
+
+
 if __name__ == "__main__":
     unittest.main()

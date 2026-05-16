@@ -7,6 +7,7 @@ step re-renders the managed-block payload in canonical form.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,6 +24,12 @@ from lib.roadmap_state import (
     parse_frontmatter,
     parse_roadmap_phases,
     parse_state_snapshot,
+)
+
+# Regex that matches a phase checkbox line anywhere in plain text.
+_PHASE_LINE_RE = re.compile(
+    r"^-\s+\[[ xX]\]\s+\*\*Phase\s+\d+:\s*[^*]+\*\*",
+    re.MULTILINE,
 )
 
 
@@ -113,6 +120,44 @@ def _wrap_section_in_block(
     return new_text, True
 
 
+def _phases_inside_block(text: str, slug: str) -> list[RoadmapPhase] | None:
+    """Return phases parsed ONLY from the managed block's payload, or None if block absent.
+
+    The block payload contains raw phase checkbox lines without a ``## Phases``
+    heading, so we match them directly with the phase-line regex rather than
+    delegating to ``parse_roadmap_phases`` (which requires a section heading).
+    """
+    blocks = parse_blocks(text)
+    if slug not in blocks:
+        return None
+    payload = blocks[slug].payload
+    pattern = re.compile(
+        r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*Phase\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*",
+        re.MULTILINE,
+    )
+    phases: list[RoadmapPhase] = []
+    for match in pattern.finditer(payload):
+        phases.append(
+            RoadmapPhase(
+                number=int(match.group("number")),
+                title=match.group("title").strip(),
+                completed=match.group("mark").lower() == "x",
+            )
+        )
+    return phases
+
+
+def _orphan_phase_lines(text: str, slug: str) -> list[str]:
+    """Return phase-pattern lines that exist OUTSIDE the managed block."""
+    blocks = parse_blocks(text)
+    if slug not in blocks:
+        return []
+    block = blocks[slug]
+    # Remove the block region from the text before scanning.
+    remainder = text[: block.start] + text[block.end :]
+    return _PHASE_LINE_RE.findall(remainder)
+
+
 def _phase_title_lookup(phases: list[RoadmapPhase], number: int | None) -> str:
     if number is None:
         return ""
@@ -138,7 +183,13 @@ def repair(root: Path) -> RepairReport:
     roadmap_text = roadmap_path.read_text(encoding="utf-8")
     state_text = state_path.read_text(encoding="utf-8")
 
-    phases = parse_roadmap_phases(roadmap_text)
+    # Use phases inside the block when it already exists, to avoid pulling in
+    # orphan phase lines from elsewhere in the file.
+    phases_from_block = _phases_inside_block(roadmap_text, ROADMAP_PHASES_SLUG)
+    if phases_from_block is not None:
+        phases = phases_from_block
+    else:
+        phases = parse_roadmap_phases(roadmap_text)
     snapshot = parse_state_snapshot(state_text)
     phase_state: dict = {}
     if phase_state_path.exists():
@@ -148,6 +199,13 @@ def repair(root: Path) -> RepairReport:
             report.warnings.append(f"phase-state.json invalid: {exc}")
 
     roadmap_payload = canonical_roadmap_phases_payload(phases)
+
+    # Warn about orphan phase lines that sit outside the managed block.
+    for orphan_line in _orphan_phase_lines(roadmap_text, ROADMAP_PHASES_SLUG):
+        report.warnings.append(
+            f"roadmap phase line outside managed block: {orphan_line}; "
+            "move it inside or delete it"
+        )
     new_roadmap, roadmap_changed = _wrap_section_in_block(
         roadmap_text,
         slug=ROADMAP_PHASES_SLUG,
