@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -509,6 +510,21 @@ def check_phase_state_semantics(path: Path) -> None:
                 f"{path} review[{index}].at must be an ISO-8601 UTC timestamp; "
                 f"got {entry['at']!r}."
             )
+        # T0-4 SecM4: when evidence_path is non-empty, reject traversal
+        # segments, absolute paths, and URL schemes. The empty string is
+        # accepted as a migration sentinel (see state_migrate_t04).
+        ev = entry["evidence_path"]
+        if ev:
+            ev_segments = ev.replace("\\", "/").split("/")
+            if (
+                ".." in ev_segments
+                or os.path.isabs(ev)
+                or "://" in ev
+            ):
+                raise SystemExit(
+                    f"{path} review[{index}].evidence_path: traversal or "
+                    f"absolute path not allowed (got: {ev})"
+                )
     # T0-4 (ADR-004): a closed (done) phase requires verification OR review
     # non-empty — at least one form of evidence must be present.
     if state.get("phase") == "done" and not verification and not review:
