@@ -20,7 +20,7 @@ CASES = [
     ("both", ["--adapters", "both"]),
     ("python-analysis", ["--adapters", "opencode", "--packs", "workflow-core,tech-python,workflow-data-analysis"]),
     (
-        "dotnet-etl",
+        "dotnet-etl-mssql",
         [
             "--adapters",
             "both",
