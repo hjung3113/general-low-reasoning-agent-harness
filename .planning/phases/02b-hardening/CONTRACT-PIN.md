@@ -163,9 +163,11 @@ The following decisions resolve "who lands this first" debates that surfaced dur
 
 Assigned to **`02b-08-T1-S-PLAN.md`** as a new sub-task (adapter parity gap: the `.opencode/commands/done.md` exists in the pre-slice tree but `.roo/commands/done.md` does not). The content of the file mirrors `.opencode/commands/done.md` with the documented `.roo` frontmatter conventions. This was not previously assigned to any plan and was identified as a drift gap.
 
-### 5.3 Uninstall flag split (`--remove-state`, `--remove-operational`, `--remove-install-state`, `--remove-all`)
+### 5.3 Uninstall flag split (`--remove-state`, `--remove-operational`, `--remove-install-state-only`, `--remove-all`)
 
 Assigned to **`02b-04-T0-3-PLAN.md`**. T0-3 owns `scripts/uninstall_harness.py` flag additions because the flag set consumes `STATE_FILE_PATHS`, `OPERATIONAL_PATHS`, and `INSTALL_PATHS` — all three of which T0-3 already wires through `scripts/lib/operational_paths.py`. Per ADR Artifact 2 "Uninstall consumers (G4-C)".
+
+> Note (C5 amendment): the new flag is named `--remove-install-state-only` (with the `-only` suffix) because the legacy `--remove-install-state` flag — gated via the existing `--select` mechanism — pre-existed in `scripts/uninstall_harness.py`. The `-only` suffix avoids a CLI name collision while keeping the verb's intent (remove ONLY the install-state file, not the operational/state directories) explicit.
 
 ### 5.4 `.gitignore` mandatory entries
 
@@ -252,7 +254,7 @@ No other audit-log filenames are introduced in this slice.
 | L14 | Nanosecond-precision timestamps (`approved_at`, `updated_at`) | `02b-04-T0-3-PLAN.md` |
 | L15 | `--at` 24h-window validation (exit 8) | `02b-04-T0-3-PLAN.md` |
 | L16 | Exit code 4 = SCOPE_VIOLATION (reservation lifted; was: reserved) | `02b-07-T1-1-PLAN.md` |
-| L17 | Uninstall flag split (`--remove-state`/`--remove-operational`/`--remove-install-state`/`--remove-all`) | `02b-04-T0-3-PLAN.md` |
+| L17 | Uninstall flag split (`--remove-state`/`--remove-operational`/`--remove-install-state-only`/`--remove-all`) | `02b-04-T0-3-PLAN.md` |
 | L18 | `.gitignore` mandatory entries | `02b-04-T0-3-PLAN.md` + `02b-06-T0-5-PLAN.md` (each lands its own row of §5.4) |
 | L19 | Verification execution trust boundary (core never executes) | `02b-05-T0-4-PLAN.md` |
 | L20 | SKILL surface CLI alignment (adapter command files use new verbs) | `02b-08-T1-S-PLAN.md` |
