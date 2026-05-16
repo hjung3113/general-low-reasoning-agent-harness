@@ -31,7 +31,64 @@ MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
 KNOWN_ADAPTERS = {"roo", "opencode"}
-KNOWN_PROFILES = {"generic", "dotnet-etl-mssql"}
+KNOWN_PROFILES = {"generic", "dotnet-etl", "python-etl", "react-web"}
+LEGACY_PROFILE_ALIASES = {"dotnet-etl-mssql": "dotnet-etl"}
+
+_PROFILE_DEFAULT_PACKS = {
+    "generic": ("workflow-core",),
+    "dotnet-etl": ("workflow-core", "workflow-etl", "tech-csharp"),
+    "python-etl": ("workflow-core", "workflow-etl", "tech-python"),
+    "react-web": (
+        "workflow-core",
+        "workflow-web-development",
+        "tech-react",
+        "tech-typescript",
+        "tech-tailwind",
+    ),
+}
+
+_DB_PACKS = {
+    "mssql": ("tech-mssql", "workflow-db-context"),
+    "postgresql": ("tech-postgresql", "workflow-db-context"),
+    "none": (),
+}
+
+
+def default_packs_for_profile(profile: str) -> list[str]:
+    return list(_PROFILE_DEFAULT_PACKS.get(profile, ("workflow-core",)))
+
+
+def db_packs(db: str) -> list[str]:
+    if db not in _DB_PACKS:
+        raise ValueError(f"unknown db: {db!r}; expected one of mssql, postgresql, none")
+    return list(_DB_PACKS[db])
+
+
+def normalize_profiles(values: Iterable[str]) -> list[str]:
+    """Validate and remap ``--profiles`` input.
+
+    - Legacy aliases (e.g. ``dotnet-etl-mssql``) are remapped with a stderr
+      deprecation warning.
+    - Unknown profile names raise SystemExit.
+    - Known names pass through unchanged.
+    """
+    out: list[str] = []
+    for raw in values:
+        if raw in LEGACY_PROFILE_ALIASES:
+            target = LEGACY_PROFILE_ALIASES[raw]
+            print(
+                f"WARN: profile name {raw!r} is deprecated; using {target!r}. "
+                f"This alias will be removed in v0.8.",
+                file=sys.stderr,
+            )
+            out.append(target)
+        elif raw in KNOWN_PROFILES:
+            out.append(raw)
+        else:
+            raise SystemExit(f"unknown harness scope requested: profile: {raw}")
+    return out
+
+
 KNOWN_POLICIES = {"harness-owned", "managed", "managed-append", "project-owned", "exclude"}
 KNOWN_PACKS = {
     "workflow-core",
@@ -53,6 +110,7 @@ KNOWN_PACKS = {
     "workflow-skill-authoring",
     "workflow-security-review",
 }
+PROFILE_MODE_OWNERS: dict[str, str] = {"ui-engineer": "react-web"}
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 README_RELEASE_VERSION = re.compile(r"\bv\d+\.\d+\.\d+\b")
 VERIFICATION_PREFIXES = (
@@ -329,8 +387,14 @@ def run(argv: list[str] | None = None) -> int:
     )
     init_parser.add_argument(
         "--packs",
-        default="workflow-core",
-        help="Comma-separated optional skill/capability packs to install. Defaults to workflow-core.",
+        default=None,
+        help="Comma-separated optional skill/capability packs to install. Defaults to profile-appropriate packs.",
+    )
+    init_parser.add_argument(
+        "--db",
+        choices=("mssql", "postgresql", "none"),
+        default=None,
+        help="Optional database axis. Ignored when profile is 'generic'.",
     )
 
     upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
@@ -379,16 +443,34 @@ def run(argv: list[str] | None = None) -> int:
     HARNESS_VERSION = resolve_harness_version(command_root, explicit=args.release_version)
 
     if args.command == "init":
+        raw_profiles = parse_scope(args.profiles, default={"generic"})
+        profiles_resolved = normalize_profiles(list(raw_profiles))
+        if args.packs is not None:
+            # User explicitly provided --packs: honour it as-is.
+            final_packs: set[str] = parse_scope(args.packs, default={"workflow-core"})
+        else:
+            # Auto-derive packs from profile defaults + optional db axis.
+            auto_packs: set[str] = set()
+            for profile in profiles_resolved:
+                auto_packs.update(default_packs_for_profile(profile))
+            db = args.db
+            if db is not None:
+                if profiles_resolved == ["generic"]:
+                    print("NOTE: --db is ignored for the 'generic' profile.", file=sys.stderr)
+                else:
+                    auto_packs.update(db_packs(db))
+            final_packs = auto_packs
         install(
             root=root,
             target=args.target,
             dry_run=args.dry_run,
             adapters=parse_scope(args.adapters, default={"roo"}),
-            profiles=parse_scope(args.profiles, default={"generic"}),
-            packs=parse_scope(args.packs, default={"workflow-core"}),
+            profiles=set(profiles_resolved),
+            packs=final_packs,
         )
         return 0
     if args.command == "upgrade":
+        raw_upgrade_profiles = parse_optional_scope(args.profiles)
         return upgrade(
             root=command_root,
             target=args.target,
@@ -396,7 +478,7 @@ def run(argv: list[str] | None = None) -> int:
             force=args.force,
             adopt_existing=args.adopt_existing,
             adapters=parse_optional_scope(args.adapters),
-            profiles=parse_optional_scope(args.profiles),
+            profiles=set(normalize_profiles(list(raw_upgrade_profiles))) if raw_upgrade_profiles is not None else None,
             packs=parse_optional_scope(args.packs),
         )
     if args.command == "check":
@@ -454,6 +536,29 @@ def run_delegated_command(command: list[str], cwd: Path) -> int:
     return 0
 
 
+def sync_roomodes_profile_modes(target: Path, profiles: Iterable[str], source_root: Path) -> None:
+    """Replace the profile-modes section of target/.roomodes with the modes
+    contributed by the currently installed profiles.
+
+    If target/.roomodes does not exist (e.g. opencode-only install) this is a
+    no-op. Profile-owned modes are read from
+    ``<source_root>/harness/profiles/<profile>/modes/*.json``.
+    """
+    from lib import roomodes_writer
+
+    roomodes_path = target / ".roomodes"
+    if not roomodes_path.exists():
+        return
+    profile_modes: list[dict] = []
+    for profile in profiles:
+        modes_dir = source_root / "harness/profiles" / profile / "modes"
+        if not modes_dir.exists():
+            continue
+        for mode_file in sorted(modes_dir.glob("*.json")):
+            profile_modes.append(json.loads(mode_file.read_text(encoding="utf-8")))
+    roomodes_writer.set_profile_modes(roomodes_path, profile_modes)
+
+
 def install(
     *,
     root: Path,
@@ -505,7 +610,54 @@ def install(
             else:
                 write_copy(source, destination)
 
+    sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
     write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
+
+
+def migrate_install_state(state: dict) -> dict:
+    """Rewrite a v0.6.0-style install record to the post-unification shape.
+
+    Returns the (possibly mutated) state. Also returns it through the in-place
+    dict for callers that prefer the side-effect.
+    """
+    options = state.setdefault("init_options", {})
+    profiles = list(options.get("profiles") or [])
+    new_profiles: list[str] = []
+    added_packs: set[str] = set()
+    for p in profiles:
+        if p == "dotnet-etl-mssql":
+            new_profiles.append("dotnet-etl")
+            added_packs.update(("tech-mssql", "workflow-db-context"))
+        elif p in LEGACY_PROFILE_ALIASES:
+            new_profiles.append(LEGACY_PROFILE_ALIASES[p])
+        else:
+            new_profiles.append(p)
+    if new_profiles != profiles:
+        options["profiles"] = new_profiles
+        state["profiles"] = new_profiles
+    if added_packs:
+        packs = set(state.get("packs") or [])
+        packs.update(added_packs)
+        state["packs"] = sorted(packs)
+        opt_packs = set(options.get("packs") or [])
+        opt_packs.update(added_packs)
+        options["packs"] = sorted(opt_packs)
+    return state
+
+
+def install_state_migration_report(before: dict, after: dict) -> list[str]:
+    """Return human-readable lines describing what migrate_install_state changed."""
+    lines: list[str] = []
+    before_profiles = list((before.get("init_options") or {}).get("profiles") or [])
+    after_profiles = list((after.get("init_options") or {}).get("profiles") or [])
+    if before_profiles != after_profiles:
+        lines.append(f"profiles: {before_profiles} -> {after_profiles}")
+    before_packs = set(before.get("packs") or [])
+    after_packs = set(after.get("packs") or [])
+    added = sorted(after_packs - before_packs)
+    if added:
+        lines.append(f"packs added: {', '.join(added)}")
+    return lines
 
 
 def upgrade(
@@ -519,10 +671,19 @@ def upgrade(
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
 ) -> int:
+    import copy
+
     if not (root / MANIFEST_PATH).exists():
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
     target = target.resolve()
     installed = read_install_state(target)
+    before_migration = copy.deepcopy(installed)
+    migrate_install_state(installed)
+    report = install_state_migration_report(before_migration, installed)
+    if report:
+        print("MIGRATION:")
+        for line in report:
+            print(f"  {line}")
     adapters = adapters if adapters is not None else installed_scope(installed, "adapters", default={"roo"})
     profiles = profiles if profiles is not None else installed_scope(installed, "profiles", default={"generic"})
     packs = packs if packs is not None else installed_scope(installed, "packs", default=set())
@@ -669,6 +830,11 @@ def upgrade(
     provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
+    if not dry_run:
+        sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
+        roomodes_path = target / ".roomodes"
+        if roomodes_path.exists() and isinstance(installed.get("files"), dict) and ".roomodes" in installed["files"]:
+            installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
     if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
     if dry_run:
@@ -1420,6 +1586,9 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")
     validate_installed_scope_names(installed)
+    profile_sync_errs = _check_roomodes_profile_sync(target, installed)
+    if profile_sync_errs:
+        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs))
     missing = []
     for path_text in installed.get("files", {}):
         destination = target / normalize_path(path_text)
@@ -1498,6 +1667,39 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             check_phase_state_semantics(path)
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
+
+
+def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
+    roomodes_path = target / ".roomodes"
+    if not roomodes_path.exists():
+        return []
+    try:
+        from lib import roomodes_writer
+        profile_modes = roomodes_writer.read(roomodes_path).profile_modes
+    except ImportError:
+        # roomodes_writer is not installed to targets; parse directly using the
+        # same slug-based classification as the writer.
+        _BASE_SLUGS = {
+            "orchestrator", "architect", "tdd-code", "diagnose", "review",
+            "docs-issues", "ops-observability", "harness-maintainer",
+        }
+        _KNOWN_PROFILE_SLUGS = frozenset(PROFILE_MODE_OWNERS.keys())
+        data = json.loads(roomodes_path.read_text(encoding="utf-8"))
+        profile_modes = [
+            m for m in data.get("customModes", [])
+            if m.get("slug") not in _BASE_SLUGS and m.get("slug") in _KNOWN_PROFILE_SLUGS
+        ]
+    installed_profiles = set((installed.get("init_options") or {}).get("profiles") or [])
+    errs: list[str] = []
+    for mode in profile_modes:
+        slug = mode.get("slug")
+        owner = PROFILE_MODE_OWNERS.get(slug)
+        if owner and owner not in installed_profiles:
+            errs.append(
+                f".roomodes contains profile-contributed mode {slug!r} but "
+                f"owning profile {owner!r} is not installed"
+            )
+    return errs
 
 
 def validate_installed_scope_names(installed: dict[str, object]) -> None:
@@ -1732,6 +1934,7 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(installed_scope_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
+    findings.extend(opencode_profile_rules_doctor_findings(root))
     findings.append(
         DoctorFinding(
             severity="P3",
@@ -2015,6 +2218,30 @@ def db_context_doctor_findings(root: Path) -> list[DoctorFinding]:
                         evidence="include_jobs present; agent_jobs missing",
                     )
                 )
+    return findings
+
+
+def opencode_profile_rules_doctor_findings(root: Path) -> list[DoctorFinding]:
+    findings: list[DoctorFinding] = []
+    cmd_dir = root / ".opencode/commands"
+    if not cmd_dir.exists():
+        return findings
+    for name in ("discuss.md", "plan.md", "execute.md", "done.md"):
+        path = cmd_dir / name
+        if not path.exists():
+            continue
+        if ".opencode/profile-rules/" not in path.read_text(encoding="utf-8"):
+            findings.append(
+                DoctorFinding(
+                    severity="P2",
+                    code="opencode_profile_rules_missing",
+                    path=f".opencode/commands/{name}",
+                    cause=f"{name} is missing the .opencode/profile-rules/ read instruction.",
+                    impact="Profile-specific rules will not be loaded when the command is invoked.",
+                    fix=f"Add the profile-rules read instruction to .opencode/commands/{name}.",
+                    evidence=f"{name}: missing .opencode/profile-rules/ read instruction",
+                )
+            )
     return findings
 
 

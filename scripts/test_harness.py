@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness
 import install_harness
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 class HarnessToolTests(unittest.TestCase):
     SHOW_PHASE_STATUS_PREFLIGHT = (
@@ -497,37 +499,6 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
 
-    def test_install_harness_profile_presets_map_to_expected_packs(self) -> None:
-        pack_names = harness.available_scopes(harness.repo_root())["packs"]
-
-        _, dotnet_packs = install_harness.resolve_profile_preset("dotnet-etl", pack_names)
-        _, python_packs = install_harness.resolve_profile_preset("python-etl", pack_names)
-        _, web_packs = install_harness.resolve_profile_preset("react-tailwind-typescript-web", pack_names)
-        _, full_packs = install_harness.resolve_profile_preset("full", pack_names)
-
-        self.assertEqual(
-            ["workflow-core", "tech-csharp", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
-            dotnet_packs,
-        )
-        self.assertNotIn("tech-mssql", dotnet_packs)
-        self.assertNotIn("workflow-db-context", dotnet_packs)
-        self.assertEqual(
-            ["workflow-core", "tech-python", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
-            python_packs,
-        )
-        self.assertEqual(
-            [
-                "workflow-core",
-                "tech-react",
-                "tech-typescript",
-                "tech-tailwind",
-                "workflow-web-development",
-                "workflow-tdd",
-            ],
-            web_packs,
-        )
-        self.assertEqual(pack_names, full_packs)
-
     def test_install_harness_pack_selection_uses_shown_numbers_only(self) -> None:
         self.assertEqual(
             ["workflow-security-review", "tech-mssql"],
@@ -547,7 +518,7 @@ class HarnessToolTests(unittest.TestCase):
                     str(harness.repo_root() / "scripts/install_harness.py"),
                     "--interactive",
                 ],
-                input=f"relative-target\n{missing}\n{target}\n1\n2\nnone\nyes\n",
+                input=f"relative-target\n{missing}\n{target}\n1\n2\nnone\nnone\nyes\n",
                 cwd=harness.repo_root(),
                 capture_output=True,
                 text=True,
@@ -575,7 +546,7 @@ class HarnessToolTests(unittest.TestCase):
                     "--packs",
                     "workflow-security-review",
                 ],
-                input=f"{target}\n\n4\n\nno\n",
+                input=f"{target}\n\n4\n\n\nno\n",
                 cwd=harness.repo_root(),
                 capture_output=True,
                 text=True,
@@ -592,7 +563,6 @@ class HarnessToolTests(unittest.TestCase):
                     "tech-typescript",
                     "workflow-core",
                     "workflow-security-review",
-                    "workflow-tdd",
                     "workflow-web-development",
                 ],
                 installed["packs"],
@@ -1246,7 +1216,7 @@ progress:
                     "--adapters",
                     "roo,opencode",
                     "--profiles",
-                    "generic,dotnet-etl-mssql",
+                    "generic,dotnet-etl",
                     "--packs",
                     "workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
                 ]
@@ -1261,20 +1231,16 @@ progress:
                 "risk-review",
             ):
                 self.assertTrue((target / f".agents/skills/{skill_name}/SKILL.md").exists(), skill_name)
-            profile = (target / "docs/profiles/dotnet-etl-mssql.md").read_text(encoding="utf-8")
-            self.assertIn("Target .NET 10 unless", profile)
-            self.assertIn("Testcontainers", profile)
-            self.assertIn("Row-by-row ETL writes are forbidden", profile)
-            self.assertIn("needs-db-context", profile)
+            profile = (target / "docs/profiles/dotnet-etl.md").read_text(encoding="utf-8")
+            self.assertIn("dotnet-etl", profile)
             etl = (target / ".agents/skills/workflow-etl/SKILL.md").read_text(encoding="utf-8")
-            self.assertIn("C#/.NET 10 + MSSQL ETL", etl)
             self.assertIn("tech-csharp", etl)
             self.assertIn("tech-mssql", etl)
             self.assertIn("workflow-db-context", etl)
             db_context = (target / ".agents/skills/workflow-db-context/SKILL.md").read_text(encoding="utf-8")
             self.assertIn("needs-db-context", db_context)
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
-            self.assertIn("dotnet-etl-mssql", installed["profiles"])
+            self.assertIn("dotnet-etl", installed["profiles"])
             self.assertEqual("workflow", installed["pack_metadata"]["workflow-db-context"]["category"])
             self.assertIn("sql server verification", installed["pack_metadata"]["tech-mssql"]["capabilities"])
             self.assertTrue((target / ".roo/skills/workflow-phase-gate/SKILL.md").exists())
@@ -1673,7 +1639,7 @@ progress:
                     "--adapters",
                     "opencode",
                     "--profiles",
-                    "generic,dotnet-etl-mssql",
+                    "generic,dotnet-etl",
                     "--packs",
                     "workflow-core,workflow-tdd,tech-python",
                 ]
@@ -1681,7 +1647,7 @@ progress:
 
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(["opencode"], installed["init_options"]["adapters"])
-            self.assertEqual(["dotnet-etl-mssql", "generic"], installed["init_options"]["profiles"])
+            self.assertEqual(["dotnet-etl", "generic"], installed["init_options"]["profiles"])
             self.assertEqual(["tech-python", "workflow-core", "workflow-tdd"], installed["init_options"]["packs"])
 
             result = harness.run(["upgrade", "--target", str(target)])
@@ -1689,7 +1655,7 @@ progress:
             self.assertEqual(0, result)
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(["opencode"], installed["adapters"])
-            self.assertEqual(["dotnet-etl-mssql", "generic"], installed["profiles"])
+            self.assertEqual(["dotnet-etl", "generic"], installed["profiles"])
             self.assertEqual(["tech-python", "workflow-core", "workflow-tdd"], installed["packs"])
             self.assertEqual(installed["init_options"]["packs"], installed["packs"])
             self.assertTrue((target / ".opencode/commands/plan.md").exists())
@@ -2773,7 +2739,7 @@ progress:
             for phrase in phrases:
                 self.assertIn(phrase, text, filename)
 
-    def test_root_readme_documents_general_install_check_and_upgrade_hardening(self) -> None:
+    def test_readme_documents_unified_profiles_and_db_flag(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
 
         for phrase in (
@@ -2786,9 +2752,10 @@ progress:
             "python3 scripts/harness.py check --worktree",
             "python3 scripts/release_smoke_test.py",
             "push 전에 서브에이전트 적대적 리뷰를 해줘",
-            "installer preset `dotnet-etl`",
-            "installer preset `react-tailwind-typescript-web`",
-            "`tech-mssql` 또는 `tech-postgresql`",
+            "`dotnet-etl`",
+            "`react-web`",
+            "`--db`",
+            "`--db mssql` 또는 `--db postgresql`",
             "workflow-tdd",
             "workflow-debugging",
             "workflow-code-review",
@@ -2842,6 +2809,502 @@ progress:
             "sha256": harness.file_hash(path),
         }
         installed_path.write_text(json.dumps(installed), encoding="utf-8")
+
+
+class ManifestProfileEntriesTests(unittest.TestCase):
+    def setUp(self):
+        self.manifest = json.loads((REPO_ROOT / "harness/manifest.json").read_text(encoding="utf-8"))
+        self.entries = self.manifest["files"]
+
+    def _entry(self, path):
+        for e in self.entries:
+            if e["path"] == path:
+                return e
+        self.fail(f"manifest entry missing: {path}")
+
+    def test_legacy_dotnet_etl_mssql_profile_doc_removed(self):
+        paths = {e["path"] for e in self.entries}
+        self.assertNotIn("docs/profiles/dotnet-etl-mssql.md", paths)
+
+    def test_new_profile_docs_present(self):
+        for path in (
+            "docs/profiles/dotnet-etl.md",
+            "docs/profiles/python-etl.md",
+            "docs/profiles/react-web.md",
+        ):
+            e = self._entry(path)
+            self.assertEqual(
+                e["owner"], f"profile:{path.split('/')[-1].removesuffix('.md')}"
+            )
+
+    def test_dotnet_etl_etl_tdd_installs_into_roo_and_opencode(self):
+        roo = self._entry(".roo/rules-tdd-code/dotnet-etl-etl-tdd.md")
+        self.assertEqual(roo["profile"], "dotnet-etl")
+        self.assertEqual(roo["adapter"], "roo")
+        self.assertEqual(roo["owner"], "profile:dotnet-etl")
+        oc = self._entry(".opencode/profile-rules/dotnet-etl-etl-tdd.md")
+        self.assertEqual(oc["adapter"], "opencode")
+        self.assertEqual(oc["profile"], "dotnet-etl")
+
+    def test_react_web_ui_engineer_extras_targets_ui_engineer_rules_dir(self):
+        roo = self._entry(".roo/rules-ui-engineer/react-web-ui-engineer-extras.md")
+        self.assertEqual(roo["profile"], "react-web")
+        self.assertEqual(roo["adapter"], "roo")
+
+
+class ProfileResolutionTests(unittest.TestCase):
+    def test_known_profiles(self):
+        from scripts import harness as h
+        self.assertEqual(h.KNOWN_PROFILES, {"generic", "dotnet-etl", "python-etl", "react-web"})
+
+    def test_legacy_alias_maps(self):
+        from scripts import harness as h
+        self.assertEqual(h.LEGACY_PROFILE_ALIASES["dotnet-etl-mssql"], "dotnet-etl")
+
+    def test_default_packs_for_dotnet_etl(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("dotnet-etl")
+        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-csharp"})
+
+    def test_default_packs_for_python_etl(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("python-etl")
+        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-python"})
+
+    def test_default_packs_for_react_web(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("react-web")
+        self.assertEqual(
+            set(packs),
+            {"workflow-core", "workflow-web-development", "tech-react", "tech-typescript", "tech-tailwind"},
+        )
+
+    def test_db_packs_mssql(self):
+        from scripts import harness as h
+        self.assertEqual(set(h.db_packs("mssql")), {"tech-mssql", "workflow-db-context"})
+
+    def test_db_packs_postgresql(self):
+        from scripts import harness as h
+        self.assertEqual(set(h.db_packs("postgresql")), {"tech-postgresql", "workflow-db-context"})
+
+    def test_db_packs_none_returns_empty(self):
+        from scripts import harness as h
+        self.assertEqual(h.db_packs("none"), [])
+
+    def test_db_packs_unknown_raises(self):
+        from scripts import harness as h
+        with self.assertRaises(ValueError):
+            h.db_packs("mysql")
+
+    def test_normalize_profiles_handles_legacy_alias(self):
+        from scripts import harness as h
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            result = h.normalize_profiles(["dotnet-etl-mssql", "generic"])
+        self.assertEqual(result, ["dotnet-etl", "generic"])
+        self.assertIn("deprecated", buf.getvalue())
+
+    def test_normalize_profiles_rejects_unknown(self):
+        from scripts import harness as h
+        with self.assertRaises(SystemExit):
+            h.normalize_profiles(["bogus"])
+
+    def test_normalize_profiles_passes_known_through(self):
+        from scripts import harness as h
+        self.assertEqual(h.normalize_profiles(["react-web", "generic"]), ["react-web", "generic"])
+
+
+class DbFlagTests(unittest.TestCase):
+    def test_init_with_db_mssql_adds_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                    "--db", "mssql",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("tech-mssql", installed["packs"])
+            self.assertIn("workflow-db-context", installed["packs"])
+
+    def test_init_with_db_postgresql_adds_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "python-etl",
+                    "--db", "postgresql",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("tech-postgresql", installed["packs"])
+            self.assertIn("workflow-db-context", installed["packs"])
+
+    def test_init_db_none_does_not_add_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                    "--db", "none",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+            self.assertNotIn("tech-postgresql", installed["packs"])
+
+    def test_init_db_with_generic_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            result = subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "generic",
+                    "--db", "mssql",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("ignored", (result.stderr + result.stdout).lower())
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+
+    def test_init_without_db_omits_db_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [
+                    sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                    "init",
+                    "--target", str(target),
+                    "--adapters", "roo",
+                    "--profiles", "dotnet-etl",
+                ],
+                check=True,
+            )
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertNotIn("tech-mssql", installed["packs"])
+            self.assertNotIn("tech-postgresql", installed["packs"])
+
+
+class RoomodesWriterTests(unittest.TestCase):
+    def test_read_baseline_returns_eight_base_modes(self):
+        from scripts.lib import roomodes_writer
+        baseline = roomodes_writer.read(REPO_ROOT / ".roomodes")
+        self.assertEqual(
+            [m["slug"] for m in baseline.base_modes],
+            [
+                "orchestrator",
+                "architect",
+                "tdd-code",
+                "diagnose",
+                "review",
+                "docs-issues",
+                "ops-observability",
+                "harness-maintainer",
+            ],
+        )
+        self.assertEqual(baseline.profile_modes, [])
+
+    def test_set_profile_modes_round_trip(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / ".roomodes"
+            target.write_text((REPO_ROOT / ".roomodes").read_text(encoding="utf-8"), encoding="utf-8")
+            ui_engineer = {"slug": "ui-engineer", "name": "UI Engineer"}
+            roomodes_writer.set_profile_modes(target, [ui_engineer])
+            again = roomodes_writer.read(target)
+            self.assertEqual(len(again.base_modes), 8)
+            self.assertEqual([m["slug"] for m in again.profile_modes], ["ui-engineer"])
+            roomodes_writer.set_profile_modes(target, [])
+            again2 = roomodes_writer.read(target)
+            self.assertEqual(again2.profile_modes, [])
+            self.assertEqual(len(again2.base_modes), 8)
+
+    def test_unmanaged_modes_preserved(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / ".roomodes"
+            target.write_text(json.dumps({"customModes": [
+                {"slug": "orchestrator"},
+                {"slug": "tdd-code"},
+                {"slug": "my-custom-mode", "name": "Project-owned"},
+            ]}), encoding="utf-8")
+            c = roomodes_writer.read(target)
+            self.assertEqual([m["slug"] for m in c.unmanaged_modes], ["my-custom-mode"])
+            roomodes_writer.set_profile_modes(target, [{"slug": "ui-engineer"}])
+            c2 = roomodes_writer.read(target)
+            self.assertEqual([m["slug"] for m in c2.unmanaged_modes], ["my-custom-mode"])
+
+
+class RoomodesProfileSyncTests(unittest.TestCase):
+    def test_react_web_install_adds_ui_engineer(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"],
+                check=True,
+            )
+            roomodes = json.loads((target / ".roomodes").read_text(encoding="utf-8"))
+            slugs = [m["slug"] for m in roomodes["customModes"]]
+            self.assertIn("ui-engineer", slugs)
+            self.assertEqual(slugs[:8], list(roomodes_writer.BASE_MODE_SLUGS))
+
+    def test_dotnet_etl_install_does_not_add_ui_engineer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            roomodes = json.loads((target / ".roomodes").read_text(encoding="utf-8"))
+            slugs = [m["slug"] for m in roomodes["customModes"]]
+            self.assertNotIn("ui-engineer", slugs)
+
+    def test_opencode_only_install_does_not_create_roomodes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "opencode", "--profiles", "react-web"],
+                check=True,
+            )
+            self.assertFalse((target / ".roomodes").exists())
+
+    def test_upgrade_removes_ui_engineer_when_react_web_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run([sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                            "init", "--target", str(target),
+                            "--adapters", "roo", "--profiles", "react-web"], check=True)
+            # confirm ui-engineer present
+            slugs_before = [m["slug"] for m in json.loads((target / ".roomodes").read_text())["customModes"]]
+            self.assertIn("ui-engineer", slugs_before)
+            # upgrade to generic
+            subprocess.run([sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                            "upgrade", "--target", str(target),
+                            "--profiles", "generic"], check=True)
+            slugs_after = [m["slug"] for m in json.loads((target / ".roomodes").read_text())["customModes"]]
+            self.assertNotIn("ui-engineer", slugs_after)
+
+
+class OpencodeCommandsProfileRulesTests(unittest.TestCase):
+    def test_each_command_references_profile_rules_dir(self):
+        for name in ("discuss.md", "plan.md", "execute.md", "done.md"):
+            text = (REPO_ROOT / ".opencode/commands" / name).read_text(encoding="utf-8")
+            self.assertIn(".opencode/profile-rules/", text, msg=name)
+            self.assertIn("alphabetical", text.lower(), msg=name)
+
+
+class InstallerInteractiveTests(unittest.TestCase):
+    def test_profile_options_are_unified(self):
+        from scripts import install_harness
+        slugs = [opt[0] for opt in install_harness.PROFILE_OPTIONS]
+        self.assertEqual(set(slugs), {"generic", "dotnet-etl", "python-etl", "react-web"})
+
+    def test_db_options_include_none(self):
+        from scripts import install_harness
+        slugs = [opt[0] for opt in install_harness.DB_OPTIONS]
+        self.assertEqual(set(slugs), {"mssql", "postgresql", "none"})
+
+    def test_prompt_db_returns_none_for_generic_without_prompting(self):
+        from scripts import install_harness
+        with mock.patch("builtins.input", side_effect=AssertionError("should not prompt")):
+            self.assertEqual(install_harness.prompt_db("generic"), "none")
+
+    def test_legacy_preset_names_removed(self):
+        from scripts import install_harness
+        self.assertFalse(hasattr(install_harness, "PROFILE_PRESETS"))
+        self.assertFalse(hasattr(install_harness, "resolve_profile_preset"))
+
+    def test_run_interactive_dry_run_resolves_dotnet_etl_with_mssql(self):
+        from scripts import install_harness
+        with tempfile.TemporaryDirectory() as tmp:
+            # tmp path, adapter choice "1" (roo), profile choice "2" (dotnet-etl),
+            # db choice "1" (mssql), then "" for additional packs.
+            answers = iter([tmp, "1", "2", "1", ""])
+            with mock.patch("builtins.input", side_effect=lambda *a, **k: next(answers)):
+                plan = install_harness.run_interactive_dry_run()
+            self.assertEqual(plan["profile"], "dotnet-etl")
+            self.assertEqual(plan["db"], "mssql")
+            self.assertIn("tech-mssql", plan["packs"])
+            self.assertIn("workflow-db-context", plan["packs"])
+
+
+class UpgradeMigrationTests(unittest.TestCase):
+    def test_upgrade_migrates_dotnet_etl_mssql_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            # Bootstrap a working install first so the upgrade has files to
+            # operate on; then forcibly rewrite the manifest to look like
+            # a pre-migration v0.6.0 install.
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["dotnet-etl-mssql"]
+            installed["profiles"] = ["dotnet-etl-mssql"]
+            # Strip the auto-added db packs so we can verify migration adds them.
+            installed["packs"] = ["workflow-core", "workflow-etl", "tech-csharp"]
+            installed["init_options"]["packs"] = ["workflow-core", "workflow-etl", "tech-csharp"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target)],
+                check=True,
+            )
+            migrated = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual(migrated["init_options"]["profiles"], ["dotnet-etl"])
+            self.assertEqual(migrated["profiles"], ["dotnet-etl"])
+            self.assertIn("tech-mssql", migrated["packs"])
+            self.assertIn("workflow-db-context", migrated["packs"])
+
+    def test_upgrade_dry_run_reports_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["dotnet-etl-mssql"]
+            installed["profiles"] = ["dotnet-etl-mssql"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target), "--dry-run"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            combined = result.stdout + result.stderr
+            self.assertIn("dotnet-etl-mssql", combined)
+            self.assertIn("dotnet-etl", combined)
+
+    def test_upgrade_preserves_non_legacy_profiles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"],
+                check=True,
+            )
+            installed_path = target / ".harness/installed-manifest.json"
+            before = json.loads(installed_path.read_text(encoding="utf-8"))
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "upgrade", "--target", str(target)],
+                check=True,
+            )
+            after = json.loads(installed_path.read_text(encoding="utf-8"))
+            self.assertEqual(after["init_options"]["profiles"], before["init_options"]["profiles"])
+            self.assertEqual(set(after["packs"]), set(before["packs"]))
+
+
+class CheckProfileSyncTests(unittest.TestCase):
+    def test_check_fails_when_ui_engineer_present_without_react_web(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"], check=True)
+            installed_path = target / ".harness/installed-manifest.json"
+            installed = json.loads(installed_path.read_text(encoding="utf-8"))
+            installed["init_options"]["profiles"] = ["generic"]
+            installed["profiles"] = ["generic"]
+            installed_path.write_text(json.dumps(installed), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "check", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("ui-engineer", result.stdout + result.stderr)
+
+    def test_check_passes_for_clean_react_web_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"], check=True)
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "check", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+
+
+class DoctorOpencodeProfileRulesTests(unittest.TestCase):
+    def test_doctor_warns_when_profile_rules_line_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "opencode", "--profiles", "dotnet-etl"], check=True)
+            execute = target / ".opencode/commands/execute.md"
+            text = execute.read_text(encoding="utf-8")
+            mangled = "\n".join(
+                line for line in text.splitlines()
+                if ".opencode/profile-rules/" not in line
+            ) + "\n"
+            execute.write_text(mangled, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "doctor", "--target", str(target)],
+                capture_output=True, text=True)
+            self.assertIn("profile-rules", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

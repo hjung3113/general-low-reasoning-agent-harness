@@ -15,6 +15,7 @@
 - [설치 후 첫 작업](#설치-후-첫-작업)
 - [워크플로우 모델](#워크플로우-모델)
 - [클라이언트별 커맨드 모델](#클라이언트별-커맨드-모델)
+- [Roo modes](#roo-modes)
 - [스킬 팩](#스킬-팩)
 - [프롬프트 레시피](#프롬프트-레시피)
 - [점검, Doctor, 검증](#점검-doctor-검증)
@@ -63,13 +64,18 @@ python scripts/harness.py init --target /path/to/project
 - generic profile
 - `workflow-core` skill pack
 
-Interactive profile presets are installer-only UX presets. They map to existing manifest profiles and skill packs; they are not valid values for `scripts/harness.py init --profiles`.
+The installer accepts a single profile (`generic`, `dotnet-etl`, `python-etl`,
+`react-web`). When the profile is not `generic`, the installer asks which
+database to wire in (`mssql`, `postgresql`, `none`). Profile names are also
+valid values for `scripts/harness.py init --profiles`. The `dotnet-etl-mssql`
+profile is deprecated; existing installs upgrade automatically to `dotnet-etl`
+plus `tech-mssql`.
 
-- `minimal`: stack-neutral planning guardrails plus `workflow-core`.
-- `dotnet-etl`: .NET/C# ETL packs without assuming a database engine.
+- `generic`: stack-neutral planning guardrails plus `workflow-core`.
+- `dotnet-etl`: .NET/C# ETL packs. Pair with `--db` if a database engine is used.
 - `python-etl`: Python ETL/data pipeline packs.
-- `react-tailwind-typescript-web`: React, TypeScript, Tailwind, and web workflow packs.
-- `full`: all shipped skill packs; adapters are still selected separately.
+- `react-web`: React, TypeScript, and Tailwind web workflow packs. Adds the
+  `ui-engineer` Roo mode when the Roo adapter is installed.
 
 ### 빠른 검증
 
@@ -121,7 +127,7 @@ skill pack은 플러그인입니다. Core는 작게 유지하고, debugging, TDD
 
 - **Core protocol**: `.planning/**`, `.scratch/phase-state.json`, checks, doctor, dashboard, AGENTS guidance.
 - **Adapters**: `.roo/**`, `.opencode/**`, client-specific command surfaces.
-- **Profiles**: `generic`, `dotnet-etl-mssql` 같은 확인된 project environment.
+- **Profiles**: `generic`, `dotnet-etl`, `python-etl`, `react-web` 같은 확인된 project environment.
 - **Skill packs**: `.agents/skills/**` 아래에 설치되는 composable workflow/tech skills.
 
 중요한 ownership rule: source repository에는 `.agents/skills/**`가 없어도 정상입니다. Source에는 `harness/skill-packs/**`가 있고, target install 시 선택한 pack만 `.agents/skills/**`로 복사됩니다.
@@ -134,10 +140,11 @@ skill pack은 플러그인입니다. Core는 작게 유지하고, debugging, TDD
 | core-only 하네스 | adapter 없음 | `python3 scripts/harness.py init --target /path/to/project --adapters none` | "core planning docs만 만들고 adapter command는 설치하지 마." |
 | OpenCode만 쓰기 | OpenCode adapter | `python3 scripts/harness.py init --target /path/to/project --adapters opencode` | "OpenCode discuss command 순서대로 읽고 phase 후보만 제안해." |
 | Roo + OpenCode 동시 지원 | both adapters | `python3 scripts/harness.py init --target /path/to/project --adapters both` | "Roo/OpenCode 모두 같은 `.planning/**`과 live gate를 쓰는지 확인해." |
-| .NET ETL | installer preset `dotnet-etl` | `python3 scripts/install_harness.py --interactive` | ".NET ETL restart/idempotency와 TDD 검증 계획을 세워줘." |
-| Python ETL | installer preset `python-etl` | `python3 scripts/install_harness.py --interactive` | "Python 데이터 파이프라인의 입력/변환/재시작 검증 계획을 세워줘." |
-| React/Tailwind/TypeScript web app | installer preset `react-tailwind-typescript-web` | `python3 scripts/install_harness.py --interactive` | "UI 변경은 browser verification까지 포함해서 plan을 세워줘." |
-| DB가 중요한 ETL | ETL profile + 추가 DB pack | interactive에서 `tech-mssql` 또는 `tech-postgresql`, 필요 시 `workflow-db-context` 추가 | "DB별 transaction/idempotency 검증도 포함해줘." |
+| .NET ETL | `dotnet-etl` profile | `python3 scripts/install_harness.py --interactive` | ".NET ETL restart/idempotency와 TDD 검증 계획을 세워줘." |
+| Python ETL | `python-etl` profile | `python3 scripts/install_harness.py --interactive` | "Python 데이터 파이프라인의 입력/변환/재시작 검증 계획을 세워줘." |
+| React/TypeScript/Tailwind web app | `react-web` profile | `python3 scripts/install_harness.py --interactive` | "UI 변경은 browser verification까지 포함해서 plan을 세워줘." |
+| ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/install_harness.py --interactive` (또는 `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql`) | "MSSQL transaction/idempotency 검증도 포함해줘." |
+| DB가 중요한 ETL | ETL profile + `--db` flag | interactive에서 `--db mssql` 또는 `--db postgresql`, 필요 시 `workflow-db-context` 추가 | "DB별 transaction/idempotency 검증도 포함해줘." |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` | "증상 재현부터 최소화, 가설, 계측, 회귀 테스트 순서로 진행해." |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` | "권한, secret exposure, rollback 관점으로 적대적 리뷰해." |
 | 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.6.0 --dry-run` | "dry-run 결과와 conflict를 먼저 설명하고, force는 쓰지 마." |
@@ -286,6 +293,15 @@ Use `.opencode/commands/discuss.md` first.
 Then use installed skills workflow-debugging,workflow-tdd.
 Do not edit application code until the plan names allowed_paths and I approve execute.
 ```
+
+## Roo modes
+
+The harness ships 8 base modes (`orchestrator`, `architect`, `tdd-code`,
+`diagnose`, `review`, `docs-issues`, `ops-observability`, `harness-maintainer`).
+Profile-contributed modes are added on top:
+
+- `ui-engineer` (added by `react-web` profile when Roo is installed): browser-
+  first UI implementation. Drops out automatically when the profile is removed.
 
 ## 스킬 팩
 

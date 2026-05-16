@@ -21,14 +21,15 @@ CASES = [
     ("python-analysis", ["--adapters", "opencode", "--packs", "workflow-core,tech-python,workflow-data-analysis"]),
     (
         "dotnet-etl-mssql",
-        [
-            "--adapters",
-            "both",
-            "--profiles",
-            "generic,dotnet-etl-mssql",
-            "--packs",
-            "workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
-        ],
+        ["--adapters", "both", "--profiles", "dotnet-etl", "--db", "mssql"],
+    ),
+    (
+        "python-etl-postgresql-opencode",
+        ["--adapters", "opencode", "--profiles", "python-etl", "--db", "postgresql"],
+    ),
+    (
+        "react-web-roo",
+        ["--adapters", "roo", "--profiles", "react-web", "--db", "none"],
     ),
     (
         "web",
@@ -47,7 +48,9 @@ CASES = [
             "--adapters",
             "both",
             "--profiles",
-            "generic,dotnet-etl-mssql",
+            "dotnet-etl",
+            "--db",
+            "mssql",
             "--packs",
             ",".join(
                 [
