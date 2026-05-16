@@ -262,6 +262,23 @@ def migrate_file(
     target = Path(target)
     pre_bytes = target.read_bytes()
     pre_state = json.loads(pre_bytes.decode("utf-8"))
+
+    # SM2: --reverse may only operate on v2 inputs.
+    if direction == "reverse":
+        sv = pre_state.get("state_schema_version")
+        if sv != 2:
+            if sv is None:
+                raise _CodedSystemExit(
+                    2,
+                    f"state already at v0 or unknown version; nothing to reverse "
+                    f"(target={target})",
+                )
+            raise _CodedSystemExit(
+                2,
+                f"unknown state_schema_version={sv!r}; refusing to reverse "
+                f"(target={target})",
+            )
+
     post_state = _transform(pre_state, direction=direction)
     post_bytes = serialize(post_state)
 
