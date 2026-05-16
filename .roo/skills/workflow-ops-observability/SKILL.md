@@ -53,3 +53,13 @@ If the task cannot proceed because planning context is missing, stale, placehold
 - No unbounded queues, unbounded retries, silent drops, or swallowed exceptions.
 - Do not assume runtime, queue, database, cloud, or deployment technology unless confirmed by repository evidence or active packs.
 
+
+
+## Canonical CLI Invocation
+
+Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
+
+```text
+python3 scripts/harness.py phase set <discuss|plan|execute|done>
+python3 scripts/harness.py phase approve   # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+```
