@@ -72,5 +72,157 @@ class TestLoadStateJsonEmptyFile(unittest.TestCase):
             self.assertIn("empty file", err.lower())
 
 
+# ---------------------------------------------------------------------------
+# Remediation hint precedence: sidecar > backup-listing > default
+# (plan tests 4-6)
+# ---------------------------------------------------------------------------
+
+
+def _write_broken_state(repo: Path) -> Path:
+    state_dir = repo / ".scratch"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    path = state_dir / "phase-state.json"
+    path.write_text('{"phase":', encoding="utf-8")  # truncated
+    return path
+
+
+class TestRemediationHints(unittest.TestCase):
+    def test_diagnostic_suggests_resume_when_sidecar_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            backups = repo / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            sidecar = (
+                backups
+                / "phase-state.json.pre-repair.20260516T193045123456789Z.12345.bak.resume.json"
+            )
+            sidecar.write_text("{}", encoding="utf-8")
+            path = _write_broken_state(repo)
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.load_state_json(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("harness migrate state --resume", buf.getvalue())
+
+    def test_diagnostic_lists_backups_when_present_and_no_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            backups = repo / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            for stamp in (
+                "20260514T100000000000000Z.111.bak",
+                "20260515T100000000000000Z.222.bak",
+                "20260516T100000000000000Z.333.bak",
+            ):
+                (backups / f"phase-state.json.pre-repair.{stamp}").write_text("{}", encoding="utf-8")
+            path = _write_broken_state(repo)
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit):
+                    state_diagnostics.load_state_json(path)
+            err = buf.getvalue()
+            # Newest by lexical sort is the 20260516 one.
+            self.assertIn(
+                "phase-state.json.pre-repair.20260516T100000000000000Z.333.bak",
+                err,
+            )
+            self.assertIn("restore from .harness/backups/", err)
+
+    def test_diagnostic_omits_resume_and_backups_when_neither_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / ".scratch").mkdir()
+            (repo / ".harness").mkdir()
+            path = _write_broken_state(repo)
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit):
+                    state_diagnostics.load_state_json(path)
+            err = buf.getvalue()
+            self.assertNotIn("harness migrate state --resume", err)
+            self.assertNotIn("restore from .harness/backups/", err)
+            self.assertIn("fix the JSON", err)
+
+
+# ---------------------------------------------------------------------------
+# parse_state_markdown: duplicate slug + unbalanced + invalid slug
+# (plan tests 7-9)
+# ---------------------------------------------------------------------------
+
+
+class TestParseStateMarkdownDuplicateSlug(unittest.TestCase):
+    def test_duplicate_slug_raises_systemexit_5_with_two_line_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            text = (
+                "# Title\n"
+                "\n"
+                "<!-- HARNESS:BEGIN managed:foo v1 -->\n"
+                "first\n"
+                "<!-- HARNESS:END managed:foo -->\n"
+                "\n"
+                "intermediate\n"
+                "\n"
+                "<!-- HARNESS:BEGIN managed:foo v1 -->\n"
+                "second\n"
+                "<!-- HARNESS:END managed:foo -->\n"
+            )
+            path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            err = buf.getvalue()
+            self.assertIn(str(path), err)
+            self.assertIn("foo", err)
+            # Both BEGIN line numbers must appear: line 3 and line 9.
+            self.assertIn("3", err)
+            self.assertIn("9", err)
+
+
+class TestParseStateMarkdownUnbalanced(unittest.TestCase):
+    def test_unbalanced_markers_raises_systemexit_5(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            text = (
+                "# Title\n"
+                "\n"
+                "<!-- HARNESS:BEGIN managed:foo v1 -->\n"
+                "payload without close\n"
+            )
+            path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            err = buf.getvalue()
+            self.assertIn(str(path), err)
+            self.assertIn("3", err)  # BEGIN line number
+            self.assertIn("unbalanced", err.lower())
+
+
+class TestParseStateMarkdownInvalidSlug(unittest.TestCase):
+    def test_invalid_slug_raises_systemexit_5(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            text = (
+                "<!-- HARNESS:BEGIN managed:Foo_BAD v1 -->\n"
+                "x\n"
+                "<!-- HARNESS:END managed:Foo_BAD -->\n"
+            )
+            path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            err = buf.getvalue()
+            self.assertIn(str(path), err)
+            self.assertIn("Foo_BAD", err)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
