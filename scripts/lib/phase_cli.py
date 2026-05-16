@@ -38,6 +38,7 @@ from lib.exitcodes import (
     EXIT_STALE_UNCERTAIN,
     EXIT_TIMESTAMP_OUT_OF_RANGE,
 )
+from lib.state_diagnostics import load_state_json
 from lib.session import (
     acquire_lock,
     LockfileExists,
@@ -95,15 +96,10 @@ def _identify() -> str:
 def _load_state() -> tuple[dict, Optional[str]]:
     if not STATE_PATH.exists():
         return ({}, None)
-    try:
-        data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        print(
-            f"error: .scratch/phase-state.json is unparseable ({exc}); "
-            f"fix the JSON or restore from a backup before retrying.",
-            file=sys.stderr,
-        )
-        sys.exit(EXIT_UNPARSEABLE_JSON)
+    # T1-M-C2: route through the sanctioned reader. load_state_json emits
+    # the structured single-line "error: <path> is unparseable at line
+    # N:col M: <msg>; <hint>" diagnostic and exits 5 on failure.
+    data = load_state_json(STATE_PATH)
     if not isinstance(data, dict):
         print(
             "error: .scratch/phase-state.json must be a JSON object.",

@@ -29,6 +29,32 @@ def run_harness(args, cwd, stdin=None):
     )
 
 
+class PhaseSetMalformedStateTests(unittest.TestCase):
+    """T1-M-C2: phase verbs must route state reads through load_state_json
+    so malformed input exits 5 with the structured diagnostic instead of
+    the ad-hoc f-string message."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / ".scratch").mkdir()
+        (self.tmp / ".harness").mkdir()
+
+    def test_phase_set_on_malformed_state_exits_5_with_diagnostic(self) -> None:
+        (self.tmp / ".scratch/phase-state.json").write_text(
+            '{"phase":', encoding="utf-8"
+        )
+        r = run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 5, r.stderr)
+        # state_diagnostics emits "error: <path> is unparseable at line X:col Y..."
+        self.assertIn("is unparseable", r.stderr)
+        self.assertIn("phase-state.json", r.stderr)
+        # Structured diagnostic format from state_diagnostics: "line N:col M"
+        # (the legacy ad-hoc message uses "line N column M" which has no colon).
+        self.assertRegex(r.stderr, r"line\s+\d+:col\s*\d+")
+        # And remediation hint sentence (default template):
+        self.assertIn("fix the JSON", r.stderr)
+
+
 class PhaseSetTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
