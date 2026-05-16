@@ -3560,5 +3560,17 @@ class ChangelogStructureTests(unittest.TestCase):
         self.assertIn("--resume", body)
 
 
+class GitignoreInvariantsTests(unittest.TestCase):
+    def test_gitignore_excludes_harness_dir(self) -> None:
+        """The repo-root .gitignore must exclude .harness/ (backups, audit log,
+        lockfile, install manifest live here per T0-1 CC2 / ADR Ledger L18)."""
+        text = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        lines = [ln.strip() for ln in text.splitlines()]
+        self.assertTrue(
+            any(ln in (".harness/", "/.harness/") for ln in lines),
+            f".gitignore does not exclude .harness/. Contents: {text!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
