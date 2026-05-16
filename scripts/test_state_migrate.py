@@ -82,6 +82,31 @@ class StateMigratePureTests(unittest.TestCase):
         v0 = state_migrate.reverse(v2)
         self.assertNotIn("state_schema_version", v0)
 
+    # SecM1: T0-1 forward must also relocate soft-prefix verification entries
+    # into review so that a live v0 -> v2 migration produces a checker-clean
+    # post-state in one step.
+    def test_forward_migration_also_migrates_soft_prefix_verification(self) -> None:
+        v0 = {
+            "phase": "done",
+            "approved": False,
+            "approved_by": "user",
+            "approved_at": "2026-05-14T15:00:00Z",
+            "automation_mode": "manual",
+            "auto_selected": [],
+            "verification": ["Confirm X", "python3 foo.py"],
+            "updated_at": "2026-05-15T00:00:00Z",
+            "updated_by": "codex",
+        }
+        v2 = state_migrate.forward(v0)
+        self.assertEqual(v2["verification"], ["python3 foo.py"])
+        self.assertEqual(len(v2["review"]), 1)
+        review = v2["review"][0]
+        self.assertEqual(review["actor"], "Confirm")
+        self.assertEqual(review["summary"], "Confirm X")
+        self.assertEqual(review["evidence_path"], "")
+        # `at` adopts the migrated updated_at (promoted to ns-precision).
+        self.assertEqual(review["at"], "2026-05-15T00:00:00.000000000Z")
+
     # T-21: canonical serialization rules (sort_keys, indent=2, trailing newline)
     def test_migrate_forward_uses_canonical_serialization_rules(self) -> None:
         state = _read_input()
