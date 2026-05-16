@@ -709,6 +709,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/manifest.py",
+      "source": "scripts/lib/manifest.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"
