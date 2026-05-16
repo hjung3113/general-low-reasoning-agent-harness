@@ -8,7 +8,29 @@ All notable changes to this harness.
 
 ### Breaking
 
-<!-- T0-A: no breaking changes; populated by T0-1+ -->
+- **L1 — `phase=done` no longer requires a specific `approved` value.** The
+  schema's `done` branch drops the `approved` constant (ADR-001 option 3).
+  Existing direct readers of `done.approved` MUST treat the field as
+  unconstrained. `harness phase approve` exits 6 in `done` (T0-3). Migration:
+  `python3 scripts/harness.py migrate state --forward` is idempotent at the
+  `json.loads` level; the live `.scratch/phase-state.json` is rewritten to
+  the v2 shape in this slice.
+- **L2 — `state_schema_version=2` is now REQUIRED at the top level of
+  `.scratch/phase-state.json`.** Pre-slice records (no `state_schema_version`
+  field) are treated as version `0` and rejected by `scripts/harness.py check`
+  with a remediation pointing at
+  `python3 scripts/harness.py migrate state --forward`. ADR-001 Decision §
+  resolves the spec's "1→2" wording by introducing the field directly at
+  value `2`; no v1 wire format is ever written.
+- **L12 — Migrator `--resume` verb (crash recovery, ADR G1-E).**
+  `scripts/migrate_state.py` ships with `--forward`, `--reverse`, and
+  `--resume` sub-verbs. `--forward` and `--reverse` refuse to overwrite an
+  existing `.bak` (`O_EXCL`); `--resume` reads the sidecar
+  `.harness/backups/<basename>.pre-repair.<...>.bak.resume.json` and either
+  re-runs the partial migration or declares it complete by hash.
+
+Note: this slice preserves the `## Unreleased (develop)` heading verbatim;
+normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
 
 ### Added
 
