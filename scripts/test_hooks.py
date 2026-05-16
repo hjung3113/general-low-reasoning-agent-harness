@@ -82,6 +82,21 @@ class InstallTests(unittest.TestCase):
         second = (tmp / ".git/hooks/pre-commit").read_text()
         self.assertEqual(first, second)
 
+    def test_install_is_idempotent_with_existing_user_hook(self):
+        """T1-1-M1: appending the managed block to a pre-existing user
+        hook MUST be byte-identical on a second install."""
+        tmp = _make_target([".scratch/"])
+        hook = tmp / ".git/hooks/pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\necho user-hook\n")
+        hook.chmod(0o755)
+        hooks.install_pre_commit_hook(tmp)
+        first = hook.read_bytes()
+        hooks.install_pre_commit_hook(tmp)
+        second = hook.read_bytes()
+        self.assertEqual(first, second,
+                         "second install must produce a byte-identical hook")
+
     def test_install_appends_to_existing_hook(self):
         tmp = _make_target([".scratch/"])
         hook = tmp / ".git/hooks/pre-commit"
