@@ -13,6 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 HARNESS = REPO / "scripts" / "harness.py"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def run_harness(args, cwd, stdin=None):
@@ -204,6 +205,59 @@ class SessionUnlockTests(unittest.TestCase):
         ))
         r = run_harness(["session", "unlock"], cwd=self.tmp)
         self.assertEqual(r.returncode, 7, r.stderr)
+
+    # ----- C2: session unlock must write an audit entry on every removal path -----
+
+    def _last_audit_entry(self) -> dict:
+        audit = self.tmp / ".harness" / "audit.log"
+        self.assertTrue(audit.exists(), "audit.log not created by session unlock")
+        lines = [ln for ln in audit.read_text().splitlines() if ln.strip()]
+        self.assertTrue(lines, "audit.log empty")
+        return json.loads(lines[-1])
+
+    def test_session_unlock_audits_normal_path(self) -> None:
+        """Dead-pid unlock writes an audit entry with the stolen payload."""
+        payload = {"pid": 999999, "hostname": "h", "started_at_utc": "x",
+                   "harness_version": "v", "boot_id": None}
+        self.lock.write_text(json.dumps(payload))
+        r = run_harness(["session", "unlock"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        entry = self._last_audit_entry()
+        self.assertEqual(entry["verb"], "session.unlock")
+        self.assertFalse(entry["args"]["force"])
+        self.assertEqual(entry["args"]["stolen_payload"]["pid"], 999999)
+
+    def test_session_unlock_audits_force_path(self) -> None:
+        """--force unlock writes an audit entry with force=true."""
+        payload = {"pid": os.getpid(), "hostname": "h", "started_at_utc": "x",
+                   "harness_version": "v", "boot_id": None}
+        self.lock.write_text(json.dumps(payload))
+        r = run_harness(["session", "unlock", "--force"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        entry = self._last_audit_entry()
+        self.assertEqual(entry["verb"], "session.unlock")
+        self.assertTrue(entry["args"]["force"])
+        self.assertEqual(entry["args"]["stolen_payload"]["pid"], os.getpid())
+
+    def test_session_unlock_audits_boot_id_mismatch_path(self) -> None:
+        """boot_id-mismatch auto-unlock writes an audit entry."""
+        # Use a sentinel boot_id that cannot match any real host.
+        payload = {"pid": os.getpid(), "hostname": "h", "started_at_utc": "x",
+                   "harness_version": "v", "boot_id": "stale-boot-id-from-old-kernel"}
+        self.lock.write_text(json.dumps(payload))
+        r = run_harness(["session", "unlock"], cwd=self.tmp)
+        # Boot-id mismatch is only meaningful when current boot_id is non-None.
+        # On macOS/Linux read_boot_id returns a real value with C5/M1 fixes.
+        # Skip silently if current host returns None (cannot trigger this path).
+        from lib.session import read_boot_id
+        if read_boot_id() is None:
+            self.skipTest("current host has no boot_id; mismatch path unreachable")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.lock.exists())
+        entry = self._last_audit_entry()
+        self.assertEqual(entry["verb"], "session.unlock")
+        self.assertEqual(entry["args"]["stolen_payload"]["boot_id"],
+                         "stale-boot-id-from-old-kernel")
 
 
 if __name__ == "__main__":
