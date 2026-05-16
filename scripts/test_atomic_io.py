@@ -76,6 +76,21 @@ class TestAtomicWriteTextCrashSafety(unittest.TestCase):
             del real_replace
 
 
+class TestAtomicWriteTextMode(unittest.TestCase):
+    def test_atomic_write_text_default_mode_is_0o644(self) -> None:
+        import stat
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            atomic_io.atomic_write_text(target, "x")
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            # Explicit mode override honored.
+            target2 = Path(tmpdir) / "out2.txt"
+            atomic_io.atomic_write_text(target2, "x", mode=0o600)
+            self.assertEqual(target2.stat().st_mode & 0o777, 0o600)
+
+
 class TestAtomicWriteTextPreconditions(unittest.TestCase):
     def test_atomic_write_text_rejects_missing_parent_directory(self) -> None:
         import tempfile
