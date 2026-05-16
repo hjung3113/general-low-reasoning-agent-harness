@@ -714,6 +714,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/append_block.py",
+      "source": "scripts/lib/append_block.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"

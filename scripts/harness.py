@@ -799,20 +799,20 @@ def write_text_file(destination: Path, text: str) -> None:
     destination.write_text(text, encoding="utf-8")
 
 
-@dataclass(frozen=True)
-class AppendBlockPlan:
-    updated_text: str | None
-    proposed_block: str
-    applied_sha256: str | None
-    conflict: bool = False
-
-
-@dataclass(frozen=True)
-class ParsedAppendBlock:
-    start: int
-    end: int
-    text: str
-    payload: str
+from lib.append_block import (
+    AppendBlockPlan,
+    ParsedAppendBlock,
+    marker_start,
+    marker_end,
+    marker_end_for_path,
+    render_append_block,
+    parse_append_block,
+    append_block_to_text,
+    replace_block,
+    write_managed_append,
+    plan_managed_append,
+    plan_managed_append_retirement,
+)
 
 
 def now_utc() -> str:
@@ -829,146 +829,6 @@ def sha256_text(text: str) -> str:
 
 def normalize_payload(text: str) -> str:
     return text.rstrip("\n") + "\n"
-
-
-def marker_start(entry: ManifestEntry) -> str:
-    return f"# >>> low-reasoning-harness:{entry.path.as_posix()} v{HARNESS_VERSION}"
-
-
-def marker_end_for_path(path_text: str) -> str:
-    return f"# <<< low-reasoning-harness:{path_text}"
-
-
-def marker_end(entry: ManifestEntry) -> str:
-    return marker_end_for_path(entry.path.as_posix())
-
-
-def render_append_block(source: Path, entry: ManifestEntry) -> str:
-    return (
-        marker_start(entry)
-        + "\n"
-        + normalize_payload(source.read_text(encoding="utf-8"))
-        + marker_end(entry)
-        + "\n"
-    )
-
-
-def parse_append_block(text: str, path_text: str) -> ParsedAppendBlock | None:
-    escaped = re.escape(path_text)
-    start_pattern = re.compile(rf"^# >>> low-reasoning-harness:{escaped} v(?P<version>[^\s]+)$")
-    end_line = marker_end_for_path(path_text)
-    lines = text.splitlines(keepends=True)
-    start_indexes: list[int] = []
-    end_indexes: list[int] = []
-    offset = 0
-    for line in lines:
-        stripped = line.rstrip("\r\n")
-        if start_pattern.fullmatch(stripped):
-            start_indexes.append(offset)
-        if stripped == end_line:
-            end_indexes.append(offset + len(line))
-        offset += len(line)
-    if not start_indexes and not end_indexes:
-        return None
-    if len(start_indexes) != 1 or len(end_indexes) != 1 or start_indexes[0] >= end_indexes[0]:
-        raise ValueError(f"Malformed managed-append block for {path_text}")
-    block_text = text[start_indexes[0] : end_indexes[0]]
-    block_lines = block_text.splitlines(keepends=True)
-    payload = "".join(block_lines[1:-1])
-    return ParsedAppendBlock(start=start_indexes[0], end=end_indexes[0], text=block_text, payload=payload)
-
-
-def append_block_to_text(existing: str, block: str) -> str:
-    if not existing:
-        return block
-    separator = "" if existing.endswith("\n\n") else "\n" if existing.endswith("\n") else "\n\n"
-    return existing + separator + block
-
-
-def replace_block(text: str, parsed: ParsedAppendBlock, block: str) -> str:
-    return text[: parsed.start] + block + text[parsed.end :]
-
-
-def write_managed_append(*, source: Path, destination: Path, entry: ManifestEntry) -> str:
-    plan = plan_managed_append(source=source, destination=destination, entry=entry, installed_info={})
-    if plan.conflict:
-        raise SystemExit(f"Refusing to write malformed managed-append destination: {entry.path}")
-    if plan.updated_text is not None:
-        write_text_file(destination, plan.updated_text)
-    return plan.applied_sha256 or sha256_text(plan.proposed_block)
-
-
-def plan_managed_append(
-    *,
-    source: Path,
-    destination: Path,
-    entry: ManifestEntry,
-    installed_info: object,
-) -> AppendBlockPlan:
-    block = render_append_block(source, entry)
-    block_hash = sha256_text(block)
-    info = installed_info if isinstance(installed_info, dict) else {}
-    if not destination.exists():
-        return AppendBlockPlan(updated_text=block, proposed_block=block, applied_sha256=block_hash)
-
-    text = destination.read_text(encoding="utf-8")
-    try:
-        parsed = parse_append_block(text, entry.path.as_posix())
-    except ValueError:
-        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
-
-    if parsed is None:
-        if info.get("policy") == "managed":
-            old_hash = info.get("sha256")
-            if old_hash and file_hash(destination) == old_hash:
-                return AppendBlockPlan(updated_text=block, proposed_block=block, applied_sha256=block_hash)
-            return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
-        return AppendBlockPlan(
-            updated_text=append_block_to_text(text, block),
-            proposed_block=block,
-            applied_sha256=block_hash,
-        )
-
-    current_hash = sha256_text(parsed.text)
-    old_applied_hash = info.get("applied_sha256")
-    if old_applied_hash and current_hash != old_applied_hash:
-        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
-    if not old_applied_hash and current_hash != block_hash:
-        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=None, conflict=True)
-    if current_hash == block_hash:
-        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=block_hash)
-    if normalize_payload(parsed.payload) == normalize_payload(source.read_text(encoding="utf-8")):
-        return AppendBlockPlan(updated_text=None, proposed_block=block, applied_sha256=current_hash)
-    return AppendBlockPlan(
-        updated_text=replace_block(text, parsed, block),
-        proposed_block=block,
-        applied_sha256=block_hash,
-    )
-
-
-def plan_managed_append_retirement(
-    *,
-    destination: Path,
-    path_text: str,
-    installed_info: dict[str, object],
-) -> AppendBlockPlan:
-    proposed = ""
-    if not destination.exists():
-        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None)
-    text = destination.read_text(encoding="utf-8")
-    try:
-        parsed = parse_append_block(text, path_text)
-    except ValueError:
-        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None, conflict=True)
-    if parsed is None:
-        return AppendBlockPlan(updated_text=None, proposed_block=proposed, applied_sha256=None)
-    old_applied_hash = installed_info.get("applied_sha256")
-    if old_applied_hash and sha256_text(parsed.text) != old_applied_hash:
-        return AppendBlockPlan(updated_text=None, proposed_block=parsed.text, applied_sha256=None, conflict=True)
-    if not old_applied_hash:
-        return AppendBlockPlan(updated_text=None, proposed_block=parsed.text, applied_sha256=None, conflict=True)
-    updated = text[: parsed.start] + text[parsed.end :]
-    return AppendBlockPlan(updated_text=updated, proposed_block=parsed.text, applied_sha256=None)
 
 
 def write_text_conflict(target: Path, path_text: str, content: str) -> None:
