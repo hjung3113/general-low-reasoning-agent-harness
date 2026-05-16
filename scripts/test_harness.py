@@ -3159,5 +3159,13 @@ class RoomodesProfileSyncTests(unittest.TestCase):
             self.assertNotIn("ui-engineer", slugs_after)
 
 
+class OpencodeCommandsProfileRulesTests(unittest.TestCase):
+    def test_each_command_references_profile_rules_dir(self):
+        for name in ("discuss.md", "plan.md", "execute.md", "done.md"):
+            text = (REPO_ROOT / ".opencode/commands" / name).read_text(encoding="utf-8")
+            self.assertIn(".opencode/profile-rules/", text, msg=name)
+            self.assertIn("alphabetical", text.lower(), msg=name)
+
+
 if __name__ == "__main__":
     unittest.main()
