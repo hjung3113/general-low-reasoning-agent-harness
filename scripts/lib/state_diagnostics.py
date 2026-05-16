@@ -154,22 +154,26 @@ def load_state_json(path: Path) -> dict:
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        _emit_and_exit(path, f"{path} is unparseable (invalid UTF-8: {exc.reason})")
+        return  # pragma: no cover
     except OSError as exc:
         _emit_and_exit(
             path,
             f"{path} could not be read ({exc.__class__.__name__}: {exc})",
         )
+        return  # pragma: no cover
     if text == "":
         _emit_and_exit(path, f"{path} is unparseable (empty file)")
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
-        summary = (
-            f"{path} is unparseable at line {exc.lineno}:col {exc.colno}: {exc.msg}"
-        )
+        # Trim "starting at" / "at line N column N" tails from exc.msg since
+        # we already render line:col separately — keeps diagnostic under
+        # the 200-char operator-fit budget on long paths.
+        msg = re.sub(r"\s+(starting at|at line \d+ column \d+).*$", "", exc.msg).strip()
+        summary = f"{path} is unparseable at line {exc.lineno}:col {exc.colno}: {msg}"
         _emit_and_exit(path, summary)
-    except UnicodeDecodeError as exc:
-        _emit_and_exit(path, f"{path} is unparseable (invalid UTF-8: {exc.reason})")
     # Unreachable: _emit_and_exit always raises.
     raise AssertionError("unreachable")  # pragma: no cover
 

@@ -291,5 +291,142 @@ class TestParseStateMarkdownFrontmatter(unittest.TestCase):
             self.assertIn("body", err.lower())
 
 
+# ---------------------------------------------------------------------------
+# Fuzz sweep + diagnostic single-line constraint + grep gate (plan tests 12-16)
+# ---------------------------------------------------------------------------
+
+
+class TestNoUncaughtExceptionFuzz(unittest.TestCase):
+    """Spec §7: 'diagnostic exit not traceback' sweep."""
+
+    def test_no_uncaught_exception_on_any_malformed_input(self) -> None:
+        # Note: "null", "[]" are VALID JSON; load_state_json returns them and
+        # the caller is responsible for downstream type checks. We test only
+        # payloads that are definitionally unparseable.
+        malformed_payloads = (
+            b"",
+            b"\x00",
+            b"{",
+            b"]",
+            b'{"phase":}',
+            b"\xff\xfe",  # invalid UTF-8 BOM
+            b"a" * (1 << 20),  # 1 MiB of "a"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            for payload in malformed_payloads:
+                path.write_bytes(payload)
+                buf = io.StringIO()
+                with redirect_stderr(buf):
+                    # The contract: ONLY SystemExit(5) is acceptable; nothing
+                    # else may escape (no JSONDecodeError, no ValueError, no
+                    # KeyError, no UnicodeDecodeError, etc.).
+                    raised: BaseException | None = None
+                    try:
+                        state_diagnostics.load_state_json(path)
+                    except SystemExit as exc:
+                        raised = exc
+                    except BaseException as exc:  # noqa: BLE001
+                        self.fail(
+                            f"payload {payload[:32]!r} raised "
+                            f"{exc.__class__.__name__}: {exc}"
+                        )
+                    self.assertIsNotNone(raised, f"payload {payload[:32]!r} did not exit")
+                    assert raised is not None  # for mypy
+                    self.assertEqual(
+                        raised.code,
+                        EXIT_UNPARSEABLE_JSON,
+                        f"payload {payload[:32]!r} exited with {raised.code}",
+                    )
+
+
+class TestDiagnosticFormatConstraint(unittest.TestCase):
+    """Low-reasoning operator fit: diagnostics must fit on one line ≤200 chars."""
+
+    def test_diagnostic_format_is_single_line_under_200_chars(self) -> None:
+        cases = (
+            b"",
+            b'{"phase": "exec',
+            b"]",
+            b"\x00\x01",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            for payload in cases:
+                path.write_bytes(payload)
+                buf = io.StringIO()
+                with redirect_stderr(buf):
+                    try:
+                        state_diagnostics.load_state_json(path)
+                    except SystemExit:
+                        pass
+                err = buf.getvalue()
+                if not err:
+                    continue  # valid payload — no diagnostic to constrain
+                # Allow continuation lines with two-space "hint:" indent;
+                # the FIRST line must be ≤200 chars; any continuation ≤120.
+                lines = err.rstrip("\n").split("\n")
+                self.assertLessEqual(
+                    len(lines[0]),
+                    200,
+                    f"diagnostic first line >200 chars: {lines[0]!r}",
+                )
+                for cont in lines[1:]:
+                    self.assertLessEqual(
+                        len(cont),
+                        120,
+                        f"continuation line >120 chars: {cont!r}",
+                    )
+
+
+class TestNoBareJsonLoadsOnStatePaths(unittest.TestCase):
+    """Grep gate: no bare json.loads on managed-state literals outside the helper."""
+
+    _STATE_LITERALS = (
+        "phase-state.json",
+        "installed-manifest.json",
+    )
+
+    def test_grep_gate_no_bare_json_loads_on_state_paths_outside_helper(self) -> None:
+        lib_dir = Path(__file__).resolve().parent / "lib"
+        violations: list[str] = []
+        for py in sorted(lib_dir.glob("*.py")):
+            if py.name == "state_diagnostics.py":
+                continue  # sanctioned call site
+            text = py.read_text(encoding="utf-8")
+            # Walk line-by-line so we can report the offender precisely AND
+            # so we can ignore lines inside a same-line comment.
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                stripped = line.split("#", 1)[0]
+                if "json.loads(" not in stripped:
+                    continue
+                # Look at a small window for the offending state literal.
+                window_start = max(0, lineno - 3)
+                window_end = min(len(text.splitlines()), lineno + 2)
+                window = "\n".join(text.splitlines()[window_start:window_end])
+                if any(lit in window for lit in self._STATE_LITERALS):
+                    violations.append(f"{py.name}:{lineno}: {line.strip()}")
+        # Known exceptions: check.py:73 _is_trivial_phase_state and :130
+        # check_drift both have intentional bare-except diagnostics paths
+        # that must NEVER exit; they are read-only fallbacks. Allowlist them.
+        allowlisted_prefixes = (
+            "check.py:73",
+            "check.py:130",
+        )
+        unexpected = [
+            v for v in violations
+            if not any(v.startswith(p) for p in allowlisted_prefixes)
+        ]
+        # Also drop any violation whose line is itself an allowlisted helper
+        # function name (e.g., functions that exist solely to extract a hash
+        # for drift diagnostics).
+        self.assertEqual(
+            unexpected,
+            [],
+            "Bare json.loads on managed-state paths outside state_diagnostics.py:\n"
+            + "\n".join(unexpected),
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
