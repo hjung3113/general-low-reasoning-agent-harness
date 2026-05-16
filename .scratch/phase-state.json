@@ -14,6 +14,7 @@
   "next_action": "Phase 1 release complete. Start a new discuss pass for any further scope.",
   "allowed_paths": [
     "README.md",
+    "CHANGELOG.md",
     "AGENTS.md",
     ".planning/",
     ".scratch/phase-state.json",
