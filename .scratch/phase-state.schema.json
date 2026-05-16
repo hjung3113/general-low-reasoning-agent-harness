@@ -430,7 +430,23 @@
           "next_action": {
             "type": "string"
           }
-        }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "verification": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "review": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
       }
     },
     {
