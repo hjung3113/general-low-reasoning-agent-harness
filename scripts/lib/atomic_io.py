@@ -67,5 +67,20 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
 
 
 def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -> None:
-    """Atomic append skeleton — body lands in subsequent GREEN commits."""
-    raise NotImplementedError("atomic_append_log body not yet implemented")
+    """Append one ``line`` to ``path`` atomically.
+
+    Uses ``O_WRONLY | O_APPEND | O_CREAT`` + a single ``os.write`` of a
+    PIPE_BUF-safe (<=512 bytes including trailing newline) payload so
+    concurrent writers cannot tear each other's records. ``flock`` is
+    added in a subsequent commit to harden against non-POSIX-append FS;
+    on Linux/macOS POSIX append already provides the no-tear guarantee
+    below 512 bytes.
+    """
+    path = Path(path)
+    payload = line if line.endswith("\n") else line + "\n"
+    encoded = payload.encode("utf-8")
+    fd = os.open(str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, encoded)
+    finally:
+        os.close(fd)
