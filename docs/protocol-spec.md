@@ -266,3 +266,90 @@ Before pushing a generalized harness release:
 10. Confirm the README and clean skeleton are stack-neutral.
 11. Confirm stack-specific docs are adapter, profile, pack, or example material only.
 12. Record command results, target paths, timestamp, adversarial review result, commit, and pushed branch in the phase verification ledger.
+
+## CLI Verbs
+
+The phase lifecycle CLI verbs are defined by ADR-003a Artifact 1 and implemented in `scripts/lib/phase_cli.py`.
+
+### `harness phase set <phase>`
+
+- Positional `phase` ∈ {`discuss`, `plan`, `execute`, `done`}.
+- Optional flags: `--plan-id <id>`, `--summary <text>`, `--reset-approval`, `--stdin-json`.
+- Stdin: when `--stdin-json` is passed, reads a JSON object whose allowlisted keys are written to the state file.
+- Stdout: JSON object `{ok, verb, previous_phase, phase, state_path, audit_entry_index, updated_at, updated_by}`.
+- Stderr: human-readable diagnostics on failure.
+
+### `harness phase approve`
+
+- Optional flags: `--by <identifier>`, `--at <ISO-8601 nanos>`, `--stdin-json`.
+- Stdout: JSON object `{ok, verb, phase, approved, approved_by, approved_at, state_path, audit_entry_index, updated_at, updated_by}`.
+
+### `harness session unlock`
+
+- Optional flags: `--force`, `--print`.
+- Default behaviour: refuse if the recorded PID is alive; remove if dead or if host has rebooted (Linux `boot_id` comparison).
+
+## Exit Codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | `EXIT_OK` | success |
+| 1 | `EXIT_OPERATIONAL` | I/O / permissions / generic write failure |
+| 2 | `EXIT_INVALID_TRANSITION` | violates ADR-001 transition table |
+| 3 | `EXIT_SESSION_LOCKED` | `.harness/session.lock` held |
+| 4 | `EXIT_SCOPE_VIOLATION` | write outside `allowed_paths` (T1-1) |
+| 5 | `EXIT_UNPARSEABLE_JSON` | state file or stdin failed `json.loads` |
+| 6 | `EXIT_WRONG_PHASE_FOR_VERB` | verb invoked in a phase that does not accept it |
+| 7 | `EXIT_STALE_UNCERTAIN` | `session unlock` staleness uncertain |
+| 8 | `EXIT_TIMESTAMP_OUT_OF_RANGE` | `--at` value not within 24h of current UTC |
+
+Constants live in `scripts/lib/exitcodes.py`.
+
+## Audit Log Format
+
+Path: `.harness/audit.log`. One JSON line per lifecycle write, encoded with `json.dumps(..., separators=(",",":"), sort_keys=True)`.
+
+```json
+{"index":1,"verb":"phase.set","args":{"phase":"discuss"},"before_sha256":"...","after_sha256":"...","at":"2026-05-16T19:30:45.123456789Z","by":"user@example"}
+```
+
+- Each line is ≤512 bytes (PIPE_BUF-safe). Oversize `args` payloads are replaced with `{"truncated": true}`; the full record is archived to `.harness/audit.overflow/<index>.json`.
+- Rotation triggers at 10 MiB OR 10 000 entries (whichever first). Rotated files: `audit.log.1` … `audit.log.5` (keeping the last five).
+- Append uses `O_WRONLY|O_APPEND|O_CREAT|O_NOFOLLOW|O_CLOEXEC` + `fcntl.flock(LOCK_EX)`.
+- Allowed writers: `scripts/lib/audit.py` only.
+
+## Session Lockfile
+
+Path: `.harness/session.lock`. Payload (JSON object):
+
+```json
+{"pid":12345,"hostname":"laptop.local","started_at_utc":"2026-05-16T19:30:45.123456789Z","harness_version":"0.7.0","boot_id":null}
+```
+
+- Acquisition: `O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC` + `fcntl.flock(LOCK_EX|LOCK_NB)`.
+- Release: explicit unlink on context exit + `atexit` registration + SIGINT/SIGTERM handlers.
+- Recovery: `harness session unlock` checks `os.kill(pid, 0)` and (on Linux) `/proc/sys/kernel/random/boot_id`; refuses live PIDs unless `--force`.
+
+## Field Ownership
+
+Per ADR-003b Artifact 3 the `.scratch/phase-state.json` fields fall into three buckets:
+
+| Bucket | Fields | Writers |
+|---|---|---|
+| `cli` | `phase`, `approved`, `approved_by`, `approved_at`, `updated_at`, `updated_by` | `harness phase set`, `harness phase approve` |
+| `cli-opt-in` | `plan_id`, `summary`, plus stdin-allowlisted `next_action`, `current_checkpoint`, `checkpoint_path`, `state_path`, `plan_path` | same CLI verbs when explicit flag/stdin is passed |
+| `user` | `verification`, `review`, `acceptance_criteria`, `allowed_paths`, `blocked_paths`, `automation_mode`, `auto_selected`, `notes` | editor / planning agent only — CLI verbs MUST NOT modify |
+
+## Drift Warning
+
+`harness check` compares the live `.scratch/phase-state.json` SHA-256 against the last audit entry's `after_sha256`. On mismatch a stderr warning is emitted (exit code unchanged):
+
+```
+warning: .scratch/phase-state.json sha256 (<actual>) does not match the last audit entry's after_sha256 (<expected>) at index <N>. Drift detected. To restore audit baseline, re-run the last CLI verb that should have produced this state (typically 'harness phase set <phase>' or 'harness phase approve'). Manual edits are not currently tracked.
+```
+
+First-write / empty-log cases are suppressed.
+
+## Verification Allowlist
+
+This anchor is owned by T0-4. See the `verification` field documentation under "Field Ownership". The seven allowed verb prefixes are: `python3 `, `git `, `jq `, `npx `, `pytest `, `harness `, `make `.
