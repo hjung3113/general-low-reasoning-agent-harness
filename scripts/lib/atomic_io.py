@@ -11,16 +11,37 @@ Exports (skeleton — bodies filled in subsequent commits per plan task order):
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
-    """Atomic write skeleton — body lands in subsequent GREEN commits.
+    """Write ``content`` to ``path`` atomically.
 
-    Currently unimplemented; tests for happy-path/atomicity/preconditions are
-    RED until the corresponding GREEN commits fill in the body.
+    Writes ``content`` to a temp file in ``path.parent``, fsyncs the data to
+    disk, then ``os.replace``s the temp file over the target. Any leftover
+    temp file from a successful replace is gone; failure paths (covered in
+    subsequent commits) will unlink the temp file before re-raising.
     """
-    raise NotImplementedError("atomic_write_text body not yet implemented")
+    path = Path(path)
+    parent = path.parent
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=str(parent),
+        prefix=path.name + ".",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    finally:
+        tmp.close()
+    os.replace(tmp.name, path)
+    os.chmod(path, mode)
 
 
 def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -> None:

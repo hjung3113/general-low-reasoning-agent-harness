@@ -27,6 +27,22 @@ class TestAtomicWriteTextHappyPath(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "hello\n")
             # Default mode 0o644 (verified separately in test 7).
 
+    def test_atomic_write_text_replaces_existing_atomically(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            target.write_text("old-content", encoding="utf-8")
+            atomic_io.atomic_write_text(target, "new-content")
+            self.assertEqual(target.read_text(encoding="utf-8"), "new-content")
+            # No leftover tempfile artifacts in parent dir.
+            leftovers = [
+                p.name
+                for p in Path(tmpdir).iterdir()
+                if p.name != "out.txt"
+            ]
+            self.assertEqual(leftovers, [], f"unexpected leftover files: {leftovers}")
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
