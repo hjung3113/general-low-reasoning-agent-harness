@@ -24,6 +24,15 @@ markers. Treat those regions as machine-owned: do not edit them by hand.
 Free-form sections (Notes, Session Continuity, free prose outside the marker
 block) remain agent-editable as before.
 
+Important caveats:
+- `state repair` re-renders the block from the existing parser source-of-truth.
+  It does NOT have a separate canonical hash, so if you accidentally edit
+  inside the block, repair cannot magically restore the previous content.
+  Recover by reverting the file via git.
+- If you add a phase-style line (e.g., `- [ ] **Phase 9: Foo**`) OUTSIDE the
+  managed block, `state repair` will warn about it instead of folding it in.
+  Move the line inside the block (or remove it) and re-run repair.
+
 Before creating or reshaping ROADMAP phases, phase folders, ADR decisions, or phase success criteria, run a `grill-me` style alignment pass: ask one question at a time, give the recommended answer and reason, inspect the repo instead of asking when the repo can answer, and record an alignment summary with confirmed facts, inferred facts, user preferences, recommended defaults, open questions, and blocked decisions. Do not turn unconfirmed preferences into phase commitments.
 
 Every roadmap phase starts with its own `discuss` pass before `plan` or `execute`. Before finalizing ADR decisions or phase commitments, run an adversarial review with two relevant expert roles, three lenses each, and the mandatory lens of whether the questions are concrete enough for low-reasoning models. `--auto` may select recommended low-risk defaults and must record auditable `auto_selected` entries. `--chain` may continue through one phase's `discuss -> plan -> execute` only when `.scratch/phase-state.json` is verified or written with `phase=execute`, the same `plan_id`, `approved=true`, `automation_mode=chain`, durable pointers, allowed paths, verification, and review checks.
