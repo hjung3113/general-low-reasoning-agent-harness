@@ -164,6 +164,45 @@ All notable changes to this harness.
   documented to cover `.harness/audit.log`, `.harness/audit.log.*`,
   `.harness/audit.overflow/`, and `.harness/session.lock`. The
   `.harness/backups/` row is owned by T0-5.
+- **L10 — `.bak` relocated to `.harness/backups/` + retention=10 (T0-5).**
+  `state repair` no longer writes `.bak` files alongside the source under
+  `.planning/`. All pre-rewrite snapshots are now written under
+  `<root>/.harness/backups/<basename>.pre-repair.<UTC-compact-nanos>.<pid>.bak`
+  (CONTRACT-PIN §6.1 filename grammar) via the shared
+  `scripts/lib/backups.py` helper with `O_EXCL` + `O_NOFOLLOW`, a `0o700`
+  backups directory, and a retention cap of 10 per basename (oldest pruned
+  best-effort). `.bak` writes precede the atomic rewrite of the original
+  file; on backup collision (`SystemExit(1)`) the original is never
+  touched. The previous behavior (no `.bak` at all for `state_repair`) is
+  replaced with a durable per-target snapshot.
+- **L13 — Paused phases first-class in `STATE.md` `managed:state-current`
+  block (T0-5).** When `.scratch/phase-state.json` carries a non-empty
+  `paused_phases: [{"slug": "...", "paused_since": "YYYY-MM-DD"}, ...]`
+  list, `state repair` now renders a `### Paused Phases` H3 subsection
+  INSIDE the `managed:state-current` payload (between
+  `<!-- HARNESS:BEGIN -->` and `<!-- HARNESS:END -->`), AFTER
+  `## Active Checkpoint`. Each paused phase becomes a line
+  `- <slug> (paused since <date>)`. Missing/absent key → no subsection
+  (forward-compatible with pre-slice state files). The subsection
+  round-trips through `replace_block` without drift on a second
+  `state repair` invocation.
+- **L18 (T0-5 row) — `.harness/backups/` `.gitignore` entry (T0-5).**
+  The skeleton `.gitignore` at `harness/skeleton/clean/.gitignore` now
+  contains a `.harness/backups/` line so the per-target `.bak` snapshots
+  written by `state repair` and the state migrator are not tracked in
+  target repositories. Per CONTRACT-PIN §5.4 row-ownership table.
+- **L11 (T0-5 wrap) — `state_repair` refuses to rewrite on malformed
+  `phase-state.json` (T0-5).** T1-M routed the parse through
+  `load_state_json` (which exits 5); T0-5 now wraps that boundary in
+  `RepairRefusedError` so callers can catch the refusal programmatically,
+  and the CLI verb `harness state repair` translates it to exit code 5
+  (`EXIT_UNPARSEABLE_JSON`, CONTRACT-PIN §4) with the diagnostic
+  `state repair: refusing to rewrite — phase-state.json invalid …; fix
+  the JSON or restore from .harness/backups/`. No data is written;
+  pre-existing `ROADMAP.md` and `STATE.md` bytes are preserved
+  byte-identical. Duplicate `managed:state-current` blocks similarly
+  surface as `RepairRefusedError` ("duplicate managed block 'state-current'")
+  with exit 5 instead of a `ValueError` traceback.
 - **L20 — SKILL surface CLI alignment (T1-S).** Adapter command files
   (`.roo/commands/phase-*.md`, `.roo/commands/done.md`,
   `.opencode/commands/{discuss,plan,execute,done}.md`) and the 10
