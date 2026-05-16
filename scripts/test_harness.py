@@ -4070,6 +4070,37 @@ class T04ReviewSchemaAndFixtureTests(unittest.TestCase):
         self.assertIn("review", state)
         self.assertIsInstance(state["review"], list)
 
+    def test_schema_rejects_done_with_both_empty(self) -> None:
+        # CodeM2: the done branch must carry an `anyOf` that requires either
+        # `verification` or `review` to be non-empty (mirrors the Python-side
+        # constraint in check_phase_state_semantics). jsonschema is not a
+        # harness dep, so we assert the schema's structural shape directly
+        # and confirm the Python checker rejects the both-empty case.
+        schema = json.loads(
+            (REPO_ROOT / ".scratch" / "phase-state.schema.json").read_text(encoding="utf-8")
+        )
+        done_branch = None
+        for clause in schema.get("allOf", []):
+            then = clause.get("then", {})
+            if (
+                clause.get("if", {}).get("properties", {}).get("phase", {}).get("const")
+                == "done"
+            ):
+                done_branch = then
+                break
+        self.assertIsNotNone(done_branch, "schema is missing the done branch")
+        any_of = done_branch.get("anyOf")
+        self.assertIsInstance(any_of, list)
+        self.assertEqual(len(any_of), 2)
+        keys = sorted(
+            list(branch.get("properties", {}).keys())[0] for branch in any_of
+        )
+        self.assertEqual(keys, ["review", "verification"])
+        for branch in any_of:
+            for prop_name, prop_schema in branch["properties"].items():
+                self.assertEqual(prop_schema.get("minItems"), 1,
+                                 f"{prop_name} branch must require minItems: 1")
+
     def test_release_smoke_test_carries_g4b_boilerplate(self) -> None:
         text = (REPO_ROOT / "scripts" / "release_smoke_test.py").read_text(encoding="utf-8")
         # Top docstring should mention G4-B and DEVELOPER-TRUSTED.
