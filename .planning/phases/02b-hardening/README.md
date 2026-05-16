@@ -47,3 +47,9 @@ T0-A  (dependency-zero, lands FIRST)
 T0-A blocks every other slice. T0-1 and T0-2 may run in parallel after T0-A. T0-3 sequences after T0-1. T0-4 sequences after T0-3 (check.py merge order). T1-1 sequences after T0-4 (check.py merge order). T1-M lands before T0-5 (sole `state_repair.py:197` ownership). T1-S sequences after T0-3 contract artifact lock (not after T0-3 implementation merge).
 
 Plans 02b-10 and 02b-11 (when authored) BLOCK on plan 09 (T1-M) per CONTRACT-PIN §8 dependency posture — the smoke harness needs `state_diagnostics.py` for fixture validation.
+
+## Post-merge ledger
+
+| ID | Slice | Gap | Resolution |
+|---|---|---|---|
+| L-T1S-001 | T1-S | `.roo/commands/done.md` was authored under T1-S but never registered in `harness/manifest.json`, so `harness init` skipped it in installed targets. | Caught in 02b-hardening close-out review; fixed in commit `8a4b0f6 chore(manifest): register .roo/commands/done.md (T1-S parity gap)`. Future slice T1-S work MUST add a manifest-registration check to its plan acceptance list. |
