@@ -3560,6 +3560,29 @@ class ChangelogStructureTests(unittest.TestCase):
         self.assertIn("--resume", body)
 
 
+class HarnessMigrateSubparserTests(unittest.TestCase):
+    """T0-1 CC1: `harness migrate state --forward` must delegate to migrate_state.py."""
+
+    def test_harness_migrate_state_forward_invocation(self) -> None:
+        # Copy the v0 fixture into a temp dir and invoke the wrapper CLI
+        # through `harness.py migrate state --forward --dry-run`.
+        fixtures = REPO_ROOT / "scripts" / "fixtures" / "migrate"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            target = tmp / "phase-state.json"
+            target.write_bytes((fixtures / "phase_state_v0_input.json").read_bytes())
+            result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "harness.py"),
+                 "migrate", "state", "--forward", "--dry-run",
+                 "--target", str(target)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0,
+                             msg=f"stderr={result.stderr}\nstdout={result.stdout}")
+            expected = (fixtures / "phase_state_v0_to_v2_golden.json").read_text(encoding="utf-8")
+            self.assertEqual(result.stdout, expected)
+
+
 class GitignoreInvariantsTests(unittest.TestCase):
     def test_gitignore_excludes_harness_dir(self) -> None:
         """The repo-root .gitignore must exclude .harness/ (backups, audit log,
