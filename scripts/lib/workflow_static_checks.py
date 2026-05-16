@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -53,18 +52,13 @@ def optional_phase_pointer_keys(phase: object) -> tuple[str, ...]:
 def installed_scope_issues(installed_path: Path) -> list[dict[str, str]]:
     if not installed_path.exists():
         return []
-    try:
-        installed = json.loads(installed_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        return [
-            {
-                "code": "installed_manifest_invalid_json",
-                "cause": str(exc),
-                "impact": "Harness upgrade and scope audits cannot determine which adapters, profiles, or packs are active.",
-                "fix": "Repair `.harness/installed-manifest.json` or reinstall the harness.",
-                "evidence": f"line {exc.lineno} column {exc.colno}",
-            }
-        ]
+    # T1-M-C3: route managed-state read through the sanctioned helper.
+    # Malformed installed-manifest.json exits 5 with the structured single-
+    # line diagnostic; callers (doctor) no longer receive a synthetic
+    # 'installed_manifest_invalid_json' finding — the operator must fix the
+    # file before further checks proceed.
+    from lib.state_diagnostics import load_state_json
+    installed = load_state_json(installed_path)
     files = installed.get("files", {})
     if not isinstance(files, dict):
         return [

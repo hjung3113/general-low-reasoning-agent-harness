@@ -330,6 +330,25 @@ class TestStateReadRefusesSymlink(unittest.TestCase):
             self.assertIn(str(link), buf.getvalue())
 
 
+class TestWorkflowStaticChecksMigrated(unittest.TestCase):
+    """T1-M-C3: workflow_static_checks.installed_scope_issues must route
+    through state_diagnostics.load_state_json so malformed
+    installed-manifest.json exits 5 with the structured diagnostic."""
+
+    def test_installed_scope_issues_exits_5_on_malformed_manifest(self) -> None:
+        from lib import workflow_static_checks
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "installed-manifest.json"
+            path.write_text('{"adapters":', encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    workflow_static_checks.installed_scope_issues(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("is unparseable", buf.getvalue())
+            self.assertIn(str(path), buf.getvalue())
+
+
 class TestStateReadRefusesOversized(unittest.TestCase):
     """T1-M-SecM2: refuse to read state files larger than 8 MiB."""
 
