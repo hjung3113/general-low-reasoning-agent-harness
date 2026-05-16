@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lib.exitcodes import EXIT_UNPARSEABLE_JSON
+from lib import managed_block
+from lib import roadmap_state
 
 
 __all__ = [
@@ -188,7 +190,131 @@ class ParsedStateDoc:
     text: str
 
 
-def parse_state_markdown(path: Path) -> ParsedStateDoc:  # pragma: no cover - filled later
-    raise NotImplementedError(
-        "parse_state_markdown is wired by subsequent T1-M commits"
-    )
+_BEGIN_LINE_RE = re.compile(
+    r"^<!-- HARNESS:BEGIN managed:(?P<slug>[^\s]+) v1 -->\s*$",
+    re.MULTILINE,
+)
+
+
+def _find_begin_lines(text: str) -> list[tuple[int, str]]:
+    """Return [(1-based line number, slug-literal-as-written)] for every
+    `<!-- HARNESS:BEGIN managed:<X> v1 -->` line in `text`.
+
+    Note: matches even invalid slugs (e.g., "Foo_BAD") so we can cite the
+    line that triggered a slug-rejection.
+    """
+    out: list[tuple[int, str]] = []
+    for match in _BEGIN_LINE_RE.finditer(text):
+        # 1-based line number: count newlines before the match start.
+        line_no = text.count("\n", 0, match.start()) + 1
+        out.append((line_no, match.group("slug")))
+    return out
+
+
+def _find_duplicate_slug_lines(text: str, slug: str) -> list[int]:
+    """Return all 1-based BEGIN line numbers where `slug` appears."""
+    return [n for n, s in _find_begin_lines(text) if s == slug]
+
+
+def _classify_managed_block_error(text: str, exc: ValueError) -> str:
+    """Translate a `parse_blocks` ValueError into a human summary fragment.
+
+    Returns the trailing portion of the diagnostic (everything after the
+    "<path> is unparseable: " prefix), which the caller wraps and emits.
+    """
+    msg = str(exc)
+    if msg.startswith("Duplicate managed-block slug"):
+        # Strip the quoted slug literal: "Duplicate managed-block slug: 'foo'"
+        slug_match = re.search(r"'([^']+)'", msg)
+        slug = slug_match.group(1) if slug_match else "<unknown>"
+        lines = _find_duplicate_slug_lines(text, slug)
+        line_refs = ", ".join(str(n) for n in lines) if lines else "?"
+        return (
+            f"duplicate managed-block slug 'managed:{slug}' appears at line(s) "
+            f"{line_refs}"
+        )
+    if msg.startswith("Unbalanced managed-block markers") or msg.startswith(
+        "Malformed managed-block"
+    ):
+        begins = _find_begin_lines(text)
+        first_line = begins[0][0] if begins else "?"
+        return (
+            f"unbalanced managed-block markers; first unmatched BEGIN at line "
+            f"{first_line}"
+        )
+    if msg.startswith("Invalid managed-block slug"):
+        # Locate the offending begin line by finding any BEGIN whose slug
+        # fails the strict slug regex.
+        for line_no, slug in _find_begin_lines(text):
+            if not re.fullmatch(r"[a-z][a-z0-9-]*", slug):
+                return (
+                    f"invalid managed-block slug 'managed:{slug}' at line "
+                    f"{line_no} (slugs must match [a-z][a-z0-9-]*)"
+                )
+        return f"invalid managed-block slug: {msg}"
+    # Fallback: emit the raw library message with no line info.
+    return f"managed-block parse failed: {msg}"
+
+
+def parse_state_markdown(path: Path) -> ParsedStateDoc:
+    """Parse a STATE.md / ROADMAP.md document with diagnostic exit on failure.
+
+    On success returns a `ParsedStateDoc` carrying the parsed frontmatter,
+    managed-block index, and source text. On failure writes a single-line
+    `error:` diagnostic to stderr (with file + line citation when available)
+    and raises `SystemExit(EXIT_UNPARSEABLE_JSON)`.
+
+    Currently wraps:
+      - `managed_block.parse_blocks` (duplicate slug, unbalanced markers,
+        invalid slug)
+      - `roadmap_state.parse_frontmatter` (best-effort; frontmatter delimiter
+        validation is added in a subsequent commit)
+
+    Slug-validation note: `parse_blocks` only rejects invalid slugs when
+    `replace_block`/`render_block` is invoked; raw parsing silently skips
+    lines that don't match `[a-z][a-z0-9-]*`. We therefore pre-scan for
+    BEGIN lines whose slug fails the strict regex and raise here.
+    """
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        _emit_and_exit(
+            path,
+            f"{path} could not be read ({exc.__class__.__name__}: {exc})",
+        )
+    except UnicodeDecodeError as exc:
+        _emit_and_exit(path, f"{path} is unparseable (invalid UTF-8: {exc.reason})")
+
+    # Pre-scan: reject any BEGIN line whose slug fails the strict regex.
+    # `parse_blocks` would silently skip these because its regex requires
+    # the strict slug shape, leaving an unbalanced-marker error that hides
+    # the real cause.
+    strict_slug = re.compile(r"[a-z][a-z0-9-]*")
+    for line_no, slug in _find_begin_lines(text):
+        if not strict_slug.fullmatch(slug):
+            _emit_and_exit(
+                path,
+                (
+                    f"{path} contains invalid managed-block slug 'managed:{slug}' "
+                    f"at line {line_no} (slugs must match [a-z][a-z0-9-]*)"
+                ),
+            )
+
+    try:
+        blocks = managed_block.parse_blocks(text)
+    except ValueError as exc:
+        summary = _classify_managed_block_error(text, exc)
+        _emit_and_exit(path, f"{path}: {summary}")
+
+    # Frontmatter: best-effort for now. Stricter delimiter validation lands
+    # in a subsequent T1-M commit.
+    try:
+        frontmatter = roadmap_state.parse_frontmatter(text)
+    except Exception as exc:  # defensive: parse_frontmatter is permissive today
+        _emit_and_exit(
+            path,
+            f"{path}: frontmatter parse failed ({exc.__class__.__name__}: {exc})",
+        )
+
+    return ParsedStateDoc(frontmatter=frontmatter, blocks=blocks, text=text)
