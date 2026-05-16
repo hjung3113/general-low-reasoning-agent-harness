@@ -22,6 +22,15 @@ Run `python3 scripts/harness.py check --worktree` before marking done.
 
 Do not start new implementation work from `done`. New work begins from `discuss` or `plan`.
 
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase set done                       # execute → done (CLI preserves approved fields per G2-C)
+python3 scripts/harness.py phase set discuss --reset-approval   # from done, start a new cycle (safety prompt required)
+```
+
+`python3 scripts/harness.py phase approve` in `phase=done` is a no-op error (exit 6, G2-C). The `approved`, `approved_by`, and `approved_at` fields are preserved verbatim from the prior `execute→done` transition; do NOT re-issue `phase approve`.
+
 Done output checklist:
 
 - [ ] completed acceptance criteria

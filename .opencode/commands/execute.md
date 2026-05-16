@@ -8,15 +8,13 @@ Start with `python3 scripts/show_phase_status.py` when available. If it reports 
 
 Preflight checklist:
 
-- [ ] `.scratch/phase-state.json` says `phase=execute`.
-- [ ] `.scratch/phase-state.json` says `approved=true`.
-- [ ] `plan_id` matches the plan being executed.
+- [ ] `python3 scripts/harness.py check` exits 0 with `phase=execute`, `approved=true`, and the expected `plan_id`.
 - [ ] `allowed_paths` is non-empty.
 - [ ] `verification` is non-empty.
 - [ ] Requested edits are inside `allowed_paths`.
 - [ ] Active checkpoint, plan, and allowed paths have not drifted since approval.
 
-Before editing, verify `.scratch/phase-state.json` has:
+Before editing, verify via `python3 scripts/harness.py check` that the live gate has:
 
 - `phase=execute`
 - `approved=true`
@@ -24,7 +22,7 @@ Before editing, verify `.scratch/phase-state.json` has:
 - non-empty `allowed_paths`
 - non-empty `verification`
 - durable planning pointers
-- approval provenance
+- approval provenance (set by `python3 scripts/harness.py phase approve`)
 
 Stop if requested work falls outside `allowed_paths` or if phase, checkpoint, plan, or allowed paths changed during the session.
 
@@ -36,10 +34,16 @@ python3 scripts/harness.py check --worktree
 
 Run `python3 scripts/harness.py check --worktree` before committing.
 
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase set done      # execute → done (CLI preserves approved fields per G2-C)
+```
+
 Execution output checklist:
 
 - [ ] changed paths
 - [ ] verification commands run, with exit status
 - [ ] failed checks or skipped checks with reason
 - [ ] residual risks
-- [ ] phase-state updates made, if any
+- [ ] phase-state updates made via `python3 scripts/harness.py phase set/approve`, if any

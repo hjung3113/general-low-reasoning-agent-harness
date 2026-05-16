@@ -18,14 +18,21 @@ Preflight checklist:
 3. Write or update the phase plan, allowed path candidates, verification candidates, and review checks.
 4. Request execute approval instead of self-approving.
 
-Do not write `phase=execute` unless explicit approval provenance exists:
+Do not advance the gate to `phase=execute` unless explicit approval provenance exists. Run `python3 scripts/harness.py phase approve` (which stamps `approved_by` from `git config user.email` and `approved_at` to nanosecond precision per ADR-003a Verb 2), then `python3 scripts/harness.py phase set execute`. The CLI refuses the transition unless these prerequisites are present in the live state:
 
 - `plan_id`
-- `approved_by`
-- `approved_at`
 - non-empty `allowed_paths`
 - non-empty `verification`
 - durable `state_path`, `plan_path`, and `checkpoint_path`
+
+`approved_by` / `approved_at` are written by `python3 scripts/harness.py phase approve`; do NOT hand-write them.
+
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase approve       # plan / execute: writes approved=true, approved_by, approved_at
+python3 scripts/harness.py phase set execute   # plan → execute (requires approve first)
+```
 
 Plan output checklist:
 

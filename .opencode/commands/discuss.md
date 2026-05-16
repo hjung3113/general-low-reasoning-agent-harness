@@ -34,6 +34,13 @@ Forbidden work:
 - changing the live gate to `execute`
 - using stack-specific profile commands before that profile is confirmed
 
+Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+
+```text
+python3 scripts/harness.py phase set plan      # discuss → plan
+python3 scripts/harness.py phase approve       # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+```
+
 Output checklist:
 
 - [ ] confirmed facts with evidence paths
