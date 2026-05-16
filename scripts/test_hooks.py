@@ -207,6 +207,41 @@ class E2ECommitTests(unittest.TestCase):
         )
 
 
+class HookHarnessMissingTests(unittest.TestCase):
+    """T1-1-C2: hook hard-fails when harness CLI cannot be located.
+
+    Silent skip masks the gate: a target installed without the harness
+    accepts every commit even though scope enforcement is "on". The hook
+    must instead exit non-zero with a clear error, or be explicitly opted
+    into legacy skip behavior via ``HARNESS_HOOK_ALLOW_SKIP=1``.
+    """
+
+    def _run_hook(self, tmp: Path, env_extra: dict | None = None):
+        hook = tmp / ".git/hooks/pre-commit"
+        env = {"PATH": "/usr/bin:/bin"}  # No `harness` on PATH.
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            ["sh", str(hook)],
+            cwd=tmp, capture_output=True, text=True, env=env,
+        )
+
+    def test_hook_hard_fails_when_harness_missing(self):
+        tmp = _make_target([".scratch/"])  # NO harness shim installed.
+        hooks.install_pre_commit_hook(tmp)
+        proc = self._run_hook(tmp)
+        self.assertNotEqual(proc.returncode, 0,
+                            f"expected non-zero, got 0; stderr={proc.stderr!r}")
+        self.assertIn("harness CLI not found", proc.stderr)
+
+    def test_hook_skips_when_env_set(self):
+        tmp = _make_target([".scratch/"])
+        hooks.install_pre_commit_hook(tmp)
+        proc = self._run_hook(tmp, env_extra={"HARNESS_HOOK_ALLOW_SKIP": "1"})
+        self.assertEqual(proc.returncode, 0,
+                         f"expected 0, got {proc.returncode}; stderr={proc.stderr!r}")
+
+
 class AdapterCommandFileMirrorTests(unittest.TestCase):
     """T1-1 Task 5: both lifecycle `execute` adapter command files MUST
     promote `harness.py check --worktree` to a numbered pre-commit step

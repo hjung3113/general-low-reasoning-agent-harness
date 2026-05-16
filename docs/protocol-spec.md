@@ -370,7 +370,7 @@ Pre-commit hook lifecycle:
 
 - Install: `python3 scripts/harness.py install --pre-commit --target <path>`. Writes `<target>/.git/hooks/pre-commit` (or merges into an existing user-authored hook via the `# HARNESS:scope-check-begin` / `# HARNESS:scope-check-end` marker envelope so the install is idempotent and composes with user content).
 - Uninstall: `python3 scripts/harness.py uninstall --pre-commit --target <path>`. Removes the marker envelope; deletes the hook file when nothing else remains. Manual fallback: `rm <target>/.git/hooks/pre-commit` (the installer never touches `git config core.hooksPath`).
-- Hook body: shells out to `python3 scripts/harness.py check --worktree` from the repo root resolved via `git rev-parse --show-toplevel`. When `scripts/harness.py` or `.scratch/phase-state.json` are absent (e.g. harness not installed in the target), the hook emits a non-fatal warning to stderr and exits 0 — never silently passes through without a visible reason.
+- Hook body: shells out to the harness CLI from the repo root resolved via `git rev-parse --show-toplevel`. Resolution order is (1) a `harness` binary on `PATH`, then (2) `scripts/harness.py` under the repo root. When neither is reachable, or when `.scratch/phase-state.json` is absent, the hook **hard-fails** (exit 1) so silent skips cannot mask the gate. Set `HARNESS_HOOK_ALLOW_SKIP=1` to opt into the legacy non-fatal-warning behavior for environments that cannot install the harness yet (T1-1-C2).
 
 Failure-message contract (printed to stderr by the library on exit 4):
 
