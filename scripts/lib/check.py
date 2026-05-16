@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -46,6 +47,51 @@ from lib.worktree import (
 from lib.workflow_static_checks import (
     verification_placeholder_reason,
 )
+from lib.managed_block import parse_blocks
+
+
+@dataclass(frozen=True)
+class ManagedBlockWarning:
+    code: str
+    path: str
+    message: str
+
+
+_REQUIRED_MARKERS = (
+    (".planning/ROADMAP.md", "roadmap-phases"),
+    (".planning/STATE.md", "state-current"),
+)
+
+
+def managed_block_warnings(root: Path) -> list[ManagedBlockWarning]:
+    findings: list[ManagedBlockWarning] = []
+    for rel_path, slug in _REQUIRED_MARKERS:
+        path = root / rel_path
+        if not path.exists():
+            continue
+        try:
+            blocks = parse_blocks(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            findings.append(
+                ManagedBlockWarning(
+                    code="malformed_managed_block",
+                    path=rel_path,
+                    message=str(exc),
+                )
+            )
+            continue
+        if slug not in blocks:
+            findings.append(
+                ManagedBlockWarning(
+                    code="missing_managed_block",
+                    path=rel_path,
+                    message=(
+                        f"managed:{slug} block missing in {rel_path}; "
+                        f"run `python3 scripts/harness.py state repair` to add it."
+                    ),
+                )
+            )
+    return findings
 
 
 CLEAN_SKELETON = Path("harness/skeleton/clean")
@@ -239,6 +285,8 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             check_phase_state_semantics(path)
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
+    for warning in managed_block_warnings(target):
+        print(f"warning: {warning.code} in {warning.path}: {warning.message}")
 
 
 def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:

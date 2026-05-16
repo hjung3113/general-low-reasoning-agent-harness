@@ -3371,5 +3371,30 @@ class SkeletonManagedBlockTests(unittest.TestCase):
         self.assertIn("<!-- HARNESS:END managed:state-current -->", text)
 
 
+class ManagedBlockCheckWarningTests(unittest.TestCase):
+    def test_check_warns_when_roadmap_missing_managed_block(self):
+        import tempfile, io, contextlib
+        from pathlib import Path
+        import json as _json
+        root = Path(tempfile.mkdtemp())
+        (root / ".planning").mkdir()
+        (root / ".scratch").mkdir()
+        (root / ".planning/ROADMAP.md").write_text(
+            "# R\n\n## Phases\n\n- [ ] **Phase 0: A**\n", encoding="utf-8"
+        )
+        (root / ".planning/STATE.md").write_text(
+            "---\nprogress:\n  total_phases: 1\n  completed_phases: 0\n  percent: 0\n---\n\n"
+            "# S\n\n## Current Position\n\n- **Phase**: 0\n",
+            encoding="utf-8",
+        )
+        (root / ".scratch/phase-state.json").write_text(
+            _json.dumps({"phase": "discuss"}), encoding="utf-8"
+        )
+        from lib.check import managed_block_warnings
+        warnings = managed_block_warnings(root)
+        codes = {w.code for w in warnings}
+        self.assertIn("missing_managed_block", codes)
+
+
 if __name__ == "__main__":
     unittest.main()

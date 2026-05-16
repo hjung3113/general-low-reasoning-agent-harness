@@ -136,6 +136,8 @@ from lib.check import (
     VERIFICATION_PREFIXES,
     REQUIRED_TARGET_PHRASES,
     CONTAMINATION_PATTERNS,
+    ManagedBlockWarning,
+    managed_block_warnings,
     check_installed_target,
     _check_roomodes_profile_sync,
     check_clean_skeleton,
@@ -238,6 +240,7 @@ __all__ = [
     "check", "check_installed_target", "should_check_as_installed_target",
     "check_clean_skeleton", "check_json", "check_phase_state_semantics",
     "check_command_modes", "check_phase_reference_drift", "check_phase_state_paths",
+    "ManagedBlockWarning", "managed_block_warnings",
     # doctor
     "DoctorFinding", "doctor", "collect_doctor_findings",
     "phase_status_projection_doctor_findings", "projection_warning_severity",
