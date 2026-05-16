@@ -235,7 +235,11 @@ def read_install_state(target: Path) -> dict[str, object]:
     path = target / INSTALL_STATE
     if not path.exists():
         return {"version": None, "files": {}}
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Local import to avoid a top-level cycle: state_diagnostics has no
+    # cross-import back into state.py today, but the install-state reader
+    # is a hot path imported by check.py which also imports state.py.
+    from lib.state_diagnostics import load_state_json
+    return load_state_json(path)
 
 
 # ---------------------------------------------------------------------------
