@@ -329,15 +329,21 @@ class AdapterCommandFileMirrorTests(unittest.TestCase):
 
     def test_no_execute_file_recommends_no_verify(self):
         # Mentions of `git commit --no-verify` are permitted only inside
-        # a "Do NOT ... --no-verify" sentence (multi-line tolerated).
+        # a "Do NOT ... --no-verify" sentence. Markdown wraps the
+        # instruction across multiple lines; previously the window was 2
+        # lines which missed cases where "Do NOT" sat 2 lines above. Now
+        # we widen to 3 lines AND normalize whitespace so any wrapping
+        # style passes the guard as long as the "Do NOT" intent is local.
         for path in self.EXECUTE_FILES:
             with self.subTest(path=str(path)):
                 body = path.read_text()
                 lines = body.splitlines()
                 for index, line in enumerate(lines):
                     if "git commit --no-verify" in line:
-                        # Look at line and the previous line (markdown wraps).
-                        window = " ".join(lines[max(0, index - 1):index + 1]).lower()
+                        window_lines = lines[max(0, index - 2):index + 1]
+                        window = " ".join(window_lines)
+                        # Normalize whitespace (collapse runs of spaces/tabs).
+                        window = " ".join(window.split()).lower()
                         self.assertTrue(
                             "do not" in window,
                             f"{path}: line {index+1} mentions --no-verify "
