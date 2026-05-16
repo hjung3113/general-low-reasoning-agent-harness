@@ -187,5 +187,26 @@ class TestAtomicWriteTextPreconditions(unittest.TestCase):
             del enospc_open
 
 
+class TestAtomicAppendLogBasic(unittest.TestCase):
+    def test_atomic_append_log_creates_file_if_missing(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            atomic_io.atomic_append_log(target, "first-line")
+            self.assertTrue(target.exists())
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(target.read_text(encoding="utf-8"), "first-line\n")
+
+    def test_atomic_append_log_appends_without_truncating(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            atomic_io.atomic_append_log(target, "A")
+            atomic_io.atomic_append_log(target, "B")
+            self.assertEqual(target.read_text(encoding="utf-8"), "A\nB\n")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
