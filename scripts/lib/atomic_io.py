@@ -44,7 +44,16 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
         try:
             tmp.write(content)
             tmp.flush()
-            os.fsync(tmp.fileno())
+            tmp_fd = tmp.fileno()
+            os.fsync(tmp_fd)
+            # Apply mode BEFORE os.replace so a crashed replace cannot leave
+            # the target with stale perms, and so chmod failures abort cleanly
+            # without committing the new content (fixes C1).
+            fchmod = getattr(os, "fchmod", None)
+            if fchmod is not None:
+                fchmod(tmp_fd, mode)
+            else:  # pragma: no cover — fchmod absent only on exotic platforms
+                os.chmod(tmp_name, mode)
         finally:
             tmp.close()
         # Same-filesystem invariant: temp and target parent must share st_dev.
@@ -64,7 +73,6 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
         except FileNotFoundError:
             pass
         raise
-    os.chmod(path, mode)
 
 
 def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -> None:
