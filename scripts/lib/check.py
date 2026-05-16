@@ -96,19 +96,24 @@ def managed_block_warnings(root: Path) -> list[ManagedBlockWarning]:
 
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+#
+# T0-4 (ADR-004 / G4-A): the verification allowlist is the canonical 7-verb
+# tuple. The previous soft prefixes (Confirm/Review/Inspect/Validate/Roo/
+# core-only/OpenCode-only) AND `bash ` (D-G4) are intentionally rejected.
+# The core checker (this module) NEVER executes a verification string —
+# the field is a developer-trusted manifest consumed by external runners
+# (e.g., scripts/release_smoke_test.py). See ADR-004 G4-B + L19 in
+# CHANGELOG.md `### Breaking`.
 VERIFICATION_PREFIXES = (
     "python3 ",
     "git ",
     "jq ",
     "npx ",
-    "Validate ",
-    "Review ",
-    "Inspect ",
-    "Confirm ",
-    "core-only ",
-    "OpenCode-only ",
-    "Roo",
+    "pytest ",
+    "harness ",
+    "make ",
 )
+VERIFICATION_VERBS_INLINE = "python3, git, jq, npx, pytest, harness, make"
 REQUIRED_TARGET_PHRASES = {
     "AGENTS.md": (
         "Karpathy-Inspired Coding Guidelines",
@@ -437,13 +442,15 @@ def check_phase_state_semantics(path: Path) -> None:
     if phase == "done":
         required_done = (
             "plan_id",
-            "verification",
             "state_path",
             "plan_path",
             "checkpoint_path",
             "current_checkpoint",
             "next_action",
         )
+        # T0-4 (ADR-004): verification may be empty when `review` carries
+        # the closure evidence. The "verification OR review non-empty"
+        # constraint is enforced below, after both have been validated.
         missing = [key for key in required_done if not state.get(key)]
         # ADR-001 option 3: the schema constraint on ``approved`` is dropped
         # from the ``done`` branch — both ``approved=true`` and ``approved=false``
@@ -451,17 +458,64 @@ def check_phase_state_semantics(path: Path) -> None:
         if missing:
             raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
     verification = state.get("verification", [])
-    if verification:
-        if not isinstance(verification, list):
-            raise SystemExit(f"{path} verification must be an array.")
-        for index, command in enumerate(verification):
-            if not isinstance(command, str) or not command.strip():
-                raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
-            placeholder_reason = verification_placeholder_reason(command)
-            if placeholder_reason:
-                raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
-            if not command.startswith(VERIFICATION_PREFIXES):
-                raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
+    if verification is None:
+        verification = []
+    if not isinstance(verification, list):
+        raise SystemExit(f"{path} verification must be an array.")
+    for index, command in enumerate(verification):
+        if not isinstance(command, str) or not command.strip():
+            raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
+        placeholder_reason = verification_placeholder_reason(command)
+        if placeholder_reason:
+            raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
+        if not command.startswith(VERIFICATION_PREFIXES):
+            raise SystemExit(
+                f"{path} verification[{index}] = {command!r} does not start with an allowed verb.\n"
+                f"Allowed verbs: {VERIFICATION_VERBS_INLINE}.\n"
+                f"See docs/protocol-spec.md#verification-allowlist "
+                f"(source: scripts/lib/check.py VERIFICATION_PREFIXES)."
+            )
+    # T0-4 (ADR-004) review evidence validator.
+    review = state.get("review", [])
+    if review is None:
+        review = []
+    if not isinstance(review, list):
+        raise SystemExit(f"{path} review must be an array.")
+    for index, entry in enumerate(review):
+        if not isinstance(entry, dict):
+            raise SystemExit(f"{path} review[{index}] must be an object.")
+        # Reject extra properties (mirror schema additionalProperties: false).
+        allowed_keys = {"actor", "at", "evidence_path", "summary"}
+        extra = set(entry.keys()) - allowed_keys
+        if extra:
+            raise SystemExit(
+                f"{path} review[{index}] has unexpected keys: {sorted(extra)}."
+            )
+        for key in ("actor", "at", "evidence_path", "summary"):
+            if key not in entry:
+                raise SystemExit(f"{path} review[{index}].{key} is required.")
+            if not isinstance(entry[key], str):
+                raise SystemExit(
+                    f"{path} review[{index}].{key} must be a string; got "
+                    f"{type(entry[key]).__name__}."
+                )
+        # Non-empty constraints (evidence_path may be empty; doctor warns).
+        if not entry["actor"]:
+            raise SystemExit(f"{path} review[{index}].actor must be non-empty.")
+        if not entry["summary"]:
+            raise SystemExit(f"{path} review[{index}].summary must be non-empty.")
+        if not UTC_TIMESTAMP.fullmatch(entry["at"]):
+            raise SystemExit(
+                f"{path} review[{index}].at must be an ISO-8601 UTC timestamp; "
+                f"got {entry['at']!r}."
+            )
+    # T0-4 (ADR-004): a closed (done) phase requires verification OR review
+    # non-empty — at least one form of evidence must be present.
+    if state.get("phase") == "done" and not verification and not review:
+        raise SystemExit(
+            f"{path} done phase requires non-empty verification OR review "
+            f"(at least one form of evidence)."
+        )
 
 
 def check_command_modes(root: Path) -> None:

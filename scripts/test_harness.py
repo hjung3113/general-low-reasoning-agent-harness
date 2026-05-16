@@ -2428,8 +2428,13 @@ progress:
             with self.assertRaisesRegex(SystemExit, "placeholder verification entry"):
                 harness.check_phase_state_semantics(path)
 
+            # NOTE (T0-4 / ADR-004): the soft prefix "Review " is no longer
+            # accepted; rewriting this sub-assertion to use the new
+            # `pytest ` allowlist verb instead. The original sub-assertion
+            # is preserved in the negative-path block below as a rejection
+            # case. Plan: .planning/phases/02b-hardening/plans/02b-05-T0-4-PLAN.md
             state = json.loads(path.read_text(encoding="utf-8"))
-            state["verification"] = ["Review phase verification file"]
+            state["verification"] = ["pytest tests/foo.py"]
             path.write_text(json.dumps(state), encoding="utf-8")
             harness.check_phase_state_semantics(path)
 
@@ -2437,12 +2442,12 @@ progress:
             state["verification"] = ["definitely-not-a-command --nope"]
             path.write_text(json.dumps(state), encoding="utf-8")
 
-            with self.assertRaisesRegex(SystemExit, "verification\\[0\\] must start with an allowed command"):
+            with self.assertRaisesRegex(SystemExit, "does not start with an allowed verb"):
                 harness.check_phase_state_semantics(path)
 
             state["verification"] = ["TODO add concrete verification"]
             path.write_text(json.dumps(state), encoding="utf-8")
-            with self.assertRaisesRegex(SystemExit, "verification\\[0\\] must start with an allowed command"):
+            with self.assertRaisesRegex(SystemExit, "does not start with an allowed verb"):
                 harness.check_phase_state_semantics(path)
 
     def test_phase_state_allows_domain_words_that_look_like_placeholders(self) -> None:
@@ -2466,10 +2471,17 @@ progress:
                 "updated_at": "2026-05-15T00:00:00Z",
                 "updated_by": "test",
             }
+            # NOTE (T0-4 / ADR-004): the placeholder-vs-domain-word
+            # heuristic no longer matters for the `verification` field
+            # because the field now requires a 7-verb prefix; "Inspect" /
+            # "Review" entries are rejected at the prefix gate. The
+            # equivalent guarantee is now expressed by exercising domain
+            # words inside an allowed-verb command body. Plan:
+            # .planning/phases/02b-hardening/plans/02b-05-T0-4-PLAN.md.
             for verification in (
-                "Inspect todo-list component behavior",
-                "Review manual test plan results in docs/verification.md",
-                "Review placeholder replacement in docs",
+                "harness check  # inspect todo-list component behavior",
+                "pytest tests/  # review manual test plan results in docs/verification.md",
+                "make smoke  # review placeholder replacement in docs",
             ):
                 state = dict(base_state)
                 state["verification"] = [verification]
@@ -3652,6 +3664,443 @@ class GitignoreInvariantsTests(unittest.TestCase):
             any(ln in (".harness/", "/.harness/") for ln in lines),
             f".gitignore does not exclude .harness/. Contents: {text!r}",
         )
+
+
+class T04VerificationAllowlistTests(unittest.TestCase):
+    """T0-4 Block 1 — 7-verb verification allowlist (ADR-004 / G4-A)."""
+
+    def _write_execute_state(self, tmpdir: Path, verification: list[str]) -> Path:
+        path = tmpdir / "phase-state.json"
+        state = {
+            "phase": "execute",
+            "state_schema_version": 2,
+            "approved": True,
+            "automation_mode": "manual",
+            "auto_selected": [],
+            "plan_id": "p",
+            "allowed_paths": ["scripts/harness.py"],
+            "verification": verification,
+            "review": [],
+            "state_path": ".planning/STATE.md",
+            "plan_path": ".planning/PLAN.md",
+            "checkpoint_path": ".planning/CP.md",
+            "current_checkpoint": "CP-1",
+            "next_action": "Run verification.",
+            "approved_by": "user",
+            "approved_at": "2026-05-15T00:00:00Z",
+            "updated_at": "2026-05-15T00:00:00Z",
+            "updated_by": "test",
+        }
+        path.write_text(json.dumps(state), encoding="utf-8")
+        return path
+
+    # Accept rows (1..7)
+    def test_verification_prefix_python3_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["python3 -m unittest tests/foo.py"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_git_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["git diff --exit-code"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_jq_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["jq '.x' file.json"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_npx_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["npx vitest run"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_pytest_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["pytest tests/"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_harness_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["harness check"])
+            harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_make_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["make smoke"])
+            harness.check_phase_state_semantics(path)
+
+    # Reject rows (8..15)
+    def test_verification_prefix_bash_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["bash scripts/foo.sh"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_confirm_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["Confirm work is good"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_validate_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["Validate that docs look right"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_inspect_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["Inspect output"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_review_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["Review the diff"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_roo_rejected_room_is_great(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["Room is great"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_core_only_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["core-only check"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_verification_prefix_opencode_only_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["OpenCode-only check"])
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    # Diagnostic shape (16..19)
+    def test_rejection_message_enumerates_all_seven_verbs_inline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["bash bad"])
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("python3, git, jq, npx, pytest, harness, make", str(ctx.exception))
+
+    def test_rejection_message_cites_protocol_spec_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["bash bad"])
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("docs/protocol-spec.md#verification-allowlist", str(ctx.exception))
+
+    def test_rejection_message_names_constant_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["bash bad"])
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("scripts/lib/check.py VERIFICATION_PREFIXES", str(ctx.exception))
+
+    def test_rejection_message_includes_offending_value_and_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_execute_state(Path(tmpdir), ["python3 ok", "bash bad"])
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            msg = str(ctx.exception)
+            self.assertIn("verification[1]", msg)
+            self.assertIn(repr("bash bad"), msg)
+
+
+class T04ReviewEvidenceTests(unittest.TestCase):
+    """T0-4 Block 2 — review evidence schema (semantic checks)."""
+
+    def _base_done(self, *, verification=None, review=None) -> dict:
+        state = {
+            "phase": "done",
+            "state_schema_version": 2,
+            "approved": True,
+            "approved_by": "user",
+            "approved_at": "2026-05-14T15:00:00.000000000Z",
+            "plan_id": "test-plan",
+            "automation_mode": "manual",
+            "auto_selected": [],
+            "summary": "Done summary.",
+            "state_path": ".planning/STATE.md",
+            "plan_path": ".planning/PLAN.md",
+            "checkpoint_path": ".planning/CP.md",
+            "current_checkpoint": "CP-1",
+            "next_action": "Start next cycle.",
+            "acceptance_criteria": ["criterion one"],
+            "verification": verification if verification is not None else ["python3 scripts/harness.py check"],
+            "review": review if review is not None else [],
+            "updated_at": "2026-05-15T00:00:00.000000000Z",
+            "updated_by": "test",
+        }
+        return state
+
+    def _write(self, tmpdir: Path, state: dict) -> Path:
+        path = tmpdir / "phase-state.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+        return path
+
+    def test_review_empty_array_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[]))
+            harness.check_phase_state_semantics(path)
+
+    def test_review_well_formed_entry_accepted(self) -> None:
+        entry = {"actor": "user", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "docs/r.md", "summary": "ok"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            harness.check_phase_state_semantics(path)
+
+    def test_review_missing_actor_rejected(self) -> None:
+        entry = {"at": "2026-05-16T12:00:00Z", "evidence_path": "x", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].actor", str(ctx.exception))
+
+    def test_review_missing_at_rejected(self) -> None:
+        entry = {"actor": "u", "evidence_path": "x", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].at", str(ctx.exception))
+
+    def test_review_missing_evidence_path_rejected(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].evidence_path", str(ctx.exception))
+
+    def test_review_missing_summary_rejected(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z", "evidence_path": "x"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].summary", str(ctx.exception))
+
+    def test_review_malformed_timestamp_rejected(self) -> None:
+        entry = {"actor": "u", "at": "2026-13-99 not-iso",
+                 "evidence_path": "x", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].at", str(ctx.exception))
+
+    def test_review_empty_evidence_path_accepted_by_semantics(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            harness.check_phase_state_semantics(path)
+
+    def test_review_actor_must_be_non_empty_string(self) -> None:
+        entry = {"actor": "", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "x", "summary": "y"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(review=[entry]))
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("review[0].actor", str(ctx.exception))
+
+    def test_done_with_empty_verification_and_nonempty_review_is_valid(self) -> None:
+        entry = {"actor": "u", "at": "2026-05-16T12:00:00Z",
+                 "evidence_path": "docs/r.md", "summary": "ok"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(verification=[], review=[entry]))
+            harness.check_phase_state_semantics(path)
+
+    def test_done_with_empty_verification_and_empty_review_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir), self._base_done(verification=[], review=[]))
+            with self.assertRaises(SystemExit):
+                harness.check_phase_state_semantics(path)
+
+    def test_done_with_nonempty_verification_and_empty_review_is_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(Path(tmpdir),
+                               self._base_done(verification=["python3 ok"], review=[]))
+            harness.check_phase_state_semantics(path)
+
+
+class T04TrustBoundaryTests(unittest.TestCase):
+    """T0-4 Block 3 — G4-B: core CLI never executes verification strings."""
+
+    def test_check_does_not_execute_verification_strings(self) -> None:
+        # Walk repo `harness check` path with patched subprocess + os.system;
+        # if any verification entry were executed, one of these would fire.
+        import os as _os
+        import subprocess as _subprocess
+        with mock.patch.object(_subprocess, "run", side_effect=AssertionError("subprocess.run called")), \
+             mock.patch.object(_subprocess, "Popen", side_effect=AssertionError("subprocess.Popen called")), \
+             mock.patch.object(_subprocess, "call", side_effect=AssertionError("subprocess.call called")), \
+             mock.patch.object(_subprocess, "check_call", side_effect=AssertionError("subprocess.check_call called")), \
+             mock.patch.object(_subprocess, "check_output", side_effect=AssertionError("subprocess.check_output called")), \
+             mock.patch.object(_os, "system", side_effect=AssertionError("os.system called")):
+            # Validate the live fixture's verification entries via the
+            # semantic checker directly. This is the only code reachable
+            # from `harness check` that consumes verification strings.
+            harness.check_phase_state_semantics(
+                REPO_ROOT / ".scratch" / "phase-state.json"
+            )
+
+    def test_check_validates_prefix_without_invoking_command(self) -> None:
+        # A nonexistent path inside the verification entry must not be probed.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            state = {
+                "phase": "execute",
+                "state_schema_version": 2,
+                "approved": True,
+                "automation_mode": "manual",
+                "auto_selected": [],
+                "plan_id": "p",
+                "allowed_paths": ["scripts/harness.py"],
+                "verification": ["python3 /nonexistent/path/that/does/not/exist.py"],
+                "review": [],
+                "state_path": ".planning/STATE.md",
+                "plan_path": ".planning/PLAN.md",
+                "checkpoint_path": ".planning/CP.md",
+                "current_checkpoint": "CP-1",
+                "next_action": "Run verification.",
+                "approved_by": "user",
+                "approved_at": "2026-05-15T00:00:00Z",
+                "updated_at": "2026-05-15T00:00:00Z",
+                "updated_by": "test",
+            }
+            path = tmp / "phase-state.json"
+            path.write_text(json.dumps(state), encoding="utf-8")
+            harness.check_phase_state_semantics(path)  # no FileNotFoundError
+
+
+class T04ReviewSchemaAndFixtureTests(unittest.TestCase):
+    """T0-4 schema + live fixture invariants."""
+
+    def test_schema_has_review_property(self) -> None:
+        schema = json.loads(
+            (REPO_ROOT / ".scratch" / "phase-state.schema.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("review", schema["properties"])
+        review_schema = schema["properties"]["review"]
+        self.assertEqual(review_schema["type"], "array")
+
+    def test_schema_review_item_additional_properties_false(self) -> None:
+        schema = json.loads(
+            (REPO_ROOT / ".scratch" / "phase-state.schema.json").read_text(encoding="utf-8")
+        )
+        review_schema = schema["properties"]["review"]
+        item = review_schema["items"]
+        self.assertEqual(item.get("additionalProperties"), False)
+        for key in ("actor", "at", "evidence_path", "summary"):
+            self.assertIn(key, item["required"])
+
+    def test_live_phase_state_has_review_field(self) -> None:
+        state = json.loads(
+            (REPO_ROOT / ".scratch" / "phase-state.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("review", state)
+        self.assertIsInstance(state["review"], list)
+
+    def test_example_phase_state_has_review_field(self) -> None:
+        state = json.loads(
+            (REPO_ROOT / ".scratch" / "phase-state.example.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("review", state)
+        self.assertIsInstance(state["review"], list)
+
+    def test_release_smoke_test_carries_g4b_boilerplate(self) -> None:
+        text = (REPO_ROOT / "scripts" / "release_smoke_test.py").read_text(encoding="utf-8")
+        # Top docstring should mention G4-B and DEVELOPER-TRUSTED.
+        self.assertIn("G4-B", text)
+        self.assertIn("DEVELOPER-TRUSTED", text)
+
+    def test_changelog_breaking_subsection_mentions_l5_and_l19(self) -> None:
+        text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("L5", text)
+        self.assertIn("L19", text)
+        self.assertIn("7-verb", text)
+
+
+class T04DoctorReviewEvidenceTests(unittest.TestCase):
+    """T0-4 doctor finding: review entries with empty evidence_path warn."""
+
+    def test_doctor_warns_on_empty_evidence_path(self) -> None:
+        from lib import doctor as _doctor
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            scratch = tmp / ".scratch"
+            scratch.mkdir()
+            state = {
+                "phase": "done",
+                "state_schema_version": 2,
+                "approved": True,
+                "approved_by": "u",
+                "approved_at": "2026-05-14T15:00:00.000000000Z",
+                "plan_id": "p",
+                "automation_mode": "manual",
+                "auto_selected": [],
+                "summary": "s",
+                "state_path": ".planning/STATE.md",
+                "plan_path": ".planning/PLAN.md",
+                "checkpoint_path": ".planning/CP.md",
+                "current_checkpoint": "CP-1",
+                "next_action": "n",
+                "acceptance_criteria": ["a"],
+                "verification": ["python3 ok"],
+                "review": [
+                    {"actor": "migration", "at": "2026-05-15T00:00:00Z",
+                     "evidence_path": "", "summary": "migrated"}
+                ],
+                "updated_at": "2026-05-15T00:00:00.000000000Z",
+                "updated_by": "t",
+            }
+            (scratch / "phase-state.json").write_text(json.dumps(state), encoding="utf-8")
+            findings = _doctor.review_evidence_path_doctor_findings(tmp)
+            codes = [f.code for f in findings]
+            self.assertIn("review_evidence_path_empty", codes)
+
+    def test_doctor_quiet_when_evidence_path_present(self) -> None:
+        from lib import doctor as _doctor
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            scratch = tmp / ".scratch"
+            scratch.mkdir()
+            state = {
+                "phase": "done",
+                "state_schema_version": 2,
+                "approved": True,
+                "approved_by": "u",
+                "approved_at": "2026-05-14T15:00:00.000000000Z",
+                "plan_id": "p",
+                "automation_mode": "manual",
+                "auto_selected": [],
+                "summary": "s",
+                "state_path": ".planning/STATE.md",
+                "plan_path": ".planning/PLAN.md",
+                "checkpoint_path": ".planning/CP.md",
+                "current_checkpoint": "CP-1",
+                "next_action": "n",
+                "acceptance_criteria": ["a"],
+                "verification": ["python3 ok"],
+                "review": [
+                    {"actor": "u", "at": "2026-05-15T00:00:00Z",
+                     "evidence_path": "docs/r.md", "summary": "ok"}
+                ],
+                "updated_at": "2026-05-15T00:00:00.000000000Z",
+                "updated_by": "t",
+            }
+            (scratch / "phase-state.json").write_text(json.dumps(state), encoding="utf-8")
+            findings = _doctor.review_evidence_path_doctor_findings(tmp)
+            self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":

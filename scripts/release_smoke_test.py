@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Run the release install/check smoke matrix for the harness source tree."""
+"""Run the release install/check smoke matrix for the harness source tree.
+
+G4-B trust boundary (ADR-004 / T0-4 / CHANGELOG L19): this smoke runner
+treats every ``verification[*]`` entry in ``.scratch/phase-state.json`` as
+DEVELOPER-TRUSTED shell input and may execute it on behalf of the
+developer. The core ``harness check`` CLI never executes verification
+strings; this runner is the one in-tree consumer that intentionally
+crosses the boundary. Do not pipe untrusted state files through this
+script.
+"""
 
 from __future__ import annotations
 

@@ -33,6 +33,7 @@
   ],
   "phase": "done",
   "plan_id": "generalized-harness-release-01",
+  "review": [],
   "plan_path": ".planning/phases/01-generalized-harness-release/01-01-PLAN.md",
   "state_path": ".planning/STATE.md",
   "state_schema_version": 2,

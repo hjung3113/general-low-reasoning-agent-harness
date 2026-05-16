@@ -31,8 +31,22 @@
     "Workflow skill gives low-reasoning models a clear next step for each phase."
   ],
   "verification": [
-    "Validate .scratch/phase-state.example.json against .scratch/phase-state.schema.json.",
-    "Review changed paths stay inside the approved ownership scope."
+    "jq . .scratch/phase-state.example.json",
+    "git diff --name-only -- .scratch/"
+  ],
+  "review": [
+    {
+      "actor": "user",
+      "at": "2026-05-11T09:00:00Z",
+      "evidence_path": "",
+      "summary": "Validate .scratch/phase-state.example.json against .scratch/phase-state.schema.json."
+    },
+    {
+      "actor": "user",
+      "at": "2026-05-11T09:00:00Z",
+      "evidence_path": "",
+      "summary": "Review changed paths stay inside the approved ownership scope."
+    }
   ],
   "notes": [
     "Roo rules and skills alone do not prevent filesystem writes or commits."

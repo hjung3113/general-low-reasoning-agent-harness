@@ -68,6 +68,7 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(roadmap_state_doctor_findings(root))
     findings.extend(phase_state_path_doctor_findings(root))
     findings.extend(verification_contract_doctor_findings(root))
+    findings.extend(review_evidence_path_doctor_findings(root))
     findings.extend(installed_scope_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
@@ -235,6 +236,46 @@ def verification_contract_doctor_findings(root: Path) -> list[DoctorFinding]:
                 evidence=issue["command"],
             )
         )
+    return findings
+
+
+def review_evidence_path_doctor_findings(root: Path) -> list[DoctorFinding]:
+    """T0-4 (ADR-004): warn when ``review[i].evidence_path == ""``.
+
+    Non-failing finding. The schema accepts the empty-string sentinel so the
+    T0-4 migrator can produce valid output for soft-prefix entries it
+    relocates from ``verification``; this finding prompts maintainers to
+    backfill the path manually.
+    """
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return []
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    review = state.get("review") or []
+    if not isinstance(review, list):
+        return []
+    findings: list[DoctorFinding] = []
+    for index, entry in enumerate(review):
+        if not isinstance(entry, dict):
+            continue
+        ev = entry.get("evidence_path")
+        if ev == "":
+            actor = entry.get("actor", "?")
+            findings.append(
+                DoctorFinding(
+                    severity="P3",
+                    code="review_evidence_path_empty",
+                    path=".scratch/phase-state.json",
+                    cause=f"review[{index}] (actor={actor!r}) has empty evidence_path.",
+                    impact="Reviewers cannot audit which artifact supports the human evidence; "
+                           "the T0-4 migrator leaves this empty when it relocates a soft-prefix verification entry.",
+                    fix="Backfill review[{}].evidence_path with the URL or repo-relative path of the supporting artifact.".format(index),
+                    evidence=f"review[{index}].evidence_path=''",
+                )
+            )
     return findings
 
 
