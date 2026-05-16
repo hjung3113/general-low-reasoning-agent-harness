@@ -407,6 +407,32 @@ class StateMigrateResumeDirectionTests(unittest.TestCase):
             self.assertIn("direction", str(ctx.exception))
 
 
+class StateMigrateIdempotenceMessageTests(unittest.TestCase):
+    """T0-1 CM4: byte-equal short-circuit must announce itself on stderr."""
+
+    def test_forward_idempotence_prints_message(self) -> None:
+        import io
+        import contextlib
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups = tmp / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            target = tmp / "phase-state.json"
+            # Write the post-forward (v2) canonical bytes; running --forward
+            # on this is the no-op path.
+            target.write_bytes(_read_golden_bytes())
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                state_migrate.migrate_file(
+                    target, direction="forward", backups_dir=backups,
+                )
+            out = buf.getvalue()
+            self.assertIn("already at v2", out)
+            self.assertIn("no action", out)
+            # No .bak should have been created.
+            self.assertEqual(list(backups.glob("*.bak")), [])
+
+
 class StateMigrateCLITests(unittest.TestCase):
     def test_cli_forward_dry_run_on_input_fixture(self) -> None:
         """migrate_state.py --forward --dry-run runs and prints expected JSON.
