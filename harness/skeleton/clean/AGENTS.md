@@ -2,9 +2,13 @@
 
 Project-local workflow skills live under `.agents/skills/` as composable plugins and under adapter-owned folders for client-specific skills. Keep project-specific skills in the target repository instead of installing them globally.
 
+## Running Referenced Scripts
+
+When a skill, command, mode, or rule names a script (for example `python3 scripts/foo.py` or `bash scripts/bar.sh`), execute it with the Bash tool and read its stdout/stderr. Do NOT open the script with Read or any file-viewing tool to infer what it does — its output is the contract, the source is not. Only inspect the source if execution fails and you need to debug it.
+
 ## Planning State
 
-Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Start with `python3 scripts/show_phase_status.py` when available — execute it via Bash and read its output; do not Read the script file itself. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, and setup changes are allowed only when explicitly requested.
 
