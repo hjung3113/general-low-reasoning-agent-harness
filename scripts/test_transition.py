@@ -39,11 +39,15 @@ class TransitionMachineTests(unittest.TestCase):
 
     # ---------------- T-23: undefined pairs reject exit 2 ----------------
     def test_transition_table_undefined_pairs_reject_with_exit_2(self) -> None:
+        # Deviation from plan T-23 list: the plan's example list included
+        # ("done", "execute") as "clearly-undefined", but ADR-001 Decision §
+        # "Transition state machine" explicitly marks ``done -> execute`` as
+        # legal with ``(reset, --reset-approval)``. ADR is authoritative;
+        # remove that pair and keep the truly-undefined ones.
         undefined_cases = [
             ("discuss", "execute"),
             ("discuss", "done"),
             ("plan", "done"),
-            ("done", "execute"),
         ]
         for from_phase, to_phase in undefined_cases:
             with self.subTest(from_phase=from_phase, to_phase=to_phase):
