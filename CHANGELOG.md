@@ -164,6 +164,18 @@ All notable changes to this harness.
   documented to cover `.harness/audit.log`, `.harness/audit.log.*`,
   `.harness/audit.overflow/`, and `.harness/session.lock`. The
   `.harness/backups/` row is owned by T0-5.
+- **L20 — SKILL surface CLI alignment (T1-S).** Adapter command files
+  (`.roo/commands/phase-*.md`, `.roo/commands/done.md`,
+  `.opencode/commands/{discuss,plan,execute,done}.md`) and the 10
+  `.roo/skills/workflow-*/SKILL.md` files now instruct the agent to
+  advance the lifecycle via `python3 scripts/harness.py phase set <X>`
+  and `python3 scripts/harness.py phase approve` (ADR-003a Verbs 1+2)
+  instead of direct-editing `.scratch/phase-state.json`.
+  `.roo/commands/done.md` is added per CONTRACT-PIN §5.2 (adapter
+  parity gap closed). The G3-A canonical `phase=done` few-shot is
+  anchored in `.roo/skills/workflow-phase-gate/SKILL.md`; other
+  SKILLs reference it by path rather than duplicating the JSON.
+  No code or schema changes; surface-touch only.
 
 Note: this slice preserves the `## Unreleased (develop)` heading verbatim;
 normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
