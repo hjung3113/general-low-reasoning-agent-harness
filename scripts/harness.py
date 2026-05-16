@@ -460,6 +460,48 @@ def run(argv: list[str] | None = None) -> int:
     migrate_state_p.add_argument("--dry-run", action="store_true",
                                  help="Print canonical transformed output to stdout; no disk mutation.")
 
+    # ----- phase lifecycle verbs (ADR-003a Artifact 1, T0-3) -----
+    phase_parser = subparsers.add_parser(
+        "phase",
+        help="Phase lifecycle verbs (ADR-003a Artifact 1).",
+    )
+    phase_sub = phase_parser.add_subparsers(dest="phase_command", required=True)
+
+    p_set = phase_sub.add_parser(
+        "set", help="Set current phase (ADR-001 transition table)."
+    )
+    p_set.add_argument(
+        "phase", choices=["discuss", "plan", "execute", "done"]
+    )
+    p_set.add_argument("--plan-id", default=None)
+    p_set.add_argument("--summary", default=None)
+    p_set.add_argument("--reset-approval", action="store_true")
+    p_set.add_argument("--stdin-json", action="store_true")
+
+    p_approve = phase_sub.add_parser(
+        "approve", help="Approve current phase (ADR-003a verb 2)."
+    )
+    p_approve.add_argument("--by", default=None)
+    p_approve.add_argument("--at", default=None)
+    p_approve.add_argument("--stdin-json", action="store_true")
+
+    # ----- session operational verbs (ADR-003a verb 3, T0-3) -----
+    session_parser = subparsers.add_parser(
+        "session",
+        help="Session operational verbs (ADR-003a verb 3).",
+    )
+    session_sub = session_parser.add_subparsers(
+        dest="session_command", required=True
+    )
+    s_unlock = session_sub.add_parser(
+        "unlock", help="Remove a stale session lockfile (G1-B recovery)."
+    )
+    s_unlock.add_argument("--force", action="store_true")
+    s_unlock.add_argument(
+        "--print", dest="print_only", action="store_true",
+        help="Print the lockfile payload and exit 0 without removing.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -569,6 +611,18 @@ def run(argv: list[str] | None = None) -> int:
                 forwarded.append("--dry-run")
             return _migrate_state.main(forwarded)
         raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
+    if args.command == "phase":
+        from lib.phase_cli import cmd_phase_set, cmd_phase_approve
+        if args.phase_command == "set":
+            return cmd_phase_set(args)
+        if args.phase_command == "approve":
+            return cmd_phase_approve(args)
+        raise AssertionError(f"Unhandled phase subcommand: {args.phase_command}")
+    if args.command == "session":
+        from lib.phase_cli import cmd_session_unlock
+        if args.session_command == "unlock":
+            return cmd_session_unlock(args)
+        raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
