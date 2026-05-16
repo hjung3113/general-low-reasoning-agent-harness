@@ -289,6 +289,39 @@ class RapidRepairUniquenessTests(unittest.TestCase):
         )
 
 
+class RetentionCapE2ETests(unittest.TestCase):
+    """T0-5-M2: seeding 10 fake `.bak` siblings + a repair must leave 10.
+
+    Validates retention from the repair() surface (not just lib.backups
+    directly), confirming the default retention=10 is wired end-to-end.
+    """
+
+    def test_repair_prunes_to_retention_cap(self):
+        root = _make_root(
+            phase_state={
+                "phase": "discuss",
+                "current_checkpoint": "CP-09-99",
+                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+            }
+        )
+        backups_dir = root / ".harness" / "backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        # The repair() targets STATE.md (only the state-current block changes
+        # in this fixture); seed 10 `.bak` siblings for that basename so the
+        # 11th (the one repair writes) triggers exactly one eviction.
+        for i in range(10):
+            ts = f"20260101T0000{i:02d}000000000Z"
+            (backups_dir / f"STATE.md.pre-repair.{ts}.0.bak").write_bytes(
+                f"seed-{i}".encode()
+            )
+        repair(root)
+        remaining = sorted(backups_dir.glob("STATE.md.pre-repair.*.bak"))
+        self.assertEqual(
+            len(remaining), 10,
+            f"expected 10 after prune, got {len(remaining)}: {[p.name for p in remaining]}",
+        )
+
+
 class CanonicalPayloadTests(unittest.TestCase):
     def test_canonical_payload_threads_paused_phases(self) -> None:
         payload = canonical_state_current_payload(
