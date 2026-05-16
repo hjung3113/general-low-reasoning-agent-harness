@@ -409,6 +409,39 @@ class TestAtomicAppendLogErrors(unittest.TestCase):
             self.assertNotIn("should-fail", contents)
 
 
+class TestAtomicAppendLogSymlinkRefusal(unittest.TestCase):
+    def test_atomic_append_log_refuses_symlink(self) -> None:
+        """If the audit log path is a symlink, open() must refuse (O_NOFOLLOW).
+
+        The symlink target file must remain untouched.
+        """
+        import os as _os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_target = Path(tmpdir) / "victim.txt"
+            real_target.write_text("UNTOUCHED", encoding="utf-8")
+
+            log_path = Path(tmpdir) / "audit.log"
+            _os.symlink(str(real_target), str(log_path))
+            self.assertTrue(log_path.is_symlink())
+
+            with self.assertRaises(Exception) as ctx:
+                atomic_io.atomic_append_log(log_path, "should-fail")
+            # Must be either AuditLogRefusedError (preferred) or OSError(ELOOP).
+            exc = ctx.exception
+            cls_name = type(exc).__name__
+            self.assertTrue(
+                cls_name == "AuditLogRefusedError" or isinstance(exc, OSError),
+                f"unexpected exception type: {cls_name}: {exc}",
+            )
+
+            # Symlink target byte-identical.
+            self.assertEqual(real_target.read_text(encoding="utf-8"), "UNTOUCHED")
+            # Symlink itself still a symlink (not replaced by a regular file).
+            self.assertTrue(log_path.is_symlink())
+
+
 class TestAtomicAppendLogConcurrency(unittest.TestCase):
     def test_atomic_append_log_concurrent_writes_dont_tear(self) -> None:
         """N=8 threads x K=50 iterations each — every line structurally intact."""
