@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness
+import install_harness
 
 
 class HarnessToolTests(unittest.TestCase):
@@ -495,6 +496,107 @@ class HarnessToolTests(unittest.TestCase):
             self.assertEqual("2.0.0", installed["version"])
             self.assertEqual([], installed["adapters"])
             self.assertEqual(["workflow-core", "workflow-tdd"], installed["packs"])
+
+    def test_install_harness_profile_presets_map_to_expected_packs(self) -> None:
+        pack_names = harness.available_scopes(harness.repo_root())["packs"]
+
+        _, dotnet_packs = install_harness.resolve_profile_preset("dotnet-etl", pack_names)
+        _, python_packs = install_harness.resolve_profile_preset("python-etl", pack_names)
+        _, web_packs = install_harness.resolve_profile_preset("react-tailwind-typescript-web", pack_names)
+        _, full_packs = install_harness.resolve_profile_preset("full", pack_names)
+
+        self.assertEqual(
+            ["workflow-core", "tech-csharp", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
+            dotnet_packs,
+        )
+        self.assertNotIn("tech-mssql", dotnet_packs)
+        self.assertNotIn("workflow-db-context", dotnet_packs)
+        self.assertEqual(
+            ["workflow-core", "tech-python", "workflow-etl", "workflow-data-processing", "workflow-tdd"],
+            python_packs,
+        )
+        self.assertEqual(
+            [
+                "workflow-core",
+                "tech-react",
+                "tech-typescript",
+                "tech-tailwind",
+                "workflow-web-development",
+                "workflow-tdd",
+            ],
+            web_packs,
+        )
+        self.assertEqual(pack_names, full_packs)
+
+    def test_install_harness_pack_selection_uses_shown_numbers_only(self) -> None:
+        self.assertEqual(
+            ["workflow-security-review", "tech-mssql"],
+            install_harness.parse_pack_selection("1,tech-mssql", ["workflow-security-review", "tech-mssql"]),
+        )
+        self.assertEqual([], install_harness.parse_pack_selection("none", ["workflow-security-review"]))
+        self.assertEqual("both", install_harness.normalize_adapter_choice("roo,opencode"))
+
+    def test_install_harness_interactive_requires_existing_absolute_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            target.mkdir()
+            missing = Path(tmpdir) / "missing"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/install_harness.py"),
+                    "--interactive",
+                ],
+                input=f"relative-target\n{missing}\n{target}\n1\n2\nnone\nyes\n",
+                cwd=harness.repo_root(),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("Target path must be absolute. Try again.", result.stdout)
+            self.assertIn("Target path does not exist. Create it first, then try again.", result.stdout)
+            self.assertIn(f"--target {target} --dry-run", result.stdout)
+            self.assertIn("target=" + str(target.resolve()), result.stdout)
+
+    def test_install_harness_interactive_merges_profile_packs_with_extra_packs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            target.mkdir()
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(harness.repo_root() / "scripts/install_harness.py"),
+                    "--interactive",
+                    "--adapters",
+                    "roo,opencode",
+                    "--packs",
+                    "workflow-security-review",
+                ],
+                input=f"{target}\n\n4\n\nno\n",
+                cwd=harness.repo_root(),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(["opencode", "roo"], installed["adapters"])
+            self.assertEqual(
+                [
+                    "tech-react",
+                    "tech-tailwind",
+                    "tech-typescript",
+                    "workflow-core",
+                    "workflow-security-review",
+                    "workflow-tdd",
+                    "workflow-web-development",
+                ],
+                installed["packs"],
+            )
 
     def test_uninstall_harness_removes_selected_adapter_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2684,8 +2786,9 @@ progress:
             "python3 scripts/harness.py check --worktree",
             "python3 scripts/release_smoke_test.py",
             "push 전에 서브에이전트 적대적 리뷰를 해줘",
-            "--packs workflow-core,tech-csharp,tech-mssql,workflow-etl,workflow-db-context",
-            "--packs workflow-core,tech-react,tech-typescript,tech-tailwind,workflow-web-development",
+            "installer preset `dotnet-etl`",
+            "installer preset `react-tailwind-typescript-web`",
+            "`tech-mssql` 또는 `tech-postgresql`",
             "workflow-tdd",
             "workflow-debugging",
             "workflow-code-review",
