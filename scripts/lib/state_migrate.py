@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Optional
 
 from .atomic_io import atomic_write_text
+from . import backups as _backups_mod
 
 
 MIGRATOR_VERSION = "t0-1-v1"
@@ -186,8 +187,15 @@ def _sha256(data: bytes) -> str:
 
 
 def _write_bak_excl(bak_path: Path, content: bytes) -> None:
-    """Write ``content`` to ``bak_path`` with ``O_EXCL`` semantics."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    """Thin wrapper retained for back-compat; delegates to ``lib.backups``."""
+    # Reuse the hardened helper (O_EXCL + O_NOFOLLOW + 0o700 dir mode + retries).
+    # We pre-mkdir to keep mode semantics consistent with the original API.
+    bak_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(bak_path.parent, 0o700)
+    except OSError:
+        pass
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(str(bak_path), flags, 0o644)
     except FileExistsError:
@@ -289,6 +297,9 @@ def migrate_file(
         os.unlink(sidecar_path)
     except FileNotFoundError:  # pragma: no cover — concurrent cleanup
         pass
+
+    # Retention prune (CONTRACT-PIN §6): keep last 10 .bak per target basename.
+    _backups_mod._prune_old_backups(target.name, backups_dir, 10)
 
 
 def _find_sidecar_for(target: Path, backups_dir: Path) -> Optional[Path]:
