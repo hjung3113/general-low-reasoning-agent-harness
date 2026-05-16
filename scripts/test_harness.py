@@ -1332,7 +1332,7 @@ progress:
             readme = (target / "README.md").read_text(encoding="utf-8")
             state = (target / ".planning/STATE.md").read_text(encoding="utf-8")
             self.assertIn("Fresh target first action", readme)
-            self.assertIn("Fresh target first action", state)
+            self.assertIn("python3 scripts/harness.py state show", state)
             for earlier, later in (
                 ("`AGENTS.md`", "`.planning/STATE.md`"),
                 ("`.planning/STATE.md`", "`.planning/ROADMAP.md`"),
@@ -3355,6 +3355,20 @@ class StateSubcommandTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         roadmap = (root / ".planning/ROADMAP.md").read_text(encoding="utf-8")
         self.assertIn("HARNESS:BEGIN managed:roadmap-phases", roadmap)
+
+
+class SkeletonManagedBlockTests(unittest.TestCase):
+    def test_skeleton_roadmap_has_managed_block(self):
+        from pathlib import Path
+        text = Path("harness/skeleton/clean/.planning/ROADMAP.md").read_text(encoding="utf-8")
+        self.assertIn("<!-- HARNESS:BEGIN managed:roadmap-phases v1 -->", text)
+        self.assertIn("<!-- HARNESS:END managed:roadmap-phases -->", text)
+
+    def test_skeleton_state_has_managed_block(self):
+        from pathlib import Path
+        text = Path("harness/skeleton/clean/.planning/STATE.md").read_text(encoding="utf-8")
+        self.assertIn("<!-- HARNESS:BEGIN managed:state-current v1 -->", text)
+        self.assertIn("<!-- HARNESS:END managed:state-current -->", text)
 
 
 if __name__ == "__main__":
