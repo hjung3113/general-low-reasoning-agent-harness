@@ -469,6 +469,61 @@ class TestAtomicAppendLogCloexec(unittest.TestCase):
                 _os.close(fd)
 
 
+class TestAtomicAppendLogContention(unittest.TestCase):
+    def test_atomic_append_log_raises_on_lock_contention(self) -> None:
+        """If another process/thread holds an exclusive flock, atomic_append_log
+        must raise AuditLogContendedError immediately (LOCK_NB), not block.
+        """
+        import fcntl as _fcntl
+        import tempfile
+        import threading
+        import time
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            target.write_text("", encoding="utf-8")
+
+            # Acquire LOCK_EX in this thread on a separate fd.
+            holder_fd = atomic_io._open_audit_log(target)  # type: ignore[attr-defined]
+            _fcntl.flock(holder_fd, _fcntl.LOCK_EX)
+
+            release = threading.Event()
+            outcome: dict[str, object] = {}
+
+            def attempt() -> None:
+                start = time.monotonic()
+                try:
+                    atomic_io.atomic_append_log(target, "contender")
+                except Exception as e:  # noqa: BLE001
+                    outcome["exc"] = e
+                outcome["elapsed"] = time.monotonic() - start
+
+            t = threading.Thread(target=attempt, daemon=True)
+            t.start()
+            t.join(timeout=2.0)
+            try:
+                self.assertFalse(t.is_alive(), "append blocked instead of raising")
+                exc = outcome.get("exc")
+                self.assertIsNotNone(exc, "append unexpectedly succeeded")
+                # Must be AuditLogContendedError (subclass of OSError).
+                self.assertEqual(
+                    type(exc).__name__,
+                    "AuditLogContendedError",
+                    f"unexpected exception type: {type(exc).__name__}: {exc}",
+                )
+                # Should have returned promptly (not blocked).
+                self.assertLess(
+                    outcome.get("elapsed", 99),  # type: ignore[arg-type]
+                    1.0,
+                    "append should have returned immediately, not blocked",
+                )
+            finally:
+                _fcntl.flock(holder_fd, _fcntl.LOCK_UN)
+                import os as _os
+                _os.close(holder_fd)
+                release.set()
+
+
 class TestAtomicAppendLogConcurrency(unittest.TestCase):
     def test_atomic_append_log_concurrent_writes_dont_tear(self) -> None:
         """N=8 threads x K=50 iterations each — every line structurally intact."""
