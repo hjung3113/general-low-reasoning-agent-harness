@@ -699,6 +699,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/version.py",
+      "source": "scripts/lib/version.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_harness.py",
       "source": "scripts/target_smoke_test.py",
       "policy": "harness-owned"
