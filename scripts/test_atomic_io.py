@@ -243,5 +243,82 @@ class TestAtomicAppendLogErrors(unittest.TestCase):
             self.assertNotIn("should-fail", contents)
 
 
+class TestAtomicAppendLogConcurrency(unittest.TestCase):
+    def test_atomic_append_log_concurrent_writes_dont_tear(self) -> None:
+        """N=8 threads x K=50 iterations each — every line structurally intact."""
+        import tempfile
+        import threading
+
+        N = 8
+        K = 50
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+
+            def worker(tag: int) -> None:
+                for i in range(K):
+                    # Each line uniquely tagged + checksum boundary tokens.
+                    line = f"<tag={tag:02d}><i={i:03d}>" + ("." * 30) + "<end>"
+                    atomic_io.atomic_append_log(target, line)
+
+            threads = [threading.Thread(target=worker, args=(t,)) for t in range(N)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            lines = target.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), N * K, f"expected {N*K} lines, got {len(lines)}")
+            # Every line is structurally intact: starts with <tag= and ends with <end>.
+            for ln in lines:
+                self.assertTrue(
+                    ln.startswith("<tag=") and ln.endswith("<end>"),
+                    f"torn line detected: {ln!r}",
+                )
+
+    def test_atomic_append_log_subprocess_sigkill_preserves_committed_lines(self) -> None:
+        """Out-of-process integration test: SIGKILL mid-batch leaves valid lines parseable.
+
+        Skipped on platforms without fork().
+        """
+        import os as _os
+        import platform
+        import signal
+        import subprocess
+        import sys as _sys
+        import tempfile
+        import time
+
+        if platform.system() == "Windows":  # pragma: no cover
+            self.skipTest("fork()/SIGKILL not available on Windows")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            scripts_dir = Path(__file__).resolve().parent
+            child_prog = (
+                "import sys, time\n"
+                f"sys.path.insert(0, {str(scripts_dir)!r})\n"
+                "from lib import atomic_io\n"
+                "from pathlib import Path\n"
+                f"target = Path({str(target)!r})\n"
+                "for i in range(10000):\n"
+                "    atomic_io.atomic_append_log(target, f'<i={i:05d}><end>')\n"
+            )
+            proc = subprocess.Popen([_sys.executable, "-c", child_prog])
+            # Let the child make some progress.
+            time.sleep(0.3)
+            proc.send_signal(signal.SIGKILL)
+            proc.wait()
+
+            self.assertTrue(target.exists(), "child must have written at least once before SIGKILL")
+            lines = target.read_text(encoding="utf-8").splitlines()
+            self.assertGreater(len(lines), 0)
+            for ln in lines:
+                self.assertTrue(
+                    ln.startswith("<i=") and ln.endswith("<end>"),
+                    f"torn line after SIGKILL: {ln!r}",
+                )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
