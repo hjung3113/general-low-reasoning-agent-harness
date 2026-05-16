@@ -7,13 +7,12 @@ from pathlib import Path
 from typing import Iterable
 
 from lib.roadmap_state import normalize_path
+from lib.state_diagnostics import load_state_json
 
 
 def check_changed_paths(target: Path, base: str) -> None:
-    import json
-
     state_path = target / ".scratch/phase-state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state = load_state_json(state_path)
     if not changed_path_gate_allows_state(state):
         raise SystemExit("Changed-path check requires phase=execute with approved=true or phase=done with approved=false")
     changed = git_changed_paths(target, base)
@@ -27,9 +26,7 @@ def check_changed_paths(target: Path, base: str) -> None:
 
 
 def check_worktree_paths(target: Path) -> None:
-    import json
-
-    state = json.loads((target / ".scratch/phase-state.json").read_text(encoding="utf-8"))
+    state = load_state_json(target / ".scratch/phase-state.json")
     if not changed_path_gate_allows_state(state):
         raise SystemExit("Worktree changed-path check requires phase=execute with approved=true or phase=done with approved=false")
     changed = sorted(set(git_worktree_paths(target)))

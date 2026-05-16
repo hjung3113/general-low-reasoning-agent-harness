@@ -724,6 +724,16 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/exitcodes.py",
+      "source": "scripts/lib/exitcodes.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_diagnostics.py",
+      "source": "scripts/lib/state_diagnostics.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/operational_paths.py",
       "source": "scripts/lib/operational_paths.py",
       "policy": "harness-owned"
