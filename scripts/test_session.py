@@ -15,7 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lib.session import acquire_lock, release_lock, read_lock_payload, is_pid_alive, LockfileExists  # noqa: E402
+from lib.session import acquire_lock, release_lock, read_lock_payload, is_pid_alive, LockfileExists, read_boot_id  # noqa: E402
+from lib import session as session_mod  # noqa: E402
 
 
 class LockfileTests(unittest.TestCase):
@@ -70,6 +71,34 @@ class LockfileTests(unittest.TestCase):
         proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertFalse(self.lock_path.exists())
+
+    def test_read_boot_id_linux_unchanged(self) -> None:
+        """M1: Linux path still reads /proc/sys/kernel/random/boot_id."""
+        from unittest import mock
+        with mock.patch.object(session_mod.platform, "system", return_value="Linux"):
+            with mock.patch.object(
+                session_mod.Path, "read_text", return_value="deadbeef-1234\n"
+            ):
+                self.assertEqual(read_boot_id(), "deadbeef-1234")
+
+    def test_read_boot_id_macos_returns_sysctl_parsed(self) -> None:
+        """M1: macOS parses 'kern.boottime' sysctl into darwin-boot-{sec}."""
+        from unittest import mock
+
+        class FakeCompleted:
+            returncode = 0
+            stdout = "{ sec = 1777386969, usec = 3543 } Tue Apr 28 23:36:09 2026\n"
+
+        with mock.patch.object(session_mod.platform, "system", return_value="Darwin"):
+            with mock.patch.object(
+                session_mod.subprocess, "run", return_value=FakeCompleted()
+            ):
+                self.assertEqual(read_boot_id(), "darwin-boot-1777386969")
+
+    def test_read_boot_id_other_returns_none(self) -> None:
+        from unittest import mock
+        with mock.patch.object(session_mod.platform, "system", return_value="FreeBSD"):
+            self.assertIsNone(read_boot_id())
 
     def test_sigint_during_acquire_releases_lock(self) -> None:
         script = (
