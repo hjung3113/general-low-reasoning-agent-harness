@@ -624,28 +624,133 @@ class TestGrepGate(unittest.TestCase):
 
     @staticmethod
     def _gate_scan(scripts_root: Path, tracked_paths: tuple[str, ...]) -> list[str]:
+        """Two-tier scan: line regex + AST walk with local-name aliasing.
+
+        Limitation: dynamic path computation (f-strings, str.format, joins,
+        function-returned paths) evades the AST tier. Such cases require
+        manual review and are out of scope for the automated gate.
+        """
+        import ast
         import re
 
-        pattern = re.compile(r"\.write_text\(")
+        # Tier 1: single-line regex — fast and catches the common forms.
+        # Matches .write_text(, .write_bytes(, or open(... "w" ...) / 'w'.
+        line_pattern = re.compile(
+            r"(\.write_text\(|\.write_bytes\(|open\([^)]+[\"\']w[\"\'])"
+        )
         violations: list[str] = []
+
         for py_path in scripts_root.rglob("*.py"):
             # Skip test files: they write fixture state under tempdirs, NOT
             # the real on-disk state paths. The atomicity contract applies
             # only to production writers (scripts/lib/*.py and CLI entries).
-            # The synthetic-fixture test (test 13) exercises the gate against
-            # a planted file in a temp scripts/ tree to prove the gate works.
+            # The synthetic-fixture tests exercise the gate against planted
+            # files in a temp scripts/ tree to prove the gate works.
             if py_path.name.startswith("test_"):
                 continue
             try:
                 text = py_path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
+
+            # Tier 1: line regex.
+            line_hits: set[int] = set()
             for lineno, line in enumerate(text.splitlines(), start=1):
-                if not pattern.search(line):
+                if not line_pattern.search(line):
                     continue
                 for tracked in tracked_paths:
                     if tracked in line:
-                        violations.append(f"{py_path}:{lineno}: {line.strip()} (matches {tracked})")
+                        violations.append(
+                            f"{py_path}:{lineno}: {line.strip()} (matches {tracked})"
+                        )
+                        line_hits.add(lineno)
+
+            # Tier 2: AST with local-name aliasing — catches two-line forms
+            # like ``p = Path("X")`` followed by ``p.write_text(...)``.
+            try:
+                tree = ast.parse(text, filename=str(py_path))
+            except SyntaxError:
+                continue
+
+            # Local-name → string-literal map (top-level / function-scoped
+            # simple assignments only — no closure tracking).
+            #
+            # We collect for the whole module: ``name = "lit"`` or
+            # ``name = Path("lit")`` mappings.
+            name_to_lit: dict[str, str] = {}
+
+            def _string_literal_of(node: ast.AST) -> str | None:
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    return node.value
+                # Path("lit"), PurePath("lit"), pathlib.Path("lit"), etc.
+                if isinstance(node, ast.Call):
+                    fname = ""
+                    if isinstance(node.func, ast.Name):
+                        fname = node.func.id
+                    elif isinstance(node.func, ast.Attribute):
+                        fname = node.func.attr
+                    if fname in {"Path", "PurePath", "PosixPath", "WindowsPath"}:
+                        if node.args and isinstance(node.args[0], ast.Constant) \
+                                and isinstance(node.args[0].value, str):
+                            return node.args[0].value
+                return None
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                        and isinstance(node.targets[0], ast.Name):
+                    lit = _string_literal_of(node.value)
+                    if lit is not None:
+                        name_to_lit[node.targets[0].id] = lit
+
+            def _record(lineno: int, snippet: str, tracked: str) -> None:
+                if lineno in line_hits:
+                    return  # already reported by tier 1
+                violations.append(
+                    f"{py_path}:{lineno}: {snippet} (matches {tracked})"
+                )
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                # Case A: <expr>.write_text(...) or .write_bytes(...)
+                if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                    "write_text", "write_bytes"
+                }:
+                    receiver = node.func.value
+                    lit: str | None = None
+                    if isinstance(receiver, ast.Name):
+                        lit = name_to_lit.get(receiver.id)
+                    else:
+                        lit = _string_literal_of(receiver)
+                    if lit is not None:
+                        for tracked in tracked_paths:
+                            if tracked in lit:
+                                _record(
+                                    node.lineno,
+                                    f"<AST> {receiver!r}.{node.func.attr}(...)",
+                                    tracked,
+                                )
+                # Case B: open(<expr>, "w" ...)
+                if isinstance(node.func, ast.Name) and node.func.id == "open" \
+                        and len(node.args) >= 2:
+                    mode_arg = node.args[1]
+                    if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str) \
+                            and "w" in mode_arg.value:
+                        path_arg = node.args[0]
+                        lit2: str | None = None
+                        if isinstance(path_arg, ast.Name):
+                            lit2 = name_to_lit.get(path_arg.id)
+                        else:
+                            lit2 = _string_literal_of(path_arg)
+                        if lit2 is not None:
+                            for tracked in tracked_paths:
+                                if tracked in lit2:
+                                    _record(
+                                        node.lineno,
+                                        f"<AST> open({lit2!r}, {mode_arg.value!r})",
+                                        tracked,
+                                    )
+
         return violations
 
     def test_grep_gate_clean_against_live_tree(self) -> None:
