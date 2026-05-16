@@ -32,9 +32,10 @@ Before the owning mode commits:
 1. Run `python3 scripts/harness.py check --worktree`.
 2. On exit 4 (scope violation): the command names every violating file
    and points at `docs/protocol-spec.md#scope-enforcement`. Reduce the
-   commit (e.g. `git restore --staged <file>`) OR edit
-   `.scratch/phase-state.json` `allowed_paths`. Do NOT use
-   `git commit --no-verify`.
+   commit (e.g. `git restore --staged <file>`) OR return to the `plan`
+   phase via `harness phase set plan --reset-approval`, expand
+   `allowed_paths` through the planning workflow, then re-approve and
+   re-execute. Do NOT use `git commit --no-verify`.
 3. On exit 0: proceed with the commit.
 
 The pre-commit hook installable via `python3 scripts/harness.py install

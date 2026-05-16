@@ -273,6 +273,42 @@ class E2ECommitTests(unittest.TestCase):
         )
 
 
+class AdapterRemediationCliRuleTests(unittest.TestCase):
+    """T1-S-M1: the `execute` adapter commands MUST NOT recommend direct
+    edits to `.scratch/phase-state.json` for scope remediation — that
+    contradicts the spec rule "advance via CLI verbs only". Instead they
+    should route operators back through the plan→approve→execute flow.
+    """
+
+    EXECUTE_FILES = (
+        REPO_ROOT / ".opencode/commands/execute.md",
+        REPO_ROOT / ".roo/commands/phase-execute.md",
+    )
+
+    def test_no_execute_command_recommends_direct_state_edit(self):
+        import re
+        # Matches phrases like "edit `.scratch/phase-state.json`" or
+        # "edit .scratch/phase-state.json `allowed_paths`".
+        pattern = re.compile(r"edit\s+`?\.scratch/phase-state\.json`?", re.I)
+        for path in self.EXECUTE_FILES:
+            with self.subTest(path=str(path)):
+                body = path.read_text()
+                # Strip lines that are explicit "do NOT edit" prohibitions.
+                clean_lines = []
+                for line in body.splitlines():
+                    lowered = line.lower()
+                    if "do not" in lowered and "edit" in lowered:
+                        continue
+                    clean_lines.append(line)
+                clean = "\n".join(clean_lines)
+                matches = pattern.findall(clean)
+                self.assertEqual(
+                    matches, [],
+                    f"{path}: contains a recommendation to edit "
+                    f"phase-state.json directly: {matches!r}",
+                )
+
+
 class HookHarnessMissingTests(unittest.TestCase):
     """T1-1-C2: hook hard-fails when harness CLI cannot be located.
 

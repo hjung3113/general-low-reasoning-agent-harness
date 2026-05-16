@@ -32,7 +32,9 @@ Stop if requested work falls outside `allowed_paths` or if phase, checkpoint, pl
 2. If exit code is 4 (scope violation): the command names the violating
    files and prints a remediation block. Either
    (a) `git restore --staged <file>` and exclude it from the commit, OR
-   (b) edit `.scratch/phase-state.json` `allowed_paths` (and re-run).
+   (b) return to the `plan` phase via
+       `harness phase set plan --reset-approval`, expand `allowed_paths`
+       through the planning workflow, then re-approve and re-execute.
    Do NOT bypass with `git commit --no-verify`.
 3. If exit code is 0: proceed with `git commit`.
 
