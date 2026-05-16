@@ -12,6 +12,8 @@ Start with `python3 scripts/show_phase_status.py` when available — execute it 
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, and setup changes are allowed only when explicitly requested.
 
+On pre-commit exit 4 (scope violation): see `docs/protocol-spec.md#scope-enforcement`.
+
 ### Managed marker blocks
 
 `.planning/ROADMAP.md` and `.planning/STATE.md` contain regions wrapped in

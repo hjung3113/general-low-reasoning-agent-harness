@@ -353,3 +353,39 @@ First-write / empty-log cases are suppressed.
 ## Verification Allowlist
 
 This anchor is owned by T0-4. See the `verification` field documentation under "Field Ownership". The seven allowed verb prefixes are: `python3 `, `git `, `jq `, `npx `, `pytest `, `harness `, `make `.
+
+## Scope Enforcement
+
+`python3 scripts/harness.py check --worktree` is the single enforcement primitive for `allowed_paths` / `blocked_paths` (anchor: `#scope-enforcement`, owning slice: T1-1).
+
+Exit codes (consume from `scripts/lib/exitcodes.py`; no numeric literals in source):
+
+| Code | Meaning |
+|---|---|
+| `0` | clean tree, OR scope check not applicable in the current phase (e.g. `phase=plan`). |
+| `4` | scope violation — at least one worktree path matched `blocked_paths` or fell outside `allowed_paths`. Names every violating file. |
+| `1` | argparse / invocation error / catastrophic failure. |
+
+Pre-commit hook lifecycle:
+
+- Install: `python3 scripts/harness.py install --pre-commit --target <path>`. Writes `<target>/.git/hooks/pre-commit` (or merges into an existing user-authored hook via the `# HARNESS:scope-check-begin` / `# HARNESS:scope-check-end` marker envelope so the install is idempotent and composes with user content).
+- Uninstall: `python3 scripts/harness.py uninstall --pre-commit --target <path>`. Removes the marker envelope; deletes the hook file when nothing else remains. Manual fallback: `rm <target>/.git/hooks/pre-commit` (the installer never touches `git config core.hooksPath`).
+- Hook body: shells out to `python3 scripts/harness.py check --worktree` from the repo root resolved via `git rev-parse --show-toplevel`. When `scripts/harness.py` or `.scratch/phase-state.json` are absent (e.g. harness not installed in the target), the hook emits a non-fatal warning to stderr and exits 0 — never silently passes through without a visible reason.
+
+Failure-message contract (printed to stderr by the library on exit 4):
+
+```
+harness: scope violation (exit 4)
+Files outside allowed_paths:
+  <path1>
+  <path2>
+Remediation:
+  - Move the change out of the commit, OR
+  - Add the path/glob to .scratch/phase-state.json `allowed_paths`, OR
+  - Remove a matching entry from `blocked_paths`.
+See docs/protocol-spec.md#scope-enforcement.
+```
+
+Adapter symmetry (spec §10.4): both `.opencode/commands/execute.md` and `.roo/commands/phase-execute.md` MUST instruct the agent to run `python3 scripts/harness.py check --worktree` as a numbered pre-commit step, AND MUST NOT instruct `git commit --no-verify` to bypass exit 4. A regression in `scripts/test_hooks.py::AdapterCommandFileMirrorTests` enforces both rules.
+
+Cross-reference: ADR-003a Artifact 1 exit-code table (this slice claims row "4 — `EXIT_SCOPE_VIOLATION`", lifting the original "schema-version refusal" reservation; see ledger entry L16 in CHANGELOG and the ADR amendment commit `docs(adr): assign exit code 4 to SCOPE_VIOLATION`).
