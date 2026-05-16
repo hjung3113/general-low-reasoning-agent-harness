@@ -158,6 +158,14 @@ def uninstall(
         files.pop(path_text, None)
 
     update_installed_scopes(installed, selected)
+    residual_profiles = installed.get("profiles") or []
+    source_root_str = installed.get("source")
+    if source_root_str:
+        harness.sync_roomodes_profile_modes(
+            target=target,
+            profiles=residual_profiles,
+            source_root=Path(source_root_str),
+        )
     if remove_install_state:
         installed_path.unlink()
         harness.remove_empty_parents(installed_path.parent, target)

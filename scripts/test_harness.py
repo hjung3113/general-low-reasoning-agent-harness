@@ -3098,5 +3098,66 @@ class RoomodesWriterTests(unittest.TestCase):
             self.assertEqual([m["slug"] for m in c2.unmanaged_modes], ["my-custom-mode"])
 
 
+class RoomodesProfileSyncTests(unittest.TestCase):
+    def test_react_web_install_adds_ui_engineer(self):
+        from scripts.lib import roomodes_writer
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "react-web"],
+                check=True,
+            )
+            roomodes = json.loads((target / ".roomodes").read_text(encoding="utf-8"))
+            slugs = [m["slug"] for m in roomodes["customModes"]]
+            self.assertIn("ui-engineer", slugs)
+            self.assertEqual(slugs[:8], list(roomodes_writer.BASE_MODE_SLUGS))
+
+    def test_dotnet_etl_install_does_not_add_ui_engineer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "roo", "--profiles", "dotnet-etl"],
+                check=True,
+            )
+            roomodes = json.loads((target / ".roomodes").read_text(encoding="utf-8"))
+            slugs = [m["slug"] for m in roomodes["customModes"]]
+            self.assertNotIn("ui-engineer", slugs)
+
+    def test_opencode_only_install_does_not_create_roomodes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                 "init", "--target", str(target),
+                 "--adapters", "opencode", "--profiles", "react-web"],
+                check=True,
+            )
+            self.assertFalse((target / ".roomodes").exists())
+
+    def test_upgrade_removes_ui_engineer_when_react_web_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "proj"
+            target.mkdir()
+            subprocess.run([sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                            "init", "--target", str(target),
+                            "--adapters", "roo", "--profiles", "react-web"], check=True)
+            # confirm ui-engineer present
+            slugs_before = [m["slug"] for m in json.loads((target / ".roomodes").read_text())["customModes"]]
+            self.assertIn("ui-engineer", slugs_before)
+            # upgrade to generic
+            subprocess.run([sys.executable, str(REPO_ROOT / "scripts/harness.py"),
+                            "upgrade", "--target", str(target),
+                            "--profiles", "generic"], check=True)
+            slugs_after = [m["slug"] for m in json.loads((target / ".roomodes").read_text())["customModes"]]
+            self.assertNotIn("ui-engineer", slugs_after)
+
+
 if __name__ == "__main__":
     unittest.main()

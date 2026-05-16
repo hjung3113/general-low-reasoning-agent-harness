@@ -535,6 +535,29 @@ def run_delegated_command(command: list[str], cwd: Path) -> int:
     return 0
 
 
+def sync_roomodes_profile_modes(target: Path, profiles: Iterable[str], source_root: Path) -> None:
+    """Replace the profile-modes section of target/.roomodes with the modes
+    contributed by the currently installed profiles.
+
+    If target/.roomodes does not exist (e.g. opencode-only install) this is a
+    no-op. Profile-owned modes are read from
+    ``<source_root>/harness/profiles/<profile>/modes/*.json``.
+    """
+    from lib import roomodes_writer
+
+    roomodes_path = target / ".roomodes"
+    if not roomodes_path.exists():
+        return
+    profile_modes: list[dict] = []
+    for profile in profiles:
+        modes_dir = source_root / "harness/profiles" / profile / "modes"
+        if not modes_dir.exists():
+            continue
+        for mode_file in sorted(modes_dir.glob("*.json")):
+            profile_modes.append(json.loads(mode_file.read_text(encoding="utf-8")))
+    roomodes_writer.set_profile_modes(roomodes_path, profile_modes)
+
+
 def install(
     *,
     root: Path,
@@ -586,6 +609,7 @@ def install(
             else:
                 write_copy(source, destination)
 
+    sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
     write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
 
 
@@ -750,6 +774,11 @@ def upgrade(
     provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
+    if not dry_run:
+        sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
+        roomodes_path = target / ".roomodes"
+        if roomodes_path.exists() and isinstance(installed.get("files"), dict) and ".roomodes" in installed["files"]:
+            installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
     if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
     if dry_run:
