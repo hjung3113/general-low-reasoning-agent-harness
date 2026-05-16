@@ -95,6 +95,26 @@ class LockfileTests(unittest.TestCase):
             ):
                 self.assertEqual(read_boot_id(), "darwin-boot-1777386969")
 
+    def test_acquire_lock_unlinks_on_write_failure(self) -> None:
+        """M2: a write failure during acquire_lock must remove the partial lockfile."""
+        from unittest import mock
+
+        real_write = os.write
+        call_count = {"n": 0}
+
+        def failing_write(fd, data):
+            call_count["n"] += 1
+            raise OSError(28, "No space left on device")
+
+        with mock.patch.object(os, "write", side_effect=failing_write):
+            with self.assertRaises(OSError):
+                with acquire_lock(lock_path=self.lock_path):
+                    pass  # pragma: no cover
+        self.assertFalse(
+            self.lock_path.exists(),
+            "lockfile must be removed when payload write fails",
+        )
+
     def test_read_boot_id_other_returns_none(self) -> None:
         from unittest import mock
         with mock.patch.object(session_mod.platform, "system", return_value="FreeBSD"):
