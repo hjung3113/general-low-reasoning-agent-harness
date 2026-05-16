@@ -44,5 +44,37 @@ class TestAtomicWriteTextHappyPath(unittest.TestCase):
             self.assertEqual(leftovers, [], f"unexpected leftover files: {leftovers}")
 
 
+class TestAtomicWriteTextCrashSafety(unittest.TestCase):
+    def test_atomic_write_text_crash_between_temp_and_replace_preserves_original(self) -> None:
+        """Spec §10 mandated crash-injection test: original survives a failed os.replace."""
+        import os as _os
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            target.write_text("ORIGINAL", encoding="utf-8")
+
+            real_replace = _os.replace
+
+            def boom(src, dst, *a, **kw):
+                # Simulate crash after fsync but before replace lands.
+                raise OSError("simulated crash between temp and replace")
+
+            with mock.patch("lib.atomic_io.os.replace", side_effect=boom):
+                with self.assertRaises(OSError):
+                    atomic_io.atomic_write_text(target, "NEW")
+
+            # Original file byte-identical.
+            self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL")
+            # Orphan tempfile cleaned up.
+            leftovers = [
+                p.name for p in Path(tmpdir).iterdir() if p.name != "out.txt"
+            ]
+            self.assertEqual(leftovers, [], f"orphan tempfile not cleaned up: {leftovers}")
+            # Silence linter for unused alias.
+            del real_replace
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
