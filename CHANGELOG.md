@@ -28,6 +28,26 @@ All notable changes to this harness.
   existing `.bak` (`O_EXCL`); `--resume` reads the sidecar
   `.harness/backups/<basename>.pre-repair.<...>.bak.resume.json` and either
   re-runs the partial migration or declares it complete by hash.
+- **L5 — Verification 7-verb allowlist (ADR-004 / G4-A).** The
+  `.scratch/phase-state.json` `verification` array now accepts ONLY entries
+  beginning with one of seven verb prefixes: `python3 `, `git `, `jq `,
+  `npx `, `pytest `, `harness `, `make `. The previous soft-prefixes
+  (`Confirm `, `Review `, `Inspect `, `Validate `, bare `Roo`,
+  `core-only `, `OpenCode-only `) AND `bash ` (D-G4) are no longer accepted.
+  A new top-level `review: array<object>` field carries human-evidence
+  entries (`{actor, at, evidence_path, summary}`); pre-slice soft-prefix
+  entries are relocated by the migrator. Migration:
+  `scripts/lib/state_migrate_t04.py` relocates non-conforming entries to
+  `review` losslessly; existing `python3 ` entries are preserved.
+- **L19 — Verification execution trust boundary (ADR-004 / G4-B).**
+  `harness check` (and any other core CLI verb) NEVER executes a
+  `verification[*]` string — the field is a developer-trusted manifest of
+  commands to be run BY the developer / smoke runner, not by the harness.
+  `scripts/release_smoke_test.py` carries a header docstring documenting
+  that it is the sole in-tree consumer that intentionally crosses this
+  boundary. A regression test mocks `subprocess.*` and `os.system` and
+  asserts none are invoked by any code path reachable from
+  `scripts.harness.main(["check"])`.
 
 Note: this slice preserves the `## Unreleased (develop)` heading verbatim;
 normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
