@@ -224,5 +224,72 @@ class TestParseStateMarkdownInvalidSlug(unittest.TestCase):
             self.assertIn("Foo_BAD", err)
 
 
+# ---------------------------------------------------------------------------
+# Frontmatter delimiter validation (plan tests 10-11)
+# ---------------------------------------------------------------------------
+
+
+class TestParseStateMarkdownFrontmatter(unittest.TestCase):
+    def test_unclosed_frontmatter_raises_systemexit_5(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            text = (
+                "---\n"
+                "phase: 1\n"
+                "progress:\n"
+                "  total_phases: 3\n"
+                "# (no closing --- before body)\n"
+                "\n"
+                "## Section\n"
+            )
+            path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            err = buf.getvalue()
+            self.assertIn(str(path), err)
+            # Start line of the frontmatter is 1.
+            self.assertIn("line 1", err)
+            self.assertIn("closing", err.lower())
+            self.assertIn("---", err)
+
+    def test_valid_frontmatter_then_invalid_body_partial_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            text = (
+                "---\n"
+                "phase: 1\n"
+                "---\n"
+                "\n"
+                "# Title\n"
+                "\n"
+                "<!-- HARNESS:BEGIN managed:foo v1 -->\n"
+                "first\n"
+                "<!-- HARNESS:END managed:foo -->\n"
+                "\n"
+                "<!-- HARNESS:BEGIN managed:foo v1 -->\n"
+                "dup\n"
+                "<!-- HARNESS:END managed:foo -->\n"
+            )
+            path.write_text(text, encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            err = buf.getvalue()
+            # Body-section failure must cite the duplicate slug (one of the
+            # duplicate BEGIN line numbers).
+            self.assertIn("foo", err)
+            self.assertIn("7", err)  # first BEGIN
+            self.assertIn("11", err)  # second BEGIN
+            # Frontmatter ack: the diagnostic must NOT discard the fact that
+            # frontmatter parsed — operator should see context that the
+            # failure is in the body, not the header.
+            self.assertIn("body", err.lower())
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
