@@ -40,7 +40,15 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
         os.fsync(tmp.fileno())
     finally:
         tmp.close()
-    os.replace(tmp.name, path)
+    try:
+        os.replace(tmp.name, path)
+    except BaseException:
+        # Clean up orphan tempfile on any failure (incl. OSError, KeyboardInterrupt).
+        try:
+            os.unlink(tmp.name)
+        except FileNotFoundError:
+            pass
+        raise
     os.chmod(path, mode)
 
 
