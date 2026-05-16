@@ -10,6 +10,8 @@ stays untouched except for any required regression adjustments per Task 9.
 from __future__ import annotations
 
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -320,6 +322,58 @@ class RetentionCapE2ETests(unittest.TestCase):
             len(remaining), 10,
             f"expected 10 after prune, got {len(remaining)}: {[p.name for p in remaining]}",
         )
+
+
+class BackupsDirSecurityTests(unittest.TestCase):
+    """T0-5-M3: assert SM3 invariants at the slice surface (repair()).
+
+    The lib.backups module has its own coverage; this file owns the
+    end-to-end guarantee that any repair-driven backup write yields a
+    mode-0o700 directory and refuses symlink-targeted .bak paths.
+    """
+
+    def test_backups_dir_mode_is_0700(self):
+        root = _make_root(
+            phase_state={
+                "phase": "discuss",
+                "current_checkpoint": "CP-09-99",
+                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+            }
+        )
+        repair(root)
+        backups_dir = root / ".harness" / "backups"
+        self.assertTrue(backups_dir.is_dir())
+        mode = stat.S_IMODE(backups_dir.stat().st_mode)
+        self.assertEqual(mode, 0o700, f"expected 0o700, got {oct(mode)}")
+
+    def test_repair_refuses_symlink_target(self):
+        """Deterministic .bak name pointed at a symlink — repair must NOT
+        follow it (O_NOFOLLOW). The decoy file MUST be untouched."""
+        from unittest import mock
+        from lib import backups as backups_mod
+
+        root = _make_root(
+            phase_state={
+                "phase": "discuss",
+                "current_checkpoint": "CP-09-99",
+                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+            }
+        )
+        backups_dir = root / ".harness" / "backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        decoy = root / "decoy"
+        decoy.write_bytes(b"DECOY")
+        fixed_ts = "20260516T193045000000000Z"
+        # Pre-plant the symlink at every name the 3-retry loop could pick.
+        bak_path = backups_dir / f"STATE.md.pre-repair.{fixed_ts}.99.bak"
+        os.symlink(decoy, bak_path)
+        with mock.patch.object(backups_mod, "_compact_utc_nanos",
+                               return_value=fixed_ts), \
+             mock.patch.object(backups_mod, "_pid", return_value=99):
+            with self.assertRaises((SystemExit, OSError)):
+                repair(root)
+        self.assertEqual(decoy.read_bytes(), b"DECOY",
+                         "O_NOFOLLOW MUST prevent writing through the symlink")
 
 
 class CanonicalPayloadTests(unittest.TestCase):
