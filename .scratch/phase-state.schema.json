@@ -106,7 +106,7 @@
       },
       "minItems": 1,
       "uniqueItems": true,
-      "description": "Paths or path prefixes allowed during execute."
+      "description": "Paths matched against changed-file lists. Each entry is either a literal path, a literal directory prefix ending in '/', or a glob using ADR-002 grammar (*, ?, [abc], [!abc]; / is the separator and * does not cross it; ** is treated as *; case-sensitive)."
     },
     "blocked_paths": {
       "type": "array",
@@ -115,7 +115,7 @@
         "minLength": 1
       },
       "uniqueItems": true,
-      "description": "Paths or path prefixes that remain out of scope."
+      "description": "Glob/literal entries that override allowed_paths (ADR-002 precedence (a)). Same grammar as allowed_paths."
     },
     "acceptance_criteria": {
       "type": "array",
