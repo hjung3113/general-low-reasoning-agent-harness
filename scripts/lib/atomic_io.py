@@ -168,7 +168,16 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
         # flock(LOCK_EX) serializes writers across processes. POSIX O_APPEND
         # already gives <PIPE_BUF atomicity but flock guards against non-POSIX
         # FS variants and ensures the documented semantics hold portably.
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        # M3: non-blocking acquisition. On contention, raise a typed sentinel
+        # immediately so the caller can decide retry/backoff policy rather
+        # than block this thread indefinitely.
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as e:
+            raise AuditLogContendedError(
+                e.errno or errno.EWOULDBLOCK,
+                f"atomic_append_log: lock contended on {path}",
+            ) from e
         try:
             os.write(fd, encoded)
         finally:

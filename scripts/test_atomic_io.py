@@ -537,10 +537,21 @@ class TestAtomicAppendLogConcurrency(unittest.TestCase):
             target = Path(tmpdir) / "audit.log"
 
             def worker(tag: int) -> None:
+                import time as _time
                 for i in range(K):
                     # Each line uniquely tagged + checksum boundary tokens.
                     line = f"<tag={tag:02d}><i={i:03d}>" + ("." * 30) + "<end>"
-                    atomic_io.atomic_append_log(target, line)
+                    # M3: append is non-blocking; retry with tiny backoff on
+                    # AuditLogContendedError so the test still exercises the
+                    # no-tear invariant under contention.
+                    backoff = 0.0005
+                    while True:
+                        try:
+                            atomic_io.atomic_append_log(target, line)
+                            break
+                        except atomic_io.AuditLogContendedError:
+                            _time.sleep(backoff)
+                            backoff = min(backoff * 2, 0.05)
 
             threads = [threading.Thread(target=worker, args=(t,)) for t in range(N)]
             for t in threads:
