@@ -3,6 +3,7 @@
 Phase: `02b-hardening` (slice T0-A, dependency-zero, lands FIRST)
 Spec: `docs/superpowers/specs/2026-05-16-hardening-slice-design.md` §7 (T0-A row) + §11 (worked example)
 ADR: `docs/adr/2026-05-16-hardening-bundle.md` — Artifact 2 (`STATE_FILE_PATHS`, `OPERATIONAL_PATHS`), G1-A (audit.log atomicity), G1-D (`.bak` relocation)
+Contract: `.planning/phases/02b-hardening/CONTRACT-PIN.md` §1 (module names), §2 (path-tuple ownership in `scripts/lib/operational_paths.py`), §3 (flat `scripts/test_<module>.py`), §7 (CHANGELOG seeding in FIRST commit).
 
 ## Goal (one sentence)
 Introduce a single atomic-write helper module (`scripts/lib/atomic_io.py`) that performs `tempfile.NamedTemporaryFile + fsync + os.replace` for managed JSON/text state and `flock + os.write` for the audit-log append, and migrate every existing `path.write_text` call site that targets a path in `STATE_FILE_PATHS ∪ OPERATIONAL_PATHS` so that no partial-write window can corrupt managed state.
@@ -61,7 +62,7 @@ Each task is one RED→GREEN cycle. Tasks 1–12 implement the helper; tasks 13�
 15. Migrate `scripts/lib/state_repair.py:248` (`state_path.write_text(new_state, encoding="utf-8")`) — replace with `atomic_write_text(state_path, new_state)`.
 16. Audit `scripts/lib/install.py:132–141` (`write_text_file` / `write_text_conflict`). These are SKILL-pack content writers, NOT state/operational paths; per the Out-of-scope list, leave unchanged BUT add a comment referencing this plan + grep gate to document the deliberate exclusion. (No behavior change.)
 17. Audit `scripts/lib/upgrade.py:184` and `:235` (`write_text_file(destination, result.updated_text)`). These re-enter `install.write_text_file`, so the audit in task 16 covers them; no edit required. Document the call chain in a comment near `upgrade.py:20` import block.
-18. Add the grep-gate function in `scripts/test_atomic_io.py` (or a sibling helper). The gate: read `STATE_FILE_PATHS` and `OPERATIONAL_PATHS` from `scripts/lib/atomic_io.py` (define them there as the pre-ADR defaults: `STATE_FILE_PATHS = (".scratch/phase-state.json", ".harness/installed-manifest.json")`, `OPERATIONAL_PATHS = ()`); recursively scan `scripts/` for lines matching `r"\.write_text\("` AND containing any literal path string from either tuple; emit a violation per match. The test asserts zero violations against the live tree and one violation against the synthesized fixture (test 13).
+18. Add the grep-gate function in `scripts/test_atomic_io.py` (or a sibling helper). The gate: read `STATE_FILE_PATHS`, `OPERATIONAL_PATHS`, and `INSTALL_PATHS` from `scripts/lib/operational_paths.py` (sole declaration site per CONTRACT-PIN §2; T0-A creates the file with the post-ADR pinned values from CONTRACT-PIN §2); recursively scan `scripts/` for lines matching `r"\.write_text\("` AND containing any literal path string from any tuple; emit a violation per match. The test asserts zero violations against the live tree and one violation against the synthesized fixture (test 13). Do NOT duplicate tuple literals anywhere else.
 19. Run full test suite + harness self-check, fix any regressions exposed by the in-place rewrite (e.g., tests that mocked `Path.write_text` need to mock `atomic_io.atomic_write_text` instead).
 
 ## Dependency on other slices
@@ -80,6 +81,9 @@ Run from repo root:
 ## Commits (atomic, in order)
 One commit per RED→GREEN cycle; squash only if a test required a follow-up correction.
 
+Per `CONTRACT-PIN.md` §1 the helper module is `scripts/lib/atomic_io.py` with exports `atomic_write_text(path, content, *, mode=0o644)` and `atomic_append_log(path, line, *, max_bytes_per_line=512)`. Path tuples `STATE_FILE_PATHS`, `OPERATIONAL_PATHS`, and `INSTALL_PATHS` live ONLY in `scripts/lib/operational_paths.py` (§2). Tests are flat at `scripts/test_*.py` (§3). Note: the verbatim test snippet inside Task 1 importing `from scripts.tests.test_operational_paths` is illustrative ONLY; the actual files live at `scripts/test_operational_paths.py` per CONTRACT-PIN §3.
+
+0. `docs(changelog): seed ## Unreleased (develop) → ### Breaking skeleton for T0-A` — CHANGELOG seeding commit per CONTRACT-PIN §7. T0-A owns no ledger entries itself, but lands the `### Breaking` heading skeleton so downstream slices can append their L# rows from their FIRST commits without merge races. This commit happens FIRST, before any test/code commit below.
 1. `test(atomic_io): RED for atomic_write_text basic happy path` (test 1)
 2. `feat(atomic_io): atomic_write_text via tempfile+fsync+replace` (impl tasks 2–3, GREEN tests 1–2)
 3. `test(atomic_io): RED for crash-between-temp-and-replace preserves original` (test 3)
@@ -91,13 +95,13 @@ One commit per RED→GREEN cycle; squash only if a test required a follow-up cor
 9. `test(atomic_io): RED for atomic_append_log create + append + no-tear` (tests 8–9)
 10. `feat(atomic_io): atomic_append_log via O_APPEND + flock + os.write` (impl tasks 9–10)
 11. `test(atomic_io): RED for oversized line refusal + lock release on error` (tests 10, 12)
-12. `feat(atomic_io): enforce max_bytes_per_line and release flock on exception` (impl tasks 11–12)
-13. `test(atomic_io): RED for concurrent append non-tearing (threading)` (test 11)
-14. `feat(atomic_io): finalize concurrent-safe append semantics` (any fixes surfaced by test 11)
+12. `test(atomic_io): RED for concurrent append non-tearing (threading + subprocess SIGKILL)` (test 11 — RED MUST land before impl)
+13. `feat(atomic_io): enforce max_bytes_per_line, release flock on exception, and finalize concurrent-safe append semantics (flock+os.write)` (impl tasks 11–12; GREEN for tests 10–12). Reorder rationale: per user adversarial review, the threading RED for non-tear must precede the flock+os.write GREEN; previous draft swapped these so the impl shipped first.
+14. `test(atomic_io): RED for subprocess+SIGKILL crash injection (out-of-process integration)` — adds an out-of-process integration test that spawns a child writing via `atomic_append_log`, sends `SIGKILL` mid-batch, then asserts every persisted line parses. Marked as out-of-process integration test (skipped on platforms without `fork()`).
 15. `refactor(state): route write_json through atomic_write_text` (impl task 13)
 16. `refactor(state_repair): atomic writes for STATE.md and ROADMAP.md rewrites` (impl tasks 14–15)
 17. `docs(install,upgrade): annotate deliberate non-migration of SKILL content writers` (impl tasks 16–17, comments only)
-18. `test(atomic_io): grep gate for write_text against STATE/OPERATIONAL paths` (impl task 18, test 13)
+18. `test(atomic_io): grep gate for write_text against STATE/OPERATIONAL paths` (impl task 18, test 13). The grep gate imports `STATE_FILE_PATHS` / `OPERATIONAL_PATHS` / `INSTALL_PATHS` from `scripts/lib/operational_paths.py` (NOT from `atomic_io.py`); the tuples are declared in `operational_paths.py` per CONTRACT-PIN §2.
 19. `chore(atomic_io): regression sweep — full suite + harness check pass` (impl task 19; only if existing tests need helper-mock updates)
 
 ## Risk + reversibility
