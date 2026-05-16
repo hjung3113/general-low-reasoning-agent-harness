@@ -48,7 +48,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
 
 4. Apply automation flags only within the phase gate.
    - `--auto`: use recommended answers for reversible, low-risk, non-blocking choices and record them as `auto_selected`.
-   - `--chain`: continue from discuss to plan to execute using recommended answers only when a concrete plan has non-empty verification, allowed paths, durable planning pointers, no unresolved P1 adversarial finding, and `.scratch/phase-state.json` has been verified or written with `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`.
+   - `--chain`: continue from discuss to plan to execute using recommended answers only when a concrete plan has non-empty verification, allowed paths, durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `python3 scripts/harness.py check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`. Reach that state via `python3 scripts/harness.py phase approve && python3 scripts/harness.py phase set execute`.
    - Stop and ask the user for high-risk, destructive, external, security-sensitive, irreversible, or product-direction choices.
 
 5. Frame the decision.
@@ -64,7 +64,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
    - Write or update an ADR when the decision is durable.
    - Include consequences, ownership, and test strategy.
    - Update `.planning/DECISIONS.md` or the active phase context/checkpoint when the decision affects project state.
-   - If the ADR adds, deletes, inserts, renumbers, completes, or reopens a roadmap phase, update `.planning/ROADMAP.md`, `.planning/STATE.md`, the active phase `*-CHECKPOINTS.md`, and `.scratch/phase-state.json` together.
+   - If the ADR adds, deletes, inserts, renumbers, completes, or reopens a roadmap phase, update `.planning/ROADMAP.md`, `.planning/STATE.md`, and the active phase `*-CHECKPOINTS.md` together. Advance the live gate via `python3 scripts/harness.py phase set <X>` (and `phase approve` if entering execute); do NOT direct-edit `.scratch/phase-state.json`.
    - Keep STATE frontmatter `progress.total_phases`, `progress.completed_phases`, and `progress.percent` derived from the ROADMAP phase checklist.
    - Keep `.scratch/phase-state.json` `state_path`, `checkpoint_path`, and `current_checkpoint` aligned with the active checkpoint recorded in `.planning/STATE.md`.
    - Update the matching `.planning/codebase/**` note when the decision changes architecture, stack, structure, conventions, testing, integrations, or known concerns.
@@ -107,3 +107,13 @@ ADR may proceed only when:
 - Do not let `--auto` or `--chain` skip alignment, adversarial review, durable planning pointers, allowed paths, or verification.
 - Do not adopt frameworks only to make diagrams cleaner.
 - Do not turn this workflow into sample project or domain implementation.
+
+
+## Canonical CLI Invocation
+
+Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
+
+```text
+python3 scripts/harness.py phase set <discuss|plan|execute|done>
+python3 scripts/harness.py phase approve   # only in phase=plan or phase=execute; exit 6 in done (G2-C)
+```

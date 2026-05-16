@@ -24,8 +24,28 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Iterable
 
+from lib.exitcodes import EXIT_SCOPE_VIOLATION
 from lib.roadmap_state import normalize_path
 from lib.state_diagnostics import load_state_json
+
+
+def _format_scope_violation(denied: list[str]) -> str:
+    """T1-1: canonical scope-violation message.
+
+    See CONTRACT-PIN §4 / plan 02b-07 Task 1. Names every violating file
+    and points at the protocol-spec anchor. Callers print to stderr then
+    `raise SystemExit(EXIT_SCOPE_VIOLATION)`.
+    """
+    return (
+        "harness: scope violation (exit 4)\n"
+        "Files outside allowed_paths:\n"
+        + "\n".join(f"  {p}" for p in denied)
+        + "\nRemediation:\n"
+        "  - Move the change out of the commit, OR\n"
+        "  - Add the path/glob to .scratch/phase-state.json `allowed_paths`, OR\n"
+        "  - Remove a matching entry from `blocked_paths`.\n"
+        "See docs/protocol-spec.md#scope-enforcement."
+    )
 
 
 _GLOB_METACHARS = frozenset("*?[!]")
@@ -228,7 +248,8 @@ def check_changed_paths(target: Path, base: str) -> None:
         if not path_allowed(path, state.get("allowed_paths", []), state.get("blocked_paths", []))
     ]
     if denied:
-        raise SystemExit("Changed paths outside allowed_paths: " + ", ".join(denied))
+        print(_format_scope_violation(denied), file=sys.stderr)
+        raise SystemExit(EXIT_SCOPE_VIOLATION)
 
 
 def check_worktree_paths(target: Path) -> None:
@@ -246,7 +267,8 @@ def check_worktree_paths(target: Path) -> None:
         if not path_allowed(path, state.get("allowed_paths", []), state.get("blocked_paths", []))
     ]
     if denied:
-        raise SystemExit("Worktree paths outside allowed_paths: " + ", ".join(denied))
+        print(_format_scope_violation(denied), file=sys.stderr)
+        raise SystemExit(EXIT_SCOPE_VIOLATION)
 
 
 def changed_path_gate_allows_state(state: dict) -> bool:

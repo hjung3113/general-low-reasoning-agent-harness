@@ -2254,8 +2254,12 @@ progress:
             subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             (root / "outside.txt").write_text("outside", encoding="utf-8")
 
-            with self.assertRaisesRegex(SystemExit, "Worktree paths outside allowed_paths: outside.txt"):
+            # T1-1: scope violations exit with EXIT_SCOPE_VIOLATION (4) and the
+            # canonical "scope violation" message naming each violating file.
+            from lib.exitcodes import EXIT_SCOPE_VIOLATION
+            with self.assertRaises(SystemExit) as cm:
                 harness.check_worktree_paths(root)
+            self.assertEqual(cm.exception.code, EXIT_SCOPE_VIOLATION)
 
     def write_phase_state_for_worktree(self, root: Path, *, allowed_paths: list[str]) -> None:
         (root / ".scratch").mkdir(parents=True)
