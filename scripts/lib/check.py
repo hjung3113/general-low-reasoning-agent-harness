@@ -22,6 +22,7 @@ from lib.manifest import (
     validate_scope_names,
 )
 from lib.profiles import PROFILE_MODE_OWNERS
+from lib.state_diagnostics import load_state_json
 from lib.roadmap_state import (
     check_roadmap_state_sync,
     roadmap_state_sync_applicable,
@@ -293,7 +294,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     installed_path = target / INSTALL_STATE
     if not installed_path.exists():
         raise SystemExit(f"Target is missing {INSTALL_STATE}")
-    installed = json.loads(installed_path.read_text(encoding="utf-8"))
+    installed = load_state_json(installed_path)
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")
     validate_installed_scope_names(installed)
@@ -435,7 +436,7 @@ def check_json(path: Path) -> None:
 
 
 def check_phase_state_semantics(path: Path) -> None:
-    state = json.loads(path.read_text(encoding="utf-8"))
+    state = load_state_json(path)
     # ADR-001: state_schema_version is required (v2 = post-T0-1 shape). A
     # record without this field is a pre-slice (v0) record and must be
     # migrated forward before the rest of the checker runs.
@@ -654,7 +655,7 @@ def check_phase_reference_drift(root: Path) -> None:
 
 def check_phase_state_paths(root: Path) -> None:
     state_path = root / ".scratch/phase-state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state = load_state_json(state_path)
     missing = []
     for key in ("state_path", "plan_path", "checkpoint_path"):
         value = state.get(key)
