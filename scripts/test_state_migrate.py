@@ -306,6 +306,39 @@ class StateMigrateFileProtocolTests(unittest.TestCase):
             self.assertEqual(list(backups.glob("*.bak.resume.json")), [])
 
 
+class StateMigrateReverseVersionGuardTests(unittest.TestCase):
+    """T0-1 SM2: --reverse must refuse v0 / unknown-version inputs."""
+
+    def _write_target(self, tmp: Path, state: dict) -> Path:
+        target = tmp / "phase-state.json"
+        target.write_text(json.dumps(state) + "\n", encoding="utf-8")
+        return target
+
+    def test_reverse_refuses_on_v0_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups = tmp / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            # v0: no state_schema_version key.
+            target = self._write_target(tmp, {"phase": "discuss", "approved": False})
+            with self.assertRaises(SystemExit) as ctx:
+                state_migrate.migrate_file(target, direction="reverse", backups_dir=backups)
+            self.assertEqual(ctx.exception.code, 2)
+            msg = str(ctx.exception)
+            self.assertIn("v0", msg.lower())
+
+    def test_reverse_refuses_on_unknown_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups = tmp / ".harness" / "backups"
+            backups.mkdir(parents=True)
+            target = self._write_target(tmp, {"phase": "discuss", "state_schema_version": 99})
+            with self.assertRaises(SystemExit) as ctx:
+                state_migrate.migrate_file(target, direction="reverse", backups_dir=backups)
+            self.assertEqual(ctx.exception.code, 2)
+            self.assertIn("unknown", str(ctx.exception).lower())
+
+
 class StateMigrateResumeDirectionTests(unittest.TestCase):
     """T0-1 CC3+SM1: sidecar must record direction; resume must dispatch on it."""
 
