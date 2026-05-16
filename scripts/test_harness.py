@@ -806,7 +806,8 @@ class HarnessToolTests(unittest.TestCase):
             root = Path(tmpdir)
             self.write_sync_fixture(root)
 
-            with mock.patch.object(harness, "load_projection") as load_projection:
+            import lib.doctor as _doctor_mod
+            with mock.patch.object(_doctor_mod, "load_projection") as load_projection:
                 load_projection.return_value = mock.Mock(required_reads=[], warnings=[])
                 findings = harness.collect_doctor_findings(root)
 
