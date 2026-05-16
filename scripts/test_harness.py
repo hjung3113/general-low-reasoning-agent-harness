@@ -3396,6 +3396,92 @@ class ManagedBlockCheckWarningTests(unittest.TestCase):
         self.assertIn("missing_managed_block", codes)
 
 
+class PhaseStateCheckerV2Tests(unittest.TestCase):
+    """T0-1 Block A — checker contract aligned with ADR-001 v2 shape.
+
+    Per plan tests T-6..T-9. Schema-level tests T-1..T-5 are intentionally
+    omitted: the repo has no ``jsonschema`` dependency (no-new-deps spec
+    constraint) and ``check_json`` only parses JSON without validating
+    against the schema. The checker-level invariants T-6..T-9 cover the
+    runtime contract end-to-end.
+    """
+
+    def _write_state(self, root: Path, state: dict) -> Path:
+        path = root / "phase-state.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+        return path
+
+    def _base_done_v2(self) -> dict:
+        return {
+            "phase": "done",
+            "state_schema_version": 2,
+            "approved": True,
+            "approved_by": "user",
+            "approved_at": "2026-05-14T15:00:00.000000000Z",
+            "plan_id": "test-plan",
+            "automation_mode": "manual",
+            "auto_selected": [],
+            "summary": "Done summary.",
+            "state_path": ".planning/STATE.md",
+            "plan_path": ".planning/PLAN.md",
+            "checkpoint_path": ".planning/CP.md",
+            "current_checkpoint": "CP-1",
+            "next_action": "Start next cycle.",
+            "acceptance_criteria": ["criterion one"],
+            "verification": ["python3 scripts/harness.py check"],
+            "updated_at": "2026-05-15T00:00:00.000000000Z",
+            "updated_by": "test",
+        }
+
+    # T-6: accept new done state with state_schema_version=2
+    def test_check_accepts_new_done_state_with_state_schema_version_2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_state(Path(tmpdir), self._base_done_v2())
+            harness.check_phase_state_semantics(path)
+
+    # T-7: rejects v0 state with migration prompt
+    def test_check_rejects_v0_state_with_migration_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = self._base_done_v2()
+            del state["state_schema_version"]
+            path = self._write_state(Path(tmpdir), state)
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            msg = str(ctx.exception)
+            self.assertIn("state_schema_version", msg)
+            self.assertIn("python3 scripts/harness.py migrate state --forward", msg)
+
+    # T-8: done does not require approved=false
+    def test_check_done_does_not_require_approved_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = self._base_done_v2()
+            # approved=True is now valid for done.
+            state["approved"] = True
+            path = self._write_state(Path(tmpdir), state)
+            harness.check_phase_state_semantics(path)
+            # approved=False is ALSO still accepted (constraint dropped, not flipped).
+            state["approved"] = False
+            self._write_state(Path(tmpdir), state)
+            harness.check_phase_state_semantics(path)
+
+    # T-9: meta-test — old test symbol removed
+    def test_check_existing_test_for_done_approved_false_is_removed(self) -> None:
+        # Look up the class containing the previous test; assert the symbol
+        # is gone. The original test lived on the same module-level class
+        # that asserts execute semantics in this file. We check the entire
+        # module-level namespace for the symbol.
+        this_module = sys.modules[__name__]
+        # Module-level: walk every TestCase subclass and assert the symbol
+        # is not bound as a method.
+        for name, obj in vars(this_module).items():
+            if isinstance(obj, type) and issubclass(obj, unittest.TestCase):
+                self.assertNotIn(
+                    "test_done_phase_is_unapproved_non_execute_state",
+                    obj.__dict__,
+                    msg=f"symbol resurrected on {name}",
+                )
+
+
 class LiveFixtureMigrationTests(unittest.TestCase):
     """T0-1 Block D — live ``.scratch/phase-state.json`` was migrated."""
 
