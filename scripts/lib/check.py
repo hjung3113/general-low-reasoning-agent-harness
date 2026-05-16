@@ -58,6 +58,56 @@ class ManagedBlockWarning:
     message: str
 
 
+def check_drift(root: Path, *, stderr=None) -> None:
+    """Emit a drift warning if state SHA-256 diverges from last audit entry.
+
+    Per ADR-003a G2-D (T0-3 Task 8): compares the live
+    ``.scratch/phase-state.json`` SHA-256 against the last audit entry's
+    ``after_sha256`` in ``.harness/audit.log``. Drift never fails the check
+    — only stderr is touched. First-write / empty-log cases are suppressed
+    per G1-A.
+
+    The warning template MUST NOT reference any future verbs such as
+    ``harness phase audit`` (deferred to 02c).
+    """
+    if stderr is None:
+        stderr = sys.stderr
+    audit_path = root / ".harness" / "audit.log"
+    state_path = root / ".scratch" / "phase-state.json"
+    if not audit_path.exists() or audit_path.stat().st_size == 0:
+        return  # G1-A first-write suppression
+    if not state_path.exists():
+        return
+    try:
+        from lib.audit import read_last_entry, compute_state_hash
+    except Exception:
+        return
+    last = read_last_entry(audit_path)
+    if last is None:
+        return
+    expected = last.get("after_sha256")
+    if not expected:
+        return
+    actual = compute_state_hash(state_path)
+    if expected == actual:
+        return
+    try:
+        current_phase = json.loads(state_path.read_text(encoding="utf-8")).get(
+            "phase", "<unknown>"
+        )
+    except Exception:
+        current_phase = "<unknown>"
+    print(
+        f"warning: .scratch/phase-state.json sha256 ({actual}) does not match "
+        f"the last audit entry's after_sha256 ({expected}) at index "
+        f"{last.get('index')}. Drift detected. To restore audit baseline, "
+        f"re-run the last CLI verb that should have produced this state "
+        f"(typically 'harness phase set {current_phase}' or "
+        f"'harness phase approve'). Manual edits are not currently tracked.",
+        file=stderr,
+    )
+
+
 _REQUIRED_MARKERS = (
     (".planning/ROADMAP.md", "roadmap-phases"),
     (".planning/STATE.md", "state-current"),
@@ -147,6 +197,7 @@ def check(
             check_changed_paths(root, base)
         if worktree:
             check_worktree_paths(root)
+        check_drift(root)
         return
 
     manifest = load_manifest_data(root)
@@ -188,6 +239,8 @@ def check(
         check_changed_paths(check_target, base)
     if worktree:
         check_worktree_paths(check_target)
+    # G2-D drift detection (T0-3 Task 8) — always non-fatal.
+    check_drift(root)
 
 
 def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.0-dev+unknown") -> bool:
