@@ -76,5 +76,101 @@ class TestAtomicWriteTextCrashSafety(unittest.TestCase):
             del real_replace
 
 
+class TestAtomicWriteTextPreconditions(unittest.TestCase):
+    def test_atomic_write_text_rejects_missing_parent_directory(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "does-not-exist" / "out.txt"
+            with self.assertRaises(Exception) as ctx:
+                atomic_io.atomic_write_text(target, "x")
+            # Message should name the missing parent dir.
+            self.assertIn("does-not-exist", str(ctx.exception))
+
+    def test_atomic_write_text_rejects_cross_filesystem_parent(self) -> None:
+        """Spec §11 Required Behavior: detect parent on different filesystem via st_dev."""
+        import os as _os
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            real_stat = _os.stat
+            parent_str = str(Path(tmpdir))
+
+            def fake_stat(p, *a, **kw):
+                result = real_stat(p, *a, **kw)
+                # Pretend the temp file lives on a different device than the parent.
+                if str(p) == parent_str:
+                    class FakeStat:
+                        st_dev = 999
+                        st_mode = result.st_mode
+                    return FakeStat()
+                if str(p).startswith(parent_str + "/") and str(p).endswith(".tmp"):
+                    class FakeStat2:
+                        st_dev = 1
+                        st_mode = result.st_mode
+                    return FakeStat2()
+                return result
+
+            with mock.patch("lib.atomic_io.os.stat", side_effect=fake_stat):
+                with self.assertRaises(RuntimeError) as ctx:
+                    atomic_io.atomic_write_text(target, "x")
+            msg = str(ctx.exception)
+            self.assertIn("999", msg)
+            self.assertIn("1", msg)
+
+    def test_atomic_write_text_handles_disk_full_oserror(self) -> None:
+        import errno
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            target.write_text("ORIGINAL", encoding="utf-8")
+
+            real_open = open
+
+            def enospc_open(*args, **kwargs):
+                f = real_open(*args, **kwargs)
+                orig_write = f.write
+
+                def faulting_write(s):
+                    raise OSError(errno.ENOSPC, "No space left on device")
+
+                f.write = faulting_write  # type: ignore[method-assign]
+                return f
+
+            with mock.patch("lib.atomic_io.tempfile.NamedTemporaryFile") as nt:
+                # Build a real tempfile then wrap its write method.
+                import tempfile as _tf
+
+                def factory(**kw):
+                    real = _tf._TemporaryFileWrapper(  # type: ignore[attr-defined]
+                        file=open(Path(tmpdir) / "fake.tmp", "w", encoding="utf-8"),
+                        name=str(Path(tmpdir) / "fake.tmp"),
+                        delete=False,
+                    )
+                    real.write = lambda s: (_ for _ in ()).throw(  # type: ignore[assignment]
+                        OSError(errno.ENOSPC, "No space left on device")
+                    )
+                    return real
+
+                nt.side_effect = factory
+                with self.assertRaises(OSError) as ctx:
+                    atomic_io.atomic_write_text(target, "NEW")
+                self.assertEqual(ctx.exception.errno, errno.ENOSPC)
+
+            # Original unchanged.
+            self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL")
+            # No leftover tempfile artifacts in parent dir.
+            leftovers = [
+                p.name for p in Path(tmpdir).iterdir() if p.name != "out.txt"
+            ]
+            self.assertEqual(leftovers, [], f"orphan tempfile not cleaned up: {leftovers}")
+            # silence unused
+            del enospc_open
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
