@@ -26,6 +26,10 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
     """
     path = Path(path)
     parent = path.parent
+    if not parent.exists():
+        raise FileNotFoundError(
+            f"atomic_write_text: parent directory does not exist: {parent}"
+        )
     tmp = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -34,18 +38,28 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
         suffix=".tmp",
         delete=False,
     )
+    tmp_name = tmp.name
     try:
-        tmp.write(content)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-    finally:
-        tmp.close()
-    try:
-        os.replace(tmp.name, path)
-    except BaseException:
-        # Clean up orphan tempfile on any failure (incl. OSError, KeyboardInterrupt).
         try:
-            os.unlink(tmp.name)
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        finally:
+            tmp.close()
+        # Same-filesystem invariant: temp and target parent must share st_dev.
+        parent_dev = os.stat(str(parent)).st_dev
+        tmp_dev = os.stat(tmp_name).st_dev
+        if parent_dev != tmp_dev:
+            raise RuntimeError(
+                f"atomic_write_text: tempfile st_dev={tmp_dev} differs from "
+                f"parent st_dev={parent_dev} (cross-filesystem rename unsafe)"
+            )
+        os.replace(tmp_name, path)
+    except BaseException:
+        # Clean up orphan tempfile on any failure (incl. OSError, RuntimeError,
+        # KeyboardInterrupt).
+        try:
+            os.unlink(tmp_name)
         except FileNotFoundError:
             pass
         raise
