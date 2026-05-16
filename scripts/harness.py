@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Install, upgrade, and validate the generalized low-reasoning harness."""
+"""Thin CLI dispatcher for the harness.
+
+All non-CLI logic lives under ``scripts.lib.*``. This module imports each
+public symbol and re-exports it so existing callers — including the test
+suite and target-installed wrappers — continue to import names from
+``scripts.harness``.
+
+When adding a new function or class, prefer placing it directly in the
+appropriate ``scripts.lib`` module and adding a single import line here.
+"""
 
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import re
 import subprocess
 import sys
-from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
-from lib.planning_status import ProjectionError, load_projection
 from lib.version import (
     repo_root,
     upgrade_source_root,
@@ -37,13 +41,6 @@ from lib.profiles import (
     db_packs,
     normalize_profiles,
 )
-from lib.workflow_static_checks import (
-    installed_scope_issues,
-    optional_phase_pointer_keys,
-    verification_contract_issues,
-    verification_placeholder_reason,
-)
-import lib.manifest as _manifest
 from lib.manifest import (
     ManifestEntry,
     KNOWN_ADAPTERS,
@@ -84,6 +81,20 @@ from lib.state import (
     sha256_text,
     normalize_payload,
 )
+from lib.append_block import (
+    AppendBlockPlan,
+    ParsedAppendBlock,
+    marker_start,
+    marker_end,
+    marker_end_for_path,
+    render_append_block,
+    parse_append_block,
+    append_block_to_text,
+    replace_block,
+    write_managed_append,
+    plan_managed_append,
+    plan_managed_append_retirement,
+)
 from lib.roadmap_state import (
     RoadmapPhase,
     StateSnapshot,
@@ -109,10 +120,16 @@ from lib.worktree import (
     is_relative_to,
     is_text_file,
 )
-
-
-HARNESS_VERSION = "0.0.0-dev+unknown"
-
+from lib.adoption import (
+    AdoptionConflict,
+    AdoptionPlan,
+    assert_safe_write_destination,
+    normalize_selected_project_owned_state,
+    build_adopted_install_state,
+    is_required_adoption_project_owned_path,
+    is_optional_project_owned_path,
+    is_existing_harness_artifact,
+)
 from lib.check import (
     CLEAN_SKELETON,
     UTC_TIMESTAMP,
@@ -128,8 +145,7 @@ from lib.check import (
     check_phase_reference_drift,
     check_phase_state_paths,
 )
-
-
+import lib.check as _check_mod
 from lib.doctor import (
     DoctorFinding,
     doctor,
@@ -145,17 +161,177 @@ from lib.doctor import (
     opencode_profile_rules_doctor_findings,
     render_doctor_report,
 )
-
-from lib.adoption import (
-    AdoptionConflict,
-    AdoptionPlan,
-    assert_safe_write_destination,
-    normalize_selected_project_owned_state,
-    build_adopted_install_state,
-    is_required_adoption_project_owned_path,
-    is_optional_project_owned_path,
-    is_existing_harness_artifact,
+from lib.install import (
+    sync_roomodes_profile_modes,
+    write_copy,
+    write_text_file,
+    write_text_conflict,
+    remove_empty_parents,
 )
+from lib.upgrade import (
+    migrate_install_state,
+    install_state_migration_report,
+)
+from lib.planning_status import ProjectionError, load_projection
+from lib.workflow_static_checks import (
+    installed_scope_issues,
+    optional_phase_pointer_keys,
+    verification_contract_issues,
+    verification_placeholder_reason,
+)
+
+# Module-level constant; set to the resolved version inside run().
+HARNESS_VERSION = "0.0.0-dev+unknown"
+
+__all__ = [
+    # version
+    "repo_root", "upgrade_source_root", "normalize_release_version", "git_output",
+    "is_git_worktree_dirty", "exact_release_tag_version", "development_version",
+    "git_source_provenance", "source_provenance", "resolve_harness_version",
+    "release_check", "readme_release_versions", "check_readme_release_versions",
+    "README_RELEASE_VERSION",
+    # profiles
+    "KNOWN_PROFILES", "LEGACY_PROFILE_ALIASES", "PROFILE_MODE_OWNERS",
+    "default_packs_for_profile", "db_packs", "normalize_profiles",
+    # manifest
+    "ManifestEntry", "KNOWN_ADAPTERS", "KNOWN_POLICIES", "KNOWN_PACKS",
+    "MANIFEST_PATH", "MANIFEST_SOURCE_VERSION",
+    "load_manifest", "load_manifest_data", "selected_pack_metadata",
+    "select_entries", "validate_scope_names", "infer_adapter", "infer_pack",
+    "infer_owner", "source_path", "destination_path",
+    "validate_managed_append_destinations",
+    # append_block
+    "AppendBlockPlan", "ParsedAppendBlock", "marker_start", "marker_end",
+    "marker_end_for_path", "render_append_block", "parse_append_block",
+    "append_block_to_text", "replace_block", "write_managed_append",
+    "plan_managed_append", "plan_managed_append_retirement",
+    # state
+    "INSTALL_STATE", "scope_record", "delegated_source_provenance",
+    "installed_scope", "available_scopes", "parse_optional_scope", "parse_scope",
+    "write_install_state", "read_install_state", "validate_installed_scope_names",
+    "validate_installed_managed_append", "required_phrase_scope",
+    "write_json", "file_hash", "file_state", "now_utc", "manifest_sha256",
+    "sha256_text", "normalize_payload",
+    # roadmap_state
+    "RoadmapPhase", "StateSnapshot", "normalize_path", "parse_roadmap_phases",
+    "parse_state_snapshot", "parse_frontmatter", "split_frontmatter_pair",
+    "int_value", "markdown_section", "check_roadmap_state_sync",
+    "roadmap_state_sync_applicable", "find_roadmap_state_sync_findings",
+    # worktree
+    "check_changed_paths", "check_worktree_paths", "changed_path_gate_allows_state",
+    "git_changed_paths", "git_worktree_paths", "path_allowed", "matches_any",
+    "is_relative_to", "is_text_file",
+    # adoption
+    "AdoptionConflict", "AdoptionPlan", "normalize_selected_project_owned_state",
+    "build_adopted_install_state", "is_required_adoption_project_owned_path",
+    "is_optional_project_owned_path", "is_existing_harness_artifact",
+    "assert_safe_write_destination",
+    # check
+    "check", "check_installed_target", "should_check_as_installed_target",
+    "check_clean_skeleton", "check_json", "check_phase_state_semantics",
+    "check_command_modes", "check_phase_reference_drift", "check_phase_state_paths",
+    # doctor
+    "DoctorFinding", "doctor", "collect_doctor_findings",
+    "phase_status_projection_doctor_findings", "projection_warning_severity",
+    "roadmap_state_doctor_findings", "phase_state_path_doctor_findings",
+    "verification_contract_doctor_findings", "installed_scope_doctor_findings",
+    "command_mode_doctor_findings", "db_context_doctor_findings",
+    "opencode_profile_rules_doctor_findings", "render_doctor_report",
+    # install
+    "install", "sync_roomodes_profile_modes", "write_copy", "write_text_file",
+    "write_text_conflict", "remove_empty_parents",
+    # upgrade
+    "upgrade", "migrate_install_state", "install_state_migration_report",
+    # planning_status
+    "ProjectionError", "load_projection",
+    # workflow_static_checks
+    "installed_scope_issues", "optional_phase_pointer_keys",
+    "verification_contract_issues", "verification_placeholder_reason",
+    # local
+    "HARNESS_VERSION", "CLEAN_SKELETON", "UTC_TIMESTAMP", "VERIFICATION_PREFIXES",
+    "REQUIRED_TARGET_PHRASES", "CONTAMINATION_PATTERNS",
+    "run", "run_delegated_command",
+]
+
+
+def install(
+    *,
+    root: Path,
+    target: Path,
+    dry_run: bool = False,
+    adapters: set[str] | None = None,
+    profiles: set[str] | None = None,
+    packs: set[str] | None = None,
+) -> None:
+    from lib.install import install as _install
+    return _install(
+        root=root,
+        target=target,
+        dry_run=dry_run,
+        adapters=adapters,
+        profiles=profiles,
+        packs=packs,
+        harness_version=HARNESS_VERSION,
+    )
+
+
+def upgrade(
+    *,
+    root: Path,
+    target: Path,
+    dry_run: bool = False,
+    force: bool = False,
+    adopt_existing: bool = False,
+    adapters: set[str] | None = None,
+    profiles: set[str] | None = None,
+    packs: set[str] | None = None,
+) -> int:
+    from lib.upgrade import upgrade as _upgrade
+    return _upgrade(
+        root=root,
+        target=target,
+        dry_run=dry_run,
+        force=force,
+        adopt_existing=adopt_existing,
+        adapters=adapters,
+        profiles=profiles,
+        packs=packs,
+        harness_version=HARNESS_VERSION,
+    )
+
+
+def check(
+    *,
+    root: Path,
+    target: Path | None = None,
+    base: str | None = None,
+    worktree: bool = False,
+    adapter: str | None = None,
+) -> None:
+    _check_mod.check(
+        root=root,
+        target=target,
+        base=base,
+        worktree=worktree,
+        adapter=adapter,
+        harness_version=HARNESS_VERSION,
+    )
+
+
+def should_check_as_installed_target(root: Path) -> bool:
+    return _check_mod.should_check_as_installed_target(root, harness_version=HARNESS_VERSION)
+
+
+def run_delegated_command(command: list[str], cwd: Path) -> int:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    if result.returncode:
+        message = (result.stderr or result.stdout).strip()
+        raise SystemExit(message or result.returncode)
+    return 0
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -320,409 +496,6 @@ def run(argv: list[str] | None = None) -> int:
         print(f"release-check PASS v{release_version}")
         return 0
     raise AssertionError(f"Unhandled command: {args.command}")
-
-
-def run_delegated_command(command: list[str], cwd: Path) -> int:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
-    if result.stdout:
-        sys.stdout.write(result.stdout)
-    if result.stderr:
-        sys.stderr.write(result.stderr)
-    if result.returncode:
-        message = (result.stderr or result.stdout).strip()
-        raise SystemExit(message or result.returncode)
-    return 0
-
-
-from lib.install import (
-    sync_roomodes_profile_modes,
-    write_copy,
-    write_text_file,
-    write_text_conflict,
-    remove_empty_parents,
-)
-
-
-def install(
-    *,
-    root: Path,
-    target: Path,
-    dry_run: bool = False,
-    adapters: set[str] | None = None,
-    profiles: set[str] | None = None,
-    packs: set[str] | None = None,
-) -> None:
-    from lib.install import install as _install
-    return _install(
-        root=root,
-        target=target,
-        dry_run=dry_run,
-        adapters=adapters,
-        profiles=profiles,
-        packs=packs,
-        harness_version=HARNESS_VERSION,
-    )
-
-
-from lib.upgrade import (
-    migrate_install_state,
-    install_state_migration_report,
-)
-
-
-def upgrade(
-    *,
-    root: Path,
-    target: Path,
-    dry_run: bool = False,
-    force: bool = False,
-    adopt_existing: bool = False,
-    adapters: set[str] | None = None,
-    profiles: set[str] | None = None,
-    packs: set[str] | None = None,
-) -> int:
-    from lib.upgrade import upgrade as _upgrade
-    return _upgrade(
-        root=root,
-        target=target,
-        dry_run=dry_run,
-        force=force,
-        adopt_existing=adopt_existing,
-        adapters=adapters,
-        profiles=profiles,
-        packs=packs,
-        harness_version=HARNESS_VERSION,
-    )
-
-
-import lib.check as _check_mod
-
-
-def check(
-    *,
-    root: Path,
-    target: Path | None = None,
-    base: str | None = None,
-    worktree: bool = False,
-    adapter: str | None = None,
-) -> None:
-    _check_mod.check(
-        root=root,
-        target=target,
-        base=base,
-        worktree=worktree,
-        adapter=adapter,
-        harness_version=HARNESS_VERSION,
-    )
-
-
-def should_check_as_installed_target(root: Path) -> bool:
-    return _check_mod.should_check_as_installed_target(root, harness_version=HARNESS_VERSION)
-
-
-from lib.append_block import (
-    AppendBlockPlan,
-    ParsedAppendBlock,
-    marker_start,
-    marker_end,
-    marker_end_for_path,
-    render_append_block,
-    parse_append_block,
-    append_block_to_text,
-    replace_block,
-    write_managed_append,
-    plan_managed_append,
-    plan_managed_append_retirement,
-)
-
-
-def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
-    installed_path = target / INSTALL_STATE
-    if not installed_path.exists():
-        raise SystemExit(f"Target is missing {INSTALL_STATE}")
-    installed = json.loads(installed_path.read_text(encoding="utf-8"))
-    if installed.get("version") is None:
-        raise SystemExit("Target install state is missing version.")
-    validate_installed_scope_names(installed)
-    profile_sync_errs = _check_roomodes_profile_sync(target, installed)
-    if profile_sync_errs:
-        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs))
-    missing = []
-    for path_text in installed.get("files", {}):
-        destination = target / normalize_path(path_text)
-        if not destination.exists():
-            info = installed.get("files", {}).get(path_text)
-            if (
-                isinstance(info, dict)
-                and info.get("policy") == "project-owned"
-                and is_optional_project_owned_path(path_text)
-            ):
-                continue
-            missing.append(path_text)
-            continue
-        info = installed.get("files", {}).get(path_text)
-        if isinstance(info, dict) and info.get("policy") == "managed-append":
-            validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
-    if missing:
-        raise SystemExit("Installed target is missing files: " + ", ".join(missing))
-    if expected_entries is not None:
-        expected_by_path = {str(entry.path): entry for entry in expected_entries if entry.policy != "exclude"}
-        policy_mismatches = []
-        for path_text, entry in expected_by_path.items():
-            info = installed.get("files", {}).get(path_text)
-            if not isinstance(info, dict):
-                continue
-            if info.get("policy") != entry.policy:
-                policy_mismatches.append(f"{path_text}: installed {info.get('policy')} != current {entry.policy}")
-                continue
-            if entry.policy == "managed-append":
-                destination = target / normalize_path(path_text)
-                if destination.exists():
-                    validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
-        if policy_mismatches:
-            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches))
-        expected_paths = {
-            str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
-        }
-        missing_current = [
-            path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
-        ]
-        if missing_current:
-            raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
-        retired = [
-            path_text
-            for path_text, info in sorted(installed.get("files", {}).items())
-            if path_text not in expected_paths
-            and isinstance(info, dict)
-            and info.get("policy") != "project-owned"
-        ]
-        if retired:
-            raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
-    missing_phrases = []
-    for relative, phrases in REQUIRED_TARGET_PHRASES.items():
-        path = target / relative
-        if not path.exists():
-            missing_phrases.append(f"{relative}: missing file")
-            continue
-        text = required_phrase_scope(path=path, relative=relative)
-        for phrase in phrases:
-            if phrase not in text:
-                missing_phrases.append(f"{relative}: {phrase}")
-    if missing_phrases:
-        raise SystemExit("Required guardrail phrases missing: " + "; ".join(missing_phrases))
-    for relative in (
-        ".roomodes",
-        ".scratch/phase-state.schema.json",
-        ".scratch/phase-state.example.json",
-        ".scratch/phase-state.json",
-    ):
-        path = target / relative
-        if path.exists():
-            check_json(path)
-    for relative in (".scratch/phase-state.json", ".scratch/phase-state.example.json"):
-        path = target / relative
-        if path.exists():
-            check_phase_state_semantics(path)
-    if roadmap_state_sync_applicable(target):
-        check_roadmap_state_sync(target)
-
-
-def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
-    roomodes_path = target / ".roomodes"
-    if not roomodes_path.exists():
-        return []
-    try:
-        from lib import roomodes_writer
-        profile_modes = roomodes_writer.read(roomodes_path).profile_modes
-    except ImportError:
-        # roomodes_writer is not installed to targets; parse directly using the
-        # same slug-based classification as the writer.
-        _BASE_SLUGS = {
-            "orchestrator", "architect", "tdd-code", "diagnose", "review",
-            "docs-issues", "ops-observability", "harness-maintainer",
-        }
-        _KNOWN_PROFILE_SLUGS = frozenset(PROFILE_MODE_OWNERS.keys())
-        data = json.loads(roomodes_path.read_text(encoding="utf-8"))
-        profile_modes = [
-            m for m in data.get("customModes", [])
-            if m.get("slug") not in _BASE_SLUGS and m.get("slug") in _KNOWN_PROFILE_SLUGS
-        ]
-    installed_profiles = set((installed.get("init_options") or {}).get("profiles") or [])
-    errs: list[str] = []
-    for mode in profile_modes:
-        slug = mode.get("slug")
-        owner = PROFILE_MODE_OWNERS.get(slug)
-        if owner and owner not in installed_profiles:
-            errs.append(
-                f".roomodes contains profile-contributed mode {slug!r} but "
-                f"owning profile {owner!r} is not installed"
-            )
-    return errs
-
-
-def check_clean_skeleton(root: Path) -> None:
-    skeleton = root / CLEAN_SKELETON
-    if not skeleton.exists():
-        raise SystemExit(f"Missing clean skeleton: {CLEAN_SKELETON}")
-    offenders: list[str] = []
-    for path in skeleton.rglob("*"):
-        if path.is_file() and is_text_file(path):
-            text = path.read_text(encoding="utf-8")
-            if any(pattern.search(text) for pattern in CONTAMINATION_PATTERNS):
-                offenders.append(str(path.relative_to(root)))
-    if offenders:
-        raise SystemExit("Clean skeleton contamination detected: " + ", ".join(offenders))
-
-
-def check_json(path: Path) -> None:
-    json.loads(path.read_text(encoding="utf-8"))
-
-def check_phase_state_semantics(path: Path) -> None:
-    state = json.loads(path.read_text(encoding="utf-8"))
-    for key in ("updated_at",):
-        if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
-            raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
-    if not isinstance(state.get("updated_by"), str) or not state.get("updated_by"):
-        raise SystemExit(f"{path} updated_by is required.")
-    automation_mode = state.get("automation_mode")
-    if automation_mode not in {"manual", "auto", "chain"}:
-        raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
-    auto_selected = state.get("auto_selected")
-    if not isinstance(auto_selected, list):
-        raise SystemExit(f"{path} auto_selected must be an array.")
-    if automation_mode in {"auto", "chain"} and not auto_selected:
-        raise SystemExit(f"{path} auto_selected must record choices when automation_mode={automation_mode}.")
-    required = {
-        "choice": str,
-        "selected_value": str,
-        "reason": str,
-        "evidence_path": str,
-        "risk_level": str,
-        "reversible": bool,
-        "inside_allowed_paths": bool,
-        "stop_conditions_checked": list,
-    }
-    for index, item in enumerate(auto_selected):
-        if not isinstance(item, dict):
-            raise SystemExit(f"{path} auto_selected[{index}] must be an object.")
-        for key, expected_type in required.items():
-            if key not in item or not isinstance(item[key], expected_type):
-                raise SystemExit(f"{path} auto_selected[{index}].{key} is required.")
-        if item["risk_level"] not in {"low", "medium", "high"}:
-            raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high.")
-        if not item["stop_conditions_checked"]:
-            raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty.")
-    phase = state.get("phase")
-    if phase not in {"discuss", "plan", "execute", "done"}:
-        raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
-    if phase == "discuss" and state.get("approved") is not False:
-        raise SystemExit(f"{path} discuss phase requires approved=false.")
-    if phase == "plan":
-        required_plan = (
-            "plan_id",
-            "summary",
-            "plan_path",
-            "state_path",
-            "checkpoint_path",
-            "current_checkpoint",
-            "next_action",
-            "acceptance_criteria",
-            "verification",
-        )
-        missing = [key for key in required_plan if not state.get(key)]
-        if state.get("approved") is not False:
-            missing.append("approved=false")
-        if missing:
-            raise SystemExit(f"{path} plan phase requires {', '.join(missing)}.")
-    if phase == "execute":
-        required_execute = (
-            "plan_id",
-            "allowed_paths",
-            "verification",
-            "state_path",
-            "plan_path",
-            "checkpoint_path",
-            "current_checkpoint",
-            "next_action",
-            "approved_by",
-            "approved_at",
-        )
-        missing = [key for key in required_execute if not state.get(key)]
-        if state.get("approved") is not True:
-            missing.append("approved=true")
-        if missing:
-            raise SystemExit(f"{path} execute approval requires {', '.join(missing)}.")
-        if not UTC_TIMESTAMP.fullmatch(str(state.get("approved_at", ""))):
-            raise SystemExit(f"{path} approved_at must be an ISO-8601 UTC timestamp.")
-    if phase == "done":
-        required_done = (
-            "plan_id",
-            "verification",
-            "state_path",
-            "plan_path",
-            "checkpoint_path",
-            "current_checkpoint",
-            "next_action",
-        )
-        missing = [key for key in required_done if not state.get(key)]
-        if state.get("approved") is not False:
-            missing.append("approved=false")
-        if missing:
-            raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
-    verification = state.get("verification", [])
-    if verification:
-        if not isinstance(verification, list):
-            raise SystemExit(f"{path} verification must be an array.")
-        for index, command in enumerate(verification):
-            if not isinstance(command, str) or not command.strip():
-                raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
-            placeholder_reason = verification_placeholder_reason(command)
-            if placeholder_reason:
-                raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
-            if not command.startswith(VERIFICATION_PREFIXES):
-                raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
-
-
-def check_command_modes(root: Path) -> None:
-    modes = json.loads((root / ".roomodes").read_text(encoding="utf-8"))
-    known = {mode["slug"] for mode in modes.get("customModes", [])}
-    unknown: list[str] = []
-    for command in (root / ".roo/commands").glob("*.md"):
-        text = command.read_text(encoding="utf-8")
-        match = re.search(r"^mode:\s*([A-Za-z0-9_-]+)\s*$", text, re.MULTILINE)
-        if match and match.group(1) not in known:
-            unknown.append(f"{command.relative_to(root)} -> {match.group(1)}")
-    if unknown:
-        raise SystemExit("Commands reference unknown Roo modes: " + ", ".join(unknown))
-
-
-def check_phase_reference_drift(root: Path) -> None:
-    stale = (
-        "Phase 2 should add mechanical",
-        "Future mechanical enforcement belongs to Phase 2",
-        "Phase 3 for consumer onboarding",
-        "Phase 4 is reserved for a project-specific example slice",
-    )
-    offenders = []
-    for path in (root / ".planning").rglob("*.md"):
-        text = path.read_text(encoding="utf-8")
-        for phrase in stale:
-            if phrase in text:
-                offenders.append(f"{path.relative_to(root)}: {phrase}")
-    if offenders:
-        raise SystemExit("Stale phase reference detected: " + "; ".join(offenders))
-
-
-def check_phase_state_paths(root: Path) -> None:
-    state_path = root / ".scratch/phase-state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-    missing = []
-    for key in ("state_path", "plan_path", "checkpoint_path"):
-        value = state.get(key)
-        if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
-            missing.append(f"{key}={value}")
-    if missing:
-        raise SystemExit("Phase-state paths are missing: " + ", ".join(missing))
 
 
 if __name__ == "__main__":
