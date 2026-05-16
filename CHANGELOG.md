@@ -22,6 +22,30 @@ All notable changes to this harness.
   `python3 scripts/harness.py migrate state --forward`. ADR-001 Decision §
   resolves the spec's "1→2" wording by introducing the field directly at
   value `2`; no v1 wire format is ever written.
+- **L3 — `fnmatch` glob activation in `allowed_paths` / `blocked_paths`
+  (ADR-002 option 2, grammar G2-E).** `scripts/lib/worktree.py:matches_any`
+  now applies `fnmatch.fnmatchcase` semantics per segment in addition to the
+  pre-slice literal / trailing-slash-prefix branches. Supported
+  metacharacters: `*` (any chars except `/`), `?` (single char except `/`),
+  `[abc]` / `[!abc]` (POSIX-style character classes; `!` is the ONLY negation
+  marker — `^` is a literal class member). `**` is NOT a recursive-descent
+  operator and is treated as `*` (cannot cross `/`). `/` is the separator;
+  matching is case-sensitive on every platform. Pre-slice entries that
+  contain none of `* ? [ ! ]` continue to match exactly as before (literal
+  exact or trailing-slash prefix). Pre-slice entries that DID happen to
+  contain glob metacharacters (silent zero-match under the old prefix-only
+  rule) now (a) start matching per the new grammar AND (b) emit a one-time
+  G3-B loader warning to stderr when a literal file/dir collision exists at
+  the unglobbed path. Malformed patterns (e.g., unterminated `[`) now fail
+  loudly via `SystemExit` rather than silently zero-matching. No migration
+  of existing live state entries is performed; today's literal entries
+  round-trip identically.
+- **L4 — `blocked_paths` overrides `allowed_paths` (ADR-002 precedence
+  (a)).** When a changed path matches BOTH an `allowed_paths` entry AND a
+  `blocked_paths` entry, the path is denied. Pre-slice behavior was already
+  blocked-first in `scripts/lib/worktree.py:path_allowed`, but the rule is
+  now contractually pinned: blocked always wins, including when the blocked
+  entry is a glob and the allowed entry is a literal (or vice versa).
 - **L12 — Migrator `--resume` verb (crash recovery, ADR G1-E).**
   `scripts/migrate_state.py` ships with `--forward`, `--reverse`, and
   `--resume` sub-verbs. `--forward` and `--reverse` refuse to overwrite an
