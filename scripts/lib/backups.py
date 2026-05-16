@@ -89,9 +89,14 @@ def _ensure_backups_dir(backups_dir: Path) -> None:
     try:
         os.chmod(backups_dir, 0o700)
     except OSError:
-        # Non-fatal -- e.g. on filesystems that ignore chmod -- but still
-        # surface the attempt above for the common case.
-        pass
+        # SecM2: surface the failure on stderr so operators know the
+        # directory's mode did not reach 0o700 (filesystems that ignore
+        # chmod, restrictive ownership, etc.) instead of swallowing it.
+        print(
+            f"WARNING: failed to chmod {backups_dir} to 0o700 "
+            f"(permission denied or filesystem)",
+            file=sys.stderr,
+        )
 
 
 # ---------------------------------------------------------------------------

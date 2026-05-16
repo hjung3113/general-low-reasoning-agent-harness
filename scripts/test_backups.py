@@ -172,6 +172,42 @@ class RetentionPruneTests(unittest.TestCase):
                              "oldest backup should have been pruned")
 
 
+class ChmodFailureWarningTests(unittest.TestCase):
+    """T0-5-SecM2: chmod failures during _ensure_backups_dir MUST warn.
+
+    Previously failures were swallowed silently — leaving operators unaware
+    that the directory's mode never reached 0o700 (e.g. on filesystems that
+    reject the call, or under restrictive permissions).
+    """
+
+    def test_chmod_failure_emits_stderr_warning(self) -> None:
+        import io
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups_dir = tmp / ".harness" / "backups"
+            target = tmp / "phase-state.json"
+            target.write_bytes(b"x")
+            stderr = io.StringIO()
+            real_chmod = os.chmod
+
+            def boom(path, mode, **kwargs):
+                if str(path) == str(backups_dir):
+                    raise PermissionError("simulated")
+                return real_chmod(path, mode, **kwargs)
+
+            with mock.patch.object(os, "chmod", side_effect=boom), \
+                 contextlib.redirect_stderr(stderr):
+                backups.write_backup_with_excl_and_prune(
+                    target, source_bytes=b"x", backups_dir=backups_dir,
+                )
+            msg = stderr.getvalue()
+            self.assertIn("WARNING", msg)
+            self.assertIn("chmod", msg)
+            self.assertIn("0o700", msg)
+
+
 class PruneSymlinkGuardTests(unittest.TestCase):
     """T0-5-SecM1: prune MUST NOT unlink through a symlink.
 
