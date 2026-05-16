@@ -200,6 +200,7 @@ def repair(root: Path) -> RepairReport:
         # RepairRefusedError wrapper at this site (CONTRACT-PIN §5.1); T1-M
         # only provides the helper and replaces the bare json.loads call.
         # TODO(T0-5): wrap UnparseableStateError in RepairRefusedError.
+        # See: .planning/phases/02b-hardening/plans/02b-06-T0-5-PLAN.md
         from lib.state_diagnostics import load_state_json
         phase_state = load_state_json(phase_state_path)
 
