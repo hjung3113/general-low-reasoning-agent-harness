@@ -442,6 +442,33 @@ class TestAtomicAppendLogSymlinkRefusal(unittest.TestCase):
             self.assertTrue(log_path.is_symlink())
 
 
+class TestAtomicAppendLogCloexec(unittest.TestCase):
+    def test_atomic_append_log_fd_has_cloexec(self) -> None:
+        """The audit-log fd must have FD_CLOEXEC set so it does not leak
+        into subprocesses spawned mid-append.
+        """
+        import fcntl as _fcntl
+        import os as _os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.log"
+            # _open_audit_log is the private helper introduced by M2.
+            self.assertTrue(
+                hasattr(atomic_io, "_open_audit_log"),
+                "M2: scripts/lib/atomic_io.py must expose _open_audit_log helper",
+            )
+            fd = atomic_io._open_audit_log(target)  # type: ignore[attr-defined]
+            try:
+                flags = _fcntl.fcntl(fd, _fcntl.F_GETFD)
+                self.assertTrue(
+                    flags & _fcntl.FD_CLOEXEC,
+                    f"audit log fd missing FD_CLOEXEC (flags={flags:#x})",
+                )
+            finally:
+                _os.close(fd)
+
+
 class TestAtomicAppendLogConcurrency(unittest.TestCase):
     def test_atomic_append_log_concurrent_writes_dont_tear(self) -> None:
         """N=8 threads x K=50 iterations each — every line structurally intact."""
