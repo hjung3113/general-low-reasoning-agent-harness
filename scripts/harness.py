@@ -114,34 +114,21 @@ from lib.worktree import (
 
 
 HARNESS_VERSION = "0.0.0-dev+unknown"
-CLEAN_SKELETON = Path("harness/skeleton/clean")
-UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
-VERIFICATION_PREFIXES = (
-    "python3 ",
-    "git ",
-    "jq ",
-    "npx ",
-    "Validate ",
-    "Review ",
-    "Inspect ",
-    "Confirm ",
-    "core-only ",
-    "OpenCode-only ",
-    "Roo",
-)
-REQUIRED_TARGET_PHRASES = {
-    "AGENTS.md": (
-        "Karpathy-Inspired Coding Guidelines",
-        "If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`",
-        "Every roadmap phase starts with its own `discuss` pass",
-    ),
-}
-CONTAMINATION_PATTERNS = (
-    re.compile(r"\bPR\s*#\d+\b", re.IGNORECASE),
-    re.compile(r"\bDB context snapshot\b", re.IGNORECASE),
-    re.compile(r"\bhjung3113/new-project\b", re.IGNORECASE),
-    re.compile(r"\bPhase\s+[0-9]+.*(?:implemented|complete|완료)", re.IGNORECASE),
-    re.compile(r"\bunder PR review\b", re.IGNORECASE),
+
+from lib.check import (
+    CLEAN_SKELETON,
+    UTC_TIMESTAMP,
+    VERIFICATION_PREFIXES,
+    REQUIRED_TARGET_PHRASES,
+    CONTAMINATION_PATTERNS,
+    check_installed_target,
+    _check_roomodes_profile_sync,
+    check_clean_skeleton,
+    check_json,
+    check_phase_state_semantics,
+    check_command_modes,
+    check_phase_reference_drift,
+    check_phase_state_paths,
 )
 
 
@@ -675,6 +662,9 @@ def upgrade(
     return 1 if conflicts else 0
 
 
+import lib.check as _check_mod
+
+
 def check(
     *,
     root: Path,
@@ -683,65 +673,18 @@ def check(
     worktree: bool = False,
     adapter: str | None = None,
 ) -> None:
-    root = root.resolve()
-    if not (root / MANIFEST_PATH).exists() or should_check_as_installed_target(root):
-        check_installed_target(root)
-        if base:
-            check_changed_paths(root, base)
-        if worktree:
-            check_worktree_paths(root)
-        return
-
-    manifest = load_manifest_data(root)
-    if manifest.get("version") != HARNESS_VERSION:
-        raise SystemExit(f"Manifest version mismatch: expected {HARNESS_VERSION}")
-
-    all_entries = load_manifest(root)
-    entries = all_entries
-    missing = [str(entry.source) for entry in entries if entry.policy != "exclude" and not source_path(root, entry).exists()]
-    if missing:
-        raise SystemExit(f"Manifest sources missing: {', '.join(missing)}")
-
-    check_clean_skeleton(root)
-    if (root / ".roomodes").exists():
-        check_json(root / ".roomodes")
-    check_json(root / ".scratch/phase-state.schema.json")
-    check_json(root / ".scratch/phase-state.example.json")
-    check_json(root / ".scratch/phase-state.json")
-    check_phase_state_semantics(root / ".scratch/phase-state.json")
-    check_phase_state_semantics(root / ".scratch/phase-state.example.json")
-    if (root / ".roo").exists() and (root / ".roomodes").exists():
-        check_command_modes(root)
-    check_phase_state_paths(root)
-    check_roadmap_state_sync(root)
-    check_phase_reference_drift(root)
-
-    check_target = (target or root).resolve()
-    if target:
-        installed = read_install_state(check_target)
-        adapters = set(installed.get("adapters", ["roo"]))
-        profiles = set(installed.get("profiles", ["generic"]))
-        packs = set(installed.get("packs", []))
-        if adapter:
-            adapters.add(adapter)
-        validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
-        expected = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
-        check_installed_target(check_target, expected_entries=expected)
-    if base:
-        check_changed_paths(check_target, base)
-    if worktree:
-        check_worktree_paths(check_target)
+    _check_mod.check(
+        root=root,
+        target=target,
+        base=base,
+        worktree=worktree,
+        adapter=adapter,
+        harness_version=HARNESS_VERSION,
+    )
 
 
 def should_check_as_installed_target(root: Path) -> bool:
-    if not (root / INSTALL_STATE).exists() or not (root / MANIFEST_PATH).exists():
-        return False
-    try:
-        manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return True
-    version = manifest.get("version") if isinstance(manifest, dict) else None
-    return version not in {MANIFEST_SOURCE_VERSION, HARNESS_VERSION}
+    return _check_mod.should_check_as_installed_target(root, harness_version=HARNESS_VERSION)
 
 
 def write_copy(source: Path, destination: Path) -> None:

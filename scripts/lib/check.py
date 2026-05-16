@@ -1,0 +1,440 @@
+"""Source/target validation: structure, JSON, phase-state, manifest scopes."""
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Iterable
+
+from lib.manifest import (
+    ManifestEntry,
+    MANIFEST_PATH,
+    MANIFEST_SOURCE_VERSION,
+    load_manifest,
+    load_manifest_data,
+    select_entries,
+    source_path,
+    destination_path,
+    validate_managed_append_destinations,
+    validate_scope_names,
+)
+from lib.profiles import PROFILE_MODE_OWNERS
+from lib.roadmap_state import (
+    check_roadmap_state_sync,
+    roadmap_state_sync_applicable,
+    normalize_path,
+)
+from lib.state import (
+    INSTALL_STATE,
+    read_install_state,
+    validate_installed_scope_names,
+    validate_installed_managed_append,
+    required_phrase_scope,
+    file_hash,
+    manifest_sha256,
+)
+from lib.version import (
+    check_readme_release_versions,
+    resolve_harness_version,
+)
+from lib.worktree import (
+    check_changed_paths,
+    check_worktree_paths,
+    is_text_file,
+)
+from lib.workflow_static_checks import (
+    verification_placeholder_reason,
+)
+
+
+CLEAN_SKELETON = Path("harness/skeleton/clean")
+UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+VERIFICATION_PREFIXES = (
+    "python3 ",
+    "git ",
+    "jq ",
+    "npx ",
+    "Validate ",
+    "Review ",
+    "Inspect ",
+    "Confirm ",
+    "core-only ",
+    "OpenCode-only ",
+    "Roo",
+)
+REQUIRED_TARGET_PHRASES = {
+    "AGENTS.md": (
+        "Karpathy-Inspired Coding Guidelines",
+        "If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`",
+        "Every roadmap phase starts with its own `discuss` pass",
+    ),
+}
+CONTAMINATION_PATTERNS = (
+    re.compile(r"\bPR\s*#\d+\b", re.IGNORECASE),
+    re.compile(r"\bDB context snapshot\b", re.IGNORECASE),
+    re.compile(r"\bhjung3113/new-project\b", re.IGNORECASE),
+    re.compile(r"\bPhase\s+[0-9]+.*(?:implemented|complete|완료)", re.IGNORECASE),
+    re.compile(r"\bunder PR review\b", re.IGNORECASE),
+)
+
+
+def check(
+    *,
+    root: Path,
+    target: Path | None = None,
+    base: str | None = None,
+    worktree: bool = False,
+    adapter: str | None = None,
+    harness_version: str = "0.0.0-dev+unknown",
+) -> None:
+    root = root.resolve()
+    if not (root / MANIFEST_PATH).exists() or should_check_as_installed_target(root, harness_version=harness_version):
+        check_installed_target(root)
+        if base:
+            check_changed_paths(root, base)
+        if worktree:
+            check_worktree_paths(root)
+        return
+
+    manifest = load_manifest_data(root)
+    if manifest.get("version") != harness_version:
+        raise SystemExit(f"Manifest version mismatch: expected {harness_version}")
+
+    all_entries = load_manifest(root)
+    entries = all_entries
+    missing = [str(entry.source) for entry in entries if entry.policy != "exclude" and not source_path(root, entry).exists()]
+    if missing:
+        raise SystemExit(f"Manifest sources missing: {', '.join(missing)}")
+
+    check_clean_skeleton(root)
+    if (root / ".roomodes").exists():
+        check_json(root / ".roomodes")
+    check_json(root / ".scratch/phase-state.schema.json")
+    check_json(root / ".scratch/phase-state.example.json")
+    check_json(root / ".scratch/phase-state.json")
+    check_phase_state_semantics(root / ".scratch/phase-state.json")
+    check_phase_state_semantics(root / ".scratch/phase-state.example.json")
+    if (root / ".roo").exists() and (root / ".roomodes").exists():
+        check_command_modes(root)
+    check_phase_state_paths(root)
+    check_roadmap_state_sync(root)
+    check_phase_reference_drift(root)
+
+    check_target = (target or root).resolve()
+    if target:
+        installed = read_install_state(check_target)
+        adapters = set(installed.get("adapters", ["roo"]))
+        profiles = set(installed.get("profiles", ["generic"]))
+        packs = set(installed.get("packs", []))
+        if adapter:
+            adapters.add(adapter)
+        validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
+        expected = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
+        check_installed_target(check_target, expected_entries=expected)
+    if base:
+        check_changed_paths(check_target, base)
+    if worktree:
+        check_worktree_paths(check_target)
+
+
+def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.0-dev+unknown") -> bool:
+    if not (root / INSTALL_STATE).exists() or not (root / MANIFEST_PATH).exists():
+        return False
+    try:
+        manifest = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return True
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version not in {MANIFEST_SOURCE_VERSION, harness_version}
+
+
+def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
+    installed_path = target / INSTALL_STATE
+    if not installed_path.exists():
+        raise SystemExit(f"Target is missing {INSTALL_STATE}")
+    installed = json.loads(installed_path.read_text(encoding="utf-8"))
+    if installed.get("version") is None:
+        raise SystemExit("Target install state is missing version.")
+    validate_installed_scope_names(installed)
+    profile_sync_errs = _check_roomodes_profile_sync(target, installed)
+    if profile_sync_errs:
+        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs))
+    missing = []
+    for path_text in installed.get("files", {}):
+        from lib.adoption import is_optional_project_owned_path
+        destination = target / normalize_path(path_text)
+        if not destination.exists():
+            info = installed.get("files", {}).get(path_text)
+            if (
+                isinstance(info, dict)
+                and info.get("policy") == "project-owned"
+                and is_optional_project_owned_path(path_text)
+            ):
+                continue
+            missing.append(path_text)
+            continue
+        info = installed.get("files", {}).get(path_text)
+        if isinstance(info, dict) and info.get("policy") == "managed-append":
+            validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
+    if missing:
+        raise SystemExit("Installed target is missing files: " + ", ".join(missing))
+    if expected_entries is not None:
+        expected_by_path = {str(entry.path): entry for entry in expected_entries if entry.policy != "exclude"}
+        policy_mismatches = []
+        for path_text, entry in expected_by_path.items():
+            info = installed.get("files", {}).get(path_text)
+            if not isinstance(info, dict):
+                continue
+            if info.get("policy") != entry.policy:
+                policy_mismatches.append(f"{path_text}: installed {info.get('policy')} != current {entry.policy}")
+                continue
+            if entry.policy == "managed-append":
+                destination = target / normalize_path(path_text)
+                if destination.exists():
+                    validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
+        if policy_mismatches:
+            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches))
+        expected_paths = {
+            str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
+        }
+        missing_current = [
+            path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
+        ]
+        if missing_current:
+            raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
+        retired = [
+            path_text
+            for path_text, info in sorted(installed.get("files", {}).items())
+            if path_text not in expected_paths
+            and isinstance(info, dict)
+            and info.get("policy") != "project-owned"
+        ]
+        if retired:
+            raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
+    missing_phrases = []
+    for relative, phrases in REQUIRED_TARGET_PHRASES.items():
+        path = target / relative
+        if not path.exists():
+            missing_phrases.append(f"{relative}: missing file")
+            continue
+        text = required_phrase_scope(path=path, relative=relative)
+        for phrase in phrases:
+            if phrase not in text:
+                missing_phrases.append(f"{relative}: {phrase}")
+    if missing_phrases:
+        raise SystemExit("Required guardrail phrases missing: " + "; ".join(missing_phrases))
+    for relative in (
+        ".roomodes",
+        ".scratch/phase-state.schema.json",
+        ".scratch/phase-state.example.json",
+        ".scratch/phase-state.json",
+    ):
+        path = target / relative
+        if path.exists():
+            check_json(path)
+    for relative in (".scratch/phase-state.json", ".scratch/phase-state.example.json"):
+        path = target / relative
+        if path.exists():
+            check_phase_state_semantics(path)
+    if roadmap_state_sync_applicable(target):
+        check_roadmap_state_sync(target)
+
+
+def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
+    roomodes_path = target / ".roomodes"
+    if not roomodes_path.exists():
+        return []
+    try:
+        from lib import roomodes_writer
+        profile_modes = roomodes_writer.read(roomodes_path).profile_modes
+    except ImportError:
+        # roomodes_writer is not installed to targets; parse directly using the
+        # same slug-based classification as the writer.
+        _BASE_SLUGS = {
+            "orchestrator", "architect", "tdd-code", "diagnose", "review",
+            "docs-issues", "ops-observability", "harness-maintainer",
+        }
+        _KNOWN_PROFILE_SLUGS = frozenset(PROFILE_MODE_OWNERS.keys())
+        data = json.loads(roomodes_path.read_text(encoding="utf-8"))
+        profile_modes = [
+            m for m in data.get("customModes", [])
+            if m.get("slug") not in _BASE_SLUGS and m.get("slug") in _KNOWN_PROFILE_SLUGS
+        ]
+    installed_profiles = set((installed.get("init_options") or {}).get("profiles") or [])
+    errs: list[str] = []
+    for mode in profile_modes:
+        slug = mode.get("slug")
+        owner = PROFILE_MODE_OWNERS.get(slug)
+        if owner and owner not in installed_profiles:
+            errs.append(
+                f".roomodes contains profile-contributed mode {slug!r} but "
+                f"owning profile {owner!r} is not installed"
+            )
+    return errs
+
+
+def check_clean_skeleton(root: Path) -> None:
+    skeleton = root / CLEAN_SKELETON
+    if not skeleton.exists():
+        raise SystemExit(f"Missing clean skeleton: {CLEAN_SKELETON}")
+    offenders: list[str] = []
+    for path in skeleton.rglob("*"):
+        if path.is_file() and is_text_file(path):
+            text = path.read_text(encoding="utf-8")
+            if any(pattern.search(text) for pattern in CONTAMINATION_PATTERNS):
+                offenders.append(str(path.relative_to(root)))
+    if offenders:
+        raise SystemExit("Clean skeleton contamination detected: " + ", ".join(offenders))
+
+
+def check_json(path: Path) -> None:
+    json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_phase_state_semantics(path: Path) -> None:
+    state = json.loads(path.read_text(encoding="utf-8"))
+    for key in ("updated_at",):
+        if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
+            raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
+    if not isinstance(state.get("updated_by"), str) or not state.get("updated_by"):
+        raise SystemExit(f"{path} updated_by is required.")
+    automation_mode = state.get("automation_mode")
+    if automation_mode not in {"manual", "auto", "chain"}:
+        raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
+    auto_selected = state.get("auto_selected")
+    if not isinstance(auto_selected, list):
+        raise SystemExit(f"{path} auto_selected must be an array.")
+    if automation_mode in {"auto", "chain"} and not auto_selected:
+        raise SystemExit(f"{path} auto_selected must record choices when automation_mode={automation_mode}.")
+    required = {
+        "choice": str,
+        "selected_value": str,
+        "reason": str,
+        "evidence_path": str,
+        "risk_level": str,
+        "reversible": bool,
+        "inside_allowed_paths": bool,
+        "stop_conditions_checked": list,
+    }
+    for index, item in enumerate(auto_selected):
+        if not isinstance(item, dict):
+            raise SystemExit(f"{path} auto_selected[{index}] must be an object.")
+        for key, expected_type in required.items():
+            if key not in item or not isinstance(item[key], expected_type):
+                raise SystemExit(f"{path} auto_selected[{index}].{key} is required.")
+        if item["risk_level"] not in {"low", "medium", "high"}:
+            raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high.")
+        if not item["stop_conditions_checked"]:
+            raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty.")
+    phase = state.get("phase")
+    if phase not in {"discuss", "plan", "execute", "done"}:
+        raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
+    if phase == "discuss" and state.get("approved") is not False:
+        raise SystemExit(f"{path} discuss phase requires approved=false.")
+    if phase == "plan":
+        required_plan = (
+            "plan_id",
+            "summary",
+            "plan_path",
+            "state_path",
+            "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
+            "acceptance_criteria",
+            "verification",
+        )
+        missing = [key for key in required_plan if not state.get(key)]
+        if state.get("approved") is not False:
+            missing.append("approved=false")
+        if missing:
+            raise SystemExit(f"{path} plan phase requires {', '.join(missing)}.")
+    if phase == "execute":
+        required_execute = (
+            "plan_id",
+            "allowed_paths",
+            "verification",
+            "state_path",
+            "plan_path",
+            "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
+            "approved_by",
+            "approved_at",
+        )
+        missing = [key for key in required_execute if not state.get(key)]
+        if state.get("approved") is not True:
+            missing.append("approved=true")
+        if missing:
+            raise SystemExit(f"{path} execute approval requires {', '.join(missing)}.")
+        if not UTC_TIMESTAMP.fullmatch(str(state.get("approved_at", ""))):
+            raise SystemExit(f"{path} approved_at must be an ISO-8601 UTC timestamp.")
+    if phase == "done":
+        required_done = (
+            "plan_id",
+            "verification",
+            "state_path",
+            "plan_path",
+            "checkpoint_path",
+            "current_checkpoint",
+            "next_action",
+        )
+        missing = [key for key in required_done if not state.get(key)]
+        if state.get("approved") is not False:
+            missing.append("approved=false")
+        if missing:
+            raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
+    verification = state.get("verification", [])
+    if verification:
+        if not isinstance(verification, list):
+            raise SystemExit(f"{path} verification must be an array.")
+        for index, command in enumerate(verification):
+            if not isinstance(command, str) or not command.strip():
+                raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
+            placeholder_reason = verification_placeholder_reason(command)
+            if placeholder_reason:
+                raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
+            if not command.startswith(VERIFICATION_PREFIXES):
+                raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
+
+
+def check_command_modes(root: Path) -> None:
+    modes = json.loads((root / ".roomodes").read_text(encoding="utf-8"))
+    known = {mode["slug"] for mode in modes.get("customModes", [])}
+    unknown: list[str] = []
+    for command in (root / ".roo/commands").glob("*.md"):
+        text = command.read_text(encoding="utf-8")
+        match = re.search(r"^mode:\s*([A-Za-z0-9_-]+)\s*$", text, re.MULTILINE)
+        if match and match.group(1) not in known:
+            unknown.append(f"{command.relative_to(root)} -> {match.group(1)}")
+    if unknown:
+        raise SystemExit("Commands reference unknown Roo modes: " + ", ".join(unknown))
+
+
+def check_phase_reference_drift(root: Path) -> None:
+    stale = (
+        "Phase 2 should add mechanical",
+        "Future mechanical enforcement belongs to Phase 2",
+        "Phase 3 for consumer onboarding",
+        "Phase 4 is reserved for a project-specific example slice",
+    )
+    offenders = []
+    for path in (root / ".planning").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        for phrase in stale:
+            if phrase in text:
+                offenders.append(f"{path.relative_to(root)}: {phrase}")
+    if offenders:
+        raise SystemExit("Stale phase reference detected: " + "; ".join(offenders))
+
+
+def check_phase_state_paths(root: Path) -> None:
+    state_path = root / ".scratch/phase-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    missing = []
+    for key in ("state_path", "plan_path", "checkpoint_path"):
+        value = state.get(key)
+        if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
+            missing.append(f"{key}={value}")
+    if missing:
+        raise SystemExit("Phase-state paths are missing: " + ", ".join(missing))
