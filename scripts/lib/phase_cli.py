@@ -47,6 +47,7 @@ from lib.session import (
 )
 from lib.timestamps import now_iso_nanos, parse_iso_nanos
 from lib import transition as _transition
+from lib.transition import InvalidTransition
 
 STATE_PATH = Path(".scratch/phase-state.json")
 LOCK_PATH = Path(".harness/session.lock")
@@ -147,8 +148,17 @@ def _probe_harness_writable() -> None:
 
 
 def _emit_invalid_transition(exc: SystemExit) -> int:
+    """Print the ADR-003a Artifact 1 invalid-transition template to stderr.
+
+    When ``exc`` is an ``InvalidTransition`` (the C3 typed exception), its
+    ``format_message()`` returns the byte-exact template. For any other
+    SystemExit (defensive fallback for older raise sites), fall back to
+    ``str(exc)`` with a table-reference append.
+    """
+    if isinstance(exc, InvalidTransition):
+        print(exc.format_message(), file=sys.stderr)
+        return EXIT_INVALID_TRANSITION
     msg = str(exc) or "invalid phase transition"
-    # Append the ADR-001 transition table reference if not already present.
     if "ADR-001" not in msg and "transition table" not in msg:
         msg = f"{msg} (see ADR-001 transition table)"
     print(msg, file=sys.stderr)

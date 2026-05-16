@@ -46,27 +46,59 @@ TRANSITION_TABLE: dict[tuple[Optional[str], str], dict[str, bool]] = {
 }
 
 
-__all__ = ["TRANSITION_TABLE", "validate_transition"]
+__all__ = ["TRANSITION_TABLE", "InvalidTransition", "validate_transition"]
 
 
-class _CodedSystemExit(SystemExit):
-    """SystemExit subclass carrying both an int exit code and a message.
+# Remediation taxonomy per ADR-003a Artifact 1 verb 1 error template.
+REMEDIATION_NEEDS_APPROVAL = "needs_approval"
+REMEDIATION_NEEDS_RESET = "needs_reset"
+REMEDIATION_UNDEFINED = "undefined"
 
-    ``SystemExit(int)`` sets ``.code`` to the int but prints nothing. We need
-    both ``ctx.exception.code == 2`` (for tests/CLI semantics per CONTRACT-PIN
-    §4) and a human-readable ``str(exc)``. Subclassing lets us pin both.
+_REMEDIATION_TEXT: dict[str, str] = {
+    REMEDIATION_NEEDS_APPROVAL: "Run 'harness phase approve' first.",
+    REMEDIATION_NEEDS_RESET: (
+        "Pass --reset-approval to clear prior approval and proceed."
+    ),
+    REMEDIATION_UNDEFINED: (
+        "Transition is undefined; choose discuss/plan/execute/done as the next step."
+    ),
+}
+
+
+class InvalidTransition(SystemExit):
+    """Typed exception raised by ``validate_transition`` for illegal moves.
+
+    Subclasses ``SystemExit`` with ``.code == 2`` so existing call sites that
+    treat ``validate_transition`` as a process-exiting validator keep working
+    (test_transition.py assertions on ``ctx.exception.code``). Carries the
+    structured fields needed by phase_cli to format the ADR-003a Artifact 1
+    error template byte-exactly:
+
+        error: cannot set phase={target} from phase={current} (see ADR-001
+        transition table). {remediation}
     """
 
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(code)
-        self._message = message
+    def __init__(
+        self,
+        target: str,
+        current: Optional[str],
+        remediation_kind: str,
+    ) -> None:
+        super().__init__(2)
+        self.target = target
+        self.current = current
+        self.remediation_kind = remediation_kind
+        self.remediation = _REMEDIATION_TEXT[remediation_kind]
+
+    def format_message(self) -> str:
+        return (
+            f"error: cannot set phase={self.target} from "
+            f"phase={self.current} (see ADR-001 transition table). "
+            f"{self.remediation}"
+        )
 
     def __str__(self) -> str:  # noqa: D401
-        return self._message
-
-
-def _exit2(message: str) -> None:
-    raise _CodedSystemExit(2, message)
+        return self.format_message()
 
 
 def validate_transition(
@@ -78,31 +110,20 @@ def validate_transition(
 ) -> None:
     """Validate that ``(from_phase, to_phase)`` is permitted.
 
-    Raises ``_CodedSystemExit`` (a ``SystemExit`` subclass with ``.code == 2``)
+    Raises ``InvalidTransition`` (a ``SystemExit`` subclass with ``.code == 2``)
     on:
     - undefined pair (no row in ``TRANSITION_TABLE``),
     - approval-required pair invoked with ``approved=False``,
     - backward/lateral pair invoked without ``reset_approval=True``.
+
+    The exception carries ``(target, current, remediation_kind)`` so the
+    caller can format the Artifact 1 template.
     """
     key = (from_phase, to_phase)
     row = TRANSITION_TABLE.get(key)
     if row is None:
-        _exit2(
-            f"invalid phase transition {from_phase!r} -> {to_phase!r}: not "
-            f"listed in ADR-001 transition table. See "
-            f"docs/adr/2026-05-16-hardening-bundle.md ADR-001."
-        )
-        return  # unreachable; satisfies type checker
+        raise InvalidTransition(to_phase, from_phase, REMEDIATION_UNDEFINED)
     if row["requires_approved"] and not approved:
-        _exit2(
-            f"phase transition {from_phase!r} -> {to_phase!r} requires "
-            f"approved=true. Run: harness phase approve"
-        )
-        return
+        raise InvalidTransition(to_phase, from_phase, REMEDIATION_NEEDS_APPROVAL)
     if row["requires_reset_approval"] and not reset_approval:
-        _exit2(
-            f"phase transition {from_phase!r} -> {to_phase!r} requires "
-            f"--reset-approval (backward/lateral move clears prior approval). "
-            f"Re-run with --reset-approval."
-        )
-        return
+        raise InvalidTransition(to_phase, from_phase, REMEDIATION_NEEDS_RESET)
