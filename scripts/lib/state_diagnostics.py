@@ -190,6 +190,29 @@ class ParsedStateDoc:
     text: str
 
 
+def _validate_frontmatter_delimiters(path: Path, text: str) -> None:
+    """Raise SystemExit(5) if the document opens with `---` but never closes.
+
+    The legacy `parse_frontmatter` returns whatever pairs it managed to read
+    when the closing `---` is absent, which hides the corruption from the
+    operator. We require a matching close before the first body heading
+    (or end of file).
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return  # no frontmatter at all
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return  # well-formed
+    _emit_and_exit(
+        path,
+        (
+            f"{path}: unclosed frontmatter delimiter starting at line 1; "
+            f"add a closing '---' line before the document body"
+        ),
+    )
+
+
 _BEGIN_LINE_RE = re.compile(
     r"^<!-- HARNESS:BEGIN managed:(?P<slug>[^\s]+) v1 -->\s*$",
     re.MULTILINE,
@@ -286,6 +309,12 @@ def parse_state_markdown(path: Path) -> ParsedStateDoc:
     except UnicodeDecodeError as exc:
         _emit_and_exit(path, f"{path} is unparseable (invalid UTF-8: {exc.reason})")
 
+    # Frontmatter delimiter validation: if the first non-blank line is `---`
+    # we require a closing `---` BEFORE any heading or end of file. The
+    # legacy parse_frontmatter silently returns partial data on missing
+    # close, which hides the corruption.
+    _validate_frontmatter_delimiters(path, text)
+
     # Pre-scan: reject any BEGIN line whose slug fails the strict regex.
     # `parse_blocks` would silently skip these because its regex requires
     # the strict slug shape, leaving an unbalanced-marker error that hides
@@ -305,7 +334,12 @@ def parse_state_markdown(path: Path) -> ParsedStateDoc:
         blocks = managed_block.parse_blocks(text)
     except ValueError as exc:
         summary = _classify_managed_block_error(text, exc)
-        _emit_and_exit(path, f"{path}: {summary}")
+        # Acknowledge frontmatter if it parsed cleanly so the operator
+        # knows the failure is in the body, not the header.
+        prefix = ""
+        if text.lstrip().startswith("---"):
+            prefix = "frontmatter parsed; body error — "
+        _emit_and_exit(path, f"{path}: {prefix}{summary}")
 
     # Frontmatter: best-effort for now. Stricter delimiter validation lands
     # in a subsequent T1-M commit.
