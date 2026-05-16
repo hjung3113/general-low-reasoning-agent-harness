@@ -19,7 +19,9 @@ Symbols intentionally exposed for test seams:
 
 from __future__ import annotations
 
+import fnmatch
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -142,8 +144,28 @@ def _prune_old_backups(target_basename: str, backups_dir: Path, retention: int) 
     are zero-padded ``YYYYMMDDTHHMMSSnnnnnnnnn``, lexicographic order ==
     chronological order. Oldest files are unlinked.
     """
+    # SecM1: use os.scandir + entry.is_symlink() so a hostile or
+    # accidentally-planted symlink under backups_dir cannot trick the
+    # retention loop into unlinking through it. Skipped symlinks emit a
+    # stderr warning so the operator can investigate.
     pattern = f"{target_basename}.pre-repair.*.bak"
-    matches = sorted(backups_dir.glob(pattern))
+    matches: list[Path] = []
+    with os.scandir(backups_dir) as it:
+        for entry in it:
+            if not fnmatch.fnmatchcase(entry.name, pattern):
+                continue
+            try:
+                if entry.is_symlink():
+                    print(
+                        f"WARNING: skipping symlink in .harness/backups/ during prune: "
+                        f"{entry.name}",
+                        file=sys.stderr,
+                    )
+                    continue
+            except OSError:  # pragma: no cover -- race during scan
+                continue
+            matches.append(Path(entry.path))
+    matches.sort()
     excess = len(matches) - retention
     if excess <= 0:
         return

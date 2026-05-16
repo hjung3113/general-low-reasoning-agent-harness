@@ -172,5 +172,57 @@ class RetentionPruneTests(unittest.TestCase):
                              "oldest backup should have been pruned")
 
 
+class PruneSymlinkGuardTests(unittest.TestCase):
+    """T0-5-SecM1: prune MUST NOT unlink through a symlink.
+
+    Replacing glob with os.scandir + entry.is_symlink() check ensures a
+    hostile or accidentally-planted symlink under `.harness/backups/`
+    cannot trick the retention loop into chasing an unlink to an
+    arbitrary path. The skipped symlink emits a stderr warning so the
+    operator can investigate.
+    """
+
+    def test_prune_skips_symlinks_with_warning(self) -> None:
+        import io
+        import contextlib
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            backups_dir = tmp / ".harness" / "backups"
+            backups_dir.mkdir(parents=True)
+            target = tmp / "phase-state.json"
+            target.write_bytes(b"x")
+            # Seed: 9 plain .bak files (oldest first by name) + 1 SYMLINK
+            # at the second-oldest slot pointing at a decoy file.
+            decoy = tmp / "decoy"
+            decoy.write_bytes(b"DECOY")
+            for i in range(9):
+                ts = f"20260101T0000{i:02d}000000000Z"
+                (backups_dir / f"phase-state.json.pre-repair.{ts}.0.bak").write_bytes(
+                    f"seed-{i}".encode()
+                )
+            # Plant a symlink with a name that would otherwise be pruned
+            # first (oldest lex order):
+            link_name = "phase-state.json.pre-repair.20250101T000000000000000Z.0.bak"
+            os.symlink(decoy, backups_dir / link_name)
+
+            # Now write the 11th backup; prune should evict the oldest
+            # PLAIN .bak (seed-0) and SKIP the symlink with a warning.
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                backups.write_backup_with_excl_and_prune(
+                    target, source_bytes=b"x", backups_dir=backups_dir, retention=10,
+                )
+
+            # Symlink survives.
+            self.assertTrue((backups_dir / link_name).is_symlink(),
+                            "symlink MUST NOT be unlinked by prune")
+            # Decoy untouched.
+            self.assertEqual(decoy.read_bytes(), b"DECOY")
+            # A stderr warning mentions the skipped entry.
+            self.assertIn("symlink", stderr.getvalue().lower())
+            self.assertIn(link_name, stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
