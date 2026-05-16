@@ -58,14 +58,42 @@ class ManagedBlockWarning:
     message: str
 
 
+def _is_trivial_phase_state(state_path: Path) -> bool:
+    """Return True when ``state_path`` matches the clean-skeleton init signature.
+
+    The fresh-repo state has ``updated_by == "harness-init"`` AND
+    ``updated_at == "1970-01-01T00:00:00Z"`` (per
+    ``harness/skeleton/clean/.scratch/phase-state.json``). Either field
+    diverging means the file has been touched and drift detection should
+    not be silently suppressed when audit.log is absent.
+    """
+    if not state_path.exists():
+        return True
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return (
+        isinstance(data, dict)
+        and data.get("updated_by") == "harness-init"
+        and data.get("updated_at") == "1970-01-01T00:00:00Z"
+    )
+
+
 def check_drift(root: Path, *, stderr=None) -> None:
     """Emit a drift warning if state SHA-256 diverges from last audit entry.
 
     Per ADR-003a G2-D (T0-3 Task 8): compares the live
     ``.scratch/phase-state.json`` SHA-256 against the last audit entry's
     ``after_sha256`` in ``.harness/audit.log``. Drift never fails the check
-    — only stderr is touched. First-write / empty-log cases are suppressed
-    per G1-A.
+    — only stderr is touched.
+
+    Missing/empty audit.log handling (C1 amendment):
+
+    - audit.log absent/empty AND state is trivial (clean-skeleton init
+      signature) → silent return (legitimate first-use).
+    - audit.log absent/empty AND state has been edited → WARNING that drift
+      detection is disabled.
 
     The warning template MUST NOT reference any future verbs such as
     ``harness phase audit`` (deferred to 02c).
@@ -75,7 +103,14 @@ def check_drift(root: Path, *, stderr=None) -> None:
     audit_path = root / ".harness" / "audit.log"
     state_path = root / ".scratch" / "phase-state.json"
     if not audit_path.exists() or audit_path.stat().st_size == 0:
-        return  # G1-A first-write suppression
+        if _is_trivial_phase_state(state_path):
+            return  # G1-A first-write suppression on fresh repo
+        print(
+            "warning: audit log missing — drift detection disabled. "
+            "Run 'harness phase set ...' to re-establish baseline.",
+            file=stderr,
+        )
+        return
     if not state_path.exists():
         return
     try:
