@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from dataclasses import dataclass
 
 BEGIN_MARKER_FMT = "<!-- HARNESS:BEGIN managed:{slug} v1 -->"
 END_MARKER_FMT = "<!-- HARNESS:END managed:{slug} -->"
