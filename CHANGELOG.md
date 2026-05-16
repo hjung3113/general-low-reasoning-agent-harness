@@ -48,6 +48,57 @@ All notable changes to this harness.
   boundary. A regression test mocks `subprocess.*` and `os.system` and
   asserts none are invoked by any code path reachable from
   `scripts.harness.main(["check"])`.
+- **L6 — Drift-warning template (high-severity stderr) (T0-3).**
+  `harness check` now compares the live `.scratch/phase-state.json`
+  sha256 against the last audit entry's `after_sha256` in
+  `.harness/audit.log`. When they diverge, a high-severity warning is
+  emitted to stderr explaining drift and pointing at the canonical
+  remediation (`harness phase set <current_phase>` or
+  `harness phase approve`). The warning never fails the check.
+  First-write / empty-log cases are suppressed. The template MUST NOT
+  reference any future verbs.
+- **L7 — Phase transition CLI verbs `set` and `approve` (T0-3).**
+  `harness phase set <phase>` and `harness phase approve` land per
+  ADR-003a Artifact 1. Each verb writes `.scratch/phase-state.json`
+  through `atomic_write_text`, validates against the ADR-001 transition
+  table, and appends a JSON-line audit entry. Exit codes
+  `0/1/2/3/5/6/8` are reachable per Artifact 1.
+- **L8 — Session lockfile (O_EXCL + atexit/signal release) (T0-3).**
+  `.harness/session.lock` is created with `O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC`
+  + `flock(LOCK_EX|LOCK_NB)`. Lifecycle: lockfile is released on clean
+  Python exit (`atexit`) and on SIGINT/SIGTERM. Operational verb
+  `harness session unlock` recovers stale lockfiles via
+  `os.kill(pid, 0)` + Linux `boot_id` comparison, refusing live PIDs
+  unless `--force`. Payload is JSON
+  `{pid, hostname, started_at_utc, harness_version, boot_id}`.
+- **L9 — Audit log path + atomic-append + rotation (T0-3).**
+  `.harness/audit.log` carries one JSON-line entry per lifecycle write.
+  Lines are ≤512 bytes (PIPE_BUF-safe); oversize `args` payloads are
+  truncated to `{"truncated": true}` with the full record archived
+  under `.harness/audit.overflow/<index>.json`. Rotation triggers at
+  10 MiB or 10 000 entries (whichever first), keeping
+  `audit.log.1..audit.log.5`.
+- **L14 — Nanosecond-precision timestamps (T0-3).**
+  `approved_at`, `updated_at`, and audit-entry `at` fields are written
+  in ISO-8601 with full nanosecond precision
+  (`YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ`). Helper lives in
+  `scripts/lib/timestamps.py`.
+- **L15 — `--at` 24h-window validation (T0-3).**
+  `harness phase approve --at <ts>` refuses values whose absolute delta
+  from current UTC exceeds 86 400 seconds. Exit code `8`
+  (`EXIT_TIMESTAMP_OUT_OF_RANGE`).
+- **L17 — Uninstall flag split (T0-3).**
+  `scripts/uninstall_harness.py` gains
+  `--remove-state` / `--remove-operational` / `--remove-install-state` /
+  `--remove-all` flags that consume the `STATE_FILE_PATHS`,
+  `OPERATIONAL_PATHS`, and `INSTALL_PATHS` tuples from
+  `scripts/lib/operational_paths.py`. `--remove-all` is the union of
+  the other three.
+- **L18 (T0-3 rows) — `.gitignore` audit + lockfile entries (T0-3).**
+  The skeleton `.gitignore` (already excluding `.harness/`) is
+  documented to cover `.harness/audit.log`, `.harness/audit.log.*`,
+  `.harness/audit.overflow/`, and `.harness/session.lock`. The
+  `.harness/backups/` row is owned by T0-5.
 
 Note: this slice preserves the `## Unreleased (develop)` heading verbatim;
 normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
