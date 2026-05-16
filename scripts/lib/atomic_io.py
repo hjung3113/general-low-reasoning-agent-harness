@@ -11,10 +11,27 @@ Exports (skeleton — bodies filled in subsequent commits per plan task order):
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import os
 import tempfile
 from pathlib import Path
+
+
+class AuditLogRefusedError(OSError):
+    """Raised when atomic_append_log refuses to open the target path.
+
+    Currently raised on symlink detection (O_NOFOLLOW → ELOOP). Inherits
+    from OSError so existing ``except OSError`` callers still catch it.
+    """
+
+
+class AuditLogContendedError(OSError):
+    """Raised when atomic_append_log cannot acquire the exclusive lock
+    immediately (LOCK_EX|LOCK_NB → BlockingIOError). Inherits from
+    OSError so existing ``except OSError`` callers still catch it.
+    Callers may retry with backoff.
+    """
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
@@ -113,7 +130,21 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
             f"atomic_append_log: encoded line length {len(encoded)} exceeds "
             f"max_bytes_per_line={max_bytes_per_line} (PIPE_BUF-safe budget)"
         )
-    fd = os.open(str(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    open_flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    # M1: refuse to follow symlinks at the final component. Prevents an
+    # adversary from redirecting audit lines into an arbitrary file by
+    # replacing audit.log with a symlink.
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    open_flags |= o_nofollow
+    try:
+        fd = os.open(str(path), open_flags, 0o644)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise AuditLogRefusedError(
+                e.errno,
+                f"atomic_append_log: refusing to follow symlink at {path}",
+            ) from e
+        raise
     try:
         # flock(LOCK_EX) serializes writers across processes. POSIX O_APPEND
         # already gives <PIPE_BUF atomicity but flock guards against non-POSIX
