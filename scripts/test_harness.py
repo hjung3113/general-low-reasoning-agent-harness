@@ -3482,6 +3482,65 @@ class PhaseStateCheckerV2Tests(unittest.TestCase):
                 )
 
 
+class PhaseStateApprovedTypeTests(unittest.TestCase):
+    """T0-1 SM5: `approved` must be bool; reject strings like 'yes'/'true'."""
+
+    def _write_state(self, root: Path, state: dict) -> Path:
+        path = root / "phase-state.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+        return path
+
+    def _base_done_v2(self) -> dict:
+        return {
+            "phase": "done",
+            "state_schema_version": 2,
+            "approved": True,
+            "approved_by": "user",
+            "approved_at": "2026-05-14T15:00:00.000000000Z",
+            "plan_id": "test-plan",
+            "automation_mode": "manual",
+            "auto_selected": [],
+            "summary": "Done summary.",
+            "state_path": ".planning/STATE.md",
+            "plan_path": ".planning/PLAN.md",
+            "checkpoint_path": ".planning/CP.md",
+            "current_checkpoint": "CP-1",
+            "next_action": "Start next cycle.",
+            "acceptance_criteria": ["criterion one"],
+            "verification": ["python3 scripts/harness.py check"],
+            "updated_at": "2026-05-15T00:00:00.000000000Z",
+            "updated_by": "test",
+        }
+
+    def test_approved_rejects_string_yes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = self._base_done_v2()
+            state["approved"] = "yes"
+            path = self._write_state(Path(tmpdir), state)
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("approved", str(ctx.exception))
+
+    def test_approved_rejects_string_true(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = self._base_done_v2()
+            state["approved"] = "true"
+            path = self._write_state(Path(tmpdir), state)
+            with self.assertRaises(SystemExit) as ctx:
+                harness.check_phase_state_semantics(path)
+            self.assertIn("approved", str(ctx.exception))
+
+    def test_approved_accepts_true_and_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            for value in (True, False):
+                state = self._base_done_v2()
+                state["approved"] = value
+                path = self._write_state(tmp, state)
+                # Must not raise.
+                harness.check_phase_state_semantics(path)
+
+
 class LiveFixtureMigrationTests(unittest.TestCase):
     """T0-1 Block D — live ``.scratch/phase-state.json`` was migrated."""
 
