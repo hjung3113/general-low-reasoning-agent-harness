@@ -91,6 +91,75 @@ class TestAtomicWriteTextMode(unittest.TestCase):
             self.assertEqual(target2.stat().st_mode & 0o777, 0o600)
 
 
+class TestAtomicWriteTextChmodOrder(unittest.TestCase):
+    def test_atomic_write_text_mode_applied_before_replace(self) -> None:
+        """If os.replace fails, mode must already have been applied to the
+        tempfile (not deferred until after replace). Original file's mode
+        must remain untouched.
+        """
+        import os as _os
+        import stat
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            target.write_text("ORIGINAL", encoding="utf-8")
+            _os.chmod(target, 0o644)
+            original_mode = target.stat().st_mode & 0o777
+
+            captured: dict[str, int] = {}
+            real_listdir = _os.listdir
+
+            def boom(src, dst, *a, **kw):
+                # Capture tempfile mode just before the (simulated) replace fails.
+                try:
+                    captured["tmp_mode"] = stat.S_IMODE(_os.stat(src).st_mode)
+                except FileNotFoundError:
+                    captured["tmp_mode"] = -1
+                raise OSError("simulated crash before replace")
+
+            with mock.patch("lib.atomic_io.os.replace", side_effect=boom):
+                with self.assertRaises(OSError):
+                    atomic_io.atomic_write_text(target, "NEW", mode=0o640)
+
+            # Tempfile mode must have been set to 0o640 BEFORE replace was attempted.
+            self.assertEqual(
+                captured.get("tmp_mode"),
+                0o640,
+                f"mode not applied to tempfile pre-replace: {captured}",
+            )
+            # Original file's mode must be untouched.
+            self.assertEqual(target.stat().st_mode & 0o777, original_mode)
+            del real_listdir
+
+    def test_atomic_write_text_chmod_failure_does_not_commit(self) -> None:
+        """If chmod fails, tempfile is unlinked and original file untouched."""
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "out.txt"
+            target.write_text("ORIGINAL", encoding="utf-8")
+
+            # Patch both chmod APIs to raise: fchmod (preferred) and chmod fallback.
+            def boom(*a, **kw):
+                raise OSError("simulated chmod failure")
+
+            with mock.patch("lib.atomic_io.os.fchmod", side_effect=boom, create=True), \
+                 mock.patch("lib.atomic_io.os.chmod", side_effect=boom):
+                with self.assertRaises(OSError):
+                    atomic_io.atomic_write_text(target, "NEW", mode=0o600)
+
+            # Original unchanged.
+            self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL")
+            # No leftover tempfile.
+            leftovers = [
+                p.name for p in Path(tmpdir).iterdir() if p.name != "out.txt"
+            ]
+            self.assertEqual(leftovers, [], f"orphan tempfile not cleaned up: {leftovers}")
+
+
 class TestAtomicWriteTextPreconditions(unittest.TestCase):
     def test_atomic_write_text_rejects_missing_parent_directory(self) -> None:
         import tempfile
