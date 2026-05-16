@@ -90,6 +90,77 @@ class DriftTemplateTests(unittest.TestCase):
         out = self._call_drift()
         self.assertNotIn("Drift detected", out)
 
+    def test_drift_silent_when_state_trivial_and_audit_missing(self) -> None:
+        """No audit.log + trivial init-shaped state -> silent (fresh repo)."""
+        state_path = self.tmp / ".scratch" / "phase-state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "phase": "discuss",
+                    "state_schema_version": 2,
+                    "approved": False,
+                    "updated_at": "1970-01-01T00:00:00Z",
+                    "updated_by": "harness-init",
+                    "automation_mode": "manual",
+                    "auto_selected": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        out = self._call_drift()
+        self.assertEqual(out, "")
+
+    def test_drift_warns_when_audit_log_missing_and_state_nontrivial(self) -> None:
+        """No audit.log + non-trivial state -> WARNING about disabled drift detection."""
+        state_path = self.tmp / ".scratch" / "phase-state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "phase": "discuss",
+                    "state_schema_version": 2,
+                    "approved": False,
+                    "summary": "hand-edited",
+                    "updated_at": "2026-05-16T12:34:56.000000000Z",
+                    "updated_by": "human@example",
+                    "automation_mode": "manual",
+                    "auto_selected": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        out = self._call_drift()
+        self.assertIn("audit log missing", out)
+        self.assertIn("drift detection disabled", out)
+        self.assertIn("harness phase set", out)
+
+    def test_drift_warns_when_audit_log_empty_and_state_nontrivial(self) -> None:
+        """Empty audit.log treated same as missing."""
+        (self.tmp / ".harness" / "audit.log").write_text("")
+        state_path = self.tmp / ".scratch" / "phase-state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "phase": "plan",
+                    "state_schema_version": 2,
+                    "approved": False,
+                    "summary": "edited",
+                    "updated_at": "2026-05-16T12:34:56.000000000Z",
+                    "updated_by": "human@example",
+                    "automation_mode": "manual",
+                    "auto_selected": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        out = self._call_drift()
+        self.assertIn("audit log missing", out)
+
 
 if __name__ == "__main__":
     unittest.main()
