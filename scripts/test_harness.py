@@ -2887,6 +2887,69 @@ class ManifestProfileEntriesTests(unittest.TestCase):
         self.assertEqual(roo["adapter"], "roo")
 
 
+class ProfileResolutionTests(unittest.TestCase):
+    def test_known_profiles(self):
+        from scripts import harness as h
+        self.assertEqual(h.KNOWN_PROFILES, {"generic", "dotnet-etl", "python-etl", "react-web"})
+
+    def test_legacy_alias_maps(self):
+        from scripts import harness as h
+        self.assertEqual(h.LEGACY_PROFILE_ALIASES["dotnet-etl-mssql"], "dotnet-etl")
+
+    def test_default_packs_for_dotnet_etl(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("dotnet-etl")
+        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-csharp"})
+
+    def test_default_packs_for_python_etl(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("python-etl")
+        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-python"})
+
+    def test_default_packs_for_react_web(self):
+        from scripts import harness as h
+        packs = h.default_packs_for_profile("react-web")
+        self.assertEqual(
+            set(packs),
+            {"workflow-core", "workflow-web-development", "tech-react", "tech-typescript", "tech-tailwind"},
+        )
+
+    def test_db_packs_mssql(self):
+        from scripts import harness as h
+        self.assertEqual(set(h.db_packs("mssql")), {"tech-mssql", "workflow-db-context"})
+
+    def test_db_packs_postgresql(self):
+        from scripts import harness as h
+        self.assertEqual(set(h.db_packs("postgresql")), {"tech-postgresql", "workflow-db-context"})
+
+    def test_db_packs_none_returns_empty(self):
+        from scripts import harness as h
+        self.assertEqual(h.db_packs("none"), [])
+
+    def test_db_packs_unknown_raises(self):
+        from scripts import harness as h
+        with self.assertRaises(ValueError):
+            h.db_packs("mysql")
+
+    def test_normalize_profiles_handles_legacy_alias(self):
+        from scripts import harness as h
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            result = h.normalize_profiles(["dotnet-etl-mssql", "generic"])
+        self.assertEqual(result, ["dotnet-etl", "generic"])
+        self.assertIn("deprecated", buf.getvalue())
+
+    def test_normalize_profiles_rejects_unknown(self):
+        from scripts import harness as h
+        with self.assertRaises(SystemExit):
+            h.normalize_profiles(["bogus"])
+
+    def test_normalize_profiles_passes_known_through(self):
+        from scripts import harness as h
+        self.assertEqual(h.normalize_profiles(["react-web", "generic"]), ["react-web", "generic"])
+
+
 class RoomodesWriterTests(unittest.TestCase):
     def test_read_baseline_returns_eight_base_modes(self):
         from scripts.lib import roomodes_writer

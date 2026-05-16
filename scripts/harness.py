@@ -31,7 +31,62 @@ MANIFEST_PATH = Path("harness/manifest.json")
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 INSTALL_STATE = Path(".harness/installed-manifest.json")
 KNOWN_ADAPTERS = {"roo", "opencode"}
-KNOWN_PROFILES = {"generic", "dotnet-etl-mssql"}
+KNOWN_PROFILES = {"generic", "dotnet-etl", "python-etl", "react-web"}
+LEGACY_PROFILE_ALIASES = {"dotnet-etl-mssql": "dotnet-etl"}
+
+_PROFILE_DEFAULT_PACKS = {
+    "generic": ("workflow-core",),
+    "dotnet-etl": ("workflow-core", "workflow-etl", "tech-csharp"),
+    "python-etl": ("workflow-core", "workflow-etl", "tech-python"),
+    "react-web": (
+        "workflow-core",
+        "workflow-web-development",
+        "tech-react",
+        "tech-typescript",
+        "tech-tailwind",
+    ),
+}
+
+_DB_PACKS = {
+    "mssql": ("tech-mssql", "workflow-db-context"),
+    "postgresql": ("tech-postgresql", "workflow-db-context"),
+    "none": (),
+}
+
+
+def default_packs_for_profile(profile: str) -> list[str]:
+    return list(_PROFILE_DEFAULT_PACKS.get(profile, ("workflow-core",)))
+
+
+def db_packs(db: str) -> list[str]:
+    if db not in _DB_PACKS:
+        raise ValueError(f"unknown db: {db!r}; expected one of mssql, postgresql, none")
+    return list(_DB_PACKS[db])
+
+
+def normalize_profiles(values):
+    """Validate and remap ``--profiles`` input.
+
+    - Legacy aliases (e.g. ``dotnet-etl-mssql``) are remapped with a stderr
+      deprecation warning.
+    - Unknown profile names raise SystemExit.
+    - Known names pass through unchanged.
+    """
+    out = []
+    for raw in values:
+        if raw in LEGACY_PROFILE_ALIASES:
+            target = LEGACY_PROFILE_ALIASES[raw]
+            print(
+                f"WARN: profile name {raw!r} is deprecated; using {target!r}. "
+                f"This alias will be removed in v0.8.",
+                file=sys.stderr,
+            )
+            out.append(target)
+        elif raw in KNOWN_PROFILES:
+            out.append(raw)
+        else:
+            raise SystemExit(f"unknown harness scope requested: profile: {raw}")
+    return out
 KNOWN_POLICIES = {"harness-owned", "managed", "managed-append", "project-owned", "exclude"}
 KNOWN_PACKS = {
     "workflow-core",
@@ -379,16 +434,18 @@ def run(argv: list[str] | None = None) -> int:
     HARNESS_VERSION = resolve_harness_version(command_root, explicit=args.release_version)
 
     if args.command == "init":
+        raw_profiles = parse_scope(args.profiles, default={"generic"})
         install(
             root=root,
             target=args.target,
             dry_run=args.dry_run,
             adapters=parse_scope(args.adapters, default={"roo"}),
-            profiles=parse_scope(args.profiles, default={"generic"}),
+            profiles=set(normalize_profiles(list(raw_profiles))),
             packs=parse_scope(args.packs, default={"workflow-core"}),
         )
         return 0
     if args.command == "upgrade":
+        raw_upgrade_profiles = parse_optional_scope(args.profiles)
         return upgrade(
             root=command_root,
             target=args.target,
@@ -396,7 +453,7 @@ def run(argv: list[str] | None = None) -> int:
             force=args.force,
             adopt_existing=args.adopt_existing,
             adapters=parse_optional_scope(args.adapters),
-            profiles=parse_optional_scope(args.profiles),
+            profiles=set(normalize_profiles(list(raw_upgrade_profiles))) if raw_upgrade_profiles is not None else None,
             packs=parse_optional_scope(args.packs),
         )
     if args.command == "check":
