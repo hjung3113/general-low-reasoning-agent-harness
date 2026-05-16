@@ -330,6 +330,40 @@ class TestStateReadRefusesSymlink(unittest.TestCase):
             self.assertIn(str(link), buf.getvalue())
 
 
+class TestStateReadRefusesOversized(unittest.TestCase):
+    """T1-M-SecM2: refuse to read state files larger than 8 MiB."""
+
+    _CAP = 8 * 1024 * 1024
+
+    def test_load_state_json_refuses_oversized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "phase-state.json"
+            # Sparse file just over the 8 MiB cap.
+            with open(path, "wb") as fh:
+                fh.seek(self._CAP + 1)
+                fh.write(b"\0")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.load_state_json(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("file too large", buf.getvalue())
+            self.assertIn(str(path), buf.getvalue())
+
+    def test_parse_state_markdown_refuses_oversized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "STATE.md"
+            with open(path, "wb") as fh:
+                fh.seek(self._CAP + 1)
+                fh.write(b"\0")
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit) as ctx:
+                    state_diagnostics.parse_state_markdown(path)
+            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
+            self.assertIn("file too large", buf.getvalue())
+
+
 class TestNoUncaughtExceptionFuzz(unittest.TestCase):
     """Spec §7: 'diagnostic exit not traceback' sweep."""
 

@@ -132,6 +132,27 @@ def _remediation_hint(path: Path) -> str:
     return _DEFAULT_HINT
 
 
+_MAX_STATE_FILE_BYTES = 8 * 1024 * 1024
+
+
+def _enforce_size_cap(path: Path) -> None:
+    """Refuse to read state files larger than 8 MiB (T1-M-SecM2).
+
+    Cheap stat() check before the os.open so we don't slurp tens of MiB
+    of attacker-planted content into memory. Sparse files count by their
+    apparent size (st_size), which matches the test using seek+truncate.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return  # let _read_text_no_symlinks surface the OSError
+    if size > _MAX_STATE_FILE_BYTES:
+        _emit_and_exit(
+            path,
+            f"{path} is file too large ({size} bytes > {_MAX_STATE_FILE_BYTES} cap)",
+        )
+
+
 def _read_text_no_symlinks(path: Path) -> str:
     """Read `path` as UTF-8 text, refusing to traverse symlinks (T1-M-SecM1).
 
@@ -185,6 +206,7 @@ def load_state_json(path: Path) -> dict:
     `SystemExit(EXIT_UNPARSEABLE_JSON)` (exit code 5).
     """
     path = Path(path)
+    _enforce_size_cap(path)
     try:
         text = _read_text_no_symlinks(path)
     except UnicodeDecodeError as exc:
@@ -336,6 +358,7 @@ def parse_state_markdown(path: Path) -> ParsedStateDoc:
     BEGIN lines whose slug fails the strict regex and raise here.
     """
     path = Path(path)
+    _enforce_size_cap(path)
     try:
         text = _read_text_no_symlinks(path)
     except OSError as exc:
