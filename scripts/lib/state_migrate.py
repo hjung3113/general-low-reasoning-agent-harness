@@ -284,6 +284,10 @@ def migrate_file(
 
     if pre_bytes == post_bytes:
         # No-op: target already at the desired shape (byte-identical).
+        # CM4: announce so operators can tell the no-op path was taken.
+        version_label = "v2" if direction == "forward" else "v0"
+        import sys as _sys
+        print(f"state already at {version_label}; no action", file=_sys.stderr)
         return
 
     if backups_dir is None:
