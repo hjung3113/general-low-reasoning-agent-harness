@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from lib.atomic_io import atomic_write_text
 from lib.managed_block import (
     BEGIN_MARKER_FMT,
     END_MARKER_FMT,
@@ -237,7 +238,8 @@ def repair(root: Path) -> RepairReport:
             report.markers_added.append(STATE_PATH)
 
     if roadmap_changed:
-        roadmap_path.write_text(new_roadmap, encoding="utf-8")
+        # T0-A atomic write: tempfile + fsync + os.replace.
+        atomic_write_text(roadmap_path, new_roadmap)
         report.files_updated.append(ROADMAP_PATH)
         if ROADMAP_PHASES_SLUG not in parse_blocks(roadmap_text):
             report.markers_added.append(ROADMAP_PATH)
@@ -245,7 +247,8 @@ def repair(root: Path) -> RepairReport:
             report.payloads_canonicalized.append(ROADMAP_PATH)
 
     if state_changed:
-        state_path.write_text(new_state, encoding="utf-8")
+        # T0-A atomic write: tempfile + fsync + os.replace.
+        atomic_write_text(state_path, new_state)
         if STATE_PATH not in report.files_updated:
             report.files_updated.append(STATE_PATH)
         if STATE_CURRENT_SLUG in blocks:
