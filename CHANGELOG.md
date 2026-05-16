@@ -118,6 +118,32 @@ All notable changes to this harness.
   `OPERATIONAL_PATHS`, and `INSTALL_PATHS` tuples from
   `scripts/lib/operational_paths.py`. `--remove-all` is the union of
   the other three.
+- **L11 — Unparseable JSON aborts (was: silent swallow) (T1-M).**
+  `scripts/lib/state_diagnostics.py` introduces `load_state_json(path)` as
+  the sole sanctioned reader for managed harness state (`.scratch/phase-state.json`,
+  `.harness/installed-manifest.json`). Malformed input now raises
+  `SystemExit(EXIT_UNPARSEABLE_JSON)` (exit code 5) with a single-line
+  `error:` diagnostic naming the file, line:column from
+  `JSONDecodeError`, and a remediation hint that surfaces
+  `harness migrate state --resume` (when a sidecar at
+  `.harness/backups/<basename>.pre-repair.*.bak.resume.json` exists) or the
+  newest `.harness/backups/<basename>.pre-repair.*.bak` filename when only
+  backups are present. Per ADR-005 / ADR-003a Artifact 1. Companion helper
+  `parse_state_markdown(path)` wraps `managed_block.parse_blocks` and
+  `roadmap_state.parse_frontmatter` so duplicate managed-block slugs,
+  unbalanced markers, invalid slugs, and unclosed frontmatter delimiters
+  abort with the same exit code instead of surfacing tracebacks or
+  silently returning partial data. Pre-slice behavior at
+  `check.check_phase_state_paths`, `worktree.check_changed_paths`,
+  `worktree.check_worktree_paths`, `state.read_install_state`,
+  `roadmap_state.roadmap_state_sync_applicable`,
+  `roadmap_state.find_roadmap_state_sync_findings`, and
+  `state_repair.repair` was an uncaught `JSONDecodeError` traceback (or, in
+  `state_repair`, a silent swallow that proceeded with an empty dict); all
+  now route through `load_state_json` and exit 5 with structured
+  diagnostics. The `state_repair.py:197` swallow→raise rewrite proper is
+  owned by T0-5 per CONTRACT-PIN §5.1; T1-M only replaces the bare
+  `json.loads` call with `load_state_json` so the helper's exit propagates.
 - **L18 (T0-3 rows) — `.gitignore` audit + lockfile entries (T0-3).**
   The skeleton `.gitignore` (already excluding `.harness/`) is
   documented to cover `.harness/audit.log`, `.harness/audit.log.*`,
