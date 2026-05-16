@@ -65,6 +65,24 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
                 f"parent st_dev={parent_dev} (cross-filesystem rename unsafe)"
             )
         os.replace(tmp_name, path)
+        # Fsync the parent directory so the rename itself is durable across
+        # power loss (C2). Best-effort: some platforms (and some FS types)
+        # reject directory fsync — swallow OSError in that case.
+        try:
+            dir_flags = os.O_RDONLY
+            o_directory = getattr(os, "O_DIRECTORY", 0)
+            dir_flags |= o_directory
+            dir_fd = os.open(str(parent), dir_flags)
+            try:
+                try:
+                    os.fsync(dir_fd)
+                except OSError:
+                    pass
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            # Opening the directory itself failed — also non-fatal.
+            pass
     except BaseException:
         # Clean up orphan tempfile on any failure (incl. OSError, RuntimeError,
         # KeyboardInterrupt).
