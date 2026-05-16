@@ -144,6 +144,21 @@ All notable changes to this harness.
   diagnostics. The `state_repair.py:197` swallow→raise rewrite proper is
   owned by T0-5 per CONTRACT-PIN §5.1; T1-M only replaces the bare
   `json.loads` call with `load_state_json` so the helper's exit propagates.
+- **L16 — Exit code 4 = `SCOPE_VIOLATION` (reservation lifted) (T1-1).**
+  ADR-003a originally reserved exit code 4 for "schema-version refusal."
+  That reservation is LIFTED by the ADR amendment commit
+  `docs(adr): assign exit code 4 to SCOPE_VIOLATION` and assigned to T1-1.
+  `scripts/lib/worktree.py:check_changed_paths` and
+  `check_worktree_paths` now `raise SystemExit(EXIT_SCOPE_VIOLATION)`
+  (imported from `scripts/lib/exitcodes.py`) on scope violation; pre-slice
+  behavior surfaced as exit 1 via a bare `SystemExit("…")`. A pre-commit
+  hook installable via `harness install --pre-commit` (uninstallable via
+  `harness uninstall --pre-commit`) invokes
+  `python3 scripts/harness.py check --worktree` from the repo root and
+  blocks commits that touch files outside `allowed_paths`. The failure
+  message names every violating file and cites
+  `docs/protocol-spec.md#scope-enforcement`. Schema-version refusal will
+  use a code in the 9..15 range when implemented in `02c-hardening`.
 - **L18 (T0-3 rows) — `.gitignore` audit + lockfile entries (T0-3).**
   The skeleton `.gitignore` (already excluding `.harness/`) is
   documented to cover `.harness/audit.log`, `.harness/audit.log.*`,
