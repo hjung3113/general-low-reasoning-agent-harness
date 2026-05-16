@@ -95,6 +95,20 @@ class MigratorTests(unittest.TestCase):
         self.assertEqual(out["review"][0]["at"], "2026-05-16T01:02:03Z")
         self.assertRegex(out["review"][0]["at"], UTC_TIMESTAMP_PATTERN)
 
+    def test_migrate_uses_fallback_when_updated_at_malformed(self) -> None:
+        # SecM5: migrator must validate state['updated_at'] against the
+        # check.py UTC regex before adopting it for the moved review entry's
+        # `at`. Otherwise an external author could smuggle an arbitrary
+        # string through the migrator and downstream evidence consumers
+        # would inherit a non-conformant timestamp.
+        state = {
+            "verification": ["Confirm x"],
+            "updated_at": "not-a-timestamp",
+        }
+        out = migrate_verification_to_review(state, migration_time="2026-05-16T01:02:03Z")
+        self.assertEqual(out["review"][0]["at"], "2026-05-16T01:02:03Z")
+        self.assertRegex(out["review"][0]["at"], UTC_TIMESTAMP_PATTERN)
+
     def test_migrator_does_not_mutate_input(self) -> None:
         state = {"verification": ["Confirm x"], "updated_at": "2026-05-15T00:00:00Z"}
         migrate_verification_to_review(state, migration_time="2026-05-16T01:00:00Z")
