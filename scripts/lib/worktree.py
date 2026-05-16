@@ -183,8 +183,8 @@ def _validate_state_patterns(state: dict) -> None:
 def check_changed_paths(target: Path, base: str) -> None:
     state_path = target / ".scratch/phase-state.json"
     state = load_state_json(state_path)
-    _run_glob_collision_scan(target, state)
     _validate_state_patterns(state)
+    _run_glob_collision_scan(target, state)
     if not changed_path_gate_allows_state(state):
         raise SystemExit(
             "Changed-path check requires phase=execute with approved=true or phase=done with approved=false"
@@ -201,8 +201,8 @@ def check_changed_paths(target: Path, base: str) -> None:
 
 def check_worktree_paths(target: Path) -> None:
     state = load_state_json(target / ".scratch/phase-state.json")
-    _run_glob_collision_scan(target, state)
     _validate_state_patterns(state)
+    _run_glob_collision_scan(target, state)
     if not changed_path_gate_allows_state(state):
         raise SystemExit(
             "Worktree changed-path check requires phase=execute with approved=true or phase=done with approved=false"

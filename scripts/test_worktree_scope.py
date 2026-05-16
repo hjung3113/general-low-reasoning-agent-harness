@@ -147,6 +147,40 @@ class MalformedPatternTests(unittest.TestCase):
         with self.assertRaises(worktree.ScopePatternError):
             worktree.matches_any("anything", ["[abc"])
 
+    def test_malformed_pattern_loud_fails_before_collision_scan(self):
+        """T0-2-M1: validation must run BEFORE the collision scan so a
+        malformed pattern surfaces as SystemExit(5) WITHOUT a confusing
+        collision warning being emitted first."""
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td)
+            (target / ".scratch").mkdir()
+            # Create a literal directory that would collide with `[abc` were
+            # it parsed as a glob — to make sure the scanner WOULD warn if
+            # called.
+            (target / "[abc").mkdir()
+            state = {
+                "phase": "execute",
+                "approved": True,
+                "allowed_paths": ["[abc"],
+                "blocked_paths": [],
+            }
+            (target / ".scratch/phase-state.json").write_text(json.dumps(state))
+            import subprocess as sp
+            sp.check_call(["git", "init", "-q"], cwd=target)
+            sp.check_call(
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                 "commit", "--allow-empty", "-q", "-m", "x"],
+                cwd=target,
+            )
+            # Capture stderr so we can assert no warning preceded the exit.
+            import io as _io
+            from contextlib import redirect_stderr
+            buf = _io.StringIO()
+            with redirect_stderr(buf):
+                with self.assertRaises(SystemExit):
+                    worktree.check_worktree_paths(target)
+            self.assertNotIn("warning:", buf.getvalue())
+
     def test_malformed_pattern_surfaces_as_systemexit_in_check(self):
         with tempfile.TemporaryDirectory() as td:
             target = Path(td)
