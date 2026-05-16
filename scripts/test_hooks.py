@@ -169,6 +169,30 @@ class InstallTargetValidationTests(unittest.TestCase):
         self.assertFalse((nested / ".git").exists())
 
 
+class InstallShebangValidationTests(unittest.TestCase):
+    """T1-1-SecM3: refuse to append to a hook with an incompatible shebang.
+
+    Our managed block is POSIX shell. Splicing it into a python/ruby/etc.
+    hook would produce garbage that the interpreter would reject (and in
+    pathological cases, execute unexpected code). Refuse with a clear
+    diagnostic instead.
+    """
+
+    def test_install_refuses_python_shebang_pre_commit(self):
+        tmp = _make_target([".scratch/"])
+        hook = tmp / ".git/hooks/pre-commit"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n")
+        hook.chmod(0o755)
+        original = hook.read_bytes()
+        with self.assertRaises(SystemExit) as ctx:
+            hooks.install_pre_commit_hook(tmp)
+        msg = str(ctx.exception)
+        self.assertIn("incompatible shebang", msg)
+        # File must be untouched.
+        self.assertEqual(hook.read_bytes(), original)
+
+
 class UninstallTests(unittest.TestCase):
     def test_uninstall_removes_block_keeps_user_content(self):
         tmp = _make_target([".scratch/"])

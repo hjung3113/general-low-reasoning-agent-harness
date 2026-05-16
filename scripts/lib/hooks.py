@@ -20,6 +20,7 @@ content).
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -152,6 +153,20 @@ def install_pre_commit_hook(target: Path) -> None:
             hook.write_text(new_body, encoding="utf-8")
         _make_executable(hook)
         return
+
+    # SecM3: refuse to splice POSIX-shell content into a hook whose
+    # shebang declares a different interpreter. Allowed: /bin/sh,
+    # /bin/bash, or `env (ba)?sh`.
+    first_line = existing.splitlines()[0] if existing.strip() else ""
+    if first_line.startswith("#!"):
+        _SHEBANG_OK = re.compile(
+            r"^#!\s*(?:/bin/sh|/bin/bash|/usr/bin/env\s+(?:ba)?sh)\s*$"
+        )
+        if not _SHEBANG_OK.match(first_line):
+            raise SystemExit(
+                f"existing pre-commit hook has incompatible shebang "
+                f"({first_line!r}); cannot append harness managed block"
+            )
 
     # Append the managed block to the existing user-authored hook.
     suffix = "" if existing.endswith("\n") else "\n"
