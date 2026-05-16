@@ -148,6 +148,129 @@ class AuditLogTests(unittest.TestCase):
         finally:
             audit_mod.ROTATION_BYTES = original
 
+    def test_audit_rotation_holds_flock_across_rename(self) -> None:
+        """C4 (white-box): _rotate MUST be called while the flock is held.
+
+        The rename of the file-under-lock is the contended step. POSIX
+        flock binds to the inode, which survives rename, so subsequent
+        openers block correctly. If the flock is released before _rotate,
+        a racing writer can rotate first, leading to FileNotFoundError /
+        clobbered audit.log.1. This test asserts call ordering directly so
+        the property holds regardless of test scheduling luck.
+        """
+        from unittest import mock
+        import fcntl as _fcntl
+
+        events: list[str] = []
+        real_flock = _fcntl.flock
+        real_rotate = audit_mod._rotate
+
+        def trace_flock(fd, op):
+            if op == _fcntl.LOCK_UN:
+                events.append("unlock")
+            elif op & _fcntl.LOCK_EX:
+                events.append("lock")
+            return real_flock(fd, op)
+
+        def trace_rotate(p):
+            events.append("rotate")
+            return real_rotate(p)
+
+        original = audit_mod.ROTATION_BYTES
+        audit_mod.ROTATION_BYTES = 256
+        try:
+            # Pre-fill above threshold so the next append triggers rotation.
+            for _ in range(6):
+                audit_append(
+                    {"verb": "phase.set", "args": {"p": "x" * 50},
+                     "before_sha256": "a" * 64, "after_sha256": "b" * 64,
+                     "at": "2026-05-16T00:00:00.000000000Z", "by": "t@e"},
+                    audit_path=self.audit,
+                )
+            events.clear()
+            with mock.patch.object(_fcntl, "flock", side_effect=trace_flock), \
+                 mock.patch.object(audit_mod, "_rotate", side_effect=trace_rotate):
+                audit_append(
+                    {"verb": "phase.set", "args": {"p": "z" * 50},
+                     "before_sha256": "a" * 64, "after_sha256": "b" * 64,
+                     "at": "2026-05-16T00:00:00.000000000Z", "by": "t@e"},
+                    audit_path=self.audit,
+                )
+        finally:
+            audit_mod.ROTATION_BYTES = original
+        # Required ordering: lock, rotate, ..., unlock — rotate MUST come
+        # before the FIRST unlock, not after.
+        lock_idx = events.index("lock")
+        rotate_idx = events.index("rotate")
+        first_unlock_after_lock = next(
+            (i for i, ev in enumerate(events) if i > lock_idx and ev == "unlock"),
+            None,
+        )
+        self.assertIsNotNone(first_unlock_after_lock, f"events={events}")
+        self.assertLess(
+            rotate_idx, first_unlock_after_lock,
+            f"_rotate must run before flock is released; events={events}",
+        )
+
+    def test_audit_rotation_concurrent_writers_no_data_loss(self) -> None:
+        """C4: writers crossing the rotation threshold concurrently must
+        not lose entries or raise FileNotFoundError mid-rotation, and the
+        rotated audit.log.1 must not be clobbered by a racing rename."""
+        original = audit_mod.ROTATION_BYTES
+        audit_mod.ROTATION_BYTES = 512
+        try:
+            self.audit.parent.mkdir(parents=True, exist_ok=True)
+            # Pre-fill above the rotation threshold so the FIRST writer in
+            # the next batch decides to rotate immediately. With 60 workers
+            # all opening before any has finished, multiple workers see the
+            # rotated-but-not-yet-replaced state and race on rotation.
+            for i in range(20):
+                audit_append(
+                    {
+                        "verb": "phase.set",
+                        "args": {"i": i, "padding": "x" * 50},
+                        "before_sha256": "a" * 64,
+                        "after_sha256": "b" * 64,
+                        "at": "2026-05-16T00:00:00.000000000Z",
+                        "by": "t@e",
+                    },
+                    audit_path=self.audit,
+                )
+            with multiprocessing.Pool(20) as pool:
+                results = pool.starmap_async(
+                    _worker,
+                    [(str(self.audit), i) for i in range(60)],
+                )
+                # Surface FileNotFoundError or any other exception from
+                # rotation racing.
+                try:
+                    results.get(timeout=30)
+                except FileNotFoundError as exc:  # pragma: no cover
+                    self.fail(f"rotation raced into missing path: {exc}")
+                except Exception as exc:
+                    self.fail(f"rotation worker raised: {exc!r}")
+            # Every line must be parseable JSON. No torn writes.
+            files = [self.audit] + sorted(
+                (self.tmp / ".harness").glob("audit.log.*")
+            )
+            total = 0
+            for f in files:
+                if not f.exists():
+                    continue
+                for ln in f.read_text().splitlines():
+                    if not ln.strip():
+                        continue
+                    parsed = json.loads(ln)
+                    self.assertIn("index", parsed)
+                    total += 1
+            # 20 pre-fill + 60 concurrent = 80 entries total (subject to
+            # ROTATION_KEEP=5 dropping the oldest). With ~50-byte entries
+            # at 512-byte rotation the oldest may be dropped; assert we
+            # retain at least 60 (the most recent batch).
+            self.assertGreaterEqual(total, 60, f"only {total} entries retained")
+        finally:
+            audit_mod.ROTATION_BYTES = original
+
     def test_compute_state_hash_empty(self) -> None:
         nonexistent = self.tmp / "missing.json"
         self.assertEqual(compute_state_hash(nonexistent), "")
