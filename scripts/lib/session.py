@@ -29,8 +29,10 @@ import fcntl
 import json
 import os
 import platform
+import re
 import signal
 import socket
+import subprocess
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -44,14 +46,47 @@ class LockfileExists(Exception):
 _active_lockfile: Optional[Path] = None
 
 
+_DARWIN_BOOTTIME_RE = re.compile(r"\{\s*sec\s*=\s*(\d+)")
+
+
 def read_boot_id() -> Optional[str]:
-    """Return Linux ``/proc/sys/kernel/random/boot_id`` or ``None`` off-Linux."""
-    if platform.system() != "Linux":
-        return None
-    try:
-        return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
-    except OSError:
-        return None
+    """Return a stable per-boot identifier, or ``None`` if unavailable.
+
+    Per-platform sources (M1 amendment):
+
+    - Linux: ``/proc/sys/kernel/random/boot_id`` (unchanged contract).
+    - macOS: ``sysctl -n kern.boottime`` → ``{ sec = N, usec = M } ...``,
+      parsed to ``"darwin-boot-{N}"``. Stable across the lifetime of a
+      single kernel boot; changes on reboot. The ``usec`` field is
+      intentionally dropped — a per-second granularity is sufficient for
+      detecting reboots and avoids spurious mismatches when the boot
+      epoch is sub-second skewed across reads.
+    - Other Unix: ``None`` (caller treats as "boot_id unknown" and falls
+      back to pid-liveness alone).
+    """
+    system = platform.system()
+    if system == "Linux":
+        try:
+            return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            return None
+    if system == "Darwin":
+        try:
+            r = subprocess.run(
+                ["sysctl", "-n", "kern.boottime"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if r.returncode != 0:
+            return None
+        m = _DARWIN_BOOTTIME_RE.search(r.stdout)
+        if not m:
+            return None
+        return f"darwin-boot-{m.group(1)}"
+    return None
 
 
 def _harness_version() -> str:
