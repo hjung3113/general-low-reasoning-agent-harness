@@ -2740,7 +2740,10 @@ progress:
                 "Execution output checklist:",
                 "non-empty `allowed_paths`",
                 "non-empty `verification`",
-                "Run `python3 scripts/harness.py check --worktree` before committing.",
+                # T1-1: pre-commit invocation promoted to a numbered REQUIRED
+                # section; the literal verb invocation stays present.
+                "python3 scripts/harness.py check --worktree",
+                "## Pre-commit (REQUIRED",
             ],
             "done.md": [
                 "Use this command to close a completed phase.",
