@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .check import VERIFICATION_PREFIXES
+from .check import UTC_TIMESTAMP, VERIFICATION_PREFIXES
 
 
 __all__ = ["migrate_verification_to_review"]
@@ -63,6 +63,10 @@ def migrate_verification_to_review(state: dict, *, migration_time: str) -> dict:
         raw = []
     at_value = state.get("updated_at") or migration_time
     if not isinstance(at_value, str):
+        at_value = migration_time
+    # SecM5: validate against the same UTC regex check.py enforces on
+    # review[N].at. A malformed updated_at must not be smuggled through.
+    if not UTC_TIMESTAMP.fullmatch(at_value):
         at_value = migration_time
 
     keepers: list[str] = []
