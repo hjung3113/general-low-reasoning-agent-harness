@@ -660,6 +660,100 @@ class TestGrepGate(unittest.TestCase):
         violations = self._gate_scan(scripts_root, tracked)
         self.assertEqual(violations, [], f"grep-gate violations: {violations}")
 
+    def test_grep_gate_catches_write_bytes(self) -> None:
+        """The gate must flag .write_bytes() against a tracked path, not just .write_text().
+
+        Limitation: dynamic path computation evades AST detection. Manual
+        review covers that case.
+        """
+        import tempfile
+
+        from lib.operational_paths import (
+            INSTALL_PATHS,
+            OPERATIONAL_PATHS,
+            STATE_FILE_PATHS,
+        )
+
+        tracked = STATE_FILE_PATHS + OPERATIONAL_PATHS + INSTALL_PATHS
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_scripts = Path(tmpdir) / "scripts"
+            fake_scripts.mkdir()
+            planted = fake_scripts / "bad.py"
+            planted.write_text(
+                'from pathlib import Path\n'
+                'Path(".scratch/phase-state.json").write_bytes(b"x")\n',
+                encoding="utf-8",
+            )
+            violations = self._gate_scan(fake_scripts, tracked)
+            self.assertTrue(
+                violations,
+                "grep gate failed to detect write_bytes violation",
+            )
+
+    def test_grep_gate_catches_open_w_mode(self) -> None:
+        """The gate must flag open(path, "w") against a tracked path.
+
+        Limitation: dynamic path computation evades AST detection. Manual
+        review covers that case.
+        """
+        import tempfile
+
+        from lib.operational_paths import (
+            INSTALL_PATHS,
+            OPERATIONAL_PATHS,
+            STATE_FILE_PATHS,
+        )
+
+        tracked = STATE_FILE_PATHS + OPERATIONAL_PATHS + INSTALL_PATHS
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_scripts = Path(tmpdir) / "scripts"
+            fake_scripts.mkdir()
+            planted = fake_scripts / "bad.py"
+            planted.write_text(
+                'open(".scratch/phase-state.json", "w").write("x")\n',
+                encoding="utf-8",
+            )
+            violations = self._gate_scan(fake_scripts, tracked)
+            self.assertTrue(
+                violations,
+                "grep gate failed to detect open(...,'w') violation",
+            )
+
+    def test_grep_gate_catches_two_line_alias(self) -> None:
+        """AST pass must catch two-line aliased violations:
+        ``p = Path("...")``; ``p.write_text(...)``.
+
+        Limitation: dynamic path computation (e.g. f-strings, joins) evades
+        AST detection. Manual review covers that case.
+        """
+        import tempfile
+
+        from lib.operational_paths import (
+            INSTALL_PATHS,
+            OPERATIONAL_PATHS,
+            STATE_FILE_PATHS,
+        )
+
+        tracked = STATE_FILE_PATHS + OPERATIONAL_PATHS + INSTALL_PATHS
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_scripts = Path(tmpdir) / "scripts"
+            fake_scripts.mkdir()
+            planted = fake_scripts / "bad.py"
+            planted.write_text(
+                'from pathlib import Path\n'
+                'p = Path(".scratch/phase-state.json")\n'
+                'p.write_text("x")\n',
+                encoding="utf-8",
+            )
+            violations = self._gate_scan(fake_scripts, tracked)
+            self.assertTrue(
+                violations,
+                "grep gate failed to detect two-line aliased violation",
+            )
+
     def test_grep_gate_fails_when_write_text_added_against_state_path(self) -> None:
         """Plant a synthetic violation in a temp scripts/ tree; gate must flag it."""
         import tempfile
