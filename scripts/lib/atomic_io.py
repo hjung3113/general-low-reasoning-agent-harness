@@ -110,6 +110,39 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
         raise
 
 
+def _open_audit_log(path: Path) -> int:
+    """Open ``path`` for the audit-append codepath, returning the raw fd.
+
+    Flags applied:
+    - ``O_WRONLY | O_APPEND | O_CREAT`` — append-only semantics, create if absent.
+    - ``O_NOFOLLOW`` (M1) — refuse to follow a symlink at the final component.
+      ELOOP → ``AuditLogRefusedError``.
+    - ``O_CLOEXEC`` (M2) — fd does not leak into spawned subprocesses.
+
+    Factored out so tests can inspect fd flags before the writer hands the
+    fd off. Callers are responsible for ``os.close``.
+    """
+    open_flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_cloexec = getattr(os, "O_CLOEXEC", 0)
+    open_flags |= o_nofollow | o_cloexec
+    try:
+        fd = os.open(str(path), open_flags, 0o644)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise AuditLogRefusedError(
+                e.errno,
+                f"atomic_append_log: refusing to follow symlink at {path}",
+            ) from e
+        raise
+    # Belt-and-suspenders for platforms where O_CLOEXEC is 0 (absent): set
+    # FD_CLOEXEC explicitly via fcntl so the test invariant holds portably.
+    if not o_cloexec:  # pragma: no cover — modern POSIX always defines it
+        flags = fcntl.fcntl(fd, fcntl.F_GETFD)
+        fcntl.fcntl(fd, fcntl.F_SETFD, flags | fcntl.FD_CLOEXEC)
+    return fd
+
+
 def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -> None:
     """Append one ``line`` to ``path`` atomically.
 
@@ -130,21 +163,7 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
             f"atomic_append_log: encoded line length {len(encoded)} exceeds "
             f"max_bytes_per_line={max_bytes_per_line} (PIPE_BUF-safe budget)"
         )
-    open_flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
-    # M1: refuse to follow symlinks at the final component. Prevents an
-    # adversary from redirecting audit lines into an arbitrary file by
-    # replacing audit.log with a symlink.
-    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
-    open_flags |= o_nofollow
-    try:
-        fd = os.open(str(path), open_flags, 0o644)
-    except OSError as e:
-        if e.errno == errno.ELOOP:
-            raise AuditLogRefusedError(
-                e.errno,
-                f"atomic_append_log: refusing to follow symlink at {path}",
-            ) from e
-        raise
+    fd = _open_audit_log(path)
     try:
         # flock(LOCK_EX) serializes writers across processes. POSIX O_APPEND
         # already gives <PIPE_BUF atomicity but flock guards against non-POSIX
