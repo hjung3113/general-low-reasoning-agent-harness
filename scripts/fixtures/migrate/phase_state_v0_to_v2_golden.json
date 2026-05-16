@@ -34,6 +34,7 @@
   "phase": "done",
   "plan_id": "generalized-harness-release-01",
   "plan_path": ".planning/phases/01-generalized-harness-release/01-01-PLAN.md",
+  "review": [],
   "state_path": ".planning/STATE.md",
   "state_schema_version": 2,
   "summary": "Generalized harness release work is approved in a separate repository copy.",

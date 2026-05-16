@@ -45,6 +45,7 @@ from typing import Optional
 
 from .atomic_io import atomic_write_text
 from . import backups as _backups_mod
+from . import state_migrate_t04 as _t04
 
 
 MIGRATOR_VERSION = "t0-1-v1"
@@ -100,11 +101,19 @@ def _truncate_timestamp(value: str) -> str:
     return value
 
 
+_FORWARD_MIGRATION_TIME_FALLBACK = "1970-01-01T00:00:00.000000000Z"
+
+
 def forward(state_v0: dict) -> dict:
     """Apply the v0 -> v2 transformation in memory.
 
     Idempotent at ``json.loads`` level: applying ``forward`` twice yields a
     dict that ``==``-equals the once-forward result.
+
+    SecM1: also delegates to ``state_migrate_t04.migrate_verification_to_review``
+    so that a live v0 -> v2 migration emits a checker-clean post-state in a
+    single pass (soft-prefix verification entries are moved into ``review``).
+    The T0-4 migrator is idempotent, so re-running ``forward`` is safe.
     """
     out = dict(state_v0)
     out["state_schema_version"] = 2
@@ -112,13 +121,24 @@ def forward(state_v0: dict) -> dict:
         v = out.get(key)
         if isinstance(v, str):
             out[key] = _promote_timestamp(v)
+    out = _t04.migrate_verification_to_review(
+        out, migration_time=_FORWARD_MIGRATION_TIME_FALLBACK
+    )
     return out
 
 
 def reverse(state_v2: dict) -> dict:
-    """Apply the v2 -> v0 transformation in memory (Artifact 5 §--reverse)."""
+    """Apply the v2 -> v0 transformation in memory (Artifact 5 §--reverse).
+
+    SecM1: ``review`` is a v2-only field (T0-4). When reversing, drop it if
+    empty to preserve the v0 round-trip property; if non-empty, retain it
+    (the v0 shape tolerates the extra key — operators inspecting reverted
+    state should still see the evidence trail).
+    """
     out = dict(state_v2)
     out.pop("state_schema_version", None)
+    if out.get("review") == []:
+        out.pop("review", None)
     for key in _TIMESTAMP_FIELDS:
         v = out.get(key)
         if isinstance(v, str):
