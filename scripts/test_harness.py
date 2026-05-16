@@ -3396,6 +3396,20 @@ class ManagedBlockCheckWarningTests(unittest.TestCase):
         self.assertIn("missing_managed_block", codes)
 
 
+class LiveFixtureMigrationTests(unittest.TestCase):
+    """T0-1 Block D — live ``.scratch/phase-state.json`` was migrated."""
+
+    def test_live_fixture_was_migrated_by_this_slice(self) -> None:
+        live = REPO_ROOT / ".scratch" / "phase-state.json"
+        # Skip in installed-target contexts where the live fixture is a
+        # source-repo concept (heuristic: harness/manifest.json absent).
+        if not (REPO_ROOT / "harness" / "manifest.json").exists():
+            self.skipTest("not a source-repo checkout (harness/manifest.json absent)")
+        state = json.loads(live.read_text(encoding="utf-8"))
+        self.assertEqual(state.get("state_schema_version"), 2)
+        self.assertEqual(state.get("phase"), "done")
+
+
 class ChangelogStructureTests(unittest.TestCase):
     """T0-1 (02b-02) — CHANGELOG ### Breaking subsection (Block 0).
 
