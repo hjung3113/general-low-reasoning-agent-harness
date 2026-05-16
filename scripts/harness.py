@@ -64,7 +64,7 @@ def db_packs(db: str) -> list[str]:
     return list(_DB_PACKS[db])
 
 
-def normalize_profiles(values):
+def normalize_profiles(values: Iterable[str]) -> list[str]:
     """Validate and remap ``--profiles`` input.
 
     - Legacy aliases (e.g. ``dotnet-etl-mssql``) are remapped with a stderr
@@ -72,7 +72,7 @@ def normalize_profiles(values):
     - Unknown profile names raise SystemExit.
     - Known names pass through unchanged.
     """
-    out = []
+    out: list[str] = []
     for raw in values:
         if raw in LEGACY_PROFILE_ALIASES:
             target = LEGACY_PROFILE_ALIASES[raw]
@@ -87,6 +87,8 @@ def normalize_profiles(values):
         else:
             raise SystemExit(f"unknown harness scope requested: profile: {raw}")
     return out
+
+
 KNOWN_POLICIES = {"harness-owned", "managed", "managed-append", "project-owned", "exclude"}
 KNOWN_PACKS = {
     "workflow-core",
