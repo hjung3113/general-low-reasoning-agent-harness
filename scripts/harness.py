@@ -7,12 +7,10 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 from lib.planning_status import ProjectionError, load_projection
 from lib.version import (
@@ -336,27 +334,13 @@ def run_delegated_command(command: list[str], cwd: Path) -> int:
     return 0
 
 
-def sync_roomodes_profile_modes(target: Path, profiles: Iterable[str], source_root: Path) -> None:
-    """Replace the profile-modes section of target/.roomodes with the modes
-    contributed by the currently installed profiles.
-
-    If target/.roomodes does not exist (e.g. opencode-only install) this is a
-    no-op. Profile-owned modes are read from
-    ``<source_root>/harness/profiles/<profile>/modes/*.json``.
-    """
-    from lib import roomodes_writer
-
-    roomodes_path = target / ".roomodes"
-    if not roomodes_path.exists():
-        return
-    profile_modes: list[dict] = []
-    for profile in profiles:
-        modes_dir = source_root / "harness/profiles" / profile / "modes"
-        if not modes_dir.exists():
-            continue
-        for mode_file in sorted(modes_dir.glob("*.json")):
-            profile_modes.append(json.loads(mode_file.read_text(encoding="utf-8")))
-    roomodes_writer.set_profile_modes(roomodes_path, profile_modes)
+from lib.install import (
+    sync_roomodes_profile_modes,
+    write_copy,
+    write_text_file,
+    write_text_conflict,
+    remove_empty_parents,
+)
 
 
 def install(
@@ -368,50 +352,16 @@ def install(
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
 ) -> None:
-    adapters = adapters if adapters is not None else {"roo"}
-    profiles = profiles if profiles is not None else {"generic"}
-    packs = packs if packs is not None else set()
-    all_entries = load_manifest(root)
-    validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
-    entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
-    target = target.resolve()
-    destinations = [
-        (entry, source_path(root, entry), destination_path(target, entry))
-        for entry in entries
-        if entry.policy != "exclude"
-    ]
-    existing = [
-        str(entry.path)
-        for entry, _, destination in destinations
-        if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
-    ]
-    if existing:
-        raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
-
-    if dry_run:
-        print("init dry-run")
-        print(f"target={target}")
-        print(f"source={root.resolve()}")
-        print(f"version={HARNESS_VERSION}")
-        print("adapters=" + ",".join(sorted(adapters)))
-        print("profiles=" + ",".join(sorted(profiles)))
-        print("packs=" + ",".join(sorted(packs)))
-        print(f"planned_writes={len(destinations)}")
-        print("no mutation performed")
-        return
-
-    target.mkdir(parents=True, exist_ok=True)
-    for entry, source, destination in destinations:
-        if not dry_run:
-            if entry.policy == "managed-append":
-                write_managed_append(source=source, destination=destination, entry=entry)
-            elif entry.policy == "project-owned" and destination.exists():
-                continue
-            else:
-                write_copy(source, destination)
-
-    sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
-    write_install_state(root=root, target=target, entries=entries, adapters=adapters, profiles=profiles, packs=packs)
+    from lib.install import install as _install
+    return _install(
+        root=root,
+        target=target,
+        dry_run=dry_run,
+        adapters=adapters,
+        profiles=profiles,
+        packs=packs,
+        harness_version=HARNESS_VERSION,
+    )
 
 
 def migrate_install_state(state: dict) -> dict:
@@ -679,18 +629,6 @@ def should_check_as_installed_target(root: Path) -> bool:
     return _check_mod.should_check_as_installed_target(root, harness_version=HARNESS_VERSION)
 
 
-def write_copy(source: Path, destination: Path) -> None:
-    assert_safe_write_destination(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
-
-
-def write_text_file(destination: Path, text: str) -> None:
-    assert_safe_write_destination(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(text, encoding="utf-8")
-
-
 from lib.append_block import (
     AppendBlockPlan,
     ParsedAppendBlock,
@@ -705,23 +643,6 @@ from lib.append_block import (
     plan_managed_append,
     plan_managed_append_retirement,
 )
-
-
-def write_text_conflict(target: Path, path_text: str, content: str) -> None:
-    destination = target / ".harness/conflicts" / normalize_path(path_text)
-    write_text_file(destination, content)
-
-
-
-def remove_empty_parents(path: Path, stop: Path) -> None:
-    stop = stop.resolve()
-    current = path.resolve()
-    while current != stop and is_relative_to(current, stop):
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
 
 
 def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
