@@ -194,10 +194,14 @@ def repair(root: Path) -> RepairReport:
     snapshot = parse_state_snapshot(state_text)
     phase_state: dict = {}
     if phase_state_path.exists():
-        try:
-            phase_state = json.loads(phase_state_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            report.warnings.append(f"phase-state.json invalid: {exc}")
+        # T1-M: route through state_diagnostics.load_state_json so malformed
+        # phase-state.json exits with code 5 + structured diagnostic instead
+        # of being silently swallowed into report.warnings. T0-5 owns the
+        # RepairRefusedError wrapper at this site (CONTRACT-PIN §5.1); T1-M
+        # only provides the helper and replaces the bare json.loads call.
+        # TODO(T0-5): wrap UnparseableStateError in RepairRefusedError.
+        from lib.state_diagnostics import load_state_json
+        phase_state = load_state_json(phase_state_path)
 
     roadmap_payload = canonical_roadmap_phases_payload(phases)
 
