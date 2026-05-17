@@ -427,6 +427,44 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cmp.diff_files, [])
 
 
+class RetryPersistenceTests(unittest.TestCase):
+    """C1 — retry policy must persist every attempt to disk, not only the final."""
+
+    def setUp(self) -> None:
+        self.fixture = _load(FX01)
+        self.tmp = Path(tempfile.mkdtemp(prefix="retry-persist."))
+        self.scratch = self.tmp / "scratch"
+        self.evidence = self.tmp / "evidence"
+
+    def test_retry_persists_each_attempt(self) -> None:
+        # Two failing responses + one passing; runner should retry twice and
+        # write per-attempt artifacts plus a final result file.
+        client = FakeClient(
+            scripted_responses=[
+                "# nothing",
+                "# still nothing",
+                "harness phase set plan",
+            ]
+        )
+        record = run_trial(self.fixture, 11, client, self.scratch, self.evidence)
+        self.assertTrue(record.passed)
+        attempts_dir = self.evidence / "discuss-to-plan" / "trial-011-attempts"
+        self.assertTrue(attempts_dir.is_dir(), f"missing {attempts_dir}")
+        attempts = sorted(attempts_dir.glob("attempt-*.json"))
+        self.assertEqual(
+            len(attempts), 3, f"expected 3 attempt files, got {[a.name for a in attempts]}"
+        )
+        # Preserve failure signal from earlier attempts.
+        a1 = json.loads(attempts[0].read_text())
+        a2 = json.loads(attempts[1].read_text())
+        a3 = json.loads(attempts[2].read_text())
+        self.assertFalse(a1["passed"])
+        self.assertFalse(a2["passed"])
+        self.assertTrue(a3["passed"])
+        # Per-attempt judgment reason preserved (not just final).
+        self.assertIn("phase set plan", a1["judgment"]["reason"])
+
+
 class AggregatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="agg."))
