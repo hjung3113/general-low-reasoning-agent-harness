@@ -758,6 +758,29 @@ def run(argv: list[str] | None = None) -> int:
         ),
     )
 
+    # ----- halt-diary admin verbs (design §5.3 + §12.7) -----
+    halt_diary_parser = subparsers.add_parser(
+        "halt-diary",
+        help="Halt-diary admin verbs (§5.3 + §12.7).",
+    )
+    halt_diary_sub = halt_diary_parser.add_subparsers(
+        dest="halt_diary_command", required=True
+    )
+    hd_clear = halt_diary_sub.add_parser(
+        "clear",
+        help=(
+            "Acknowledge and clear the last_halt diary entry. "
+            "TTY-required admin verb (§12.7)."
+        ),
+    )
+    hd_clear.add_argument(
+        "--by",
+        dest="by",
+        default=None,
+        metavar="EMAIL",
+        help="Acting user email (recorded in audit row; defaults to gitconfig).",
+    )
+
     # Audit-tip anchor admin verbs (design doc §12.1, S00.7-anchor).
     anchor_parser = subparsers.add_parser(
         "anchor",
@@ -956,6 +979,11 @@ def run(argv: list[str] | None = None) -> int:
         if args.session_command == "unlock":
             return cmd_session_unlock(args)
         raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
+    if args.command == "halt-diary":
+        from lib.halt_diary_cli import cmd_halt_diary_clear
+        if args.halt_diary_command == "clear":
+            return cmd_halt_diary_clear(args)
+        raise AssertionError(f"Unhandled halt-diary subcommand: {args.halt_diary_command}")
     if args.command == "verify":
         from lib.audit_verify_cli import cmd_verify_audit
         return cmd_verify_audit(args, root)

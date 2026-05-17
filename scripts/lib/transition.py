@@ -159,6 +159,11 @@ class StaleApprovalError(SystemExit):
             "Fix: populate state.allowed_paths (non-empty list of "
             "path globs) before entering execute"
         ),
+        "last_halt_unacknowledged": (
+            "Fix: run 'harness halt-diary clear' to acknowledge and clear the "
+            "halt diary, or 'harness phase reopen --to plan --reason \"...\"' "
+            "to rewind the phase (design §12.12)"
+        ),
     }
 
     def __init__(
@@ -318,6 +323,19 @@ def validate_transition_with_state(
                 detail=(
                     f"approved_at={approved_at!r} < "
                     f"execute_attempt_started_at={execute_attempt_started_at!r}"
+                ),
+            )
+        # §12.12: refuse if last_halt is non-null with acknowledged_at=None.
+        last_halt = state.get("last_halt")
+        if last_halt is not None and last_halt.get("acknowledged_at") is None:
+            raise StaleApprovalError(
+                to_phase,
+                from_phase,
+                "last_halt_unacknowledged",
+                detail=(
+                    "last_halt diary is present but has not been acknowledged. "
+                    "Fix: run 'harness halt-diary clear' to acknowledge and clear, "
+                    "or 'harness phase reopen --to plan --reason \"...\"' to rewind."
                 ),
             )
         return

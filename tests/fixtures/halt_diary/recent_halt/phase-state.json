@@ -1,0 +1,33 @@
+{
+  "phase": "execute",
+  "approved": true,
+  "approved_at": "2026-05-18T10:00:00Z",
+  "approved_by": "alice@example.com",
+  "execution_mode": "manual",
+  "state_schema_version": 2,
+  "verification": ["pytest tests/ -q"],
+  "allowed_paths": ["scripts/lib/"],
+  "draft_verification": null,
+  "draft_allowed_paths": null,
+  "plan_finalized_at": "2026-05-18T09:50:00Z",
+  "execute_attempt_started_at": "2026-05-18T10:00:00Z",
+  "autopilot_run_id": null,
+  "autopilot_mode": null,
+  "autopilot_phase_slug": null,
+  "autopilot_start_entry_hash": null,
+  "autopilot_allow_network": false,
+  "autopilot_started_at_iso": null,
+  "cli_budgets_remaining": null,
+  "last_halt": {
+    "run_id": "abc123",
+    "mode": "phase_autopilot",
+    "phase_slug": "02c-hardening",
+    "last_successful_transition": null,
+    "halt_reason": "budget_exhausted:file_mutation_ops",
+    "halt_at_iso": "2026-05-18T09:55:00Z",
+    "suggested_next_command": "harness phase autopilot stop --reason 'budget exhausted'",
+    "suggested_next_command_requires_human": false,
+    "acknowledged_at": null
+  },
+  "last_halt_history": []
+}

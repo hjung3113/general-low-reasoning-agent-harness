@@ -706,6 +706,21 @@ def run_start(
     )
 
     after_state = dict(before_state)
+
+    # §5.3 + §1.1 (S11): if last_halt is non-null, rotate it into
+    # last_halt_history (cap=5) before stamping the new run. The new run
+    # IS the implicit acknowledgement per §1.1 line 67 — stamp acknowledged_at
+    # now if it was not already set.
+    _prior_last_halt = before_state.get("last_halt")
+    if _prior_last_halt is not None:
+        from . import phase_reopen as _phase_reopen
+        _now_for_ack = _phase_preflight.now_iso_z()
+        _acked = _phase_reopen._ack_diary(_prior_last_halt, now_iso=_now_for_ack)
+        after_state["last_halt_history"] = _phase_reopen._rotate_last_halt_history(
+            before_state, _acked
+        )
+        after_state["last_halt"] = None
+
     after_state["execution_mode"] = execution_mode_value
     after_state["autopilot_run_id"] = new_run_id
     after_state["autopilot_mode"] = mode
