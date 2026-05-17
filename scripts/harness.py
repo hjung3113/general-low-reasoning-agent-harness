@@ -349,8 +349,37 @@ def run_delegated_command(command: list[str], cwd: Path) -> int:
     return 0
 
 
+def main() -> int:
+    """Entry point alias for `run()` — used by harness_cli.py console script."""
+    return run()
+
+
 def run(argv: list[str] | None = None) -> int:
     global HARNESS_VERSION
+
+    # S07: check for deprecated flags BEFORE argparse sees them (§3.3, §3.4).
+    # --chain / --auto are detected anywhere in argv; halt with exit 13 +
+    # structured hint + audit entry verb=cli.deprecated_flag.
+    _check_argv = argv if argv is not None else sys.argv[1:]
+    try:
+        from lib.cli_deprecated import check_deprecated_flags, print_and_exit
+        _dep_err = check_deprecated_flags(
+            _check_argv,
+            audit_path=None,  # no audit path here; audit written only if repo-root available
+        )
+        if _dep_err is not None:
+            # Try to write audit to the default .harness/audit.log if we can find the repo root
+            try:
+                _repo = repo_root()
+                _audit_path = _repo / ".harness" / "audit.log"
+                from lib.cli_deprecated import _write_audit_entry
+                _write_audit_entry(_dep_err.flag, _dep_err.hint, audit_path=_audit_path)
+            except Exception:
+                pass
+            print_and_exit(_dep_err)
+            return 13  # unreachable — print_and_exit calls sys.exit
+    except ImportError:
+        pass  # cli_deprecated not available in this installation (older target)
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
