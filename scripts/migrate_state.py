@@ -71,8 +71,30 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(state_migrate.serialize(post).decode("utf-8"))
         return 0
 
-    state_migrate.migrate_file(target, direction=direction)
+    # S01-A.2 review-fix (P1, 2026-05-17): wire audit_path so the
+    # production CLI emits the one-time `verb=migrate.state_v2` entry
+    # required by design §1.2. The canonical audit log lives at
+    # `<repo>/.harness/audit.log`; we derive the repo root from the
+    # target's grandparent (target is `.scratch/phase-state.json`).
+    # Dry-run already returned above, so no risk of leaking audit
+    # entries for a hypothetical mutation that never happened.
+    audit_path = _resolve_default_audit_path(target)
+    state_migrate.migrate_file(target, direction=direction, audit_path=audit_path)
     return 0
+
+
+def _resolve_default_audit_path(target: Path) -> Path:
+    """Return the canonical audit log path for the repo containing `target`.
+
+    Walks up from the target until a directory containing `.harness/`
+    or `.scratch/` is found (mirrors `state_migrate._default_backups_dir`).
+    Falls back to `<target.parent.parent>/.harness/audit.log` so a
+    fresh layout (no ancestor markers yet) still gets a sensible path.
+    """
+    for parent in [target.parent, *target.parent.parents]:
+        if (parent / ".harness").exists() or (parent / ".scratch").exists():
+            return parent / ".harness" / "audit.log"
+    return target.parent.parent / ".harness" / "audit.log"
 
 
 if __name__ == "__main__":
