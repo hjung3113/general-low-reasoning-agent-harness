@@ -322,6 +322,40 @@ class JudgeInvariantModeTests(unittest.TestCase):
         self.assertIn("orphan", result.reason)
 
 
+class JudgeSystemExitTests(unittest.TestCase):
+    """C5 — judge only swallows SystemExit(5); other codes propagate."""
+
+    def test_judge_propagates_non_5_systemexit(self) -> None:
+        from unittest import mock
+        from scripts.smoke import judge as jm
+
+        tmp = Path(tempfile.mkdtemp(prefix="sysexit."))
+        _write_state(tmp, {"phase": "plan", "state_schema_version": 2})
+
+        def boom(_path):
+            raise SystemExit(99)
+
+        with mock.patch.object(jm, "load_state_json", side_effect=boom):
+            with self.assertRaises(SystemExit) as cm:
+                judge_fixture_01(tmp, _load(FX01), response_text="ok")
+            self.assertEqual(cm.exception.code, 99)
+
+    def test_judge_swallows_systemexit_5_as_unparseable(self) -> None:
+        from unittest import mock
+        from scripts.smoke import judge as jm
+
+        tmp = Path(tempfile.mkdtemp(prefix="sysexit5."))
+        _write_state(tmp, {"phase": "plan", "state_schema_version": 2})
+
+        def exit5(_path):
+            raise SystemExit(5)
+
+        with mock.patch.object(jm, "load_state_json", side_effect=exit5):
+            result = judge_fixture_01(tmp, _load(FX01), response_text="ok")
+            self.assertFalse(result.passed)
+            self.assertIn("unparseable", result.reason)
+
+
 class JudgeMetaTests(unittest.TestCase):
     """Meta-tests per plan §5.1 tests 14-15."""
 
