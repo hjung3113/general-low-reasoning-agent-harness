@@ -19,6 +19,15 @@ If an attacker has user-account access, the key file is reachable; this is
 documented out-of-scope in the design (matches the broader OS-trust
 assumption). Adapter ``permissions.deny`` globs MUST cover
 ``~/.harness/**`` to claim ``approval_proof=supported``.
+
+KNOWN GAP (Windows): the design (§12.1, ADR-2 D-7) requires a per-user
+ACL on ``%LOCALAPPDATA%/Harness/secret.key`` and the anchor directory.
+This module currently relies on the inherited ACL of ``%LOCALAPPDATA%``
+(which is per-user on a default install) but does not call
+``win32security`` to explicitly tighten the file ACL. A later slice
+(tracked alongside S12-manifest Windows hardening) lands the explicit
+``icacls /inheritance:r /grant:r %USERNAME%:F`` call. POSIX 0600 is
+enforced inline.
 """
 
 from __future__ import annotations
@@ -30,7 +39,59 @@ import sys
 from pathlib import Path
 
 
+
 KEY_BYTES = 32  # 256-bit
+
+
+def _fsync_parent_dir(path: Path) -> None:
+    """Minimal cross-platform parent-dir fsync (shared with audit_anchor).
+
+    POSIX: ``os.fsync(O_DIRECTORY fd)``. Windows: best-effort via
+    ``FlushFileBuffers`` on a directory handle.
+
+    KNOWN GAP: on macOS this does NOT flush APFS volume metadata
+    (Apple TN1150 requires ``fcntl(fd, F_FULLFSYNC)`` on the file fd).
+    The full ``scripts/lib/durable_fs.py`` lands at S01-schema.
+    """
+    parent = path if path.is_dir() else path.parent
+    if os.name == "nt":  # pragma: no cover - exercised on Windows CI rows only
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            GENERIC_READ = 0x80000000
+            FILE_SHARE_RW = 0x00000001 | 0x00000002 | 0x00000004
+            OPEN_EXISTING = 3
+            FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+            handle = kernel32.CreateFileW(
+                str(parent),
+                GENERIC_READ,
+                FILE_SHARE_RW,
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                None,
+            )
+            if handle == -1 or handle == 0:
+                return
+            try:
+                kernel32.FlushFileBuffers(handle)
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return
+        return
+    try:
+        fd = os.open(str(parent), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 class SecretKeyError(RuntimeError):
@@ -80,13 +141,14 @@ def ensure_secret_key(*, mint_if_missing: bool = True) -> Path:
         except OSError:
             pass
 
+    # Unique tmp filename per minter so two concurrent first-time minters
+    # cannot unlink each other's staged key.
     key = secrets.token_bytes(KEY_BYTES)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
     try:
-        if os.name == "nt":
+        if os.name == "nt":  # pragma: no cover - Windows tested at S13
             tmp.write_bytes(key)
         else:
-            # O_EXCL to refuse if tmp already exists (concurrent minter race).
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
             fd = os.open(str(tmp), flags, 0o600)
             try:
@@ -94,7 +156,20 @@ def ensure_secret_key(*, mint_if_missing: bool = True) -> Path:
                 os.fsync(fd)
             finally:
                 os.close(fd)
+        # Race: a competing minter may have already won and created `path`.
+        # In that case we MUST keep their key (every key works with anchors
+        # that were signed by *some* key; flapping the file invalidates
+        # already-signed anchors). Detect via stat + nlink instead of
+        # relying on os.replace semantics differing across platforms.
+        if path.exists():
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+            _fsync_parent_dir(path)
+            return path
         os.replace(tmp, path)
+        _fsync_parent_dir(path)
     finally:
         try:
             tmp.unlink()

@@ -542,6 +542,16 @@ def run(argv: list[str] | None = None) -> int:
             "Without this flag, repair refuses when no audit tail is found."
         ),
     )
+    a_repair.add_argument(
+        "--accept-no-install-record",
+        action="store_true",
+        help=(
+            "Allow repair before .harness/install-record.json exists, OR when "
+            "its install_id field is missing. Mints a fresh UUID. Use only "
+            "during first install bootstrap (S00.7) — otherwise repair refuses "
+            "to silently invent an install_id."
+        ),
+    )
 
     args = parser.parse_args(argv)
     root = repo_root()

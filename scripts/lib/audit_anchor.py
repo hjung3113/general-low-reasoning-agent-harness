@@ -43,6 +43,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -50,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from . import secret_key as _secret_key
+from .secret_key import _fsync_parent_dir  # shared cross-module helper
 
 ANCHOR_SCHEMA_VERSION = 1
 
@@ -186,12 +188,14 @@ def write_anchor(
     fields["anchor_signature"] = signature
 
     body = json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Unique tmp filename guards against two simultaneous anchor writers
+    # racing on the same path.
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
     try:
-        if os.name == "nt":
+        if os.name == "nt":  # pragma: no cover - Windows row tested at S13
             tmp.write_text(body, encoding="utf-8", newline="\n")
         else:
-            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
             fd = os.open(str(tmp), flags, 0o600)
             try:
                 os.write(fd, body.encode("utf-8"))
@@ -199,6 +203,7 @@ def write_anchor(
             finally:
                 os.close(fd)
         os.replace(tmp, path)
+        _fsync_parent_dir(path)
     finally:
         try:
             tmp.unlink()
@@ -333,18 +338,19 @@ def _bump_seen(repo_root: Path, seq_global: int) -> None:
     if seen.get(rid, 0) < seq_global:
         seen[rid] = seq_global
         body = json.dumps(seen, sort_keys=True, separators=(",", ":"))
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
         try:
-            if os.name == "nt":
+            if os.name == "nt":  # pragma: no cover
                 tmp.write_text(body, encoding="utf-8", newline="\n")
             else:
-                fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 try:
                     os.write(fd, body.encode("utf-8"))
                     os.fsync(fd)
                 finally:
                     os.close(fd)
             os.replace(tmp, path)
+            _fsync_parent_dir(path)
         finally:
             try:
                 tmp.unlink()
