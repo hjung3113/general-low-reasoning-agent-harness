@@ -16,75 +16,150 @@
     },
     "tech-python": {
       "category": "tech",
-      "capabilities": ["python evidence", "python packaging", "python verification"],
-      "activation_evidence": ["pyproject.toml", "requirements.txt", "uv.lock", "python files"]
+      "capabilities": [
+        "python evidence",
+        "python packaging",
+        "python verification"
+      ],
+      "activation_evidence": [
+        "pyproject.toml",
+        "requirements.txt",
+        "uv.lock",
+        "python files"
+      ]
     },
     "tech-react": {
       "category": "tech",
-      "capabilities": ["react components", "react state", "frontend behavior"]
+      "capabilities": [
+        "react components",
+        "react state",
+        "frontend behavior"
+      ]
     },
     "tech-typescript": {
       "category": "tech",
-      "capabilities": ["typecheck", "typed module boundaries"]
+      "capabilities": [
+        "typecheck",
+        "typed module boundaries"
+      ]
     },
     "tech-tailwind": {
       "category": "tech",
-      "capabilities": ["tailwind styling", "responsive utility conventions"]
+      "capabilities": [
+        "tailwind styling",
+        "responsive utility conventions"
+      ]
     },
     "tech-csharp": {
       "category": "tech",
-      "capabilities": ["dotnet solution analysis", "build and test verification"]
+      "capabilities": [
+        "dotnet solution analysis",
+        "build and test verification"
+      ]
     },
     "tech-mssql": {
       "category": "tech",
-      "suggests": ["workflow-db-context"],
-      "capabilities": ["sql server persistence", "transaction boundaries", "sql server verification"]
+      "suggests": [
+        "workflow-db-context"
+      ],
+      "capabilities": [
+        "sql server persistence",
+        "transaction boundaries",
+        "sql server verification"
+      ]
     },
     "tech-postgresql": {
       "category": "tech",
-      "suggests": ["workflow-db-context"],
-      "capabilities": ["postgresql persistence", "transaction boundaries", "postgresql verification"]
+      "suggests": [
+        "workflow-db-context"
+      ],
+      "capabilities": [
+        "postgresql persistence",
+        "transaction boundaries",
+        "postgresql verification"
+      ]
     },
     "workflow-data-analysis": {
       "category": "workflow",
-      "capabilities": ["analysis question framing", "reproducible analytical outputs"]
+      "capabilities": [
+        "analysis question framing",
+        "reproducible analytical outputs"
+      ]
     },
     "workflow-data-processing": {
       "category": "workflow",
-      "capabilities": ["data contracts", "transformation invariants", "failure handling"]
+      "capabilities": [
+        "data contracts",
+        "transformation invariants",
+        "failure handling"
+      ]
     },
     "workflow-etl": {
       "category": "workflow",
-      "suggests": ["workflow-db-context"],
-      "capabilities": ["extract transform load", "restart idempotency", "schema drift"]
+      "suggests": [
+        "workflow-db-context"
+      ],
+      "capabilities": [
+        "extract transform load",
+        "restart idempotency",
+        "schema drift"
+      ]
     },
     "workflow-db-context": {
       "category": "workflow",
-      "capabilities": ["needs-db-context", "database shape gating", "database verification readiness"]
+      "capabilities": [
+        "needs-db-context",
+        "database shape gating",
+        "database verification readiness"
+      ]
     },
     "workflow-web-development": {
       "category": "workflow",
-      "capabilities": ["web UX states", "frontend verification", "responsive behavior"]
+      "capabilities": [
+        "web UX states",
+        "frontend verification",
+        "responsive behavior"
+      ]
     },
     "workflow-tdd": {
       "category": "workflow",
-      "capabilities": ["red green refactor", "focused regression tests", "behavior verification"]
+      "capabilities": [
+        "red green refactor",
+        "focused regression tests",
+        "behavior verification"
+      ]
     },
     "workflow-debugging": {
       "category": "workflow",
-      "capabilities": ["reproduce failures", "minimize cases", "instrument and regress"]
+      "capabilities": [
+        "reproduce failures",
+        "minimize cases",
+        "instrument and regress"
+      ]
     },
     "workflow-code-review": {
       "category": "workflow",
-      "capabilities": ["defect review", "verification review", "scope review"]
+      "capabilities": [
+        "defect review",
+        "verification review",
+        "scope review"
+      ]
     },
     "workflow-skill-authoring": {
       "category": "workflow",
-      "capabilities": ["skill design", "activation contracts", "manifest and install validation"]
+      "capabilities": [
+        "skill design",
+        "activation contracts",
+        "manifest and install validation"
+      ]
     },
     "workflow-security-review": {
       "category": "workflow",
-      "capabilities": ["trust boundaries", "secret handling", "abuse case review"]
+      "capabilities": [
+        "trust boundaries",
+        "secret handling",
+        "abuse case review"
+      ]
     }
   },
   "files": [
@@ -376,6 +451,11 @@
     {
       "path": ".roo/commands/fsd-run-phase.md",
       "source": ".roo/commands/fsd-run-phase.md",
+      "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/fsd-run-all.md",
+      "source": ".roo/commands/fsd-run-all.md",
       "policy": "harness-owned"
     },
     {
@@ -818,100 +898,193 @@
       "source": "scripts/test_project_dashboard.py",
       "policy": "harness-owned"
     },
-    { "path": ".roo/rules-tdd-code/dotnet-etl-etl-tdd.md",
+    {
+      "path": ".roo/rules-tdd-code/dotnet-etl-etl-tdd.md",
       "source": "harness/profiles/dotnet-etl/rules/etl-tdd.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "roo" },
-    { "path": ".roo/rules-ops-observability/dotnet-etl-restart-idempotency.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-ops-observability/dotnet-etl-restart-idempotency.md",
       "source": "harness/profiles/dotnet-etl/rules/restart-idempotency.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "roo" },
-    { "path": ".roo/rules-diagnose/dotnet-etl-data-bug-trace.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-diagnose/dotnet-etl-data-bug-trace.md",
       "source": "harness/profiles/dotnet-etl/rules/data-bug-trace.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "roo" },
-    { "path": ".roo/rules-review/dotnet-etl-etl-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-review/dotnet-etl-etl-review.md",
       "source": "harness/profiles/dotnet-etl/rules/etl-review.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "roo" },
-    { "path": ".roo/rules-tdd-code/python-etl-etl-tdd.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-tdd-code/python-etl-etl-tdd.md",
       "source": "harness/profiles/python-etl/rules/etl-tdd.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "roo" },
-    { "path": ".roo/rules-ops-observability/python-etl-restart-idempotency.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-ops-observability/python-etl-restart-idempotency.md",
       "source": "harness/profiles/python-etl/rules/restart-idempotency.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "roo" },
-    { "path": ".roo/rules-diagnose/python-etl-data-bug-trace.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-diagnose/python-etl-data-bug-trace.md",
       "source": "harness/profiles/python-etl/rules/data-bug-trace.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "roo" },
-    { "path": ".roo/rules-review/python-etl-etl-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-review/python-etl-etl-review.md",
       "source": "harness/profiles/python-etl/rules/etl-review.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "roo" },
-    { "path": ".roo/rules-tdd-code/react-web-ui-tdd.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-tdd-code/react-web-ui-tdd.md",
       "source": "harness/profiles/react-web/rules/ui-tdd.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "roo" },
-    { "path": ".roo/rules-review/react-web-ui-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-review/react-web-ui-review.md",
       "source": "harness/profiles/react-web/rules/ui-review.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "roo" },
-    { "path": ".roo/rules-ui-engineer/react-web-ui-engineer-extras.md",
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "roo"
+    },
+    {
+      "path": ".roo/rules-ui-engineer/react-web-ui-engineer-extras.md",
       "source": "harness/profiles/react-web/rules/ui-engineer-extras.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "roo" },
-    { "path": ".opencode/profile-rules/dotnet-etl-etl-tdd.md",
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "roo"
+    },
+    {
+      "path": ".opencode/profile-rules/dotnet-etl-etl-tdd.md",
       "source": "harness/profiles/dotnet-etl/rules/etl-tdd.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/dotnet-etl-restart-idempotency.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/dotnet-etl-restart-idempotency.md",
       "source": "harness/profiles/dotnet-etl/rules/restart-idempotency.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/dotnet-etl-data-bug-trace.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/dotnet-etl-data-bug-trace.md",
       "source": "harness/profiles/dotnet-etl/rules/data-bug-trace.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/dotnet-etl-etl-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/dotnet-etl-etl-review.md",
       "source": "harness/profiles/dotnet-etl/rules/etl-review.md",
-      "policy": "harness-owned", "owner": "profile:dotnet-etl",
-      "profile": "dotnet-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/python-etl-etl-tdd.md",
+      "policy": "harness-owned",
+      "owner": "profile:dotnet-etl",
+      "profile": "dotnet-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/python-etl-etl-tdd.md",
       "source": "harness/profiles/python-etl/rules/etl-tdd.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/python-etl-restart-idempotency.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/python-etl-restart-idempotency.md",
       "source": "harness/profiles/python-etl/rules/restart-idempotency.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/python-etl-data-bug-trace.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/python-etl-data-bug-trace.md",
       "source": "harness/profiles/python-etl/rules/data-bug-trace.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/python-etl-etl-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/python-etl-etl-review.md",
       "source": "harness/profiles/python-etl/rules/etl-review.md",
-      "policy": "harness-owned", "owner": "profile:python-etl",
-      "profile": "python-etl", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/react-web-ui-tdd.md",
+      "policy": "harness-owned",
+      "owner": "profile:python-etl",
+      "profile": "python-etl",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/react-web-ui-tdd.md",
       "source": "harness/profiles/react-web/rules/ui-tdd.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/react-web-ui-review.md",
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/react-web-ui-review.md",
       "source": "harness/profiles/react-web/rules/ui-review.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "opencode" },
-    { "path": ".opencode/profile-rules/react-web-ui-engineer-extras.md",
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "opencode"
+    },
+    {
+      "path": ".opencode/profile-rules/react-web-ui-engineer-extras.md",
       "source": "harness/profiles/react-web/rules/ui-engineer-extras.md",
-      "policy": "harness-owned", "owner": "profile:react-web",
-      "profile": "react-web", "adapter": "opencode" }
+      "policy": "harness-owned",
+      "owner": "profile:react-web",
+      "profile": "react-web",
+      "adapter": "opencode"
+    }
   ],
   "removed_in_version": [
     {
       "path": ".roo/commands/fsd-phase.md",
       "removed_in": "v0.7.0",
       "replaced_by": ".roo/commands/fsd-run-phase.md"
+    },
+    {
+      "path": ".roo/commands/fsd-chain-phase.md",
+      "removed_in": "v0.7.0",
+      "replaced_by": ".roo/commands/fsd-run-all.md"
     }
   ]
 }
