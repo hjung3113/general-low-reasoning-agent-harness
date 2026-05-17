@@ -37,6 +37,18 @@ DEFAULT_EVIDENCE_ROOT = _REPO_ROOT / ".planning" / "phases" / "02b-hardening" / 
 DEFAULT_SCRATCH_ROOT = _REPO_ROOT / "tmp" / "smoke-e"
 FIXTURES_DIR = _REPO_ROOT / "scripts" / "smoke" / "fixtures"
 
+# SecM1 — Haiku-4.5 per-MTok pricing (USD); used to compute cumulative spend
+# when `--max-spend-usd` is set. Update if Anthropic re-prices the model.
+HAIKU_INPUT_USD_PER_MTOK = 1.00
+HAIKU_OUTPUT_USD_PER_MTOK = 5.00
+
+
+def _trial_cost_usd(input_tokens: int, output_tokens: int) -> float:
+    return (
+        (input_tokens / 1_000_000.0) * HAIKU_INPUT_USD_PER_MTOK
+        + (output_tokens / 1_000_000.0) * HAIKU_OUTPUT_USD_PER_MTOK
+    )
+
 
 def _timestamp_dir() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -100,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Sanity-load fixtures + judge dispatch; exit 0 without API.",
     )
+    p.add_argument(
+        "--max-spend-usd",
+        type=float,
+        default=None,
+        help="SecM1 — abort suite once cumulative Haiku-4.5 spend reaches cap.",
+    )
     args = p.parse_args(argv)
 
     # Per-run timestamped evidence root (plan §scope: per-run dir under evidence/).
@@ -157,10 +175,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    from scripts.smoke.model_client import HaikuClient
+    # Reference the module-level binding so tests can patch
+    # `low_reasoning_scenario.HaikuClient` (SecM1 test).
+    _HaikuClient = globals().get("HaikuClient")
+    if _HaikuClient is None:
+        from scripts.smoke.model_client import HaikuClient as _HaikuClient
 
     try:
-        client = HaikuClient()
+        client = _HaikuClient()
     except RuntimeError as exc:
         _write_skipped(base_evidence, f"HaikuClient init failed: {exc}")
         print(f"SLICE BLOCKED — {exc}", file=sys.stderr)
@@ -168,17 +190,43 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"live mode: {len(fixtures)} fixture(s) × {args.trials} trials")
     print(f"evidence root: {evidence_root}")
+    if args.max_spend_usd is not None:
+        print(f"suite cost cap: ${args.max_spend_usd:.4f} USD")
     t_start = time.monotonic()
+    cumulative_usd = 0.0
+    budget_exhausted = False
     for fx in fixtures:
+        if budget_exhausted:
+            break
         for trial_index in range(1, args.trials + 1):
             record = run_trial(fx, trial_index, client, scratch_root, evidence_root)
+            cumulative_usd += _trial_cost_usd(
+                getattr(record, "input_tokens", 0),
+                getattr(record, "output_tokens", 0),
+            )
             if trial_index % 10 == 0 or trial_index == args.trials:
                 elapsed = time.monotonic() - t_start
                 print(
                     f"  {fx['fixture_id']} trial {trial_index}/{args.trials} "
                     f"passed={record.passed} noisy={record.noisy} "
-                    f"(elapsed {elapsed:.0f}s)"
+                    f"(elapsed {elapsed:.0f}s, spend ${cumulative_usd:.4f})"
                 )
+            if (
+                args.max_spend_usd is not None
+                and cumulative_usd >= args.max_spend_usd
+            ):
+                print(
+                    f"SUITE BUDGET EXHAUSTED — cumulative ${cumulative_usd:.4f} "
+                    f">= cap ${args.max_spend_usd:.4f}",
+                    file=sys.stderr,
+                )
+                budget_exhausted = True
+                break
+
+    if budget_exhausted:
+        summary = aggregate_evidence(evidence_root)
+        write_summary(summary, evidence_root)
+        return 1
 
     summary = aggregate_evidence(evidence_root)
     write_summary(summary, evidence_root)
