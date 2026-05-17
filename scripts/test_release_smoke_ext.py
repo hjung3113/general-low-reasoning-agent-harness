@@ -231,7 +231,8 @@ class TestGrepGate(unittest.TestCase):
         }
         self.assertEqual(set(LIFECYCLE_GREP_GATE_ALLOWLIST), expected)
 
-    def test_gate_does_not_false_positive_on_comments(self):
+    def test_gate_no_writeverb_in_comment_is_clean(self):
+        # No write verb present: gate stays silent on documentary mention.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             cmd_dir = root / ".roo" / "commands"
@@ -241,6 +242,23 @@ class TestGrepGate(unittest.TestCase):
             )
             violations = run_grep_gate(root=root)
             self.assertEqual(violations, [])
+
+    def test_gate_conservative_design_flags_write_verb_inside_comment(self):
+        # M2: planted HTML comment WITH a write verb. The gate is
+        # substring-based (conservative-by-design); it MAY false-positive
+        # on comments. This test pins the documented behavior: a write
+        # verb embedded in a comment IS flagged. Operators relying on
+        # comments to disable the gate must remove the verb token.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cmd_dir = root / ".roo" / "commands"
+            cmd_dir.mkdir(parents=True)
+            (cmd_dir / "adr.md").write_text(
+                "<!-- echo > .scratch/phase-state.json -->\n"
+            )
+            violations = run_grep_gate(root=root)
+            self.assertEqual(len(violations), 1,
+                "conservative gate must flag write-verb co-located with state path even inside a comment")
 
 
 # --- Group G: orchestration + regression ------------------------------

@@ -310,6 +310,16 @@ _WRITE_VERBS = ("write", "replace", " > ", ">>")
 def run_grep_gate(*, root: Path | None = None) -> list[Violation]:
     """Static gate per spec §10.2: no quarantined command file may
     co-locate a write verb with the state file path on the same line.
+
+    Design note (conservative-by-design): this is a substring-only gate.
+    It does NOT parse markdown or strip comments, so a write verb
+    embedded inside an HTML comment such as
+    ``<!-- echo > .scratch/phase-state.json -->`` WILL be flagged. This
+    is intentional: low-reasoning agents have been observed using
+    "documentation" comments as a smuggling channel. Operators who need
+    to mention the state path in a comment must phrase it without any
+    of the tokens in ``_WRITE_VERBS``. Treat this gate as
+    defense-in-depth, not authoritative parsing.
     """
     root = root or REPO_ROOT
     violations: list[Violation] = []
