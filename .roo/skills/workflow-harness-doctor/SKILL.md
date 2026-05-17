@@ -15,10 +15,10 @@ Use this workflow to diagnose harness drift before repair work starts. It is rea
 ## Steps
 
 1. Read `AGENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`, the active checkpoint, `.planning/codebase/**`, active phase docs, and `.scratch/phase-state.json`.
-2. Run `python3 scripts/harness.py doctor` or `python3 scripts/harness.py doctor --format json`.
+2. Run `harness doctor` or `harness doctor --format json`.
 3. Report findings using the script vocabulary: `severity`, `code`, `path`, `cause`, `impact`, `fix`, `evidence`, and `connects_to_db`.
 4. Treat P0/P1 findings as blockers before PR, merge, or implementation.
-5. For any repair, run or describe a diff-before-mutation path first, such as `python3 scripts/harness.py upgrade --target <path> --dry-run` and `git diff`.
+5. For any repair, run or describe a diff-before-mutation path first, such as `harness upgrade --target <path> --dry-run` and `git diff`.
 
 ## Stop Conditions
 
@@ -33,6 +33,6 @@ Use this workflow to diagnose harness drift before repair work starts. It is rea
 Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
 
 ```text
-harness phase set <discuss|plan|execute|done>     # long form: python3 scripts/harness.py phase set <X>
-harness phase approve                              # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
+harness phase set <discuss|plan|execute|done>
+harness phase approve
 ```

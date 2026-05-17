@@ -2,7 +2,7 @@
 
 Workflow skills are the main entry point once a command or mode has been chosen.
 
-Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 | Skill | Command | Mode | Sequence |
 | --- | --- | --- | --- |

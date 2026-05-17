@@ -14,7 +14,7 @@ Apply `.roo/rules/phase-gate.md` before this workflow.
 
 Make the repository self-resumable before ADR, issue planning, or implementation work continues.
 
-After this workflow, `python3 scripts/show_phase_status.py` should identify the current project, current phase, next action, verification expectations, and stale artifact status without chat history. If the script is unavailable or falls back, the durable planning docs must still support the legacy durable planning read order.
+After this workflow, `harness check` should identify the current project, current phase, next action, verification expectations, and stale artifact status without chat history. If the script is unavailable or falls back, the durable planning docs must still support the legacy durable planning read order.
 
 ## When to Use
 
@@ -76,7 +76,7 @@ Hydrate or create these files when they are missing or placeholder-only:
 - `.planning/phases/<NN-current-phase>/NN-VERIFICATION.md`
 - `.planning/phases/<NN-current-phase>/NN-01-SUMMARY.md`
 
-Advance the live gate via `python3 scripts/harness.py phase set <X>` (and `phase approve` if entering execute) only when the user explicitly asks for harness/planning-control changes or when the current task is already scoped to phase-state repair. Keep the gate in `discuss` or `plan` unless implementation has been explicitly approved. Do NOT direct-edit `.scratch/phase-state.json`.
+Advance the live gate via `harness phase set <X>` (and `phase approve` if entering execute) only when the user explicitly asks for harness/planning-control changes or when the current task is already scoped to phase-state repair. Keep the gate in `discuss` or `plan` unless implementation has been explicitly approved. Do NOT direct-edit `.scratch/phase-state.json`.
 
 
 ## Execution Model
@@ -135,7 +135,7 @@ Do not mark planning context usable while P1 adversarial findings remain unresol
 ### 4. Apply automation flags
 
 - `--auto`: choose recommended defaults only for documentation wording, ordering, naming, or repo-proven defaults inside allowed paths; record auditable `auto_selected` entries.
-- `--chain`: continue from phase-local `discuss` to `plan` and then `execute` only when the generated plan has a concrete first slice, non-empty verification, non-empty allowed paths, current durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `python3 scripts/harness.py check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`. Reach that state via `python3 scripts/harness.py phase approve && python3 scripts/harness.py phase set execute`.
+- `--chain`: continue from phase-local `discuss` to `plan` and then `execute` only when the generated plan has a concrete first slice, non-empty verification, non-empty allowed paths, current durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `harness check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`. Reach that state via `harness phase approve && harness phase set execute`.
 - Stop for user input on destructive, external, secret-bearing, deployment, deletion, irreversible, broad-scope, or ambiguous product-direction choices.
 
 ### 5. Detect planning state
@@ -273,6 +273,6 @@ next_step: <one concrete action>
 Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
 
 ```text
-harness phase set <discuss|plan|execute|done>     # long form: python3 scripts/harness.py phase set <X>
-harness phase approve                              # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
+harness phase set <discuss|plan|execute|done>
+harness phase approve
 ```

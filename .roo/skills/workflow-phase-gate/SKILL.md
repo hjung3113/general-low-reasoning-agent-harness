@@ -16,7 +16,7 @@ State lives outside the prompt in `.scratch/phase-state.json` or another file th
 
 Before doing any work:
 
-1. Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+1. Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 2. Identify `phase`, `plan_id`, `approved`, `state_path`, `plan_path`, `checkpoint_path`, `current_checkpoint`, `allowed_paths`, and `verification`.
 3. For `plan`, `execute`, and `done`, read `state_path`, `plan_path`, and `checkpoint_path` before classifying allowed work. If any pointer is missing or stale, treat the state as incomplete and return to `plan`.
 4. If `.planning/codebase/**` or the active phase document set is missing, placeholder-only, or stale for the current repository, treat the gate as incomplete for existing-repository adoption and return to `plan` to hydrate planning memory.
@@ -89,8 +89,8 @@ Rules:
 - Perform the phase-local `discuss` summary.
 - Write the plan with `plan_id`, `allowed_paths`, acceptance criteria, and verification.
 - Treat the user's `--chain` request as permission to prepare approval state for the generated plan, not as permission to bypass the execute gate.
-- Before implementation, ensure the live gate reads `phase=execute, approved=true` with the same `plan_id`. Reach that state via `python3 scripts/harness.py phase approve` (in `phase=plan`) followed by `python3 scripts/harness.py phase set execute`. The CLI writes `approved_by`, `approved_at`, and re-stamps `updated_at`; pre-conditions the CLI does NOT set — `allowed_paths`, `verification`, durable planning pointers, `automation_mode=chain` — remain user-editable and must be present before invoking `phase set execute`.
-- Any `phase=execute` state with `approved=true` carries `approved_by` and `approved_at` provenance set by `python3 scripts/harness.py phase approve` (stamped from `git config user.email` and a nanosecond-precision UTC timestamp per ADR-003a Verb 2). Manual mode and chain mode produce identical provenance shape.
+- Before implementation, ensure the live gate reads `phase=execute, approved=true` with the same `plan_id`. Reach that state via `harness phase approve` (in `phase=plan`) followed by `harness phase set execute`. The CLI writes `approved_by`, `approved_at`, and re-stamps `updated_at`; pre-conditions the CLI does NOT set — `allowed_paths`, `verification`, durable planning pointers, `automation_mode=chain` — remain user-editable and must be present before invoking `phase set execute`.
+- Any `phase=execute` state with `approved=true` carries `approved_by` and `approved_at` provenance set by `harness phase approve` (stamped from `git config user.email` and a nanosecond-precision UTC timestamp per ADR-003a Verb 2). Manual mode and chain mode produce identical provenance shape.
 - If phase state cannot be updated or verified, stop before implementation.
 - Stop before execute if the plan lacks verification, `allowed_paths`, durable planning pointers, or a concrete first slice.
 - Stop during execute if implementation exceeds the plan, verification fails outside approved scope, or adversarial review finds a P1 blocker.
@@ -156,9 +156,9 @@ Output:
 
 Next step:
 
-- Stop and ask for approval. Do not execute until the live gate has `phase=execute`, the same `plan_id`, and `approved=true`. Reach that state via `python3 scripts/harness.py phase approve && python3 scripts/harness.py phase set execute`.
+- Stop and ask for approval. Do not execute until the live gate has `phase=execute`, the same `plan_id`, and `approved=true`. Reach that state via `harness phase approve && harness phase set execute`.
 - With `--chain`, continue to `execute` only when the user requested chaining, the generated plan is concrete, verification is non-empty, allowed paths are non-empty, and no stop condition remains.
-- Under `--chain`, verify the live gate via `python3 scripts/harness.py check` reports `phase=execute`, matching `plan_id`, `approved=true`, `automation_mode=chain`, non-empty `allowed_paths`, and non-empty `verification` before any implementation.
+- Under `--chain`, verify the live gate via `harness check` reports `phase=execute`, matching `plan_id`, `approved=true`, `automation_mode=chain`, non-empty `allowed_paths`, and non-empty `verification` before any implementation.
 
 ### execute
 
@@ -197,7 +197,7 @@ Next step:
 
 ### done
 
-Reach `phase=done` via `python3 scripts/harness.py phase set done`. The CLI re-stamps `updated_at` and preserves `approved`, `approved_by`, `approved_at` verbatim from the prior `execute→done` transition. Do NOT re-issue `python3 scripts/harness.py phase approve` in `done`; per G2-C it exits 6 (`EXIT_WRONG_PHASE_FOR_VERB`).
+Reach `phase=done` via `harness phase set done`. The CLI re-stamps `updated_at` and preserves `approved`, `approved_by`, `approved_at` verbatim from the prior `execute→done` transition. Do NOT re-issue `harness phase approve` in `done`; per G2-C it exits 6 (`EXIT_WRONG_PHASE_FOR_VERB`).
 
 Allowed:
 
@@ -209,7 +209,7 @@ Allowed:
 Forbidden:
 
 - More implementation under the completed `plan_id`.
-- Re-issuing `python3 scripts/harness.py phase approve` (no-op exit 6 in `done`).
+- Re-issuing `harness phase approve` (no-op exit 6 in `done`).
 
 Output:
 
@@ -243,16 +243,16 @@ Move forward in the phase lifecycle via the CLI; do NOT direct-edit `.scratch/ph
 
 ```text
 # Advance phase (writes phase, updated_at, updated_by; audits the write):
-harness phase set <discuss|plan|execute|done>     # long form: python3 scripts/harness.py phase set <X>
+harness phase set <discuss|plan|execute|done>
 
 # Approve in phase=plan or phase=execute (writes approved=true, approved_by, approved_at):
-harness phase approve                              # long form: python3 scripts/harness.py phase approve
+harness phase approve
 
 # From phase=done, start a new cycle (safety prompt required):
-harness phase set discuss --reset-approval         # long form: python3 scripts/harness.py phase set discuss --reset-approval
+harness phase set discuss --reset-approval
 ```
 
-`python3 scripts/harness.py phase approve` in `phase=done` is a no-op error (exit 6, G2-C). Direct-editing the state file still works but emits an ADR-003a drift warning on the next `harness check` run.
+`harness phase approve` in `phase=done` is a no-op error (exit 6, G2-C). Direct-editing the state file still works but emits an ADR-003a drift warning on the next `harness check` run.
 
 ## Canonical `phase=done` Example (post-CLI)
 
@@ -281,7 +281,7 @@ A valid `phase-state.json` for `phase=done` after the ADR-003a CLI lands. Field-
     "T0-A atomic primitive lands first."
   ],
   "verification": [
-    "python3 scripts/harness.py check",
+    "harness check",
     "pytest scripts/tests/ -v",
     "harness check --worktree"
   ],

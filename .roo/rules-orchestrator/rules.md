@@ -4,7 +4,7 @@
 - Do not edit agent-control files. Route `AGENTS.md`, `.roo/**`, and `.roomodes` changes to `harness-maintainer`.
 - Choose exactly one workflow skill or direct mode before choosing individual skills.
 - Slash commands are thin entry points. Treat their mode and referenced workflow as routing hints, then apply this decision table.
-- Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+- Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 ## Exclusive Routing Table
 

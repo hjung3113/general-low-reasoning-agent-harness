@@ -71,7 +71,23 @@ def venv_pip(venv_dir: Path) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+MIN_PYTHON = (3, 11)
+
+
 def main() -> int:
+    if sys.version_info < MIN_PYTHON:
+        major, minor = MIN_PYTHON
+        sys.stderr.write(
+            f"this verifier requires Python >= {major}.{minor}; "
+            f"got {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} "
+            f"at {sys.executable}.\n"
+            "Fix: re-run with a Python that matches pyproject.toml's "
+            "`requires-python` (release matrix §7.1 ships 3.11 and 3.12), e.g.\n"
+            "  /opt/homebrew/bin/python3.12 scripts/smoke/verify_launcher_matrix.py\n"
+            "  py -3.12 scripts\\smoke\\verify_launcher_matrix.py\n"
+        )
+        return 2
+
     if not (REPO_ROOT / "pyproject.toml").is_file():
         sys.stderr.write(
             f"pyproject.toml not found at {REPO_ROOT}; cannot verify launcher.\n"

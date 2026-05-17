@@ -1,6 +1,6 @@
 # Phase Gate Rule
 
-Use `.scratch/phase-state.schema.json` for external phase state. Durable phase memory lives under `.planning/`; the live gate file is only a pointer and approval gate. Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. Implementation workflows must pass this gate before editable work starts.
+Use `.scratch/phase-state.schema.json` for external phase state. Durable phase memory lives under `.planning/`; the live gate file is only a pointer and approval gate. Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. Implementation workflows must pass this gate before editable work starts.
 
 ## Required Behavior
 
@@ -9,7 +9,7 @@ Use `.scratch/phase-state.schema.json` for external phase state. Durable phase m
 - During existing-repository adoption or `project init`, treat missing, placeholder-only, or stale `.planning/codebase/**` and active `.planning/phases/**` files as an incomplete gate that must return to `plan` for hydration.
 - Treat `discuss` as read-only discovery.
 - Treat `plan` as documentation, ADR, PRD, checklist, issue-plan, or planning-memory hydration work only.
-- Treat `execute` as implementation only after `python3 scripts/show_phase_status.py` reports `projected_execute_gate_valid=true`, no blocking warnings, fresh canonical-file verification, approval provenance, non-empty acceptance criteria, durable pointers, allowed paths, and verification.
+- Treat `execute` as implementation only after `harness check` reports `projected_execute_gate_valid=true`, no blocking warnings, fresh canonical-file verification, approval provenance, non-empty acceptance criteria, durable pointers, allowed paths, and verification.
 - Treat `done` as summary and verification only, including updates to `.planning/STATE.md`, active checkpoints, and verification/summary docs.
 - Start every roadmap phase with a phase-local `discuss` pass before writing that phase's plan. A new phase must not jump directly from the previous phase's `done` into the next phase's `plan`.
 - Honor `--auto` by accepting recommended non-blocking defaults only when they are reversible, low risk, inside the current allowed work, and recorded in `auto_selected` or the active phase context.

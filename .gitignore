@@ -25,3 +25,4 @@ tmp/
 # Python build / install artifacts
 __pycache__/
 *.egg-info/
+build/

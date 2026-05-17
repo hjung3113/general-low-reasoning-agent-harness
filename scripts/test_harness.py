@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class HarnessToolTests(unittest.TestCase):
     SHOW_PHASE_STATUS_PREFLIGHT = (
-        "Start with `python3 scripts/show_phase_status.py` when available. "
+        "Start with `harness check` when available. "
         "If it reports warnings, treat named files as minimum required reads before trusting the projection. "
         "If it is missing, fails, emits malformed output, or reports an unsupported contract version, "
         "use the legacy durable planning read order."
@@ -2742,7 +2742,7 @@ progress:
                 "non-empty `verification`",
                 # T1-1: pre-commit invocation promoted to a numbered REQUIRED
                 # section; the literal verb invocation stays present.
-                "python3 scripts/harness.py check --worktree",
+                "harness check --worktree",
                 "## Pre-commit (REQUIRED",
             ],
             "done.md": [
@@ -2751,7 +2751,7 @@ progress:
                 "Done output checklist:",
                 "post-completion audit only",
                 "Confirm verification evidence exists.",
-                "Run `python3 scripts/harness.py check --worktree` before marking done.",
+                "Run `harness check --worktree` before marking done.",
             ],
         }
 
