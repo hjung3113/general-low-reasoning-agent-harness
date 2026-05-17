@@ -439,9 +439,21 @@ class TestParseBudgetsClamping:
             _parse_budgets([f"shell_invocations={oversized}"])
         assert exc_info.value.code == 2
 
-    def test_parse_budgets_accepts_zero(self):
-        result = _parse_budgets(["shell_invocations=0"])
-        assert result == {"shell_invocations": 0}
+    def test_parse_budgets_rejects_zero_for_count_based_capabilities(self):
+        """P1-3 fix: shell_invocations=0 and file_mutation_ops=0 must be rejected at parse time."""
+        with pytest.raises(SystemExit) as exc_info:
+            _parse_budgets(["shell_invocations=0"])
+        assert exc_info.value.code == 2
+
+    def test_parse_budgets_rejects_zero_file_mutation_ops(self):
+        with pytest.raises(SystemExit) as exc_info:
+            _parse_budgets(["file_mutation_ops=0"])
+        assert exc_info.value.code == 2
+
+    def test_parse_budgets_accepts_zero_for_wall_seconds(self):
+        """wall_seconds=0 is allowed (time-based halt only)."""
+        result = _parse_budgets(["wall_seconds=0"])
+        assert result == {"wall_seconds": 0}
 
     def test_parse_budgets_accepts_max(self):
         from lib.phase_autopilot_cli import MAX_BUDGET_VALUE

@@ -228,6 +228,25 @@ def run_fsd_run_phase(
     # Step 2: acquire primary lock.
     lock = _phase_lock.acquire_primary(scratch_root, timeout_s=10.0, audit_path=audit_path)
     try:
+        # P1-2: wall-seconds check BEFORE any mutation (lock held, state trusted).
+        import json as _json
+        from . import cli_budgets as _cli_budgets
+        _state_path = scratch_root / "phase-state.json"
+        if _state_path.exists():
+            _before_state = _json.loads(_state_path.read_text(encoding="utf-8"))
+            _halt_exit = _cli_budgets.wall_seconds_check_and_maybe_halt(
+                before_state=_before_state,
+                scratch_root=scratch_root,
+                audit_path=audit_path,
+                lock_handle=lock,
+            )
+            if _halt_exit is not None:
+                return FsdWrapperResult(
+                    exit_code=_halt_exit,
+                    sub_reason="budget_exhausted:wall_seconds",
+                    message="wall_seconds budget exhausted; autopilot halted",
+                )
+
         # Step 3: if no slug yet, call next-pending (lock already held).
         if resolved_slug is None:
             resolved_slug, err = _resolve_next_pending(
@@ -331,6 +350,25 @@ def run_fsd_run_all(
     # Acquire primary lock.
     lock = _phase_lock.acquire_primary(scratch_root, timeout_s=10.0, audit_path=audit_path)
     try:
+        # P1-2: wall-seconds check BEFORE any mutation (lock held, state trusted).
+        import json as _json
+        from . import cli_budgets as _cli_budgets
+        _state_path = scratch_root / "phase-state.json"
+        if _state_path.exists():
+            _before_state = _json.loads(_state_path.read_text(encoding="utf-8"))
+            _halt_exit = _cli_budgets.wall_seconds_check_and_maybe_halt(
+                before_state=_before_state,
+                scratch_root=scratch_root,
+                audit_path=audit_path,
+                lock_handle=lock,
+            )
+            if _halt_exit is not None:
+                return FsdWrapperResult(
+                    exit_code=_halt_exit,
+                    sub_reason="budget_exhausted:wall_seconds",
+                    message="wall_seconds budget exhausted; autopilot halted",
+                )
+
         # Call next-pending (lock held).
         resolved_slug, err = _resolve_next_pending(
             scratch_root=scratch_root,

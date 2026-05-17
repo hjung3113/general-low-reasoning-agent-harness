@@ -309,6 +309,23 @@ def run_reopen(
         before_state = json.loads(state_path.read_text(encoding="utf-8"))
         from_phase = before_state.get("phase")
 
+        # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
+        from . import cli_budgets as _cli_budgets
+        _halt_exit = _cli_budgets.wall_seconds_check_and_maybe_halt(
+            before_state=before_state,
+            scratch_root=scratch,
+            audit_path=audit_path,
+            lock_handle=lock,
+        )
+        if _halt_exit is not None:
+            return ReopenResult(
+                exit_code=_halt_exit,
+                sub_reason="budget_exhausted:wall_seconds",
+                resolved_email=resolved,
+                by_source=by_source,
+                from_phase=from_phase,
+            )
+
         # Step 6b: source-phase validation (P2-1).
         if target == "plan" and from_phase not in _PLAN_VALID_SOURCES:
             print(
@@ -441,6 +458,9 @@ def run_reopen(
                         prior_diary, now_iso=now_iso
                     )
             # else: no diary to handle; leave last_halt / history alone.
+
+        # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
+        after_state = _phase_txn.with_budget_decrement(after_state)
 
         # ---------- Step 8: audit entries ----------
         # Top-level fields survive `audit_append`'s 1024-byte truncation

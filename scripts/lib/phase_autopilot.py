@@ -754,6 +754,20 @@ def run_start(
     after_state["autopilot_start_entry_hash"] = "PENDING"
     audit_draft["args"]["autopilot_start_entry_hash_ref"] = "PENDING"
 
+    # P2-1: warn if user supplies shell_invocations budget (advisory-only in v0.7).
+    if budgets and "shell_invocations" in budgets:
+        print(
+            "warning: --budget shell_invocations=N is ADVISORY in v0.7 "
+            "(no decrement hook); treat as audit metadata only. "
+            "Tracked OOS-shell-budget-hook for v0.8.",
+            file=sys.stderr,
+        )
+
+    # P1-1: apply file_mutation_ops decrement for the first commit (caller-contract per §3.5).
+    # NOTE: the SECOND commit (start_hash_finalized) is internal-only bookkeeping and
+    # MUST NOT decrement again — it uses the exempted action name.
+    after_state = _phase_txn.with_budget_decrement(after_state)
+
     txn_id = _phase_txn.commit_transaction(
         scratch,
         lock=lock_handle,

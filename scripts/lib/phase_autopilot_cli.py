@@ -89,6 +89,9 @@ def _cwd_repo_root() -> Path:
 MAX_BUDGET_VALUE = 10_000_000  # upper bound for any single budget integer (P2-B2)
 
 
+_COUNT_BASED_CAPABILITIES = frozenset({"shell_invocations", "file_mutation_ops"})
+
+
 def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
     """Parse repeated ``--budget key=value`` flags into a dict.
 
@@ -97,6 +100,12 @@ def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
 
     Only non-negative integers in [0, MAX_BUDGET_VALUE] are accepted.
     Malformed, negative, or oversized values cause exit 2 with a clear error.
+
+    P1-3 fix: count-based capabilities (shell_invocations, file_mutation_ops)
+    must be >= 1. Value 0 would immediately exhaust the budget on the first
+    mutation and wedge the 2-phase autopilot start (PENDING sentinel).
+    Use ``--budget wall_seconds=0`` only for time-based halt (wall_seconds=0
+    means "halt immediately on wall-clock check").
     """
     if not budget_list:
         return None
@@ -125,6 +134,15 @@ def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
             print(
                 f"error: --budget item {item!r} has negative value {val} "
                 "(budget values must be >= 0)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        # P1-3 fix: reject zero for count-based capabilities at parse time.
+        if val == 0 and key in _COUNT_BASED_CAPABILITIES:
+            print(
+                f"error: --budget {key}=0 is not permitted: budget value must be "
+                f">= 1 for shell_invocations/file_mutation_ops "
+                f"(use --budget wall_seconds=0 only for time-based halt).",
                 file=sys.stderr,
             )
             raise SystemExit(2)
@@ -334,6 +352,20 @@ def cmd_phase_autopilot_stop(args) -> int:  # type: ignore[no-untyped-def]
 
     lock = _phase_lock.acquire_primary(scratch, timeout_s=30.0, audit_path=audit_path)
     try:
+        # P1-2: wall-seconds check BEFORE verb-specific mutation.
+        import json as _json
+        _state_path = scratch / "phase-state.json"
+        if _state_path.exists():
+            _before_state = _json.loads(_state_path.read_text(encoding="utf-8"))
+            _halt_exit = _wall_seconds_check_and_maybe_halt(
+                before_state=_before_state,
+                scratch_root=scratch,
+                audit_path=audit_path,
+                lock_handle=lock,
+            )
+            if _halt_exit is not None:
+                return _halt_exit
+
         result = _phase_autopilot.run_stop(
             scratch_root=scratch,
             audit_path=audit_path,
@@ -389,6 +421,20 @@ def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
 
     lock = _phase_lock.acquire_primary(scratch, timeout_s=30.0, audit_path=audit_path)
     try:
+        # P1-2: wall-seconds check BEFORE verb-specific logic.
+        import json as _json
+        _state_path = scratch / "phase-state.json"
+        if _state_path.exists():
+            _before_state = _json.loads(_state_path.read_text(encoding="utf-8"))
+            _halt_exit = _wall_seconds_check_and_maybe_halt(
+                before_state=_before_state,
+                scratch_root=scratch,
+                audit_path=audit_path,
+                lock_handle=lock,
+            )
+            if _halt_exit is not None:
+                return _halt_exit
+
         result = _phase_autopilot.run_next_pending(
             scratch_root=scratch,
             audit_path=audit_path,
@@ -608,8 +654,11 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
-# _wall_seconds_check_and_maybe_halt — budget guard helper
+# _wall_seconds_check_and_maybe_halt — backward-compat shim (P1-2 fix)
 # ---------------------------------------------------------------------------
+# The canonical implementation lives in cli_budgets.wall_seconds_check_and_maybe_halt
+# (relocated so phase_cli.py can import without circularity).
+# This shim preserves the private name used by existing tests.
 
 
 def _wall_seconds_check_and_maybe_halt(
@@ -618,83 +667,22 @@ def _wall_seconds_check_and_maybe_halt(
     scratch_root,
     audit_path,
     lock_handle,
-    now_iso: str | None = None,
-) -> int | None:
-    """If autopilot is active and wall_seconds budget exhausted, apply halt +
-    commit the halted state and return exit code 9.  Otherwise return None
-    (caller should proceed normally).
+    now_iso: "str | None" = None,
+) -> "int | None":
+    """Backward-compat shim — delegates to cli_budgets.wall_seconds_check_and_maybe_halt.
 
-    Design (§3.5 / §5.3 / S10a step 2):
-      - Only fires when execution_mode != "manual".
-      - Uses cli_budgets.budget_check(capability="wall_seconds").
-      - On exhaustion: build diary → apply_budget_halt → commit halted state
-        (manual mode so the budget check in commit_transaction is bypassed).
-      - Returns 9 on exhaustion, None on OK.
-
-    Position contract: call AFTER state-trust preflight (state is trusted),
-    BEFORE verb-specific mutation logic.  The caller MUST hold the lock.
-
-    shell_invocations enforcement note: shell_invocations is NOT checked here
-    (S10a step 2 limited-enforcement scope: the harness CLI itself does not
-    heavily shell out; shell_invocations is stamped at start + checked only
-    if a future step wires subprocess counting).
+    Position contract: call AFTER state-trust preflight, BEFORE any state-mutating
+    logic. Caller MUST hold the lock.
     """
     from . import cli_budgets as _cli_budgets
-    from . import phase_txn as _phase_txn
-    from . import phase_preflight as _phase_preflight
-    from pathlib import Path
 
-    # Only enforce when autopilot is active.
-    exec_mode = before_state.get("execution_mode", "manual")
-    if exec_mode == "manual":
-        return None
-
-    _now = now_iso or _phase_preflight.now_iso_z()
-    check = _cli_budgets.budget_check(
-        before_state,
-        capability="wall_seconds",
-        now_iso=_now,
+    return _cli_budgets.wall_seconds_check_and_maybe_halt(
+        before_state=before_state,
+        scratch_root=scratch_root,
+        audit_path=audit_path,
+        lock_handle=lock_handle,
+        now_iso=now_iso,
     )
-    if not check.exhausted:
-        return None
-
-    # Budget exhausted: build diary, apply halt, commit.
-    diary = _cli_budgets.build_budget_halt_diary(
-        result=check,
-        state=before_state,
-        now_iso=_now,
-    )
-    halted_state = _cli_budgets.apply_budget_halt(before_state, diary=diary)
-
-    scratch = Path(scratch_root)
-    audit_path_p = Path(audit_path)
-
-    try:
-        _phase_txn.commit_transaction(
-            scratch,
-            lock=lock_handle,
-            request=_phase_txn.TxnRequest(
-                action="phase.autopilot.halt.budget",
-                before_state=before_state,
-                after_state=halted_state,
-                audit_entry_draft={
-                    "verb": "phase.autopilot.halt",
-                    "args": {
-                        "reason": diary.reason,
-                        "capability": diary.capability,
-                        "remaining_at_halt": diary.remaining_at_halt,
-                        "halted_at": _now,
-                    },
-                },
-            ),
-            audit_path=audit_path_p,
-        )
-    except Exception:
-        # If the halt commit itself fails, still return 9 so the caller
-        # knows not to proceed with the original mutation.
-        pass
-
-    return 9
 
 
 __all__ = [

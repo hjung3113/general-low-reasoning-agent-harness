@@ -217,6 +217,24 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
     state, current = _load_state()
     before_hash = compute_state_hash(STATE_PATH)
     target = args.phase
+
+    # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
+    # Acquires primary lock briefly for the halt-commit if needed; released immediately.
+    if state.get("execution_mode", "manual") != "manual":
+        from scripts.lib import cli_budgets as _cli_budgets_mod
+        from scripts.lib import phase_lock as _phase_lock_mod
+        _primary_lock = _phase_lock_mod.acquire_primary(SCRATCH_DIR, timeout_s=5.0)
+        try:
+            _halt_exit = _cli_budgets_mod.wall_seconds_check_and_maybe_halt(
+                before_state=state,
+                scratch_root=SCRATCH_DIR,
+                audit_path=AUDIT_PATH,
+                lock_handle=_primary_lock,
+            )
+        finally:
+            _phase_lock_mod.release_primary(_primary_lock)
+        if _halt_exit is not None:
+            return _halt_exit
     approved = bool(state.get("approved"))
     reset_approval = bool(getattr(args, "reset_approval", False))
 
@@ -342,6 +360,11 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
     new_state = _phase_state.stamp_transition_timestamps(
         new_state, to_phase=target, now_iso=new_state["updated_at"]
     )
+
+    # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
+    if new_state.get("execution_mode", "manual") != "manual":
+        from scripts.lib.phase_txn import with_budget_decrement as _with_budget_decrement
+        new_state = _with_budget_decrement(new_state)
 
     _write_state_atomic(new_state)
     after_hash = compute_state_hash(STATE_PATH)

@@ -190,7 +190,15 @@ def commit_transaction(
 
     # Budget pre-check (BEFORE journal write — no artefacts written yet).
     # Only applied when autopilot is active AND budgets are configured.
-    if request.before_state is not None:
+    #
+    # EXEMPTED actions (P1-3 fix): internal-finalize commits that are
+    # follow-up bookkeeping to a prior user-driven mutation. These must
+    # complete to satisfy §1.1 invariants; exempting them prevents a
+    # wedged PENDING sentinel when file_mutation_ops=0.
+    _FINALIZE_EXEMPT_ACTIONS = frozenset({
+        "phase.autopilot.start_hash_finalized",
+    })
+    if request.before_state is not None and request.action not in _FINALIZE_EXEMPT_ACTIONS:
         _exec_mode = request.before_state.get("execution_mode", "manual")
         if _exec_mode != "manual":
             _budgets = request.before_state.get("cli_budgets_remaining")

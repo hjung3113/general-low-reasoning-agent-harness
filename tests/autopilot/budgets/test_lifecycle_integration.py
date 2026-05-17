@@ -237,8 +237,9 @@ def test_run_start_persists_cli_budgets_remaining_from_kwargs(harness_env):
     state = _read_state(harness_env)
     remaining = state.get("cli_budgets_remaining")
     assert remaining is not None
-    # Supplied overrides must be present.
-    assert remaining["file_mutation_ops"] == 7
+    # P1-1 fix: run_start now calls with_budget_decrement for its own commit,
+    # so file_mutation_ops starts at 7 and is decremented to 6 after start.
+    assert remaining["file_mutation_ops"] == 6
     assert remaining["wall_seconds"] == 200
 
 
@@ -592,7 +593,9 @@ def test_budget_exhausted_error_wall_seconds():
 
 
 def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
-    """Full happy-path then exhaustion: budget file_mutation_ops=3 → 4th commit raises."""
+    """Full happy-path then exhaustion: budget file_mutation_ops=3 → run_start decrements
+    to 2, then 2 more user commits bring it to 0, and the 3rd user commit raises.
+    (P1-1 fix: run_start now uses one decrement for its own commit.)"""
     scratch = tmp_path / ".scratch"
     scratch.mkdir()
     harness = tmp_path / ".harness"
@@ -631,6 +634,8 @@ def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
     (harness / "install-record.json").write_text(json.dumps(install_record) + "\n")
 
     # Start with budget=3 file_mutation_ops.
+    # P1-1 fix: run_start now decrements file_mutation_ops for its own commit,
+    # so after start the budget is 2 (not 3).
     lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
     try:
         result = phase_autopilot.run_start(
@@ -652,8 +657,12 @@ def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
         phase_lock.release_primary(lock)
     assert result.exit_code == 0
 
-    # Do 3 commits — each one should succeed.
-    for i in range(3):
+    # After start, file_mutation_ops should be 2 (3 - 1 for the start commit).
+    state = json.loads((scratch / "phase-state.json").read_text())
+    assert state["cli_budgets_remaining"]["file_mutation_ops"] == 2
+
+    # Do 2 user commits — each one should succeed (decrements 2 → 1 → 0).
+    for i in range(2):
         state = json.loads((scratch / "phase-state.json").read_text())
         # Caller contract: decrement before passing after_state.
         after = with_budget_decrement(dict(state))
@@ -673,11 +682,11 @@ def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
         finally:
             phase_lock.release_primary(lock)
 
-    # After 3 decrements, file_mutation_ops should be 0.
+    # After 2 user decrements, file_mutation_ops should be 0.
     state = json.loads((scratch / "phase-state.json").read_text())
     assert state["cli_budgets_remaining"]["file_mutation_ops"] == 0
 
-    # 4th commit: should raise BudgetExhaustedError.
+    # 3rd user commit: should raise BudgetExhaustedError.
     after = dict(state)
     after["phase"] = "execute"
     lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
@@ -690,7 +699,7 @@ def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
                     action="test.set",
                     before_state=state,
                     after_state=after,
-                    audit_entry_draft={"verb": "test.set", "args": {"i": 4}},
+                    audit_entry_draft={"verb": "test.set", "args": {"i": 3}},
                 ),
                 audit_path=audit_path,
             )

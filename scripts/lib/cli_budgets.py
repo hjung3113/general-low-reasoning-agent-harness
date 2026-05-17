@@ -203,7 +203,15 @@ def _check_wall_seconds(
 
     now_dt = _now_utc(now_iso)
     started_dt = _parse_iso_z(started_at_iso)
-    elapsed_seconds = (now_dt - started_dt).total_seconds()
+    # P2-3 fix: clamp elapsed to ≥0 to defend against backward clock skew.
+    # Without the clamp, a future anchor (e.g. NTP correction) would yield
+    # negative elapsed, making remaining > budget and extending the budget
+    # beyond what the user configured. We halt conservatively: when clock
+    # goes backward the measurement is uncertain so we treat it as 0 elapsed
+    # (remaining = full budget) rather than extending. Spec deviation note:
+    # §1.1 specifies wall-clock via ISO anchor (not POSIX monotonic); this
+    # clamp is the correct conservative behaviour for a non-monotonic clock.
+    elapsed_seconds = max(0.0, (now_dt - started_dt).total_seconds())
     remaining_seconds = int(wall_budget - elapsed_seconds)
 
     if elapsed_seconds >= wall_budget:
@@ -308,6 +316,11 @@ def build_budget_halt_diary(
     only in audit rows, not in last_halt diary).
     """
     capability = result.capability  # the exhausted capability
+    # P2-6 fix: capability must not be None for a budget-exhausted diary entry.
+    assert capability is not None, (
+        "build_budget_halt_diary requires result.capability to be set "
+        "(must be called with an exhausted BudgetCheckResult)"
+    )
     return BudgetDiaryEntry(
         at=now_iso,
         reason=f"budget_exhausted:{capability}",
@@ -369,6 +382,91 @@ def apply_budget_halt(state: dict, *, diary: BudgetDiaryEntry) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# wall_seconds_check_and_maybe_halt — shared budget guard (P1-2 fix)
+# ---------------------------------------------------------------------------
+
+
+def wall_seconds_check_and_maybe_halt(
+    *,
+    before_state: dict,
+    scratch_root,
+    audit_path,
+    lock_handle,
+    now_iso: "Optional[str]" = None,
+) -> "Optional[int]":
+    """If autopilot active and wall_seconds budget exhausted, apply halt +
+    commit the halted state and return exit code 9. Otherwise return None.
+
+    Relocated from phase_autopilot_cli._wall_seconds_check_and_maybe_halt
+    (P1-2 fix) so phase_cli.py and phase_autopilot_cli.py can both import
+    without circularity.
+
+    Position contract: call AFTER state-trust preflight (state is trusted),
+    BEFORE any state-mutating logic. Caller MUST hold the lock.
+    """
+    import sys
+    from pathlib import Path
+
+    # Lazy import to avoid circular at module load time.
+    from . import phase_txn as _phase_txn
+    from . import phase_preflight as _phase_preflight
+
+    exec_mode = before_state.get("execution_mode", "manual")
+    if exec_mode == "manual":
+        return None
+
+    _now = now_iso or _phase_preflight.now_iso_z()
+    check = budget_check(before_state, capability="wall_seconds", now_iso=_now)
+    if not check.exhausted:
+        return None
+
+    # Budget exhausted: build diary, apply halt, commit.
+    diary = build_budget_halt_diary(result=check, state=before_state, now_iso=_now)
+    halted_state = apply_budget_halt(before_state, diary=diary)
+
+    scratch = Path(scratch_root)
+    audit_path_p = Path(audit_path)
+
+    # P2-2 fix: emit structured stderr so operators can disambiguate exit 9.
+    cap = diary.capability
+    print(
+        f"ERROR: budget exhausted (capability={cap}, remaining={diary.remaining_at_halt}). "
+        f"Exit 9 sub_reason=budget_exhausted:{cap}.\n"
+        "Fix: inspect 'harness phase status' for last_halt diary; "
+        "then 'harness phase autopilot stop --reason \"<text>\"' to return to manual.",
+        file=sys.stderr,
+    )
+
+    try:
+        _phase_txn.commit_transaction(
+            scratch,
+            lock=lock_handle,
+            request=_phase_txn.TxnRequest(
+                action="phase.autopilot.halt.budget",
+                before_state=before_state,
+                after_state=halted_state,
+                audit_entry_draft={
+                    "verb": "phase.autopilot.halt",
+                    "args": {
+                        "reason": diary.reason,
+                        "capability": diary.capability,
+                        "remaining_at_halt": diary.remaining_at_halt,
+                        "halted_at": _now,
+                    },
+                },
+            ),
+            audit_path=audit_path_p,
+        )
+    except (FileNotFoundError, PermissionError):
+        pass  # repo state absent — caller's exit-9 message is still meaningful
+    except Exception as e:
+        print(f"WARNING: budget-halt commit failed: {e}", file=sys.stderr)
+        raise  # re-raise so caller sees the real fault, not a silent 9
+
+    return 9
+
+
+# ---------------------------------------------------------------------------
 # Public surface
 # ---------------------------------------------------------------------------
 
@@ -383,4 +481,5 @@ __all__ = [
     "clear_autopilot_started_at",
     "build_budget_halt_diary",
     "apply_budget_halt",
+    "wall_seconds_check_and_maybe_halt",
 ]
