@@ -15,7 +15,7 @@ Fault classes asserted:
   - is_denied: ALLOWED — safe commands (ls, cat, etc.)
   - is_denied: case-insensitive basename (curl.exe → denied)
   - is_denied: empty argv → (False, None)
-  - is_denied: HARNESS_ALLOW_NETWORK=1 env → all return (False, None) regardless of argv
+  - is_denied: HARNESS_ALLOW_NETWORK=1 env → NOT a bypass (input metadata only, §3.5/§5.2)
   - emit_deny_audit: writes audit row with required fields; truncates command at 512 chars
   - shim_main: env not set to deny → execvp called (allow pass-through)
   - shim_main: env=deny + curl → returns 4, audit emitted, stderr has "refused"
@@ -142,10 +142,17 @@ def test_is_denied_empty_argv_is_allowed() -> None:
     assert label is None
 
 
-def test_is_denied_allow_network_env_overrides_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    """HARNESS_ALLOW_NETWORK=1 → is_denied always returns (False, None)."""
+def test_is_denied_allow_network_env_is_not_a_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HARNESS_ALLOW_NETWORK=1 is input metadata only (§3.5/§5.2); it does NOT
+    bypass is_denied. The legitimate allow path is HARNESS_AUTOPILOT_NETWORK=allow
+    (set by run_start after §3.5/§3.5.1 authorization).
+
+    This test replaces the old 'env overrides all' test that documented the
+    incorrect env-spoof bypass. See S10b+S10c review fixes (P1-1).
+    """
     monkeypatch.setenv("HARNESS_ALLOW_NETWORK", "1")
 
+    # Deny-listed commands must STILL be denied regardless of HARNESS_ALLOW_NETWORK.
     for argv in [
         ["curl", "http://example.com"],
         ["git", "push", "origin"],
@@ -153,8 +160,10 @@ def test_is_denied_allow_network_env_overrides_all(monkeypatch: pytest.MonkeyPat
         ["ssh", "user@host"],
     ]:
         denied, label = is_denied(argv)
-        assert denied is False, f"Expected ALLOW for {argv}, got denied=True"
-        assert label is None
+        assert denied is True, (
+            f"P1-1: HARNESS_ALLOW_NETWORK=1 must NOT bypass is_denied for {argv!r}. "
+            "This env var is input metadata only, not authorization (§3.5/§5.2)."
+        )
 
 
 def test_is_denied_allow_network_env_unset_still_denies(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -14,8 +14,14 @@ Atomicity contract: shim refusal exits non-zero (exit 4) AND emits
 ``verb=autopilot.network.deny`` audit row BEFORE the subprocess call.
 Cannot be bypassed by piping (``curl ... | bash``) because the shim wraps argv[0].
 
-Allowlist override: set ``HARNESS_ALLOW_NETWORK=1`` to permit all commands
-regardless of deny-list (used by the allow_network=True autopilot path).
+Authorization model (§3.5 / §5.2):
+  - ``HARNESS_ALLOW_NETWORK=1`` is INPUT METADATA only — it does NOT authorize
+    network access. It is NOT read by ``is_denied`` or ``shim_main``.
+  - The legitimate allow path is ``HARNESS_AUTOPILOT_NETWORK=allow``, set by
+    ``run_start`` when ``--allow-network`` was authorized via §3.5/§3.5.1
+    (TTY-human or CI-OIDC predicate). ``shim_main`` passes through when the
+    env is anything other than ``"deny"``.
+  - This design closes the env-spoof channel described in §3.5.1.
 
 Hard isolation limitation
 --------------------------
@@ -26,6 +32,7 @@ S10d / ``harness install --autopilot-guards``.
 
 Exit codes (§3.4):
   - 4: scope_violation (sub_reason: autopilot_network_deny)
+  - 6: audit_write_failed (both primary and fallback audit writes failed)
 
 TODO (S10d): ship PATH-prepend installer ``harness install --autopilot-guards``.
 TODO (S10d): Windows PowerShell shim.
@@ -101,8 +108,12 @@ def _normalize_basename(cmd: str) -> str:
 def is_denied(argv: Sequence[str]) -> tuple[bool, Optional[str]]:
     """Pure check: returns (True, command_label) if argv matches the deny-list,
     else (False, None). Inspects argv[0] (basename, strip path/extension) and
-    sub-tokens for git family. Allowlist override: if env HARNESS_ALLOW_NETWORK=1
-    is set, returns (False, None) regardless.
+    sub-tokens for git family.
+
+    NOTE: HARNESS_ALLOW_NETWORK=1 is NOT read here. It is input metadata only
+    (§3.5 / §5.2), not authorization. The legitimate allow path is
+    HARNESS_AUTOPILOT_NETWORK=allow (set by run_start when --allow-network was
+    authorized via §3.5/§3.5.1). shim_main handles the pass-through on =allow.
 
     Examples::
 
@@ -114,10 +125,6 @@ def is_denied(argv: Sequence[str]) -> tuple[bool, Optional[str]]:
       is_denied(['git', 'submodule', 'update', '--remote']) → (True, 'git submodule update --remote')
     """
     if not argv:
-        return (False, None)
-
-    # Allowlist override.
-    if os.environ.get("HARNESS_ALLOW_NETWORK", "") == "1":
         return (False, None)
 
     cmd0 = _normalize_basename(argv[0])
@@ -172,7 +179,7 @@ def emit_deny_audit(
     argv: Sequence[str],
     command_label: str,
     audit_path: "str | os.PathLike",
-) -> None:
+) -> bool:
     """Append verb=autopilot.network.deny BEFORE refusing. Fields:
 
       verb:          'autopilot.network.deny'
@@ -181,9 +188,13 @@ def emit_deny_audit(
       cwd:           os.getcwd()
       at:            ISO-Z
 
-    Best-effort: if audit_path can't be resolved or write fails, print warning
-    to stderr but do NOT block the refusal (the refusal is the primary safety;
-    audit is forensic).
+    Returns True if the audit write succeeded (primary OR fallback), False if
+    BOTH primary and fallback writes failed. Callers should return exit code 6
+    when this returns False (§5.2 AND: refused but never audited = audit hole).
+
+    Fallback: on primary OSError, tries a plain JSON line append to
+    .harness/audit.fallback.log (no chain stamping required). If both fail,
+    prints WARNING to stderr (forensic) and returns False.
     """
     from . import audit as _audit
 
@@ -200,14 +211,38 @@ def emit_deny_audit(
         "at": now,
     }
 
+    primary_path = Path(audit_path)
     try:
-        _audit.audit_append(entry, audit_path=Path(audit_path))
-    except Exception as exc:  # noqa: BLE001
+        _audit.audit_append(entry, audit_path=primary_path)
+        return True
+    except OSError as exc:
+        # Primary write failed — try fallback plain-append (no chain stamping).
+        fallback_path = primary_path.parent / "audit.fallback.log"
+        try:
+            import json as _json
+            with open(fallback_path, "a", encoding="utf-8") as fh:
+                fh.write(_json.dumps(entry) + "\n")
+            print(
+                f"[autopilot_guard] warning: primary audit emit failed ({exc}); "
+                "fallback written to audit.fallback.log.",
+                file=sys.stderr,
+            )
+            return True
+        except OSError as fallback_exc:
+            print(
+                f"[autopilot_guard] WARNING: AUDIT TRAIL HOLE — both primary "
+                f"({exc}) and fallback ({fallback_exc}) audit writes failed. "
+                "Refusal will proceed but this event has NOT been recorded.",
+                file=sys.stderr,
+            )
+            return False
+    except Exception as exc:  # noqa: BLE001 — non-OSError (e.g. json encoding)
         print(
             f"[autopilot_guard] warning: audit emit failed ({exc}); "
             "refusal will proceed regardless.",
             file=sys.stderr,
         )
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -222,16 +257,23 @@ def shim_main(argv: Optional[Sequence[str]] = None) -> int:
       1. argv = argv or sys.argv[1:]
          (shim invocation: ``python -m scripts.lib.autopilot_guard <wrapped-argv>``)
       2. If env HARNESS_AUTOPILOT_NETWORK != "deny" → exec the real command
-         pass-through (allow).
+         pass-through (allow). This includes =allow (authorized via §3.5/§3.5.1)
+         and any unset/other value.
       3. Resolve audit_path via standard repo-root walk (reuse
          phase_preflight pattern or operational_paths).
       4. is_denied(argv) → if denied: emit_deny_audit + print "refused:
-         <label>" to stderr + return 4.
+         <label>" to stderr + return 4 (or 6 if audit trail is broken).
       5. Else: exec the real command via os.execvp(argv[0], argv) —
          process-replace, no double-fork.
 
     Returns int (exit code). Never returns when allowing (execvp replaces
     process), unless execvp is monkeypatched in tests.
+
+    Exit codes:
+      4: denied (scope_violation, audit written OK)
+      6: denied AND audit write failed (audit_write_failed — both primary
+         and fallback failed; §5.2 AND contract broken — operators MUST
+         investigate the audit-trail hole)
     """
     if argv is None:
         argv = sys.argv[1:]
@@ -240,6 +282,8 @@ def shim_main(argv: Optional[Sequence[str]] = None) -> int:
     # Step 2: check if we are in deny mode.
     if os.environ.get("HARNESS_AUTOPILOT_NETWORK") != "deny":
         # Pass-through: exec the real command.
+        # =allow means --allow-network was authorized via §3.5/§3.5.1.
+        # Unset / any other value also passes through.
         if argv:
             os.execvp(argv[0], argv)
         return 0
@@ -252,14 +296,18 @@ def shim_main(argv: Optional[Sequence[str]] = None) -> int:
 
     if denied:
         # Emit audit BEFORE refusing (atomicity contract §5.2).
+        audit_ok: bool
         if audit_path is not None:
-            emit_deny_audit(argv=argv, command_label=command_label, audit_path=audit_path)
+            audit_ok = emit_deny_audit(
+                argv=argv, command_label=command_label, audit_path=audit_path
+            )
         else:
             print(
-                f"[autopilot_guard] warning: could not locate .harness/audit.log; "
+                "[autopilot_guard] warning: could not locate .harness/audit.log; "
                 "refusal will proceed without audit.",
                 file=sys.stderr,
             )
+            audit_ok = False
 
         print(
             f"[autopilot_guard] refused: {command_label!r} is denied in autopilot mode "
@@ -267,7 +315,8 @@ def shim_main(argv: Optional[Sequence[str]] = None) -> int:
             f"Command: {' '.join(argv)!r}",
             file=sys.stderr,
         )
-        return 4
+        # Return 6 when audit trail is broken (both primary + fallback failed).
+        return 4 if audit_ok else 6
 
     # Step 5: allow — exec the real command (process-replace).
     if argv:

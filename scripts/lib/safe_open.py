@@ -291,6 +291,28 @@ def _rethrow_eloop(exc: OSError, component: str, *, dir_fd: int = -1) -> None:
     macOS additionally returns ENOTDIR when O_NOFOLLOW|O_DIRECTORY is used on
     a symlink-to-directory.  In that case we confirm via lstat (relative to
     dir_fd when provided) before converting.
+
+    # RACE NOTE (macOS O_PATH fallback): On macOS, between the failed open()
+    # call (ENOTDIR) and the subsequent os.lstat() call below, there is a
+    # single-syscall window during which an attacker who has write access to a
+    # sibling directory could swap the path component (e.g., replace a symlink
+    # with a real directory or vice versa). This means the lstat-based symlink
+    # confirmation is NOT strictly TOCTOU-free on macOS.
+    #
+    # Practical risk assessment:
+    #   - The window is extremely small (one syscall gap, ~microseconds).
+    #   - Exploitability requires LOCAL filesystem write access to a sibling
+    #     directory (i.e., the attacker already has significant access).
+    #   - The worst-case outcome is a false-negative: a symlink is NOT detected,
+    #     and ENOTDIR propagates as-is (the write still fails at the OS level).
+    #   - There is no false-positive risk (we never allow an unsafe write;
+    #     an undetected symlink causes a write failure, not a bypass).
+    #
+    # Strict §12.2 TOCTOU-freedom requires Linux O_PATH (which gives a
+    # race-free fd for the component WITHOUT following symlinks, allowing
+    # fstat() on the fd). On macOS, this code provides best-effort detection
+    # with the above documented limitation. Full TOCTOU-free coverage on macOS
+    # is deferred to S10d when the PATH-prepend installer is shipped.
     """
     import errno as _errno
     import stat as _stat
@@ -303,6 +325,7 @@ def _rethrow_eloop(exc: OSError, component: str, *, dir_fd: int = -1) -> None:
     if exc.errno == _errno.ENOTDIR:
         # macOS: O_NOFOLLOW|O_DIRECTORY on a symlink yields ENOTDIR.
         # Verify the target really is a symlink before converting.
+        # See RACE NOTE in docstring for macOS TOCTOU limitation.
         try:
             if dir_fd >= 0:
                 st = os.lstat(component, dir_fd=dir_fd)

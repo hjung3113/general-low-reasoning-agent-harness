@@ -14,16 +14,37 @@ Exports:
 The fence applies ONLY to autopilot modes (execution_mode != "manual").
 Manual mode is always allowed (fence_disabled_manual_mode).
 
-Fail-closed: if execution_mode != "manual" and allowed_paths is None or []:
-  → denied (not_in_allowed_paths). No permissive-by-default for autopilot.
+Fail-closed behavior:
+  - If execution_mode is missing (None): denied (execution_mode_missing_fail_closed).
+    Corrupt/fresh state with no execution_mode must not allow all writes.
+  - If execution_mode != "manual" and allowed_paths is None or []:
+    denied (not_in_allowed_paths). No permissive-by-default for autopilot.
 
 Reason values:
-  "allowed"                   -- path matches an allowed prefix
-  "path_outside_anchor"       -- '..' component detected
-  "symlink_in_path"           -- symlink encountered in path walk
-  "not_in_allowed_paths"      -- path doesn't match any allowed prefix,
-                                  or allowed_paths is None / []
-  "fence_disabled_manual_mode"-- execution_mode == "manual"
+  "allowed"                          -- path matches an allowed prefix
+  "path_outside_anchor"              -- '..' component detected
+  "symlink_in_path"                  -- symlink encountered in path walk
+  "not_in_allowed_paths"             -- path doesn't match any allowed prefix,
+                                        or allowed_paths is None / []
+  "fence_disabled_manual_mode"       -- execution_mode == "manual"
+  "execution_mode_missing_fail_closed" -- execution_mode field absent from state
+
+allowed_paths prefix match semantics (§5.1):
+  Each entry in state.allowed_paths is a POSIX path prefix string such as
+  "scripts/" or ".harness/". A target path is matched if its POSIX-normalized
+  form equals the entry (exact match) or starts with the entry stripped of its
+  trailing slash plus a "/". For example, "scripts/lib/foo.py" matches prefix
+  "scripts/" because it starts with "scripts/". Partial-component matches are
+  NOT allowed: "scriptsx/foo.py" does NOT match "scripts/" because the
+  prefix check appends "/" to the stripped entry, requiring a full component
+  boundary. Callers must ensure allowed_paths entries use forward-slash suffixes
+  for directory prefixes.
+
+TODO (S10d/S11): Wire fence_protected_paths into production callers (phase_set,
+  phase_approve, etc.). Currently enforce_write is unit-tested but not called
+  from production paths. Deciding which absolute paths every command writes
+  requires per-command audit of write targets. Tracked as S10d scope; mirror
+  the S10a P1-1 production-wiring pattern when implementing.
 
 Slice S10b step 2.
 """
@@ -233,8 +254,13 @@ def check_write_path(
     """
     path_str = str(path)
 
-    # Step 1 — manual mode bypass
-    exec_mode = state.get("execution_mode", "manual")
+    # Step 1 — manual mode bypass (fail-closed on missing execution_mode)
+    exec_mode = state.get("execution_mode")
+    if exec_mode is None:
+        # Fail-closed: corrupt/fresh state with no execution_mode must not allow
+        # all writes. Default-to-manual would allow arbitrary writes from a
+        # state-less or tampered context. §5.1 fail-closed requirement.
+        return FenceCheckResult(allowed=False, reason="execution_mode_missing_fail_closed")
     if exec_mode == "manual":
         return FenceCheckResult(allowed=True, reason="fence_disabled_manual_mode")
 
