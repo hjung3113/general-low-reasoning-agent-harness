@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +30,15 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 MAX_TRANSPORT_ATTEMPTS = 3
 BACKOFF_SECONDS = (1.0, 2.0, 4.0)
 RETRYABLE_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+
+
+_SK_PATTERN = re.compile(rb"sk-[A-Za-z0-9_-]+")
+
+
+def _redact(body: bytes) -> str:
+    """SecM3 — scrub `sk-...` patterns before surfacing HTTP error bodies."""
+    redacted = _SK_PATTERN.sub(b"sk-REDACTED", body or b"")
+    return repr(redacted[:500])
 
 
 class HttpTransportError(RuntimeError):
@@ -99,7 +109,7 @@ class HaikuClient:
                         f"HaikuClient: HTTP {code} after {MAX_TRANSPORT_ATTEMPTS} attempts"
                     ) from exc
                 raise RuntimeError(
-                    f"HaikuClient: HTTP {code} from Anthropic API: {exc.read()[:500]!r}"
+                    f"HaikuClient: HTTP {code} from Anthropic API: {_redact(exc.read())}"
                 ) from exc
         if payload is None:
             raise HttpTransportError(

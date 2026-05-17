@@ -208,16 +208,25 @@ def _is_live_client(client) -> bool:
     return type(client).__name__ == "HaikuClient"
 
 
+def _secure_mkdir(path: Path) -> None:
+    """SecM3 — create dir mode 0o700; chmod existing dir if necessary."""
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass  # best-effort; e.g. read-only mount
+
+
 def _evidence_path(evidence_root: Path, fixture: dict, trial_index: int) -> Path:
     flow_dir = Path(evidence_root) / fixture["flow"]
-    flow_dir.mkdir(parents=True, exist_ok=True)
+    _secure_mkdir(flow_dir)
     return flow_dir / f"trial-{trial_index:03d}.json"
 
 
 def _attempts_dir(evidence_root: Path, fixture: dict, trial_index: int) -> Path:
     flow_dir = Path(evidence_root) / fixture["flow"]
     attempts = flow_dir / f"trial-{trial_index:03d}-attempts"
-    attempts.mkdir(parents=True, exist_ok=True)
+    _secure_mkdir(attempts)
     return attempts
 
 
