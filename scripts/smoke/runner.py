@@ -233,15 +233,47 @@ def _single_attempt(
     wall = time.monotonic() - t0
     api_wall = float(getattr(response, "wall_clock_seconds", 0.0) or 0.0)
 
-    # Defensive: pin model + temperature on every call.
+    # M4 — pinning mismatch records a trial fail rather than asserting,
+    # so a misconfigured client surfaces as evidence instead of aborting
+    # the entire suite mid-run.
     last = getattr(model_client, "last_call", {}) or {}
+    pinning_reason = None
     if last:
-        assert last.get("model") == PINNED_MODEL, (
-            f"runner: model not pinned (got {last.get('model')!r}, "
-            f"expected {PINNED_MODEL!r})"
+        if last.get("model") != PINNED_MODEL:
+            pinning_reason = (
+                f"client_misconfigured: model={last.get('model')!r} expected={PINNED_MODEL!r}"
+            )
+        elif last.get("temperature") != PINNED_TEMPERATURE:
+            pinning_reason = (
+                f"client_misconfigured: temperature={last.get('temperature')!r}"
+                f" expected={PINNED_TEMPERATURE!r}"
+            )
+    if pinning_reason:
+        wall_now = time.monotonic() - t0
+        record = TrialRecord(
+            fixture_id=fixture["fixture_id"],
+            trial_index=trial_index,
+            model=PINNED_MODEL,
+            prompt=prompt,
+            response=response.text if response else "",
+            judgment={
+                "passed": False,
+                "reason": pinning_reason,
+                "retry_recommended": False,
+            },
+            retry_count=0,
+            wall_clock_seconds=wall_now,
+            input_tokens=int(getattr(response, "input_tokens", 0)),
+            output_tokens=int(getattr(response, "output_tokens", 0)),
+            budget_caps_hit=[],
+            commands_executed=[],
+            passed=False,
+            api_wall_seconds=float(getattr(response, "wall_clock_seconds", 0.0) or 0.0),
         )
-        assert last.get("temperature") == PINNED_TEMPERATURE, (
-            f"runner: temperature not pinned (got {last.get('temperature')!r})"
+        return (
+            JudgeResult(False, pinning_reason, retry_recommended=False),
+            record,
+            dest,
         )
 
     caps_hit = _budget_caps_hit(wall, response.input_tokens, response.output_tokens)
@@ -310,6 +342,8 @@ def run_trial(
     while (
         not record.passed
         and not record.budget_caps_hit
+        and not getattr(record, "transport_error", False)
+        and "client_misconfigured" not in (record.judgment or {}).get("reason", "")
         and retry_count < MAX_RETRIES
     ):
         retry_count += 1
