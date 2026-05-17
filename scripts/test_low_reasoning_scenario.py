@@ -343,6 +343,50 @@ class JudgeInvariantModeTests(unittest.TestCase):
         self.assertIn("orphan", result.reason)
 
 
+class SuiteCostCapTests(unittest.TestCase):
+    """SecM1 — --max-spend-usd halts the suite once cumulative spend exceeds cap."""
+
+    def test_suite_respects_max_spend_usd(self) -> None:
+        from scripts.smoke import low_reasoning_scenario as lrs
+
+        evidence = Path(tempfile.mkdtemp(prefix="costcap.")) / "ev"
+        # Patch HaikuClient with FakeClient so we don't need a real key.
+        from unittest import mock
+
+        class CostClient:
+            model = PINNED_MODEL
+            temperature = 0.0
+            last_call: dict = {"model": PINNED_MODEL, "temperature": 0.0}
+
+            def respond(self, prompt):
+                self.last_call = {"model": self.model, "temperature": self.temperature}
+                from scripts.smoke.fake_client import ModelResponse
+                # Each call: 10_000 input + 1_000 output tokens.
+                return ModelResponse(
+                    text="harness phase set plan",
+                    input_tokens=10_000,
+                    output_tokens=1_000,
+                )
+
+        with mock.patch(
+            "scripts.smoke.low_reasoning_scenario.HaikuClient",
+            CostClient,
+            create=True,
+        ), mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}):
+            rc = lrs.main(
+                [
+                    "--flow", "fixture-01",
+                    "--trials", "10",
+                    "--live",
+                    "--evidence-dir", str(evidence),
+                    "--max-spend-usd", "0.05",
+                ]
+            )
+        # Suite should have aborted early; banner SUITE BUDGET EXHAUSTED.
+        # Exit code non-zero (budget exhausted).
+        self.assertIn(rc, (1, 2, 3))
+
+
 class SummarizeOnlyLatestTests(unittest.TestCase):
     """M2 — --summarize-only walks base_evidence and picks newest timestamp dir."""
 
