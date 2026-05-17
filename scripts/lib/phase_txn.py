@@ -63,15 +63,33 @@ class TxnLockMissingError(TxnError):
 class TxnRequest:
     """Inputs to one commit. `before_state` may be `None` for a from-
     nothing insert; `after_state` is the canonical post-state dict.
-    `audit_entry_draft` is the verb-level payload (`{verb, by, args, ...}`)
-    that this module decorates with `txn_id` + sha256 hashes before
-    appending to the audit log.
+
+    Audit drafts: most verbs emit ONE audit entry per transaction
+    (`audit_entry_draft`). The S04+S05 review-fix (P1-3) extended this to
+    accept a LIST of drafts (`audit_entry_drafts`) so a single atomic
+    transaction can emit multiple correlated audit rows (e.g. a reopen
+    that halts active autopilot emits `phase.autopilot.halt` followed by
+    `phase.reopen` under one `txn_id`). The singular `audit_entry_draft`
+    field is preserved as the backward-compat path; if both are set, the
+    plural list wins. All drafts share the same `txn_id` and
+    `before/after_sha256` decorations.
     """
 
     action: str
     before_state: Optional[Mapping[str, Any]]
     after_state: Mapping[str, Any]
-    audit_entry_draft: Mapping[str, Any]
+    audit_entry_draft: Optional[Mapping[str, Any]] = None
+    audit_entry_drafts: Optional[list] = None
+
+    def resolved_drafts(self) -> list:
+        """Return the canonical list of drafts to write. Plural wins over
+        singular. Empty/missing -> empty list (callers should not invoke
+        commit_transaction with zero audit rows, but the helper is safe)."""
+        if self.audit_entry_drafts:
+            return list(self.audit_entry_drafts)
+        if self.audit_entry_draft is not None:
+            return [self.audit_entry_draft]
+        return []
 
 
 def _canonical_bytes(state: Optional[Mapping[str, Any]]) -> bytes:
@@ -148,13 +166,19 @@ def commit_transaction(
     after_sha = _sha256(after_bytes)
     txn_id = _new_txn_id()
 
+    drafts = request.resolved_drafts()
+    # Journal captures the FIRST draft only (the recovery oracle uses the
+    # journal solely to learn the planned action; the audit log itself
+    # records all drafts after step 3 completes).
+    journal_first_draft = dict(drafts[0]) if drafts else {}
+
     # --- Step 1: journal -----------------------------------------------------
     journal_payload = {
         "txn_id": txn_id,
         "action": request.action,
         "before_sha256": before_sha,
         "after_sha256": after_sha,
-        "audit_entry_draft": dict(request.audit_entry_draft),
+        "audit_entry_draft": journal_first_draft,
         "started_at_monotonic": time.monotonic(),
     }
     journal_bytes = (
@@ -189,12 +213,26 @@ def commit_transaction(
     _durable_fs.fsync_parent_dir(scratch)
 
     # --- Step 3: audit append ----------------------------------------------
-    entry = dict(request.audit_entry_draft)
-    entry.setdefault("at", _now_iso())
-    entry["txn_id"] = txn_id
-    entry["before_sha256"] = before_sha
-    entry["after_sha256"] = after_sha
-    _audit.audit_append(entry, audit_path=audit_path)
+    # P1-3 extension: append ALL drafts inside step 3 so a multi-row
+    # transaction (e.g. autopilot.halt + reopen) is atomic — a crash
+    # between rows still leaves the journal+tmp on disk for the recovery
+    # oracle, which keys off the journal's `txn_id` (== shared by all
+    # rows). The §3.8 "one txn = one audit row" invariant is widened to
+    # "one txn = one audit txn_id span"; every row carries the same
+    # decorations.
+    if not drafts:
+        raise TxnError(
+            "commit_transaction requires at least one audit_entry_draft "
+            "(set request.audit_entry_draft or request.audit_entry_drafts)"
+        )
+    now_iso = _now_iso()
+    for draft in drafts:
+        entry = dict(draft)
+        entry.setdefault("at", now_iso)
+        entry["txn_id"] = txn_id
+        entry["before_sha256"] = before_sha
+        entry["after_sha256"] = after_sha
+        _audit.audit_append(entry, audit_path=audit_path)
     # §12.5 #3 (Round-7 amendment): after `fsync(audit_fd)` inside
     # `audit_append`, the harness MUST `fsync_parent_dir(scratch)`
     # before proceeding to step 4. Without this the scratch dir entry

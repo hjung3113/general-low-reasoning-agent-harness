@@ -43,10 +43,11 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from . import approval_nonce as _approval_nonce
-from . import audit_anchor as _audit_anchor
+from . import audit_anchor as _audit_anchor  # kept for tests that monkeypatch
 from . import phase_lock as _phase_lock
+from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
-from . import state_trust as _state_trust
+from . import state_trust as _state_trust  # kept for tests that monkeypatch
 
 
 # ---------------------------------------------------------------------------
@@ -146,11 +147,24 @@ _C0_CONTROLS = frozenset(chr(c) for c in range(0x00, 0x20))
 # Unicode bidi/isolate formatting controls — visual-spoof hazard
 # (Trojan-Source class). LRM/RLM/LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI.
 _BIDI_CONTROLS = frozenset([
-    "‎", "‏",
-    "‪", "‫", "‬", "‭", "‮",
-    "⁦", "⁧", "⁨", "⁩",
+    "‎", "‏",  # LRM, RLM
+    "‪", "‫", "‬", "‭", "‮",  # LRE/RLE/PDF/LRO/RLO
+    "⁦", "⁧", "⁨", "⁩",  # LRI/RLI/FSI/PDI
 ])
-_FORBIDDEN_CHARS = _C0_CONTROLS | {"\x7f"} | _BIDI_CONTROLS
+# S04+S05 review-fix P2-2: parity with §12.6 Trojan-Source intent. Add
+# zero-width joiners (ZWJ/ZWNJ), Arabic Letter Mark (ALM), and Unicode
+# line/paragraph separators (LS/PS). All five are visual-spoof or
+# audit-line-framing hazards that the original set missed.
+_EXTRA_INVISIBLES = frozenset([
+    "‌",  # ZERO WIDTH NON-JOINER (ZWNJ)
+    "‍",  # ZERO WIDTH JOINER (ZWJ)
+    "؜",  # ARABIC LETTER MARK (ALM)
+    " ",  # LINE SEPARATOR (LS)
+    " ",  # PARAGRAPH SEPARATOR (PS)
+])
+_FORBIDDEN_CHARS = (
+    _C0_CONTROLS | {"\x7f"} | _BIDI_CONTROLS | _EXTRA_INVISIBLES
+)
 
 
 def _has_forbidden_chars(s: str) -> bool:
@@ -162,43 +176,25 @@ def _has_forbidden_chars(s: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+# Backward-compat shims — these names existed pre-refactor. Tests
+# monkeypatch them and other callers import them, so the shape is
+# preserved. The bodies delegate to `phase_preflight` (P2-3 extraction).
+
 def default_gitconfig_email_lookup() -> str:
     """Run `git config user.email`. Empty string on any failure."""
-    try:
-        r = subprocess.run(
-            ["git", "config", "user.email"],
-            capture_output=True,
-            text=True,
-            timeout=2.0,
-        )
-        if r.returncode == 0:
-            return r.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return ""
+    return _phase_preflight.default_gitconfig_email_lookup()
 
 
 def _load_install_record(path: Path) -> dict:
-    if not path.exists():
-        raise FileNotFoundError(path)
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _phase_preflight.load_install_record(path)
 
 
 def _approvers_emails(install_record: Mapping) -> list[str]:
-    out = []
-    for entry in install_record.get("approvers", []) or []:
-        if isinstance(entry, dict) and entry.get("email"):
-            out.append(str(entry["email"]).strip().lower())
-    return out
+    return _phase_preflight.approvers_emails(install_record)
 
 
 def _now_iso_z() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return _phase_preflight.now_iso_z()
 
 
 # ---------------------------------------------------------------------------

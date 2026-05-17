@@ -389,6 +389,39 @@ def test_baseline_unchanged_when_no_override_flag(env):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 9b. P2-2 sanitizer parity — ZWJ / ZWNJ / ALM / LS / PS (§12.6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("char,name", [
+    ("‌", "ZWNJ (U+200C)"),
+    ("‍", "ZWJ (U+200D)"),
+    ("؜", "ALM (U+061C)"),
+    (" ", "LINE SEPARATOR (U+2028)"),
+    (" ", "PARAGRAPH SEPARATOR (U+2029)"),
+])
+def test_sanitizer_rejects_zwj_zwnj_alm_ls_ps(env, char, name):
+    """P2-2: §12.6 Trojan-Source parity — zero-width joiners, Arabic
+    Letter Mark, and Unicode line/paragraph separators must be rejected
+    by the sanitizer (they are visual-spoof / audit-line-framing hazards
+    that the original _BIDI_CONTROLS set missed)."""
+    _mint_valid_nonce(env["nonce_dir"])
+    bad_reason = f"legit reason{char}injected"
+    rc = _run(
+        env,
+        by="alice@example.com",
+        override_identity="alice-alt@example.com",
+        override_reason=bad_reason,
+    )
+    assert rc.exit_code == 6, (
+        f"override_reason containing {name} should be rejected"
+    )
+    assert rc.sub_reason == "override_reason_invalid_chars", (
+        f"expected override_reason_invalid_chars for {name}, got {rc.sub_reason!r}"
+    )
+
+
 def test_override_identity_with_control_chars_rejected(env):
     _mint_valid_nonce(env["nonce_dir"])
     rc = _run(
