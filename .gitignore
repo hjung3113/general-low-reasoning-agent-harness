@@ -18,3 +18,6 @@ jobs.md
 
 # Smoke/test fixture scratch — accumulates Python bytecode cache, can grow to GB.
 tmp/
+
+# Claude Code worktrees — content lives in linked branches (already merged to develop).
+.claude/
