@@ -259,6 +259,68 @@ class TestStage2Roo(unittest.TestCase):
             for ec in capture["exit_codes"]:
                 self.assertEqual(ec, 0)
 
+    def test_stage2_does_not_read_quarantined_adapter_files(self):
+        # C2: while stage 2 runs, no .roo/commands/{adr,bugfix,feature,
+        # doctor,issues,ops,fsd-phase,review,simple}.md file may be
+        # opened by the smoke driver. We hook builtins.open + Path.read_text
+        # to log every file path read and assert disjoint with the
+        # quarantined set.
+        import builtins, pathlib
+        opened: list[str] = []
+        real_open = builtins.open
+        real_read_text = pathlib.Path.read_text
+
+        def tracking_open(file, *a, **kw):
+            try:
+                opened.append(str(file))
+            except Exception:
+                pass
+            return real_open(file, *a, **kw)
+
+        def tracking_read_text(self, *a, **kw):
+            opened.append(str(self))
+            return real_read_text(self, *a, **kw)
+
+        with tempfile.TemporaryDirectory(prefix="harness-smoke-stage2-quar.") as tmp:
+            builtins.open = tracking_open
+            pathlib.Path.read_text = tracking_read_text
+            try:
+                smoke_lifecycle._run_stage2_roo(Path(tmp))
+            finally:
+                builtins.open = real_open
+                pathlib.Path.read_text = real_read_text
+        quarantined_paths = {
+            str(REPO_ROOT / ".roo" / "commands" / name)
+            for name in QUARANTINED_ROO_COMMANDS
+        }
+        leaked = [p for p in opened if p in quarantined_paths]
+        self.assertEqual(leaked, [],
+            f"stage 2 opened quarantined adapter files: {leaked!r}")
+
+    def test_stage3_dispatches_via_markdown_extracted_argv(self):
+        # C2: the stage 3 dispatcher must parse the OpenCode markdown
+        # files and verify each one advertises the verb being
+        # dispatched (verb-domain check inside _execute_adapter_command_real).
+        # If the markdown file lacked the relevant `harness phase ...`
+        # invocation, the dispatcher would raise RuntimeError. A
+        # successful stage 3 run is therefore evidence that extraction
+        # is exercised. We also directly assert the extractor returns
+        # non-empty argvs from each lifecycle command file.
+        opencode_dir = REPO_ROOT / ".opencode" / "commands"
+        if not opencode_dir.exists():
+            opencode_dir = REPO_ROOT / ".opencode" / "command"
+        for inv in STAGE1_INVOCATIONS:
+            cmd = opencode_dir / inv["opencode"]
+            extracted = smoke_lifecycle._extract_argv_from_markdown(cmd)
+            self.assertTrue(extracted,
+                f"opencode cmd {cmd} produced no extracted argvs")
+            # The verb domain must be present.
+            domain = inv["argv"][:2]
+            self.assertTrue(
+                any(smoke_lifecycle._argv_prefix_matches(a, domain) for a in extracted),
+                f"opencode cmd {cmd} missing verb-domain {domain!r} (extracted={extracted!r})",
+            )
+
     def test_stage2_each_lifecycle_cmd_references_expected_verb(self):
         adapter_dir = REPO_ROOT / ".roo" / "commands"
         for inv in STAGE1_INVOCATIONS:

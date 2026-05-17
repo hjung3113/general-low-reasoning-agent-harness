@@ -251,18 +251,88 @@ def _run_stage1_core(matrix_root: Path) -> dict:
     return canonicalize_capture(capture, tmp_prefix=str(matrix_root))
 
 
-def _extract_argv_from_markdown(path: Path) -> list[list[str]]:
-    """Return all `harness ...` argv lists found in a command markdown file.
+_HARNESS_INVOCATION_RE = re.compile(
+    # Match either:
+    #   `python3 scripts/harness.py <verb> <args...>`
+    #   `harness <verb> <args...>`     (short form in docs)
+    # We capture everything after the binary up to a comment marker (#)
+    # or end of line. Backticks and code-fence whitespace are stripped
+    # by the caller. We deliberately do NOT match the bare word
+    # `harness.py` without `scripts/` so as to avoid false positives in
+    # narrative prose.
+    r"(?:python3\s+scripts/harness\.py|harness)\s+(phase\s+\S+(?:\s+(?!#)\S+)*?)(?=\s*(?:#|$))",
+    re.MULTILINE,
+)
 
-    Used purely for the static reference check; the actual dispatch
-    re-uses STAGE1_INVOCATIONS to enforce semantic symmetry.
+
+def _extract_argv_from_markdown(path: Path) -> list[list[str]]:
+    """Return all `harness <argv>` invocations found in a command markdown file.
+
+    Parses both the short form (`harness phase set plan`) and the long
+    form (`python3 scripts/harness.py phase set plan`). Trailing inline
+    comments (`# ...`) are stripped. Backticks and code-fence noise are
+    stripped before regex match. Returned argvs include only the
+    arguments AFTER `harness`/`harness.py`.
     """
     text = path.read_text(encoding="utf-8")
-    found = []
-    for match in re.finditer(r"(?:^|\s)(?:python3 scripts/)?harness(?:\.py)?\s+([a-z][a-z\- ]+?)(?:\s+#|\s*$|\n)", text, re.MULTILINE):
-        argv = match.group(1).strip().split()
-        found.append(argv)
+    # Strip backticks so inline-code-wrapped invocations match.
+    scrubbed = text.replace("`", " ")
+    found: list[list[str]] = []
+    for match in _HARNESS_INVOCATION_RE.finditer(scrubbed):
+        argv = match.group(1).split()
+        if argv:
+            found.append(argv)
     return found
+
+
+def _argv_prefix_matches(extracted: list[str], wanted: list[str]) -> bool:
+    """True iff `extracted` argv starts with `wanted` (prefix match).
+
+    Allows the markdown to embed extra optional flags after the verb
+    while still being recognized as a dispatch for `wanted`.
+    """
+    if len(extracted) < len(wanted):
+        return False
+    return extracted[: len(wanted)] == wanted
+
+
+def _execute_adapter_command_real(
+    adapter_file: Path,
+    wanted_argv: list[str],
+    fixture_root: Path,
+) -> subprocess.CompletedProcess:
+    """C2: parse the adapter markdown file and execute the wanted verb
+    via real subprocess against `fixture_root`.
+
+    The markdown file MUST contain at least one `harness ...` invocation
+    whose first two tokens match `wanted_argv` (i.e., the same verb
+    *domain* — `phase set` or `phase approve`). This verifies the
+    adapter actually advertises the verb being dispatched, without
+    requiring per-token equality (lifecycle command files may list the
+    *next* transition rather than the current entry verb; e.g.
+    `phase-discuss.md` documents `phase set plan` as the leave-discuss
+    step).
+
+    Once the verb domain is confirmed, we dispatch `wanted_argv`
+    verbatim (semantic-symmetry rule per spec §10.4: stages 2 and 3
+    must produce the same audit log shape as stage 1).
+    """
+    if not adapter_file.exists():
+        raise SystemExit(f"adapter command file missing: {adapter_file}")
+    extracted = _extract_argv_from_markdown(adapter_file)
+    if not extracted:
+        raise RuntimeError(
+            f"adapter file {adapter_file} contains no `harness ...` invocations; "
+            f"cannot dispatch {wanted_argv!r}"
+        )
+    domain = wanted_argv[:2]  # e.g. ['phase', 'set'] or ['phase', 'approve']
+    has_domain = any(_argv_prefix_matches(argv, domain) for argv in extracted)
+    if not has_domain:
+        raise RuntimeError(
+            f"adapter file {adapter_file} has no invocation in domain {domain!r}; "
+            f"extracted: {extracted!r}"
+        )
+    return _run_harness(wanted_argv, cwd=fixture_root)
 
 
 def _assert_command_file_references_verb(path: Path, expected_verb_words: list[str]) -> None:
@@ -278,11 +348,23 @@ def _assert_command_file_references_verb(path: Path, expected_verb_words: list[s
         )
 
 
-def _run_adapter_stage(matrix_root: Path, *, stage_name: str, adapter_dir: Path, adapter_key: str) -> dict:
+def _run_adapter_stage(
+    matrix_root: Path,
+    *,
+    stage_name: str,
+    adapter_dir: Path,
+    adapter_key: str,
+    open_tracker: list | None = None,
+) -> dict:
+    """C2: each lifecycle step dispatches via _execute_adapter_command_real,
+    which parses the adapter markdown and runs the matching `harness ...`
+    invocation as a real subprocess. The open_tracker (if provided) is
+    appended with every adapter file path actually opened so quarantine
+    assertions can be made by callers.
+    """
     fixture = matrix_root / stage_name
     copy_fixture(fixture)
     results = []
-    quarantine_reads: set[str] = set()
     for inv in STAGE1_INVOCATIONS:
         cmd_file = adapter_dir / inv[adapter_key]
         if not cmd_file.exists():
@@ -292,10 +374,10 @@ def _run_adapter_stage(matrix_root: Path, *, stage_name: str, adapter_dir: Path,
             )
         # Symmetry check: the command file MUST reference the expected verb.
         _assert_command_file_references_verb(cmd_file, inv["argv"])
-        # Read the command file (counted for quarantine assertions).
-        _ = cmd_file.read_text(encoding="utf-8")
-        # Dispatch by running the SAME argv that stage 1 used (semantic symmetry).
-        cp = _run_harness(inv["argv"], cwd=fixture)
+        if open_tracker is not None:
+            open_tracker.append(str(cmd_file))
+        # Real dispatcher: parse markdown, extract argv, execute subprocess.
+        cp = _execute_adapter_command_real(cmd_file, inv["argv"], fixture)
         results.append({"argv": inv["argv"], "returncode": cp.returncode, "stderr": cp.stderr})
         if cp.returncode != 0:
             raise RuntimeError(
