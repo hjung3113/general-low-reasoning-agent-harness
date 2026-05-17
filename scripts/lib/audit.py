@@ -355,18 +355,40 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
         if len(encoded) > AUDIT_MAX_LINE_BYTES:
             # Last-resort safety: synthesize a minimal record.
             # §12.5 #1: MUST preserve chain fields even in minimal fallback.
+            #
+            # P3-P1-A fix: by_source and confirmation_kind are the
+            # truncation-resilient identity discriminators (§12.5 #1 +
+            # S05 override-identity audit shape). The phase_approve.py
+            # comment calls by_source the "truncation-resilient discriminator"
+            # — that contract was FALSE under the old minimal-fallback.
+            # Both fields are short strings (~30 bytes total) well within
+            # the 1024-byte budget.
+            #
+            # IMPORTANT: Future updates to this fallback list MUST preserve
+            # by_source and confirmation_kind. These two fields allow
+            # forensic analysis to determine the identity and authorization
+            # pathway even when the full args payload is stripped.
             minimal = {
                 "index": index,
                 "verb": entry.get("verb", "unknown"),
                 "args": {"truncated": True},
                 "at": entry.get("at"),
                 "by": entry.get("by"),
+                # Identity discriminators — truncation-resilient (§12.5 #1 + S05)
+                "by_source": entry.get("by_source"),
+                "confirmation_kind": entry.get("confirmation_kind"),
                 # Chain fields are preserved per §12.5 #1
                 "previous_entry_hash": prev_hash,
                 "seq": seq,
                 "seq_global": seq_global,
                 "schema_version": 2,
             }
+            # Drop None values for by_source / confirmation_kind to keep the
+            # record compact — they are only present when the entry has them.
+            if minimal["by_source"] is None:
+                del minimal["by_source"]
+            if minimal["confirmation_kind"] is None:
+                del minimal["confirmation_kind"]
             # entry_hash computed last on the minimal record
             minimal["entry_hash"] = _compute_entry_hash_for_minimal(minimal)
             encoded = (

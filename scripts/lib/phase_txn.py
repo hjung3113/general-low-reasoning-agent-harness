@@ -211,8 +211,22 @@ def commit_transaction(
     # follow-up bookkeeping to a prior user-driven mutation. These must
     # complete to satisfy §1.1 invariants; exempting them prevents a
     # wedged PENDING sentinel when file_mutation_ops=0.
+    #
+    # P1-1 fix: "phase.autopilot.start_recover_pending" is the recovery
+    # rollback committed by recover() when it detects a PENDING sentinel.
+    # It MUST be exempt because the very state it corrects has
+    # file_mutation_ops that may be 0.
+    #
+    # P1-2 fix: halt verbs are exempt because the before_state that triggers
+    # them has file_mutation_ops==0 (the exhausted budget), which would
+    # cause BudgetExhaustedError before the halt commit can persist.
+    # All halt-bookkeeping action strings MUST appear here.
     _FINALIZE_EXEMPT_ACTIONS = frozenset({
         "phase.autopilot.start_hash_finalized",
+        "phase.autopilot.start_recover_pending",  # P1-1: PENDING crash recovery rollback
+        "phase.autopilot.halt.budget",            # P1-2: wall_seconds budget halt
+        "phase.autopilot.halt",                   # P1-2: generic autopilot halt
+        "phase.budget.halt",                      # P1-2: alias used by some callers
     })
     if request.before_state is not None and request.action not in _FINALIZE_EXEMPT_ACTIONS:
         _exec_mode = request.before_state.get("execution_mode", "manual")
@@ -495,12 +509,18 @@ def recover(
     if not J:
         if not T:
             if audit_txn is None:
+                _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+                if _pending is not None:
+                    return _pending
                 return RecoveryResult(row=1, decision="quiescent", exit_code=0)
             # Row 3 review-fix: only accept when the on-disk state hash
             # matches the audit tail's `after_sha256`. Otherwise the
             # state file has drifted (corruption / out-of-band edit) and
             # we MUST exit 14 rather than silently report "accept".
             if audit_after_sha and state_hash == audit_after_sha:
+                _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+                if _pending is not None:
+                    return _pending
                 return RecoveryResult(
                     row=3, decision="post_finalize_no_tmp_accept", exit_code=0
                 )
@@ -512,6 +532,9 @@ def recover(
             # No audit info to corroborate — historical "orphan_tmp" path.
             os.unlink(tmp_path)
             _durable_fs.fsync_parent_dir(scratch)
+            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+            if _pending is not None:
+                return _pending
             return RecoveryResult(row=2, decision="orphan_tmp_unlinked", exit_code=0)
         # Row 4 review-fix: audit claims a transition; require state hash
         # match before treating the tmp as discardable. Tampered state
@@ -519,6 +542,9 @@ def recover(
         if audit_after_sha and state_hash == audit_after_sha:
             os.unlink(tmp_path)
             _durable_fs.fsync_parent_dir(scratch)
+            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+            if _pending is not None:
+                return _pending
             return RecoveryResult(
                 row=4, decision="orphan_tmp_unlinked_post_finalize", exit_code=0
             )
@@ -543,6 +569,9 @@ def recover(
             _durable_fs.fsync_parent_dir(scratch)
             row = 6 if T else 5
             decision = "rollback_journal_and_tmp" if T else "rollback_journal_only"
+            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+            if _pending is not None:
+                return _pending
             return RecoveryResult(row=row, decision=decision, exit_code=0)
         # state != before AND audit never recorded -> corruption.
         row = 10 if T else 11
@@ -555,6 +584,9 @@ def recover(
             os.unlink(tmp_path)
         os.unlink(journal_path)
         _durable_fs.fsync_parent_dir(scratch)
+        _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+        if _pending is not None:
+            return _pending
         return RecoveryResult(row=8, decision="finalize", exit_code=0)
 
     if state_hash == before_sha and T and _file_sha(tmp_path) == after_sha:
@@ -568,10 +600,123 @@ def recover(
             os.close(fd)
         os.unlink(journal_path)
         _durable_fs.fsync_parent_dir(scratch)
+        _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
+        if _pending is not None:
+            return _pending
         return RecoveryResult(row=7, decision="roll_forward", exit_code=0)
 
     # Audit confirms but state matches neither before nor after.
     return RecoveryResult(row=9, decision="undecidable", exit_code=14)
+
+
+def _recover_pending_sentinel(
+    scratch: Path,
+    *,
+    audit_path: Path,
+    lock: Optional[_phase_lock.LockHandle],
+) -> Optional["RecoveryResult"]:
+    """P1-1 fix: Defense-in-depth check for PENDING autopilot_start_entry_hash.
+
+    Called after the 12-row matrix produces a self-healing (exit_code=0)
+    result. If the on-disk state has `autopilot_start_entry_hash == "PENDING"`
+    AND `execution_mode != "manual"`, this means a crash happened between the
+    two-phase autopilot start commits (the PENDING sentinel was written but the
+    real hash was never finalized). We must rollback to manual so the state does
+    not report autopilot active forever.
+
+    Returns a new RecoveryResult if rollback was performed, or None if no
+    PENDING sentinel was detected (caller uses its own result in that case).
+    """
+    state_path = scratch / STATE_NAME
+    if not state_path.exists():
+        return None
+
+    try:
+        state_bytes = state_path.read_bytes()
+        if not state_bytes:
+            return None
+        state = json.loads(state_bytes.decode("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if state.get("autopilot_start_entry_hash") != "PENDING":
+        return None
+    if state.get("execution_mode") == "manual":
+        return None
+
+    # PENDING sentinel detected with active autopilot → rollback to manual.
+    import copy
+    from . import phase_reopen as _phase_reopen
+
+    now = _now_iso()
+    run_id = state.get("autopilot_run_id")
+    phase_slug = state.get("autopilot_phase_slug")
+
+    # Build the last_halt diary for this crash event.
+    last_halt_entry = {
+        "at": now,
+        "halt_reason": "crash_during_autopilot_start_hash_finalize",
+        "autopilot_run_id": run_id,
+        "autopilot_mode": state.get("autopilot_mode"),
+        "autopilot_phase_slug": phase_slug,
+        "suggested_next_command": (
+            f"harness phase autopilot start --phase {phase_slug}"
+            if phase_slug
+            else "harness phase autopilot start --phase <slug>"
+        ),
+        "suggested_next_command_requires_human": False,
+        "acknowledged_at": None,
+    }
+
+    # Rotate prior last_halt into history (cap=5).
+    prior_last_halt = state.get("last_halt")
+    if prior_last_halt is not None and prior_last_halt.get("acknowledged_at") is None:
+        prior_last_halt = dict(prior_last_halt)
+        prior_last_halt["acknowledged_at"] = now
+    new_last_halt_history = _phase_reopen._rotate_last_halt_history(
+        state, prior_last_halt, cap=5
+    )
+
+    new_state = copy.deepcopy(state)
+    new_state["execution_mode"] = "manual"
+    new_state["autopilot_run_id"] = None
+    new_state["autopilot_mode"] = None
+    new_state["autopilot_phase_slug"] = None
+    new_state["autopilot_start_entry_hash"] = None
+    new_state["autopilot_allow_network"] = None
+    if "autopilot_started_at_iso" in new_state:
+        new_state["autopilot_started_at_iso"] = None
+    new_state["last_halt"] = last_halt_entry
+    new_state["last_halt_history"] = new_last_halt_history
+
+    audit_draft = {
+        "verb": "phase.autopilot.start.recover_pending",
+        "args": {
+            "halt_reason": "crash_during_autopilot_start_hash_finalize",
+            "autopilot_run_id": run_id,
+            "autopilot_phase_slug": phase_slug,
+            "recovered_at": now,
+        },
+        "at": now,
+    }
+
+    commit_transaction(
+        scratch,
+        lock=lock,
+        request=TxnRequest(
+            action="phase.autopilot.start_recover_pending",
+            before_state=state,
+            after_state=new_state,
+            audit_entry_draft=audit_draft,
+        ),
+        audit_path=audit_path,
+    )
+
+    return RecoveryResult(
+        row=0,
+        decision="pending_sentinel_rollback_to_manual",
+        exit_code=0,
+    )
 
 
 def _now_iso() -> str:

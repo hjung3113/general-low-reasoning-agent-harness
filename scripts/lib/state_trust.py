@@ -249,6 +249,31 @@ def preflight(
             f"state file sha256 {state_sha} does not match audit tail "
             f"after_sha256 {audit_after_sha}; {_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
         )
+
+    # P1-1 defense-in-depth: check for PENDING autopilot_start_entry_hash.
+    # If recover() ran first (the normal path) this check will never fire.
+    # If preflight runs before recover() (unexpected ordering), refuse and
+    # direct the operator to run recover — exit 14 (sub_reason documented
+    # in the StateAuditMismatchError). The PENDING sentinel means a crash
+    # happened between the two-phase autopilot start commits; the state is
+    # structurally valid but semantically corrupt (autopilot_start_entry_hash
+    # is "PENDING", not a real hash). §12.5 #1 requires recover() runs first;
+    # this check is the last line of defense if that ordering is violated.
+    try:
+        parsed_state = json.loads(canonical_bytes.decode("utf-8"))
+        if (
+            parsed_state.get("autopilot_start_entry_hash") == "PENDING"
+            and parsed_state.get("execution_mode") != "manual"
+        ):
+            raise StateAuditMismatchError(
+                "autopilot_start_entry_hash is 'PENDING' — a crash occurred "
+                "between two-phase autopilot start commits; "
+                "sub_reason=autopilot_start_hash_pending_after_crash; "
+                f"{_FIX_RECOVER}"
+            )
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass  # Already validated above; this branch is unreachable in practice
+
     return None
 
 
