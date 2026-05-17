@@ -190,6 +190,13 @@ def judge_fixture_02(scratch_dir: Path, fixture: dict, response_text: str = "", 
     state = _read_state(scratch_dir)
     if state is None:
         return JudgeResult(False, "phase-state.json missing or unparseable after trial")
+    # M3 — phase must remain "plan"; any other value means the agent
+    # advanced or regressed instead of approving the plan in place.
+    if state.get("phase") != "plan":
+        return JudgeResult(
+            False,
+            f"phase must be 'plan' for fixture-02 (got {state.get('phase')!r})",
+        )
     approved = bool(state.get("approved"))
     plan_id = state.get("plan_id")
     if approved and not plan_id:
