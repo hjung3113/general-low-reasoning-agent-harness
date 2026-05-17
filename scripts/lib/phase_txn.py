@@ -195,6 +195,12 @@ def commit_transaction(
     entry["before_sha256"] = before_sha
     entry["after_sha256"] = after_sha
     _audit.audit_append(entry, audit_path=audit_path)
+    # §12.5 #3 (Round-7 amendment): after `fsync(audit_fd)` inside
+    # `audit_append`, the harness MUST `fsync_parent_dir(scratch)`
+    # before proceeding to step 4. Without this the scratch dir entry
+    # for tmp could still be undurable in a crash window even though
+    # audit already references it.
+    _durable_fs.fsync_parent_dir(scratch)
 
     # --- Step 4: atomic replace --------------------------------------------
     # `replace_with_retry` raises DurableFsError on Windows AV pin
@@ -202,6 +208,17 @@ def commit_transaction(
     # matrix (S01-D.2 rows 7 / 8a / 8b) can resolve on next start.
     _durable_fs.replace_with_retry(tmp_path, state_path)
     _durable_fs.fsync_parent_dir(scratch)
+    # §12.5 #4: step 4 now requires `fsync_file_durable` of the renamed
+    # state.json IN ADDITION to the directory fsync above. On APFS this
+    # promotes the dir fsync to `F_FULLFSYNC` on the file's bytes; on
+    # Windows it FlushFileBuffers the file via a re-open. Without this
+    # the rename can be durable while the file's data pages still sit
+    # in volatile cache, defeating the §3.8 crash guarantee.
+    fd = os.open(str(state_path), os.O_RDONLY)
+    try:
+        _durable_fs.fsync_file_durable(fd, path=state_path)
+    finally:
+        os.close(fd)
 
     # --- Step 5: unlink journal --------------------------------------------
     os.unlink(journal_path)

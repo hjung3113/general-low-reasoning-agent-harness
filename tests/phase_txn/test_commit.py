@@ -161,11 +161,12 @@ def test_commit_calls_durable_fs_in_documented_order(
     req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
     phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
 
-    # The scratch parent-dir fsync MUST fire after step 1 (journal),
-    # step 2 (tmp), step 4 (replace), step 5 (unlink) — four total.
-    # Step 3 (audit append) fsync is inside lib.audit, not durable_fs.
+    # The scratch parent-dir fsync MUST fire after EVERY step:
+    #   step 1 (journal write) + step 2 (tmp write) + step 3 (audit
+    #   append, per §12.5 #3 Round-7 amendment) + step 4 (replace) +
+    #   step 5 (unlink journal) = five total scratch fsyncs.
     scratch_fsyncs = [c for c in calls if c == "fsync_parent_dir(.scratch)"]
-    assert len(scratch_fsyncs) == 4, f"expected 4 scratch fsyncs, got {len(scratch_fsyncs)}: {calls}"
+    assert len(scratch_fsyncs) == 5, f"expected 5 scratch fsyncs, got {len(scratch_fsyncs)}: {calls}"
 
 
 def test_commit_tmp_durable_before_audit_append(
@@ -250,6 +251,81 @@ def test_journal_contains_required_fields(
 # ---------------------------------------------------------------------------
 # Failure paths: clean up on partial commit
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# S01-D.1 review fixes (P1, 2026-05-17): §12.5 amendments
+# ---------------------------------------------------------------------------
+
+
+def test_commit_fsyncs_scratch_after_audit_append_per_125_3(
+    scratch: Path, audit_path: Path, lock, monkeypatch
+):
+    """§12.5 #3 (Round-7 amendment to §3.8 row 3): after audit_append's
+    `fsync(audit_fd)`, the harness MUST `fsync_parent_dir(scratch)`
+    before proceeding to step 4. Pinned via ordering spy."""
+    from lib import audit as audit_mod, durable_fs
+
+    real_fsync_parent_dir = durable_fs.fsync_parent_dir
+    real_audit_append = audit_mod.audit_append
+    order: list[str] = []
+
+    def spy_fsync_parent_dir(path):
+        order.append(f"FSYNC_PARENT({Path(path).name})")
+        return real_fsync_parent_dir(path)
+
+    def spy_audit_append(entry, *, audit_path):
+        order.append(f"AUDIT_APPEND")
+        return real_audit_append(entry, audit_path=audit_path)
+
+    monkeypatch.setattr(phase_txn._durable_fs, "fsync_parent_dir", spy_fsync_parent_dir)
+    monkeypatch.setattr(phase_txn._audit, "audit_append", spy_audit_append)
+
+    state_path = scratch / "phase-state.json"
+    state_path.write_text(json.dumps({"phase": "discuss"}, sort_keys=True) + "\n", encoding="utf-8")
+    req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
+    phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
+
+    # Find the audit append index; the very next scratch fsync MUST be
+    # present (step-3 amendment).
+    audit_idx = next(i for i, op in enumerate(order) if op == "AUDIT_APPEND")
+    post_audit = order[audit_idx + 1:]
+    next_scratch_idx = next(
+        (i for i, op in enumerate(post_audit) if op == "FSYNC_PARENT(.scratch)"),
+        None,
+    )
+    assert next_scratch_idx == 0, (
+        "§12.5 #3 violation: scratch parent-dir was not fsync'd immediately "
+        f"after audit_append. order={order!r}"
+    )
+
+
+def test_commit_invokes_fsync_file_durable_on_replaced_state_per_125_4(
+    scratch: Path, audit_path: Path, lock, monkeypatch
+):
+    """§12.5 #4: step 4 of §3.8 now requires `fsync_file_durable` of the
+    renamed `state.json` AND `fsync_parent_dir(scratch)`. The original
+    code only did the directory fsync. Pinned via spy."""
+    from lib import durable_fs
+
+    real_fsync_file_durable = durable_fs.fsync_file_durable
+    seen_paths: list[str] = []
+
+    def spy_fsync_file_durable(fd, *, path):
+        seen_paths.append(str(Path(path).name))
+        return real_fsync_file_durable(fd, path=path)
+
+    monkeypatch.setattr(phase_txn._durable_fs, "fsync_file_durable", spy_fsync_file_durable)
+
+    state_path = scratch / "phase-state.json"
+    state_path.write_text(json.dumps({"phase": "discuss"}, sort_keys=True) + "\n", encoding="utf-8")
+    req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
+    phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
+
+    assert "phase-state.json" in seen_paths, (
+        f"§12.5 #4 violation: fsync_file_durable was never called on the "
+        f"replaced state.json. seen={seen_paths!r}"
+    )
 
 
 def test_commit_leaves_journal_when_replace_fails(
