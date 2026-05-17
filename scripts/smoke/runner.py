@@ -57,6 +57,9 @@ class TrialRecord:
     noisy: bool = False
     commands_executed: list = field(default_factory=list)
     passed: bool = False
+    # C2 honesty: monotonic wall clock above is what the budget enforces;
+    # api_wall_seconds preserves the client-reported value (informational).
+    api_wall_seconds: float = 0.0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, indent=2) + "\n"
@@ -168,7 +171,10 @@ def _single_attempt(
     prompt = _render_prompt(fixture)
     t0 = time.monotonic()
     response = model_client.respond(prompt)
-    wall = max(time.monotonic() - t0, response.wall_clock_seconds)
+    # C2 — honest wall clock: budget uses ONLY the real monotonic delta.
+    # The client-reported time is preserved as informational `api_wall_seconds`.
+    wall = time.monotonic() - t0
+    api_wall = float(getattr(response, "wall_clock_seconds", 0.0) or 0.0)
 
     # Defensive: pin model + temperature on every call.
     last = getattr(model_client, "last_call", {}) or {}
@@ -210,6 +216,7 @@ def _single_attempt(
         budget_caps_hit=caps_hit,
         commands_executed=commands_log,
         passed=judgment.passed and not caps_hit,
+        api_wall_seconds=api_wall,
     )
     return judgment, record, dest
 

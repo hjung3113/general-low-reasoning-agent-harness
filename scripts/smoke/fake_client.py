@@ -6,6 +6,7 @@ the runner deterministically and to verify temperature/model pinning.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 
@@ -32,6 +33,11 @@ class FakeClient:
     scripted_responses: list[str] = field(default_factory=list)
     scripted_token_counts: list[tuple[int, int]] | None = None
     scripted_wall_seconds: list[float] | None = None
+    # If True, actually sleep so the runner's real monotonic clock (post-C2
+    # honesty fix) observes the delay. Kept off by default to keep unit tests
+    # fast — tests that want to exercise the budget cap should monkey-patch
+    # `scripts.smoke.runner.time.monotonic` instead of relying on real sleep.
+    sleep_for_scripted_wall: bool = False
     model: str = "claude-haiku-4-5-20251001"
     temperature: float = 0.0
     max_tokens: int = 4000
@@ -56,6 +62,8 @@ class FakeClient:
             wall = self.scripted_wall_seconds[idx]
         else:
             wall = 0.01
+        if self.sleep_for_scripted_wall and wall > 0:
+            time.sleep(wall)
         self.last_call = {
             "prompt": prompt,
             "model": self.model,

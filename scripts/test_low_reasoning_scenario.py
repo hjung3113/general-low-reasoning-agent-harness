@@ -343,11 +343,21 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(data["model"], PINNED_MODEL)
 
     def test_runner_enforces_wall_clock_cap(self) -> None:
-        client = self._client(
-            ["harness phase set plan"],
-            scripted_wall_seconds=[WALL_CLOCK_CAP_SECONDS + 5.0],
+        # Post-C2 the runner uses real monotonic; patch it so a single trial
+        # advances past the cap without actually sleeping for 65s.
+        client = self._client(["harness phase set plan"])
+        from unittest import mock
+        import itertools
+
+        ticks = itertools.chain(
+            [1000.0],  # t0
+            iter(lambda: 1000.0 + WALL_CLOCK_CAP_SECONDS + 5.0, None),  # always-after
         )
-        record = run_trial(self.fixture, 2, client, self.scratch, self.evidence)
+        with mock.patch(
+            "scripts.smoke.runner.time.monotonic",
+            side_effect=lambda: next(ticks),
+        ):
+            record = run_trial(self.fixture, 2, client, self.scratch, self.evidence)
         self.assertFalse(record.passed)
         self.assertIn("wall_clock", record.budget_caps_hit)
         self.assertEqual(record.retry_count, 0)
