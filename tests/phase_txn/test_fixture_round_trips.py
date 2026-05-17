@@ -36,6 +36,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "crash"
         ("10_corrupt_journal_tmp", 10, 14),
         ("11_corrupt_journal_only", 11, 14),
         ("12_audit_partial_write", 12, 14),
+        ("13_malformed_journal", 13, 14),
     ],
 )
 def test_fixture_dispatches_to_expected_row(

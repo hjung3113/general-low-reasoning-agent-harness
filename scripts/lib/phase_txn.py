@@ -273,8 +273,8 @@ def _audit_tail_partial_write(audit_path: Path) -> bool:
     return False
 
 
-def _audit_tail_txn_id(audit_path: Path) -> Optional[str]:
-    """Return the `txn_id` field of the last well-formed audit entry, if any."""
+def _audit_tail_entry(audit_path: Path) -> Optional[dict]:
+    """Return the last well-formed audit entry (full dict), or None."""
     if not audit_path.exists():
         return None
     text = audit_path.read_text(encoding="utf-8")
@@ -282,11 +282,25 @@ def _audit_tail_txn_id(audit_path: Path) -> Optional[str]:
         if not line.strip():
             continue
         try:
-            entry = json.loads(line)
+            return json.loads(line)
         except json.JSONDecodeError:
             continue
-        return entry.get("txn_id")
     return None
+
+
+def _audit_tail_txn_id(audit_path: Path) -> Optional[str]:
+    """Return the `txn_id` field of the last well-formed audit entry, if any."""
+    entry = _audit_tail_entry(audit_path)
+    return entry.get("txn_id") if entry else None
+
+
+class _MalformedJournal(Exception):
+    """Sentinel raised when a present journal file fails JSON-parse.
+
+    Surfaced by `recover()` as `row=13 decision=malformed_journal exit=14`
+    — a real fault separate from a missing journal (J=0). Prior to the
+    S01-D.2 review-fix the parse failure was silently swallowed.
+    """
 
 
 def _read_journal(scratch: Path) -> Optional[dict]:
@@ -295,8 +309,8 @@ def _read_journal(scratch: Path) -> Optional[dict]:
         return None
     try:
         return json.loads(journal.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise _MalformedJournal(str(exc)) from exc
 
 
 def recover(
@@ -324,26 +338,55 @@ def recover(
     if _audit_tail_partial_write(audit_path):
         return RecoveryResult(row=12, decision="audit_partial_write", exit_code=14)
 
-    journal = _read_journal(scratch)
+    # Out-of-band row 13 — journal file exists but fails JSON-parse.
+    # Surfaced separately from J=0 so we don't fall into rows 1/2/3/4
+    # and erroneously unlink tmp while a real journal sits on disk.
+    try:
+        journal = _read_journal(scratch)
+    except _MalformedJournal:
+        return RecoveryResult(row=13, decision="malformed_journal", exit_code=14)
+
     J = journal is not None
     T = tmp_path.exists()
     state_hash = _state_sha_of_disk(state_path)
-    audit_txn = _audit_tail_txn_id(audit_path)
+    audit_entry = _audit_tail_entry(audit_path)
+    audit_txn = audit_entry.get("txn_id") if audit_entry else None
+    audit_after_sha = audit_entry.get("after_sha256") if audit_entry else None
 
     # J = 0 (rows 1-4)
     if not J:
         if not T:
             if audit_txn is None:
                 return RecoveryResult(row=1, decision="quiescent", exit_code=0)
+            # Row 3 review-fix: only accept when the on-disk state hash
+            # matches the audit tail's `after_sha256`. Otherwise the
+            # state file has drifted (corruption / out-of-band edit) and
+            # we MUST exit 14 rather than silently report "accept".
+            if audit_after_sha and state_hash == audit_after_sha:
+                return RecoveryResult(
+                    row=3, decision="post_finalize_no_tmp_accept", exit_code=0
+                )
             return RecoveryResult(
-                row=3, decision="post_finalize_no_tmp_accept", exit_code=0
+                row=9, decision="undecidable_state_hash_mismatch_audit", exit_code=14
             )
-        # T = 1, J = 0 — orphan tmp regardless of audit shape.
-        os.unlink(tmp_path)
-        _durable_fs.fsync_parent_dir(scratch)
-        row = 4 if audit_txn is not None else 2
-        decision = "orphan_tmp_unlinked_post_finalize" if row == 4 else "orphan_tmp_unlinked"
-        return RecoveryResult(row=row, decision=decision, exit_code=0)
+        # T = 1, J = 0 — orphan tmp.
+        if audit_txn is None:
+            # No audit info to corroborate — historical "orphan_tmp" path.
+            os.unlink(tmp_path)
+            _durable_fs.fsync_parent_dir(scratch)
+            return RecoveryResult(row=2, decision="orphan_tmp_unlinked", exit_code=0)
+        # Row 4 review-fix: audit claims a transition; require state hash
+        # match before treating the tmp as discardable. Tampered state
+        # must NOT cause us to delete a potentially-recoverable tmp.
+        if audit_after_sha and state_hash == audit_after_sha:
+            os.unlink(tmp_path)
+            _durable_fs.fsync_parent_dir(scratch)
+            return RecoveryResult(
+                row=4, decision="orphan_tmp_unlinked_post_finalize", exit_code=0
+            )
+        return RecoveryResult(
+            row=9, decision="undecidable_state_hash_mismatch_audit", exit_code=14
+        )
 
     # J = 1 — journal present (rows 5-11)
     assert journal is not None

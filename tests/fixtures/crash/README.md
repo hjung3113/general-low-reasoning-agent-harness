@@ -24,6 +24,12 @@ Row 12 is the §12.5 #2 audit-partial-write extension. Predicates:
 | 10_corrupt_journal_tmp | 1 | 1 | 0 | != before | corruption | 14 |
 | 11_corrupt_journal_only | 1 | 0 | 0 | != before | corruption | 14 |
 | 12_audit_partial_write | * | * | last record fails JSON-parse | * | `audit_partial_write` | 14 |
+| 13_malformed_journal | journal-fails-parse | * | * | * | `malformed_journal` | 14 |
+
+Row 13 is an S01-D.2 review-fix addition (out-of-band relative to the
+design §3.8 table): if the journal file exists but fails JSON-parse,
+recovery must NOT silently fall into J=0 rows 1/2/3/4 and risk
+deleting tmp data. Operator action is required.
 
 Tests `tests/phase_txn/test_recovery_matrix.py` build the same shapes
 in `tmp_path` so the matrix is exercised in isolation per test. These

@@ -344,6 +344,84 @@ def test_row_12_audit_partial_write_last_entry_unparseable(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# S01-D.2 review fixes (P1, 2026-05-17)
+# ---------------------------------------------------------------------------
+
+
+def test_row_3_rejects_when_state_hash_does_not_match_audit_after_sha(
+    scratch: Path, audit_path: Path, lock
+):
+    """Reviewer P1: rows 3/4 were accepting any audit tail with a txn_id,
+    without comparing state_hash to the audit entry's after_sha256.
+    Corrupt state + non-empty audit must NOT silently return exit 0."""
+    state_body = _write_state(scratch, {"phase": "garbage"})  # NOT == after
+    _write_audit(audit_path, [
+        {
+            "verb": "phase.set",
+            "txn_id": "3" * 32,
+            "after_sha256": _sha(_canon_bytes({"phase": "plan"})),
+        },
+    ])
+
+    result = phase_txn.recover(scratch, audit_path=audit_path, lock=lock)
+    assert result.exit_code == 14
+    assert result.decision != "post_finalize_no_tmp_accept"
+
+
+def test_row_4_rejects_when_state_hash_does_not_match_audit_after_sha(
+    scratch: Path, audit_path: Path, lock
+):
+    """Same defect as row 3, but with tmp present. We MUST NOT unlink
+    tmp + accept when the state file itself is in an unknown shape."""
+    _write_state(scratch, {"phase": "garbage"})
+    _write_tmp(scratch, {"phase": "plan"})
+    _write_audit(audit_path, [
+        {
+            "verb": "phase.set",
+            "txn_id": "4" * 32,
+            "after_sha256": _sha(_canon_bytes({"phase": "plan"})),
+        },
+    ])
+
+    result = phase_txn.recover(scratch, audit_path=audit_path, lock=lock)
+    assert result.exit_code == 14
+    # tmp must NOT have been unlinked — recovery should leave the
+    # forensic artefacts intact for `harness lock recover --force`.
+    assert (scratch / "phase-state.json.tmp").exists()
+
+
+def test_recover_exits_14_on_malformed_journal(
+    scratch: Path, audit_path: Path, lock
+):
+    """Reviewer P1: a journal file that fails JSON-parse was being treated
+    as J=0 (absent), which let rows 1/2/3/4 fire while a real journal
+    sat on disk. A malformed journal MUST instead surface as an
+    exit-14 recovery fault — operator action is required."""
+    _write_state(scratch, {"phase": "discuss"})
+    (scratch / "phase-state.json.journal").write_text("{not a valid", encoding="utf-8")
+    audit_path.write_text("", encoding="utf-8")
+
+    result = phase_txn.recover(scratch, audit_path=audit_path, lock=lock)
+    assert result.exit_code == 14
+    assert result.decision == "malformed_journal"
+    # Journal artefact left intact for forensic inspection.
+    assert (scratch / "phase-state.json.journal").exists()
+
+
+def test_malformed_journal_does_not_unlink_tmp(scratch: Path, audit_path: Path, lock):
+    """Stronger form of the prior test: a malformed journal alongside a
+    tmp file must NOT cause the tmp to be unlinked as if J=0 + T=1."""
+    _write_state(scratch, {"phase": "discuss"})
+    _write_tmp(scratch, {"phase": "plan"})
+    (scratch / "phase-state.json.journal").write_text("garbage", encoding="utf-8")
+    audit_path.write_text("", encoding="utf-8")
+
+    result = phase_txn.recover(scratch, audit_path=audit_path, lock=lock)
+    assert result.exit_code == 14
+    assert (scratch / "phase-state.json.tmp").exists()
+
+
 def test_recover_refuses_without_lock(scratch: Path, audit_path: Path):
     _write_state(scratch, {"phase": "discuss"})
     audit_path.write_text("", encoding="utf-8")
