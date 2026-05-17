@@ -219,10 +219,6 @@ def test_live_phase_set_stamps_execute_attempt_started_at(fake_repo):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="blocked on S07-prep CLI wiring of cmd_phase_set → validate_transition_with_state",
-    strict=True,
-)
 def test_live_cli_set_routes_through_validate_transition_with_state():
     import inspect
 

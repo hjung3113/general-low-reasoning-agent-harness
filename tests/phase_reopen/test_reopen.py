@@ -486,10 +486,6 @@ def test_tampered_state_rejected(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="blocked on S07-prep CLI argparse wiring of cmd_phase_reopen → run_reopen",
-    strict=True,
-)
 def test_live_cli_routes_through_run_reopen():
     from lib import phase_cli
 

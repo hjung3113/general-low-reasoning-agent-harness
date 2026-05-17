@@ -224,14 +224,30 @@ def _iso_lt(a: Optional[str], b: Optional[str]) -> bool:
 
 def _parse_iso_z(s: str) -> datetime:
     """Parse a canonical UTC-Z ISO-8601 string. Raises ValueError on
-    anything that does not end in `Z` so producer drift fails loudly."""
+    anything that does not end in `Z` so producer drift fails loudly.
+
+    Python 3.9 ``datetime.fromisoformat`` accepts at most 6 fractional
+    decimal digits (microsecond precision). Our internal timestamp
+    producer ``timestamps.now_iso_nanos`` emits 9-digit nanosecond
+    strings. We truncate any fractional-second component to 6 digits
+    before parsing so both producers are accepted. The truncation is
+    correct for chronological comparison because the nanosecond bits
+    never change the microsecond-level ordering of the two timestamps
+    being compared (the comparison precision is coarser).
+    """
     if not isinstance(s, str) or not s.endswith("Z"):
         raise ValueError(
             f"timestamp {s!r} is not a canonical UTC-Z ISO-8601 string "
             f"(must end with 'Z'); see design §1.1 timestamps producer "
             f"contract"
         )
-    return datetime.fromisoformat(s[:-1] + "+00:00")
+    # Truncate fractional seconds to at most 6 digits for Python 3.9
+    # compatibility (fromisoformat on 3.9 rejects 9-digit nanos).
+    body = s[:-1]  # strip trailing Z
+    if "." in body:
+        integer_part, frac = body.split(".", 1)
+        body = integer_part + "." + frac[:6]
+    return datetime.fromisoformat(body + "+00:00")
 
 
 def validate_transition_with_state(

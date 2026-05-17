@@ -631,10 +631,6 @@ def test_env_vars_byte_identical_to_empty_env(env, capsys):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="blocked on S07-prep CLI argparse wiring of cmd_phase_approve → run_approve",
-    strict=True,
-)
 def test_live_cli_routes_through_run_approve():
     """The live CLI dispatcher `cmd_phase_approve` MUST eventually
     delegate to `phase_approve.run_approve`. Today it still calls the

@@ -50,12 +50,15 @@ from lib.timestamps import now_iso_nanos, parse_iso_nanos
 from lib import transition as _transition
 from lib import phase_state as _phase_state
 from lib.transition import InvalidTransition
+from lib import phase_approve as _phase_approve
+from lib import phase_reopen as _phase_reopen
 
 STATE_PATH = Path(".scratch/phase-state.json")
 LOCK_PATH = Path(".harness/session.lock")
 AUDIT_PATH = Path(".harness/audit.log")
 HARNESS_DIR = Path(".harness")
 WRITE_PROBE = HARNESS_DIR / ".write_probe"
+SCRATCH_DIR = Path(".scratch")
 
 LOCKFILE_TEMPLATE = (
     "error: active session detected at .harness/session.lock; "
@@ -283,6 +286,27 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
             return _emit_invalid_transition(exc)
         raise
 
+    # §3.6 state-aware superset validator — raises StaleApprovalError (exit 2)
+    # when approval is stale relative to plan_finalized_at / execute_attempt_started_at,
+    # or when verification / allowed_paths are missing on (plan→execute).
+    # Only called for forward transitions where the state dict is meaningful;
+    # the legacy validator above already handled undefined pairs and the
+    # basic approved=False reject.  We pass `state` (before_state) so the
+    # full §3.6 stale-approval matrix is available.
+    try:
+        _transition.validate_transition_with_state(
+            state,
+            target,
+            reset_approval=reset_approval,
+        )
+    except SystemExit as exc:
+        if getattr(exc, "code", None) == 2:
+            # StaleApprovalError carries a format_message() just like
+            # InvalidTransition; re-use _emit_invalid_transition which
+            # handles both typed subclasses.
+            return _emit_invalid_transition(exc)
+        raise
+
     new_state = dict(state)
     new_state["phase"] = target
     new_state["updated_at"] = now_iso_nanos()
@@ -388,16 +412,53 @@ def _validate_at_within_24h(at_str: str) -> str:
 
 
 def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
+    """Handle ``harness phase approve`` (ADR-003a verb 2).
+
+    Delegates to ``phase_approve.run_approve`` (S02+S05 spec-compliant path)
+    which enforces the §3.1 TTY gate, identity resolution, install-record
+    membership, anchor + state-trust preflight, human-presence nonce, and
+    §3.1.1 audit provenance. The legacy ``_do_phase_approve`` shim is kept
+    for reference but is no longer called from this handler.
+    """
     _probe_harness_writable()
-    try:
-        with acquire_lock(lock_path=LOCK_PATH):
-            return _do_phase_approve(args)
-    except LockfileExists:
-        print(LOCKFILE_TEMPLATE, file=sys.stderr)
-        return EXIT_SESSION_LOCKED
+
+    cwd = Path.cwd()
+    scratch = cwd / ".scratch"
+    harness_dir = cwd / ".harness"
+    audit_path = harness_dir / "audit.log"
+    install_record_path = harness_dir / "install-record.json"
+
+    # Nonce dir: honour explicit --nonce-dir arg, else fall back to the
+    # canonical out-of-project default (~/.harness/approval-nonces/).
+    from lib import approval_nonce as _approval_nonce
+
+    nonce_dir_raw: Optional[str] = getattr(args, "nonce_dir", None)
+    nonce_dir: Path = (
+        Path(nonce_dir_raw) if nonce_dir_raw else _approval_nonce.default_nonce_dir()
+    )
+
+    stdin_isatty: bool = sys.stdin.isatty()
+    consumer_tty: str = os.ttyname(sys.stdin.fileno()) if stdin_isatty else ""
+
+    result = _phase_approve.run_approve(
+        args,
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record_path,
+        nonce_dir=nonce_dir,
+        stdin_isatty=stdin_isatty,
+        consumer_tty=consumer_tty,
+        repo_root=cwd,
+        skip_anchor_preflight=False,
+    )
+    return result.exit_code
 
 
 def _do_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
+    """Legacy shim — retained for backward compatibility with any direct
+    callers (e.g. test-harness unittest baseline). Production traffic
+    now routes through ``cmd_phase_approve → phase_approve.run_approve``."""
     state, current = _load_state()
     if current == "done":
         print(
@@ -573,4 +634,39 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
     return EXIT_OK
 
 
-__all__ = ["cmd_phase_set", "cmd_phase_approve", "cmd_session_unlock"]
+# --------------------------------------------------------------------------
+# phase reopen
+# --------------------------------------------------------------------------
+
+
+def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
+    """Handle ``harness phase reopen`` (design §3.2).
+
+    Delegates to ``phase_reopen.run_reopen`` which enforces the §3.2
+    TTY gate, identity resolution, install-record membership, anchor +
+    state-trust preflight, and the halt-diary / reset-matrix mutation.
+    """
+    _probe_harness_writable()
+
+    cwd = Path.cwd()
+    scratch = cwd / ".scratch"
+    harness_dir = cwd / ".harness"
+    audit_path = harness_dir / "audit.log"
+    install_record_path = harness_dir / "install-record.json"
+
+    stdin_isatty: bool = sys.stdin.isatty()
+
+    result = _phase_reopen.run_reopen(
+        args,
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record_path,
+        stdin_isatty=stdin_isatty,
+        repo_root=cwd,
+        skip_anchor_preflight=False,
+    )
+    return result.exit_code
+
+
+__all__ = ["cmd_phase_set", "cmd_phase_approve", "cmd_phase_reopen", "cmd_session_unlock"]
