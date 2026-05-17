@@ -42,6 +42,26 @@ def _timestamp_dir() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+_TIMESTAMP_NAME = __import__("re").compile(r"^\d{8}T\d{6}Z$")
+
+
+def _find_latest_run(base: Path) -> Path | None:
+    """M2 — walk `base` for timestamp subdirs `<UTC>T<UTC>Z/per-flow/` and
+    return the newest `per-flow` path. Returns None if no run found."""
+    if not base.is_dir():
+        return None
+    candidates: list[Path] = []
+    for child in base.iterdir():
+        if child.is_dir() and _TIMESTAMP_NAME.match(child.name):
+            per_flow = child / "per-flow"
+            if per_flow.is_dir():
+                candidates.append(per_flow)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda p: p.parent.name)
+    return candidates[-1]
+
+
 def _write_skipped(evidence_root: Path, reason: str) -> Path:
     evidence_root.mkdir(parents=True, exist_ok=True)
     path = evidence_root / "SKIPPED.md"
@@ -85,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
     # Per-run timestamped evidence root (plan §scope: per-run dir under evidence/).
     base_evidence = Path(args.evidence_dir) if args.evidence_dir else DEFAULT_EVIDENCE_ROOT
     if args.summarize_only:
-        evidence_root = base_evidence
+        latest = _find_latest_run(base_evidence)
+        evidence_root = latest if latest is not None else base_evidence
     elif args.self_check:
         evidence_root = base_evidence
     else:
