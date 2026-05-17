@@ -62,6 +62,8 @@ class TrialRecord:
     api_wall_seconds: float = 0.0
     # C3 — transport-level trial failures (after HaikuClient retry budget).
     transport_error: bool = False
+    # M1 — preserve lines that didn't parse as harness commands (don't drop).
+    rejected_lines: list = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, indent=2) + "\n"
@@ -72,14 +74,17 @@ def _render_prompt(fixture: dict) -> str:
     return fixture["prompt_template"].format(state=state_json)
 
 
-def _parse_commands(response_text: str) -> list[list[str]]:
+def _parse_commands(response_text: str) -> tuple[list[list[str]], list[str]]:
     """Extract argv lists from `harness ...` lines.
 
-    Lines that don't start with `harness ` (after stripping) are skipped.
-    Returns a list of argv (without the leading `harness`).
+    M1 — Returns `(commands, rejected_lines)` so the runner can preserve
+    silently-dropped output in evidence. Empty lines are not rejected.
+    Returns argv lists (without the leading `harness`).
     """
     cmds: list[list[str]] = []
+    rejected: list[str] = []
     for raw in (response_text or "").splitlines():
+        original = raw
         line = raw.strip().strip("`")
         if not line:
             continue
@@ -92,14 +97,18 @@ def _parse_commands(response_text: str) -> list[list[str]]:
         elif line.startswith("harness "):
             line = line[len("harness "):]
         else:
+            rejected.append(original.strip())
             continue
         try:
             argv = shlex.split(line)
         except ValueError:
+            rejected.append(original.strip())
             continue
         if argv:
             cmds.append(argv)
-    return cmds
+        else:
+            rejected.append(original.strip())
+    return cmds, rejected
 
 
 def _pinned_env(cwd: Path) -> dict[str, str]:
@@ -237,8 +246,11 @@ def _single_attempt(
 
     caps_hit = _budget_caps_hit(wall, response.input_tokens, response.output_tokens)
     commands_log: list[dict] = []
+    parsed_cmds: list[list[str]] = []
+    rejected: list[str] = []
     if not caps_hit:
-        for argv in _parse_commands(response.text):
+        parsed_cmds, rejected = _parse_commands(response.text)
+        for argv in parsed_cmds:
             commands_log.append(_run_command(argv, dest))
 
     if caps_hit:
@@ -267,6 +279,7 @@ def _single_attempt(
         commands_executed=commands_log,
         passed=judgment.passed and not caps_hit,
         api_wall_seconds=api_wall,
+        rejected_lines=rejected,
     )
     return judgment, record, dest
 
