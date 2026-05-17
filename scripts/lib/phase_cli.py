@@ -223,12 +223,28 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
         new_state["phase"] = target
         new_state["updated_at"] = now_iso_nanos()
         new_state["updated_by"] = _identify()
+        noop_plan_id = getattr(args, "plan_id", None)
+        noop_summary = getattr(args, "summary", None)
+        if noop_plan_id is not None:
+            new_state["plan_id"] = noop_plan_id
+        if noop_summary is not None:
+            new_state["summary"] = noop_summary
+        if getattr(args, "stdin_json", False):
+            extra = _read_stdin_json()
+            for k, v in extra.items():
+                if k in ALLOWED_STDIN_FIELDS:
+                    new_state[k] = v
         _write_state_atomic(new_state)
         after_hash = compute_state_hash(STATE_PATH)
+        noop_args: dict = {"phase": target}
+        if noop_plan_id:
+            noop_args["plan_id"] = noop_plan_id
+        if noop_summary:
+            noop_args["summary"] = noop_summary
         idx = audit_append(
             {
                 "verb": "phase.set.noop",
-                "args": {"phase": target},
+                "args": noop_args,
                 "before_sha256": before_hash,
                 "after_sha256": after_hash,
                 "at": new_state["updated_at"],
