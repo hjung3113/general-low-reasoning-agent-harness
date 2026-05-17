@@ -4,41 +4,62 @@ Every CLI command that reads or mutates `.scratch/phase-state.json` MUST
 call `preflight()` under the primary lock before trusting any field on
 the on-disk state. The preflight protects against silent post-install
 edits (e.g. hand-flipping `approved: false` → `true` or switching
-`execution_mode` to an autopilot variant) by requiring that the
-canonical state bytes hash matches the latest `after_sha256` recorded
-in the audit tail.
+`execution_mode` to an autopilot variant) by requiring that
+`sha256(canonical(state_bytes))` matches the latest audit tail entry's
+`after_sha256`.
 
 Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
-§2.6 "State trust preflight".
+§2.6 "State trust preflight", §2.3 (canonicalization + CRLF→LF on
+Windows), §2.4 (BOM = exit 5), §12.1/§12.6 (out-of-repo audit-tip
+anchor — caller's responsibility upstream of this preflight).
 
 Public surface
 --------------
     StateTrustError                       -- base OSError subclass
     StateTrustLockMissingError            -- caller did not hold a live lock
+    StateAnchorNotVerifiedError           -- caller did not chain through anchor
+    StateBomError                         -- exit 5 (§2.4)
+    StateCrlfError                        -- exit 5 (§2.3 line-ending)
+    StateMalformedJsonError               -- exit 5 (cannot parse state)
+    StateEmptyError                       -- exit 14 (recover-territory)
     StateAuditMismatchError               -- exit 10 fault class
-    preflight(scratch, *, audit_path, lock) -> None
+    preflight(scratch, *, audit_path, lock, anchor_verified) -> None
 
 `preflight()` does NOT mutate state, does NOT append to the audit log,
-and does NOT release the lock; it only inspects. Audit-chain validation
-(per-entry hash chain, rotation seam, BOM in audit) is S06 scope and
-intentionally left out here — this module only re-uses the last
-well-formed entry's `after_sha256` as the trust oracle. Audit-tip anchor
-verification (out-of-repo) is S00.7's `audit_anchor` module and is also
-out of scope for the preflight: if the anchor module's pre-check has
-already passed, the entries returned by `_audit_tail_entry` can be
-trusted as the tip.
+and does NOT release the lock; it only inspects.
 
-Failure modes
--------------
-    * State file absent ............................ no-op (nothing to trust).
-    * State present + audit absent or empty ........ StateAuditMismatchError.
-    * State present + audit tail lacks after_sha256  StateAuditMismatchError.
-    * State present + sha mismatch ................. StateAuditMismatchError.
+Trust chain (top-down)
+----------------------
+1. Out-of-repo audit-tip anchor (`scripts/lib/audit_anchor.py`, S00.7) —
+   caller MUST verify the anchor BEFORE invoking this preflight and
+   pass `anchor_verified=True`. Without that the on-disk audit.log is
+   itself untrusted and the §2.6 check degenerates to "state matches a
+   self-consistent forgery". `preflight()` enforces the flag at the
+   API boundary; it does not re-verify the anchor (single-source-of-
+   truth: `audit_anchor`).
+2. State-byte well-formedness (§2.3/§2.4) — BOM, CRLF, JSON-parse.
+3. Audit-tip oracle (current `audit.log` tail) — last well-formed
+   entry's `after_sha256`. **Rotation seam handling and per-entry
+   hash-chain validation are S06 scope.** If rotation happened
+   mid-startup and the current `audit.log` is empty/seed-only, this
+   preflight will (correctly) refuse — S06 will widen the walk into
+   `audit.log.1`.
+
+Out of scope for S01-E
+----------------------
+- CLI exit-surface wiring (S02+ consumers translate the raised classes
+  into the documented exit codes via `scripts/lib/exitcodes.py`).
+- Rotation-seam-aware tail walking (S06 — see `_audit_tail_entry`
+  docstring in `phase_txn`).
+- §3.9 `Fix:` line standardization smoke (S15/S16) — the messages
+  here already include the manual repair path so the cross-cutting
+  verifier will accept them.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Optional, Union
@@ -48,6 +69,19 @@ from . import phase_txn as _phase_txn
 
 
 STATE_NAME = _phase_txn.STATE_NAME
+_BOM = b"\xef\xbb\xbf"
+
+_FIX_AUDIT = "Fix: run 'harness verify --audit'"
+_FIX_REPAIR_MANUAL = (
+    "if the mismatch is intentional, restore via "
+    "'git checkout -- .scratch/phase-state.json' or re-run 'harness install'"
+)
+_FIX_STRIP_BOM = "Fix: run 'harness repair --strip-bom .scratch/phase-state.json'"
+_FIX_CRLF = (
+    "Fix: re-save .scratch/phase-state.json with LF line endings "
+    "(check .gitattributes / editor settings); see design §2.3"
+)
+_FIX_RECOVER = "Fix: run 'harness recover' before any state-mutating verb"
 
 
 class StateTrustError(OSError):
@@ -58,19 +92,47 @@ class StateTrustLockMissingError(StateTrustError):
     """Caller invoked preflight without an acquired LockHandle."""
 
 
+class StateAnchorNotVerifiedError(StateTrustError):
+    """Caller invoked preflight without first verifying the out-of-repo
+    audit-tip anchor (`audit_anchor.preflight`). The §2.6 chain is only
+    sound when the anchor has been validated upstream — see §12.1."""
+
+
+class StateBomError(StateTrustError):
+    """Exit 5 — state file begins with UTF-8 BOM (§2.4)."""
+
+    exit_code = 5
+
+
+class StateCrlfError(StateTrustError):
+    """Exit 5 — state file contains CRLF line endings (§2.3)."""
+
+    exit_code = 5
+
+
+class StateMalformedJsonError(StateTrustError):
+    """Exit 5 — state file is not parseable as JSON."""
+
+    exit_code = 5
+
+
+class StateEmptyError(StateTrustError):
+    """Exit 14 — state file present but zero bytes; this is a crash
+    artefact, not tampering. Routes to recover, not to verify --audit."""
+
+    exit_code = 14
+
+
 class StateAuditMismatchError(StateTrustError):
-    """Exit 10 — `state_audit_tip_mismatch`. The on-disk state bytes
+    """Exit 10 — `state_audit_tip_mismatch`. The canonical state bytes
     do not hash to the latest audit tail's `after_sha256`, OR the audit
     tail has no `after_sha256` to compare against while a state file is
-    present. The CLI MUST emit no mutation and print the documented
-    `Fix: run harness verify --audit` recovery line."""
+    present. The CLI MUST emit no mutation."""
 
     exit_code = 10
 
 
 def _check_lock(lock: Optional[_phase_lock.LockHandle], scratch: Path) -> None:
-    """Same shape as `phase_txn._check_lock` — kept local to avoid a
-    cross-module private import and to keep the error class distinct."""
     if lock is None:
         raise StateTrustLockMissingError(
             "preflight requires an acquired phase_lock.LockHandle"
@@ -79,11 +141,43 @@ def _check_lock(lock: Optional[_phase_lock.LockHandle], scratch: Path) -> None:
         raise StateTrustLockMissingError(
             "preflight was passed an already-released LockHandle"
         )
-    expected = scratch / _phase_lock.PRIMARY_NAME
-    if Path(lock.path) != expected:
+    expected = (scratch / _phase_lock.PRIMARY_NAME).resolve()
+    actual = Path(lock.path).resolve()
+    if actual != expected:
         raise StateTrustLockMissingError(
-            f"LockHandle path {lock.path!r} does not match expected {expected!r}"
+            f"LockHandle path {actual!r} does not match expected {expected!r}"
         )
+
+
+def _canonicalize_state_bytes(state_bytes: bytes) -> bytes:
+    """§2.6 step 1: reject BOM/CRLF, parse, re-emit via the same
+    canonical form `commit_transaction` writes. Returns canonical bytes
+    suitable for the sha256 oracle comparison.
+
+    This catches an attacker who reformats state.json with cosmetic
+    whitespace but keeps it JSON-equivalent — the cosmetic edit would
+    change the raw-byte sha but not the canonical sha. We hash the
+    canonical form so legitimate writes (which already arrive in
+    canonical form) round-trip identity, while non-canonical edits
+    surface as mismatches against the audit oracle's hash of canonical
+    bytes (`commit_transaction` writes canonical bytes to disk and
+    hashes the same bytes for the audit entry).
+    """
+    if state_bytes.startswith(_BOM):
+        raise StateBomError(
+            f"state file begins with UTF-8 BOM (forbidden by §2.4); {_FIX_STRIP_BOM}"
+        )
+    if b"\r\n" in state_bytes:
+        raise StateCrlfError(
+            f"state file contains CRLF line endings (forbidden by §2.3); {_FIX_CRLF}"
+        )
+    try:
+        parsed = json.loads(state_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StateMalformedJsonError(
+            f"state file not parseable as UTF-8 JSON: {exc}; {_FIX_RECOVER}"
+        ) from exc
+    return _phase_txn._canonical_bytes(parsed)
 
 
 def preflight(
@@ -91,44 +185,69 @@ def preflight(
     *,
     audit_path: Union[str, "os.PathLike[str]"],
     lock: Optional[_phase_lock.LockHandle],
+    anchor_verified: bool = False,
 ) -> None:
-    """Verify on-disk state bytes hash to the audit tail's `after_sha256`.
+    """Verify on-disk state bytes canonically hash to the audit tail's
+    `after_sha256`.
 
-    Returns `None` on success. Raises `StateAuditMismatchError` (exit 10)
-    on mismatch, or `StateTrustLockMissingError` if the caller is not
-    holding the primary lock on `scratch`.
+    Returns `None` on success.
 
-    No-op when the state file does not exist — there is nothing to
-    trust, so nothing to refuse. Callers that require state presence
-    must enforce that separately (preflight only governs trust).
+    Raises:
+        StateTrustLockMissingError  -- caller missing/released lock.
+        StateAnchorNotVerifiedError -- `anchor_verified=False` (default);
+                                        callers MUST chain through
+                                        `audit_anchor.preflight` first
+                                        and explicitly pass True.
+        StateBomError / StateCrlfError / StateMalformedJsonError
+                                    -- exit 5, state bytes ill-formed.
+        StateEmptyError             -- exit 14, state file is 0 bytes
+                                        (crash artefact — run recover).
+        StateAuditMismatchError     -- exit 10, canonical sha does not
+                                        match the audit tail's
+                                        `after_sha256`.
+
+    No-op when the state file does not exist (nothing to trust →
+    nothing to refuse).
     """
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
+    if not anchor_verified:
+        raise StateAnchorNotVerifiedError(
+            "preflight requires anchor_verified=True; caller must run "
+            "audit_anchor.preflight() before trusting the on-disk audit log "
+            "(see design §12.1)"
+        )
 
     state_path = scratch / STATE_NAME
     if not state_path.exists():
         return None
 
     state_bytes = state_path.read_bytes()
-    state_sha = hashlib.sha256(state_bytes).hexdigest()
+    if len(state_bytes) == 0:
+        raise StateEmptyError(
+            f"state file present but empty (likely crash artefact); {_FIX_RECOVER}"
+        )
+
+    canonical_bytes = _canonicalize_state_bytes(state_bytes)
+    state_sha = hashlib.sha256(canonical_bytes).hexdigest()
 
     tail = _phase_txn._audit_tail_entry(audit_path)
     if tail is None:
         raise StateAuditMismatchError(
-            "state file present but audit log has no entries to corroborate it; "
-            "Fix: run harness verify --audit"
+            f"state file present but audit log has no entries to corroborate it; "
+            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
         )
     audit_after_sha = tail.get("after_sha256")
     if not audit_after_sha:
         raise StateAuditMismatchError(
-            "audit tail entry lacks after_sha256; cannot trust state. "
-            "Fix: run harness verify --audit"
+            f"audit tail entry lacks after_sha256; cannot trust state; "
+            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
         )
     if state_sha != audit_after_sha:
         raise StateAuditMismatchError(
             f"state file sha256 {state_sha} does not match audit tail "
-            f"after_sha256 {audit_after_sha}; Fix: run harness verify --audit"
+            f"after_sha256 {audit_after_sha}; {_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
         )
     return None
 
@@ -136,6 +255,11 @@ def preflight(
 __all__ = [
     "StateTrustError",
     "StateTrustLockMissingError",
+    "StateAnchorNotVerifiedError",
+    "StateBomError",
+    "StateCrlfError",
+    "StateMalformedJsonError",
+    "StateEmptyError",
     "StateAuditMismatchError",
     "preflight",
 ]
