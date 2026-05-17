@@ -828,6 +828,15 @@ def run_start(
             sort_keys=True,
         )
     )
+
+    # §5.2 network deny shim: set HARNESS_AUTOPILOT_NETWORK=deny so that
+    # subsequent harness-mediated subprocesses inherit the deny posture.
+    # The env is set in the running process tree only; persistence is not
+    # required (the process exits on `phase autopilot stop`).
+    # Hard isolation (PATH-prepend installer) is deferred to S10d /
+    # `harness install --autopilot-guards`.
+    os.environ["HARNESS_AUTOPILOT_NETWORK"] = "deny"
+
     return AutopilotResult(
         exit_code=0,
         sub_reason="started",
