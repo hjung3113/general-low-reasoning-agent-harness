@@ -93,6 +93,13 @@ class TxnRequest:
     field is preserved as the backward-compat path; if both are set, the
     plural list wins. All drafts share the same `txn_id` and
     `before/after_sha256` decorations.
+
+    S10b extension: `fence_protected_paths` is a list of relative paths
+    (relative to `fence_anchor` passed to commit_transaction) that will be
+    checked by the filesystem fence BEFORE step 1 (journal write). Default
+    is [] (no fence overhead — backward-compat). Callers that mutate external
+    paths outside .scratch/ populate this list; callers that only mutate
+    state leave it empty.
     """
 
     action: str
@@ -100,6 +107,7 @@ class TxnRequest:
     after_state: Mapping[str, Any]
     audit_entry_draft: Optional[Mapping[str, Any]] = None
     audit_entry_drafts: Optional[list] = None
+    fence_protected_paths: list = dataclasses.field(default_factory=list)
 
     def resolved_drafts(self) -> list:
         """Return the canonical list of drafts to write. Plural wins over
@@ -157,6 +165,7 @@ def commit_transaction(
     lock: Optional[_phase_lock.LockHandle],
     request: TxnRequest,
     audit_path: Union[str, "os.PathLike[str]"],
+    fence_anchor: Optional[Union[str, "os.PathLike[str]"]] = None,
 ) -> str:
     """Execute steps 1-5 of design §3.8 in order. Returns the assigned `txn_id`.
 
@@ -171,6 +180,13 @@ def commit_transaction(
     the decremented budget MUST apply `with_budget_decrement(after_state)`
     themselves before building the TxnRequest.  See `with_budget_decrement`
     below.  This keeps commit_transaction free of budget-semantics coupling.
+
+    S10b fence pre-check (§5.1):
+    BEFORE step 1 (journal write), AFTER budget check — if request.fence_protected_paths
+    is non-empty AND fence_anchor is provided AND before_state.execution_mode != "manual",
+    each path in fence_protected_paths is checked via fs_fence.enforce_write.
+    If any path is denied, FenceDenyError (exit_code=4) is raised before any
+    artefact is written, and an autopilot.fence.deny audit row is emitted.
 
     Step 1: write journal {txn_id, action, before_sha256, after_sha256,
             audit_entry_draft, started_at_monotonic}; fsync(journal_fd);
@@ -215,6 +231,30 @@ def commit_transaction(
                             "or let the caller exit 9. (§3.5 caller-contract)"
                         ),
                     )
+
+    # S10b fence pre-check (§5.1) — AFTER budget check, BEFORE journal write.
+    # Only runs when fence_protected_paths is non-empty AND fence_anchor is set.
+    # Applies only when execution_mode != "manual" (manual mode is always
+    # allowed by check_write_path itself, but we skip the call entirely for
+    # clarity and to avoid import overhead on the common path).
+    if (
+        request.fence_protected_paths
+        and fence_anchor is not None
+        and request.before_state is not None
+    ):
+        _fence_exec_mode = request.before_state.get("execution_mode", "manual")
+        if _fence_exec_mode != "manual":
+            from . import fs_fence as _fs_fence
+
+            for _fence_path in request.fence_protected_paths:
+                _fs_fence.enforce_write(
+                    _fence_path,
+                    anchor=fence_anchor,
+                    state=request.before_state,
+                    lock_handle=lock,
+                    audit_path=audit_path,
+                    actor=request.action,
+                )
 
     journal_path = scratch / JOURNAL_NAME
     tmp_path = scratch / TMP_NAME
