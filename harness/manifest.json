@@ -878,6 +878,16 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/manifest_v2.py",
+      "source": "scripts/lib/manifest_v2.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/manifest_reconciler.py",
+      "source": "scripts/lib/manifest_reconciler.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/upgrade.py",
       "source": "scripts/lib/upgrade.py",
       "policy": "harness-owned"

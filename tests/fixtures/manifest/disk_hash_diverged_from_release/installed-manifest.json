@@ -1,0 +1,12 @@
+{
+  "files": {
+    "disk-file.txt": {
+      "current_sha256": "49680a9a06ae68bf76a32f15bb04bb5a2808e54d54700b33e4ae028ed4f9c50b",
+      "installed_sha256": "a4f46ab3f77d5ec6750b177f85b386aca6b0879271c5c30b92af26eaf268522d",
+      "owner": "core",
+      "policy": "harness-owned"
+    }
+  },
+  "harness_version": "v0.7.0",
+  "schema_version": 2
+}

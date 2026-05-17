@@ -193,6 +193,9 @@ def write_install_state(
     packs: set[str],
 ) -> None:
     from lib.version import source_provenance
+    # S12: import v2 manifest helpers for hash-chain stamping (§6)
+    from lib.manifest_reconciler import compute_manifest_hash_chain
+
     files = {}
     for entry in entries:
         if entry.policy == "exclude":
@@ -205,16 +208,25 @@ def write_install_state(
             if parsed is None:
                 raise SystemExit(f"Installed managed-append file is missing marker: {entry.path}")
             applied_sha256 = sha256_text(parsed.text)
-        files[str(entry.path)] = file_state(
+        entry_state = file_state(
             root=root,
             target=target,
             entry=entry,
             source=source,
             applied_sha256=applied_sha256,
         )
+        # S12 — stamp installed_sha256 / current_sha256 per entry (§6)
+        src_sha = file_hash(source)
+        entry_state["installed_sha256"] = src_sha
+        entry_state["current_sha256"] = src_sha
+        files[str(entry.path)] = entry_state
+
+    harness_ver = _active_harness_version()
     installed: dict[str, object] = {
+        "schema_version": 2,          # S12 v2 field (§6)
         "state_schema_version": 2,
-        "version": _active_harness_version(),
+        "harness_version": harness_ver,  # S12 v2 field (§6)
+        "version": harness_ver,
         "manifest_sha256": manifest_sha256(root),
         "source": str(root),
         "adapters": sorted(adapters),
@@ -228,6 +240,23 @@ def write_install_state(
     provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
+
+    # S12 — compute and stamp manifest_chain_hash (§6)
+    chain_manifest: dict[str, object] = {
+        "schema_version": 2,
+        "harness_version": harness_ver,
+        "files": {
+            p: {
+                "installed_sha256": v.get("installed_sha256", ""),
+                "current_sha256": v.get("current_sha256", ""),
+            }
+            for p, v in files.items()
+            if isinstance(v, dict) and "installed_sha256" in v
+        },
+        "removed_in_version": [],
+    }
+    installed["manifest_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
+
     write_json(target / INSTALL_STATE, installed)
 
 

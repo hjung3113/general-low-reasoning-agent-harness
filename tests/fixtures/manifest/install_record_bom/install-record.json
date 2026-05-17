@@ -1,0 +1,6 @@
+﻿{
+  "install_id": "fixture-bom-install-id-001",
+  "installed_at": "2026-01-01T00:00:00Z",
+  "note": "This file has a UTF-8 BOM prefix \u2014 must be rejected with exit 5 per sec 2.4",
+  "schema_version": 1
+}

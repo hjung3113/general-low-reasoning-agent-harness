@@ -57,6 +57,13 @@ from lib.version import (
     resolve_harness_version,
     source_provenance,
 )
+# S12 — manifest v2 reconciler (§6)
+from lib.manifest_reconciler import (
+    ReconcileDecision,
+    compute_manifest_hash_chain,
+    reconcile_install as _reconcile_install,
+)
+from lib.state import now_utc as _now_utc
 
 
 def migrate_install_state(state: dict) -> dict:
@@ -103,6 +110,100 @@ def install_state_migration_report(before: dict, after: dict) -> list[str]:
     if added:
         lines.append(f"packs added: {', '.join(added)}")
     return lines
+
+
+def _build_release_manifest_v2(
+    *,
+    root: Path,
+    entries: list,
+    harness_version: str,
+) -> dict:
+    """Build a release_manifest dict in installed-manifest v2 format for the reconciler.
+
+    For each entry compute ``installed_sha256`` from the source file in *root*.
+    ``current_sha256`` mirrors ``installed_sha256`` (the release is the new truth).
+    Backward compat: if a source file is missing (e.g. conditional content), skip it.
+    """
+    files: dict[str, object] = {}
+    for entry in entries:
+        if entry.policy == "exclude":
+            continue
+        try:
+            src = source_path(root, entry)
+            sha = file_hash(src)
+        except (FileNotFoundError, SystemExit):
+            continue
+        files[str(entry.path)] = {
+            "installed_sha256": sha,
+            "current_sha256": sha,
+            "policy": entry.policy,
+            "owner": entry.owner,
+        }
+    release_manifest: dict[str, object] = {
+        "schema_version": 2,
+        "harness_version": harness_version,
+        "files": files,
+    }
+    return release_manifest
+
+
+def _stamp_installed_manifest_v2(
+    installed: dict,
+    *,
+    release_manifest: dict,
+    harness_version: str,
+    reconcile_results: list,
+) -> None:
+    """Stamp v2 fields onto *installed* (mutates in place) per §6.
+
+    Adds:
+    - ``schema_version: 2``
+    - ``harness_version``
+    - Per file-entry: ``installed_sha256``, ``current_sha256``
+    - ``manifest_chain_hash`` (computed over the final installed dict)
+
+    USER_MODIFIED_QUARANTINE entries get a ``quarantine_path`` note.
+    WARN lines for quarantined files go to stderr.
+    """
+    import sys as _sys
+    installed["schema_version"] = 2
+    installed["harness_version"] = harness_version
+
+    release_files: dict[str, object] = release_manifest.get("files", {})  # type: ignore[assignment]
+    installed_files: dict[str, object] = installed.get("files", {})  # type: ignore[assignment]
+
+    # Build a lookup of reconcile results by path
+    reconcile_by_path: dict[str, object] = {r.path: r for r in reconcile_results}
+
+    for path_str, entry_info in list(installed_files.items()):
+        if not isinstance(entry_info, dict):
+            continue
+        rel_entry = release_files.get(path_str)
+        if not isinstance(rel_entry, dict):
+            continue
+        entry_info["installed_sha256"] = rel_entry.get("installed_sha256", "")
+        entry_info["current_sha256"] = rel_entry.get("current_sha256", "")
+        rr = reconcile_by_path.get(path_str)
+        if rr is not None and rr.decision == ReconcileDecision.USER_MODIFIED_QUARANTINE:
+            entry_info["quarantine_path"] = rr.quarantine_path or ""
+            print(
+                f"WARN: {path_str} diverged from release — moved to {rr.quarantine_path}. "
+                "Release version installed.",
+                file=_sys.stderr,
+            )
+
+    # Compute and stamp manifest_chain_hash
+    chain_manifest: dict[str, object] = {
+        "schema_version": 2,
+        "harness_version": harness_version,
+        "files": {
+            p: {"installed_sha256": v.get("installed_sha256", ""), "current_sha256": v.get("current_sha256", "")}
+            for p, v in installed_files.items()
+            if isinstance(v, dict) and "installed_sha256" in v
+        },
+        "removed_in_version": [],
+    }
+    installed["manifest_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
 
 
 def upgrade(
@@ -281,6 +382,43 @@ def upgrade(
         roomodes_path = target / ".roomodes"
         if roomodes_path.exists() and isinstance(installed.get("files"), dict) and ".roomodes" in installed["files"]:
             installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
+
+    # S12 — manifest v2 reconciler pass (§6): stamp installed_sha256,
+    # current_sha256, and manifest_chain_hash onto the installed dict.
+    # Backward compat: if prior manifest schema_version < 2, prior_manifest
+    # is treated as None (no upgrade history) — reconcile_install handles this.
+    release_manifest_v2 = _build_release_manifest_v2(
+        root=root,
+        entries=entries,
+        harness_version=harness_version,
+    )
+    prior_installed_path = target / INSTALL_STATE
+    prior_manifest_v2 = None
+    if prior_installed_path.exists():
+        try:
+            import json as _json
+            _raw = prior_installed_path.read_bytes()
+            if not _raw.startswith(b"\xef\xbb\xbf"):  # skip BOM files
+                prior_manifest_v2 = _json.loads(_raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
+        except Exception:
+            prior_manifest_v2 = None
+    # classify_only=True: the existing upgrade conflict logic already handles
+    # file moves. The reconciler is used here only for v2 hash classification
+    # and field stamping — it must NOT move files a second time.
+    reconcile_results = _reconcile_install(
+        release_manifest=release_manifest_v2,
+        prior_manifest=prior_manifest_v2,
+        repo_root=target,
+        now_iso=_now_utc(),
+        classify_only=True,
+    )
+    _stamp_installed_manifest_v2(
+        installed,
+        release_manifest=release_manifest_v2,
+        harness_version=harness_version,
+        reconcile_results=reconcile_results,
+    )
+
     if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
     if dry_run:

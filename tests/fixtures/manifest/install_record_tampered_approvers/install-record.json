@@ -1,0 +1,12 @@
+{
+  "approvers": [
+    "alice@example.com",
+    "bob@example.com",
+    "mallory@example.com"
+  ],
+  "install_id": "fixture-install-id-001",
+  "installed_at": "2026-01-01T00:00:00Z",
+  "note": "approvers field tampered post-install — mallory@example.com was not present at install time",
+  "schema_version": 1,
+  "tampered": true
+}
