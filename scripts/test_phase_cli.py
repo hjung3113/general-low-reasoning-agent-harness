@@ -168,6 +168,33 @@ class PhaseSetTests(unittest.TestCase):
         state = json.loads((self.tmp / ".scratch" / "phase-state.json").read_text())
         self.assertEqual(state["summary"], "new summary")
 
+    def test_plan_id_flag_populates_on_noop_restamp(self) -> None:
+        # Bug surfaced by Phase E subagent live: `phase set plan` on already-plan
+        # state hit the no-op restamp short-circuit, which dropped --plan-id.
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        r = run_harness(["phase", "set", "plan", "--plan-id", "plan-test-001"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        state = json.loads((self.tmp / ".scratch" / "phase-state.json").read_text())
+        self.assertEqual(state["plan_id"], "plan-test-001")
+
+    def test_summary_flag_populates_on_noop_restamp(self) -> None:
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        r = run_harness(["phase", "set", "discuss", "--summary", "restamped"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        state = json.loads((self.tmp / ".scratch" / "phase-state.json").read_text())
+        self.assertEqual(state["summary"], "restamped")
+
+    def test_stdin_json_applies_on_noop_restamp(self) -> None:
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        r = run_harness(
+            ["phase", "set", "discuss", "--stdin-json"], cwd=self.tmp,
+            stdin=json.dumps({"next_action": "Refined action"}),
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        state = json.loads((self.tmp / ".scratch" / "phase-state.json").read_text())
+        self.assertEqual(state["next_action"], "Refined action")
+
 
 class PhaseApproveTests(unittest.TestCase):
     def setUp(self) -> None:
