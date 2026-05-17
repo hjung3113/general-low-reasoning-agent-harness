@@ -233,6 +233,18 @@ normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
   approve calls** (one for `plan → execute`, one for `execute → done`). The
   golden, the canonical `STAGE1_INVOCATIONS` list, and Test 10 are reconciled
   to 6 entries; the plan body has been updated in place to match.
+- **T0-3 follow-up — `state_schema_version=2` is now stamped on every
+  state write** (`harness phase set` and `harness phase approve`). Closes
+  the L2 contract gap surfaced by 02b-11 review (commit `bab5c5d` had
+  used an `<ANY>` sentinel in `cli-contract-lifecycle.json` as a
+  temporary workaround). The runtime helper `_ensure_state_schema_version`
+  in `scripts/lib/phase_cli.py` now (a) stamps `2` when the field is
+  absent, (b) no-ops when already `2`, and (c) exits 5 with
+  `state_schema_version={N} expected 2; run 'harness migrate state
+  --forward' first` on any other value. The smoke golden now pins the
+  literal `2` and `_compare_to_golden` enforces strict equality on the
+  field (the `<ANY>` sentinel for `approved`/`approved_at`/`approved_by`
+  is retained per ADR-001).
 
 ### Added
 
