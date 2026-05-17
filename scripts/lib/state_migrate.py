@@ -46,6 +46,8 @@ from typing import Optional
 from .atomic_io import atomic_write_text
 from . import backups as _backups_mod
 from . import state_migrate_t04 as _t04
+from . import phase_state as _phase_state
+from . import audit as _audit
 
 
 MIGRATOR_VERSION = "t0-1-v1"
@@ -124,6 +126,13 @@ def forward(state_v0: dict) -> dict:
     out = _t04.migrate_verification_to_review(
         out, migration_time=_FORWARD_MIGRATION_TIME_FALLBACK
     )
+    # S01-A.2: bring the record to full v2 shape. Coercion derives
+    # execution_mode from explicit value > legacy automation_mode alias >
+    # v0.6.1 default ("manual"); apply_v2_defaults fills the remaining
+    # autopilot_* / cli_budgets_remaining / last_halt / draft_* fields.
+    # Both helpers are idempotent and fail closed on forged enum values.
+    out = _phase_state.coerce_legacy_execution_mode(out)
+    out = _phase_state.apply_v2_defaults(out)
     return out
 
 
@@ -136,6 +145,11 @@ def reverse(state_v2: dict) -> dict:
     state should still see the evidence trail).
     """
     out = dict(state_v2)
+    # S01-A.2: strip the new v2-only fields so the reverse(forward(s)) == s
+    # round-trip property continues to hold for legacy v0 inputs. The
+    # deprecated automation_mode alias is preserved by strip_v2_only_fields
+    # because it is *not* a v2-only field.
+    out = _phase_state.strip_v2_only_fields(out)
     out.pop("state_schema_version", None)
     if out.get("review") == []:
         out.pop("review", None)
@@ -253,6 +267,33 @@ def _exit1(message: str) -> _CodedSystemExit:
     return _CodedSystemExit(1, message)
 
 
+def _emit_migrate_state_v2_audit(
+    *,
+    audit_path: Path,
+    before_sha256: str,
+    after_sha256: str,
+    target: Path,
+) -> None:
+    """Append a single ``verb=migrate.state_v2`` audit entry (design §1.2).
+
+    Keeps the entry payload small enough to fit under
+    ``audit.AUDIT_MAX_LINE_BYTES`` (512). The ``target`` path is recorded
+    as its basename only — the full absolute path can be long enough to
+    push the canonical JSON line past the cap, and the basename
+    (``phase-state.json``) is the diagnostic content reviewers need.
+    """
+    entry = {
+        "verb": "migrate.state_v2",
+        "at": _iso_utc_nanos(),
+        "by": "harness.migrate",
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "target": Path(target).name,
+        "migrator_version": MIGRATOR_VERSION,
+    }
+    _audit.audit_append(entry, audit_path=audit_path)
+
+
 def _transform(state: dict, *, direction: str) -> dict:
     if direction == "forward":
         return forward(state)
@@ -266,6 +307,7 @@ def migrate_file(
     *,
     direction: str,
     backups_dir: Optional[Path] = None,
+    audit_path: Optional[Path] = None,
 ) -> None:
     """Apply the 4-step protocol (ADR G1-E) to ``target``.
 
@@ -347,6 +389,17 @@ def migrate_file(
 
     # Retention prune (CONTRACT-PIN §6): keep last 10 .bak per target basename.
     _backups_mod._prune_old_backups(target.name, backups_dir, 10)
+
+    # S01-A.2: provenance-track a forward migration that altered file
+    # contents (per design §1.2). One audit entry per actual content
+    # change; idempotent no-op forwards return earlier and do NOT emit.
+    if direction == "forward" and audit_path is not None:
+        _emit_migrate_state_v2_audit(
+            audit_path=Path(audit_path),
+            before_sha256=pre_hash,
+            after_sha256=expected_post_hash,
+            target=target,
+        )
 
 
 def _find_sidecar_for(target: Path, backups_dir: Path) -> Optional[Path]:

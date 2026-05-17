@@ -453,6 +453,20 @@ def check_phase_state_semantics(path: Path) -> None:
     automation_mode = state.get("automation_mode")
     if automation_mode not in {"manual", "auto", "chain"}:
         raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
+    # S01-A.2: execution_mode is the v0.7 canonical replacement for the
+    # legacy automation_mode alias (design §1.1). It is optional on
+    # legacy state_schema_version=2 records that pre-date the S01 slice;
+    # `harness migrate state --forward` is what upgrades them. When
+    # present, it MUST be inside the enum — fail closed to defeat
+    # hand-edited or forged values (state-trust preflight lands in S01-E).
+    if "execution_mode" in state:
+        from lib.phase_state import EXECUTION_MODES  # local import: avoids cycle
+        execution_mode = state["execution_mode"]
+        if execution_mode not in EXECUTION_MODES:
+            raise SystemExit(
+                f"{path} execution_mode must be one of "
+                f"{sorted(EXECUTION_MODES)}; got {execution_mode!r}."
+            )
     auto_selected = state.get("auto_selected")
     if not isinstance(auto_selected, list):
         raise SystemExit(f"{path} auto_selected must be an array.")

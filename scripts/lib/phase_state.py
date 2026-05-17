@@ -124,10 +124,26 @@ def apply_v2_defaults(state: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def strip_v2_only_fields(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a new dict with every NEW_V2_FIELD removed.
+
+    Mirror of ``apply_v2_defaults`` — used by ``state_migrate.reverse`` so
+    that ``reverse(forward(s)) == s`` round-trip equality holds for legacy
+    v0 inputs that do not know about the v2 schema fields. Non-v2 fields
+    (including the deprecated legacy ``automation_mode`` alias) are
+    preserved unchanged.
+    """
+    out = dict(state)
+    for key in NEW_V2_FIELDS:
+        out.pop(key, None)
+    return out
+
+
 __all__ = [
     "EXECUTION_MODES",
     "LEGACY_AUTOMATION_TO_EXECUTION",
     "NEW_V2_FIELDS",
     "coerce_legacy_execution_mode",
     "apply_v2_defaults",
+    "strip_v2_only_fields",
 ]

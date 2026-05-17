@@ -1,0 +1,20 @@
+{
+  "phase": "discuss",
+  "approved": false,
+  "auto_selected": [
+    {
+      "choice": "noop",
+      "selected_value": "noop",
+      "reason": "fixture",
+      "evidence_path": "tests/fixtures/state/v070_automation_chain/phase-state.json",
+      "risk_level": "low",
+      "reversible": true,
+      "inside_allowed_paths": true,
+      "stop_conditions_checked": ["none"]
+    }
+  ],
+  "automation_mode": "chain",
+  "verification": [],
+  "updated_at": "2026-05-15T00:00:00Z",
+  "updated_by": "test"
+}
