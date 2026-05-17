@@ -228,6 +228,11 @@ normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
   asserts shape parity against `scripts/smoke/golden/cli-contract-lifecycle.json`
   (hand-derived from ADR Artifact 1; never regenerated from runtime). Per spec
   §10.2 and `.planning/phases/02b-hardening/plans/02b-11-SMOKE-EXT-PLAN.md`.
+  **Deviation from plan body:** the plan body (Goal + Test 10) originally said
+  "5 audit entries / 1 approve"; the actual lifecycle requires **6 entries / 2
+  approve calls** (one for `plan → execute`, one for `execute → done`). The
+  golden, the canonical `STAGE1_INVOCATIONS` list, and Test 10 are reconciled
+  to 6 entries; the plan body has been updated in place to match.
 
 ### Added
 
