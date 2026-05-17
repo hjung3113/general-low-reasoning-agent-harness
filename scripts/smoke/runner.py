@@ -143,6 +143,15 @@ def _budget_caps_hit(wall: float, input_tokens: int, output_tokens: int) -> list
     return hits
 
 
+def _is_live_client(client) -> bool:
+    """C4 — detect HaikuClient (live API) vs FakeClient (unit-test double).
+
+    Judge invariants are only enforced under live mode, since FakeClient
+    cannot actually mutate filesystem state via subprocess calls.
+    """
+    return type(client).__name__ == "HaikuClient"
+
+
 def _evidence_path(evidence_root: Path, fixture: dict, trial_index: int) -> Path:
     flow_dir = Path(evidence_root) / fixture["flow"]
     flow_dir.mkdir(parents=True, exist_ok=True)
@@ -235,7 +244,9 @@ def _single_attempt(
     if caps_hit:
         judgment = JudgeResult(False, f"budget caps hit: {caps_hit}", retry_recommended=False)
     else:
-        judgment = judge_response_for_fixture(fixture, dest, response.text)
+        judgment = judge_response_for_fixture(
+            fixture, dest, response.text, live_mode=_is_live_client(model_client)
+        )
 
     record = TrialRecord(
         fixture_id=fixture["fixture_id"],

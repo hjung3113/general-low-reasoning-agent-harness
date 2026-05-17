@@ -123,8 +123,18 @@ def _verification_entries_ok(state: dict) -> tuple[bool, str]:
     return (True, "")
 
 
-def _post_trial_invariants(scratch_dir: Path) -> tuple[bool, str]:
-    """Checks that hold across every fixture: no orphan lockfile, no spurious .bak."""
+def _post_trial_environment_check(
+    scratch_dir: Path, live_mode: bool = False
+) -> tuple[bool, str]:
+    """Environment-level checks: no orphan lockfile, no spurious .bak.
+
+    C4 — Only enforced in live mode. In FakeClient mode the model never
+    actually shells out to the harness CLI, so it cannot produce a real
+    lockfile or backup; treating those as failures was a false-positive
+    vector. Tests that want the live behavior pass `live_mode=True`.
+    """
+    if not live_mode:
+        return (True, "")
     if _orphan_lockfile_present(scratch_dir):
         return (False, "orphan session lockfile after trial completion")
     if _spurious_backup_present(scratch_dir):
@@ -132,12 +142,16 @@ def _post_trial_invariants(scratch_dir: Path) -> tuple[bool, str]:
     return (True, "")
 
 
+# Back-compat alias (existing internal callers).
+_post_trial_invariants = _post_trial_environment_check
+
+
 # ---------------------------------------------------------------------------
 # Per-fixture judges
 # ---------------------------------------------------------------------------
 
 
-def judge_fixture_01(scratch_dir: Path, fixture: dict, response_text: str = "") -> JudgeResult:
+def judge_fixture_01(scratch_dir: Path, fixture: dict, response_text: str = "", live_mode: bool = False) -> JudgeResult:
     """discuss -> plan."""
     if _is_grounded_needs_info(response_text, fixture):
         return JudgeResult(True, "grounded needs-info response")
@@ -157,13 +171,13 @@ def judge_fixture_01(scratch_dir: Path, fixture: dict, response_text: str = "") 
         )
     if phase != "plan":
         return JudgeResult(False, f"agent overshot target phase (got {phase!r})")
-    inv_ok, inv_reason = _post_trial_invariants(scratch_dir)
+    inv_ok, inv_reason = _post_trial_environment_check(scratch_dir, live_mode=live_mode)
     if not inv_ok:
         return JudgeResult(False, inv_reason)
     return JudgeResult(True, "phase advanced from discuss to plan")
 
 
-def judge_fixture_02(scratch_dir: Path, fixture: dict, response_text: str = "") -> JudgeResult:
+def judge_fixture_02(scratch_dir: Path, fixture: dict, response_text: str = "", live_mode: bool = False) -> JudgeResult:
     """plan -> approved (plan stays plan but approved=True and plan_id populated)."""
     if _is_grounded_needs_info(response_text, fixture):
         return JudgeResult(True, "grounded needs-info response")
@@ -185,13 +199,13 @@ def judge_fixture_02(scratch_dir: Path, fixture: dict, response_text: str = "") 
         )
     if not plan_id:
         return JudgeResult(False, "plan_id remains null after trial")
-    inv_ok, inv_reason = _post_trial_invariants(scratch_dir)
+    inv_ok, inv_reason = _post_trial_environment_check(scratch_dir, live_mode=live_mode)
     if not inv_ok:
         return JudgeResult(False, inv_reason)
     return JudgeResult(True, "plan populated and approved")
 
 
-def judge_fixture_03(scratch_dir: Path, fixture: dict, response_text: str = "") -> JudgeResult:
+def judge_fixture_03(scratch_dir: Path, fixture: dict, response_text: str = "", live_mode: bool = False) -> JudgeResult:
     """execute -> done. Verification entries must persist and be in allowlist."""
     if _is_grounded_needs_info(response_text, fixture):
         return JudgeResult(True, "grounded needs-info response")
@@ -218,7 +232,7 @@ def judge_fixture_03(scratch_dir: Path, fixture: dict, response_text: str = "") 
         for e in audit
     ):
         return JudgeResult(False, "audit log missing phase.set:done entry")
-    inv_ok, inv_reason = _post_trial_invariants(scratch_dir)
+    inv_ok, inv_reason = _post_trial_environment_check(scratch_dir, live_mode=live_mode)
     if not inv_ok:
         return JudgeResult(False, inv_reason)
     return JudgeResult(True, "execute advanced to done; verification preserved")
@@ -271,7 +285,7 @@ def _audit_sequence_matches(audit: list[dict], expected: list[dict]) -> tuple[bo
     return (True, "")
 
 
-def judge_fixture_04(scratch_dir: Path, fixture: dict, response_text: str = "") -> JudgeResult:
+def judge_fixture_04(scratch_dir: Path, fixture: dict, response_text: str = "", live_mode: bool = False) -> JudgeResult:
     """Full lifecycle discuss -> plan -> approve -> execute -> approve -> done."""
     if _is_grounded_needs_info(response_text, fixture):
         return JudgeResult(True, "grounded needs-info response")
@@ -297,7 +311,7 @@ def judge_fixture_04(scratch_dir: Path, fixture: dict, response_text: str = "") 
     ok, reason = _audit_sequence_matches(audit, expected)
     if not ok:
         return JudgeResult(False, reason)
-    inv_ok, inv_reason = _post_trial_invariants(scratch_dir)
+    inv_ok, inv_reason = _post_trial_environment_check(scratch_dir, live_mode=live_mode)
     if not inv_ok:
         return JudgeResult(False, inv_reason)
     return JudgeResult(True, "full lifecycle traversed with required approvals")
@@ -312,12 +326,12 @@ JUDGE_DISPATCH = {
 
 
 def judge_response_for_fixture(
-    fixture: dict, scratch_dir: Path, response_text: str
+    fixture: dict, scratch_dir: Path, response_text: str, live_mode: bool = False
 ) -> JudgeResult:
     judge = JUDGE_DISPATCH.get(fixture["fixture_id"])
     if judge is None:
         raise KeyError(f"no judge for fixture_id={fixture['fixture_id']!r}")
-    return judge(scratch_dir, fixture, response_text)
+    return judge(scratch_dir, fixture, response_text, live_mode=live_mode)
 
 
 # Re-export referenced constants for clarity (so meta-tests confirm the

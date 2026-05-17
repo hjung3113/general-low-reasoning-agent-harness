@@ -273,7 +273,10 @@ class JudgeFixture04Tests(unittest.TestCase):
         )
         # plant orphan lockfile
         (self.tmp / ".harness" / "session.lock").write_text("stale\n")
-        result = judge_fixture_04(self.tmp, self.fixture, response_text="")
+        # C4 — invariants only enforced in live_mode; pass through here.
+        result = judge_fixture_04(
+            self.tmp, self.fixture, response_text="", live_mode=True
+        )
         self.assertFalse(result.passed)
         self.assertIn("orphan", result.reason)
 
