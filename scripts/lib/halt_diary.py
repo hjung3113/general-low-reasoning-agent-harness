@@ -33,24 +33,12 @@ _HALT_HISTORY_CAP = 5
 
 
 # ---------------------------------------------------------------------------
-# Error hierarchy
+# Verb registry note (P2-2 / §12.7)
 # ---------------------------------------------------------------------------
-
-
-class HaltDiaryError(OSError):
-    """Base class for halt-diary admin verb failures."""
-
-
-class HaltDiaryNothingToClear(HaltDiaryError):
-    """last_halt is None — nothing to clear. exit_code = 0 (no-op success)."""
-
-    exit_code = 0
-
-
-class HaltDiaryNonTtyBlocked(HaltDiaryError):
-    """stdin is not a TTY — admin clear refused. exit_code = 6."""
-
-    exit_code = 6
+# TODO: spec amendment pending — add halt_diary.clear to §12.7 verb registry in
+# docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md.
+# Tracked as a known design-doc gap; the verb is implemented and auditable but
+# not yet listed in the §12.7 REGISTERED_VERBS table.
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +62,12 @@ class ClearResult:
 
 _FIX_TTY = (
     "Fix: run `harness halt-diary clear` from a real terminal "
-    "(not via a piped or agent-spawned subprocess)"
+    "(not via a piped or agent-spawned subprocess)."
 )
 _FIX_ANCHOR = (
     "Fix: caller must pass anchor_verified=True (or skip_anchor_preflight=True "
     "in controlled test paths) so the §12.1 trust chain is satisfied before "
-    "mutating state via an admin verb"
+    "mutating state via an admin verb."
 )
 
 
@@ -224,9 +212,6 @@ def run_clear(
 
 
 __all__ = [
-    "HaltDiaryError",
-    "HaltDiaryNothingToClear",
-    "HaltDiaryNonTtyBlocked",
     "ClearResult",
     "run_clear",
 ]

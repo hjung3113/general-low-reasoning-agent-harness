@@ -355,8 +355,17 @@ def apply_budget_halt(state: dict, *, diary: BudgetDiaryEntry) -> dict:
     """
     new_state = copy.deepcopy(state)
 
-    # Rotate prior last_halt to history (cap-5)
+    # Rotate prior last_halt to history (cap-5).
+    # Stamp acknowledged_at on the rotated entry if not already set — the new
+    # budget-halt event IS the implicit acknowledgement of the prior halt
+    # (consistent with run_start ack semantics per §1.1 line 67: "the new run
+    # IS the implicit acknowledgement"). Without this stamp, cli_budgets and
+    # run_start diverge in ack semantics, causing cross-batch halt-diary drift.
     prior_last_halt = new_state.get("last_halt")
+    if prior_last_halt is not None and prior_last_halt.get("acknowledged_at") is None:
+        _ack_now = _now_iso_z()
+        prior_last_halt = dict(prior_last_halt)
+        prior_last_halt["acknowledged_at"] = _ack_now
     new_state["last_halt_history"] = _rotate_last_halt_history(
         state, prior_last_halt, cap=5
     )

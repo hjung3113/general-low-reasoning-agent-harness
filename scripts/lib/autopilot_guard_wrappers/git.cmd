@@ -3,6 +3,13 @@ REM git.cmd — Windows deny shim wrapper for git network subcommands (§5.2). P
 REM network_guard_posture: windows_audit_guard_degraded
 REM Denied subcommands: push, pull, fetch, clone, remote update, submodule update --remote
 REM Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §5.2
+REM
+REM NOTE: setlocal enabledelayedexpansion is REQUIRED because inside a parenthesized
+REM if-block cmd.exe expands %ERRORLEVEL% at parse time (before findstr runs), so
+REM %ERRORLEVEL% always reads the outer scope value regardless of what findstr returned.
+REM Using !ERRORLEVEL! with delayed expansion reads it at execution time. This is the
+REM classic cmd.exe parenthesized-block pitfall — do NOT revert to %ERRORLEVEL% here.
+setlocal enabledelayedexpansion
 
 if "%HARNESS_AUTOPILOT_NETWORK%"=="deny" (
     REM Check first argument (subcommand)
@@ -15,9 +22,11 @@ if "%HARNESS_AUTOPILOT_NETWORK%"=="deny" (
     )
     if "%1"=="submodule" (
         if "%2"=="update" (
-            REM Check for --remote anywhere in remaining args
+            REM Check for --remote anywhere in remaining args.
+            REM !ERRORLEVEL! (not %ERRORLEVEL%) is required here because we are
+            REM inside a parenthesized block — see banner comment above.
             echo %* | findstr /i "\-\-remote" >nul 2>&1
-            if %ERRORLEVEL%==0 goto :denied_sub
+            if !ERRORLEVEL!==0 goto :denied_sub
         )
     )
 )

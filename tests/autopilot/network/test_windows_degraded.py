@@ -379,6 +379,10 @@ _PS1_REQUIRED = [
     "exit 4",
     "windows_audit_guard_degraded",
     "network_guard_posture",
+    # P1-3+P1-4 PS 5.1 compat pins:
+    "[System.Text.UTF8Encoding]",  # replaces utf8NoBOM (PS 6.0+ only)
+    "[DateTime]::UtcNow",          # replaces Get-Date -AsUTC (PS 7.1+ only)
+    "5.1",                         # PS 5.1 compatibility statement in banner
 ]
 _CURL_CMD_REQUIRED = [
     "HARNESS_AUTOPILOT_NETWORK",
@@ -398,6 +402,9 @@ _GIT_CMD_REQUIRED = [
     "clone",
     "exit /b 4",
     "refused:",
+    # P1-2 errorlevel expansion fix pins:
+    "setlocal enabledelayedexpansion",  # required to avoid parse-time %ERRORLEVEL% expansion
+    "!ERRORLEVEL!",                     # delayed expansion in parenthesized if-block
 ]
 
 

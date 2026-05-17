@@ -3,6 +3,8 @@
 # Best-effort: bypassable by absolute paths or language runtimes.
 # For hard isolation use Linux container or WSL.
 #
+# Supported: PowerShell 5.1+ (Windows 10/11 default) and PowerShell 7+
+#
 # network_guard_posture: windows_audit_guard_degraded
 # Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §5.2
 
@@ -11,16 +13,20 @@ if ($env:HARNESS_AUTOPILOT_NETWORK -eq "deny") {
         $cmdLine = "$cmd " + ($args -join ' ')
         if ($cmdLine.Length -gt 512) { $cmdLine = $cmdLine.Substring(0, 512) }
         $auditPath = Join-Path (Get-Location) ".harness/audit.log"
-        # Best-effort audit append (skip BOM, plain JSON line)
+        # Best-effort audit append — PS 5.1 compatible.
+        # [System.Text.UTF8Encoding]($false) = UTF-8 without BOM, works on PS 5.1+.
+        # [DateTime]::UtcNow = UTC timestamp, works on PS 5.1+ (no PS 7.1-only flags).
         $entry = @{
             verb = "autopilot.network.deny"
             command_label = $cmd
             command = $cmdLine
             cwd = (Get-Location).Path
-            at = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ" -AsUTC)
+            at = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
             network_guard_posture = "windows_audit_guard_degraded"
         } | ConvertTo-Json -Compress
-        try { Add-Content -Path $auditPath -Value $entry -NoNewline:$false -Encoding utf8NoBOM } catch {}
+        try {
+            [System.IO.File]::AppendAllText($auditPath, $entry + "`n", (New-Object System.Text.UTF8Encoding($false)))
+        } catch {}
         Write-Error "refused: $cmd (autopilot deny-list; windows degraded posture)"
         exit 4
     }

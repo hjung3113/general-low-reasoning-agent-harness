@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
 from . import approval_nonce as _approval_nonce
+from . import audit as _audit
 from . import autopilot_guard as _autopilot_guard
 from . import ci_provenance as _ci_provenance
 from . import cli_budgets as _cli_budgets
@@ -616,6 +617,23 @@ def run_start(
             f"{_FIX_WINDOWS_CHAIN}"
         )
         print(f"error: {msg}", file=sys.stderr)
+        # P2-3: emit a minimal audit row so the refusal is forensically visible.
+        # No state mutation → use audit_append directly (no commit_transaction).
+        _refused_at = _phase_preflight.now_iso_z()
+        try:
+            _audit.audit_append(
+                {
+                    "verb": "phase.autopilot.start.refused",
+                    "mode": mode,
+                    "phase_slug": phase_slug,
+                    "at": _refused_at,
+                    "network_guard_posture": "windows_audit_guard_degraded",
+                    "refuse_reason": "windows_containment_degraded",
+                },
+                audit_path=audit_path,
+            )
+        except Exception:
+            pass  # best-effort; audit write failure must not shadow the real exit 11
         return AutopilotResult(
             exit_code=11,
             sub_reason="windows_containment_degraded",
@@ -739,6 +757,11 @@ def run_start(
         accept_degraded_windows=accept_degraded_windows_containment,
     )
 
+    # NOTE (§5.2 carve-out): single-phase autopilot on Windows runs WITHOUT requiring
+    # --accept-degraded — scope-limited (one phase, one boundary). chain mode IS gated
+    # because the cumulative blast radius is unbounded. Audit row still carries
+    # network_guard_posture="windows_audit_guard_degraded" for forensic clarity.
+
     # §3.5 / §1.1 integration (S10a step 2):
     # Stamp autopilot_started_at_iso as the wall-clock anchor for wall_seconds
     # budget enforcement. REPLACE semantics: each new run_start resets the anchor.
@@ -763,6 +786,11 @@ def run_start(
             "bot_identity_distinct_from_approvers": bot_identity_distinct_from_approvers,
         },
     }
+    # §3.5 line 666: stamp accepted_by_caller on audit row when posture is degraded.
+    # Present only when posture==windows_audit_guard_degraded to avoid polluting
+    # non-Windows rows with a field that doesn't apply (design §3.5 + §5.2).
+    if network_guard_posture == "windows_audit_guard_degraded":
+        audit_draft["accepted_by_caller"] = bool(accept_degraded_windows_containment)
 
     # Design decision (§1.1): autopilot_start_entry_hash MUST equal the
     # actual entry_hash of the verb=phase.autopilot.start audit entry (64 hex

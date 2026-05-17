@@ -498,9 +498,18 @@ def test_apply_budget_halt_rotates_prior_last_halt_to_history():
     state = _make_state(last_halt=prior, last_halt_history=[])
     diary = _make_diary()
     new_state = apply_budget_halt(state, diary=diary)
-    # Prior last_halt should move to history
+    # Prior last_halt should move to history.
     assert len(new_state["last_halt_history"]) == 1
-    assert new_state["last_halt_history"][0] == prior
+    rotated = new_state["last_halt_history"][0]
+    # P2-4 fix: unack'd prior halt gets acknowledged_at stamped on rotation
+    # (implicit ack: the new budget-halt supersedes it, consistent with §1.1 line 67).
+    assert rotated.get("acknowledged_at") is not None, (
+        "apply_budget_halt must stamp acknowledged_at on unack'd prior last_halt "
+        "when rotating to history (P2-4 fix, §1.1 line 67 implicit ack semantics)."
+    )
+    # All other fields should be preserved.
+    for key in ("at", "reason", "capability", "remaining_at_halt", "autopilot_run_id"):
+        assert rotated[key] == prior[key]
 
 
 def test_apply_budget_halt_cap_5_rotation():
@@ -526,8 +535,12 @@ def test_apply_budget_halt_cap_5_with_overflow():
     diary = _make_diary()
     new_state = apply_budget_halt(state, diary=diary)
     assert len(new_state["last_halt_history"]) == 5
-    # newest entry should be the prior_last_halt
-    assert new_state["last_halt_history"][-1] == prior_last_halt
+    # newest entry should be the prior_last_halt (with acknowledged_at stamped — P2-4 fix)
+    last = new_state["last_halt_history"][-1]
+    assert last["at"] == prior_last_halt["at"]
+    assert last["reason"] == prior_last_halt["reason"]
+    # acknowledged_at stamped on rotation (implicit ack — §1.1 line 67)
+    assert last.get("acknowledged_at") is not None
 
 
 def test_apply_budget_halt_does_not_mutate_original_state():
