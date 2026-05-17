@@ -431,6 +431,13 @@
       "adapter": "opencode"
     },
     {
+      "path": ".opencode/commands/fsd-run-all.md",
+      "source": ".opencode/commands/fsd-run-all.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
       "path": ".roo/README.md",
       "source": ".roo/README.md",
       "policy": "harness-owned"
@@ -1097,6 +1104,11 @@
       "path": ".opencode/commands/fsd-phase.md",
       "removed_in": "v0.7.0",
       "replaced_by": ".opencode/commands/fsd-run-phase.md"
+    },
+    {
+      "path": ".opencode/commands/fsd-chain-phase.md",
+      "removed_in": "v0.7.0",
+      "replaced_by": ".opencode/commands/fsd-run-all.md"
     }
   ]
 }
