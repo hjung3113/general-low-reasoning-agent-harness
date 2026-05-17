@@ -155,9 +155,63 @@ class TestStage1Core(unittest.TestCase):
             self.assertEqual(indices, list(range(1, len(entries) + 1)))
 
     def test_stage1_sha_invariant_holds(self):
-        # The driver itself raises on drift; an exception-free run proves it.
+        # M1: assert every audit entry carries a non-empty after_sha256,
+        # AND that the recomputed sha256 of the state file at the end of
+        # the run equals the last entry's after_sha256.
+        import hashlib as _hashlib
         with tempfile.TemporaryDirectory(prefix="harness-smoke-stage1-sha.") as tmp:
-            smoke_lifecycle._run_stage1_core(Path(tmp))
+            fixture = Path(tmp) / "stage1-core"
+            smoke_lifecycle.copy_fixture(fixture)
+            smoke_lifecycle._run_lifecycle_argv_sequence(
+                fixture, [inv["argv"] for inv in STAGE1_INVOCATIONS]
+            )
+            entries = smoke_lifecycle._read_audit(fixture)
+            self.assertTrue(entries)
+            for idx, entry in enumerate(entries):
+                self.assertTrue(
+                    entry.get("after_sha256"),
+                    f"audit_entries[{idx}].after_sha256 missing/empty",
+                )
+                # `before_sha256` is "" only on the very first entry
+                # (no prior state); subsequent entries must carry the
+                # prior entry's after as their before.
+                if idx > 0:
+                    self.assertTrue(
+                        entry.get("before_sha256"),
+                        f"audit_entries[{idx}].before_sha256 missing/empty",
+                    )
+            # Final state sha must match the last entry's after_sha256.
+            state_bytes = (fixture / ".scratch" / "phase-state.json").read_bytes()
+            self.assertEqual(
+                _hashlib.sha256(state_bytes).hexdigest(),
+                entries[-1]["after_sha256"],
+                "recomputed state sha != last audit after_sha256",
+            )
+
+    def test_driver_fails_when_after_sha256_missing(self):
+        # M1: tighten _run_lifecycle_argv_sequence to fail when an
+        # entry lacks after_sha256 (previously it silently skipped the
+        # drift check).
+        import unittest.mock as _mock
+        with tempfile.TemporaryDirectory(prefix="harness-smoke-sha-miss.") as tmp:
+            fixture = Path(tmp) / "fix"
+            smoke_lifecycle.copy_fixture(fixture)
+            real_read = smoke_lifecycle._read_audit
+
+            def fake_read(root):
+                entries = real_read(root)
+                if entries:
+                    # Strip after_sha256 from the last entry to simulate
+                    # a contract violation by the runtime.
+                    entries[-1].pop("after_sha256", None)
+                return entries
+
+            with _mock.patch.object(smoke_lifecycle, "_read_audit", fake_read):
+                with self.assertRaises(RuntimeError) as ctx:
+                    smoke_lifecycle._run_lifecycle_argv_sequence(
+                        fixture, [STAGE1_INVOCATIONS[0]["argv"]]
+                    )
+                self.assertIn("after_sha256", str(ctx.exception))
 
 
 # --- Group D: Roo lifecycle stage --------------------------------------

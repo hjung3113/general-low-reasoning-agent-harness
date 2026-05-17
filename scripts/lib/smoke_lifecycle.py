@@ -223,13 +223,20 @@ def _run_lifecycle_argv_sequence(fixture_root: Path, sequence: Iterable[list[str
             raise RuntimeError(
                 f"harness {' '.join(argv)} exited {cp.returncode} in {fixture_root}: {cp.stderr}"
             )
-        # SHA invariant: last audit after_sha must match state sha
+        # SHA invariant: last audit after_sha must exist AND match state sha.
+        # M1: FAIL (not skip) when after_sha256 is missing — silent skip
+        # would hide a contract violation in the runtime audit writer.
         entries = _read_audit(fixture_root)
         if entries:
             last = entries[-1]
             after = last.get("after_sha256")
+            if not after:
+                raise RuntimeError(
+                    f"audit after_sha256 missing/empty for entry after {argv}; "
+                    f"runtime audit writer contract violation"
+                )
             actual = _state_sha(fixture_root)
-            if after and actual and after != actual:
+            if actual and after != actual:
                 raise RuntimeError(
                     f"drift: audit after_sha256 {after} != state sha {actual} after {argv}"
                 )
