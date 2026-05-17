@@ -278,6 +278,47 @@ class JudgeFixture04Tests(unittest.TestCase):
         self.assertIn("orphan", result.reason)
 
 
+class JudgeInvariantModeTests(unittest.TestCase):
+    """C4 — environment invariants advisory in FakeClient mode, enforced in live."""
+
+    def setUp(self) -> None:
+        self.fixture = _load(FX04)
+        self.tmp = Path(tempfile.mkdtemp(prefix="judgeenv."))
+        _write_state(
+            self.tmp,
+            {
+                "phase": "done",
+                "verification": ["pytest scripts/", "harness check"],
+                "state_schema_version": 2,
+            },
+        )
+        _write_audit(
+            self.tmp,
+            [
+                {"verb": "phase.set", "args": {"phase": "plan"}},
+                {"verb": "phase.approve", "args": {"by": "agent"}},
+                {"verb": "phase.set", "args": {"phase": "execute"}},
+                {"verb": "phase.approve", "args": {"by": "agent"}},
+                {"verb": "phase.set", "args": {"phase": "done"}},
+            ],
+        )
+        # plant orphan lockfile that should fail in live but be skipped in fake
+        (self.tmp / ".harness" / "session.lock").write_text("stale\n")
+
+    def test_judge_invariants_skipped_in_fake_mode(self) -> None:
+        result = judge_fixture_04(
+            self.tmp, self.fixture, response_text="", live_mode=False
+        )
+        self.assertTrue(result.passed, result.reason)
+
+    def test_judge_invariants_enforced_in_live_mode(self) -> None:
+        result = judge_fixture_04(
+            self.tmp, self.fixture, response_text="", live_mode=True
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("orphan", result.reason)
+
+
 class JudgeMetaTests(unittest.TestCase):
     """Meta-tests per plan §5.1 tests 14-15."""
 
