@@ -227,6 +227,172 @@ def commit_transaction(
     return txn_id
 
 
+# ---------------------------------------------------------------------------
+# Recovery — 12-row matrix (design §3.8 + §12.5 #2)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class RecoveryResult:
+    """Outcome of one `recover()` pass. The `row` field maps directly to
+    the design §3.8 table (1-11) or §12.5 #2 row 12. `decision` is a
+    short machine-readable string for logging / audit; `exit_code` is 0
+    for the eight self-healing rows and 14 for the four fault rows."""
+
+    row: int
+    decision: str
+    exit_code: int
+
+
+def _state_sha_of_disk(state_path: Path) -> str:
+    if not state_path.exists():
+        return ""
+    return _sha256(state_path.read_bytes())
+
+
+def _file_sha(path: Path) -> str:
+    return _sha256(path.read_bytes()) if path.exists() else ""
+
+
+def _audit_tail_partial_write(audit_path: Path) -> bool:
+    """Return True if the last non-empty line of `audit_path` fails
+    JSON-parse — the §12.5 #2 row-12 predicate. The per-entry hash-chain
+    check (S06) is intentionally NOT performed here; chain verification
+    is a S06 responsibility and would mis-flag every entry written
+    before S06 lands."""
+    if not audit_path.exists():
+        return False
+    text = audit_path.read_text(encoding="utf-8")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    try:
+        json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return True
+    return False
+
+
+def _audit_tail_txn_id(audit_path: Path) -> Optional[str]:
+    """Return the `txn_id` field of the last well-formed audit entry, if any."""
+    if not audit_path.exists():
+        return None
+    text = audit_path.read_text(encoding="utf-8")
+    for line in reversed(text.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        return entry.get("txn_id")
+    return None
+
+
+def _read_journal(scratch: Path) -> Optional[dict]:
+    journal = scratch / JOURNAL_NAME
+    if not journal.exists():
+        return None
+    try:
+        return json.loads(journal.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def recover(
+    scratch: Union[str, "os.PathLike[str]"],
+    *,
+    audit_path: Union[str, "os.PathLike[str]"],
+    lock: Optional[_phase_lock.LockHandle],
+) -> RecoveryResult:
+    """Dispatch one of the 12 design §3.8 matrix rows and execute its
+    decision. Returns a `RecoveryResult`. The caller MUST hold the
+    state lock (handed in via `lock`); recovery mutates artefacts.
+
+    Row 12 (`audit_partial_write`, §12.5 #2) takes precedence — if the
+    audit oracle itself is corrupt, no other matrix decision is safe.
+    """
+    scratch = Path(scratch)
+    audit_path = Path(audit_path)
+    _check_lock(lock, scratch)
+
+    state_path = scratch / STATE_NAME
+    journal_path = scratch / JOURNAL_NAME
+    tmp_path = scratch / TMP_NAME
+
+    # Row 12 — audit oracle untrustworthy.
+    if _audit_tail_partial_write(audit_path):
+        return RecoveryResult(row=12, decision="audit_partial_write", exit_code=14)
+
+    journal = _read_journal(scratch)
+    J = journal is not None
+    T = tmp_path.exists()
+    state_hash = _state_sha_of_disk(state_path)
+    audit_txn = _audit_tail_txn_id(audit_path)
+
+    # J = 0 (rows 1-4)
+    if not J:
+        if not T:
+            if audit_txn is None:
+                return RecoveryResult(row=1, decision="quiescent", exit_code=0)
+            return RecoveryResult(
+                row=3, decision="post_finalize_no_tmp_accept", exit_code=0
+            )
+        # T = 1, J = 0 — orphan tmp regardless of audit shape.
+        os.unlink(tmp_path)
+        _durable_fs.fsync_parent_dir(scratch)
+        row = 4 if audit_txn is not None else 2
+        decision = "orphan_tmp_unlinked_post_finalize" if row == 4 else "orphan_tmp_unlinked"
+        return RecoveryResult(row=row, decision=decision, exit_code=0)
+
+    # J = 1 — journal present (rows 5-11)
+    assert journal is not None
+    before_sha = journal.get("before_sha256", "")
+    after_sha = journal.get("after_sha256", "")
+    journal_txn = journal.get("txn_id", "")
+    A = audit_txn is not None and audit_txn == journal_txn
+
+    if not A:
+        # Audit never observed this txn (step 3 didn't complete).
+        if state_hash == before_sha:
+            # Rollback: state untouched; drop journal (+ tmp if present).
+            if T:
+                os.unlink(tmp_path)
+            os.unlink(journal_path)
+            _durable_fs.fsync_parent_dir(scratch)
+            row = 6 if T else 5
+            decision = "rollback_journal_and_tmp" if T else "rollback_journal_only"
+            return RecoveryResult(row=row, decision=decision, exit_code=0)
+        # state != before AND audit never recorded -> corruption.
+        row = 10 if T else 11
+        return RecoveryResult(row=row, decision="corruption", exit_code=14)
+
+    # A = 1 — audit confirms the txn.
+    if state_hash == after_sha:
+        # Finalize: state already updated, just remove leftovers.
+        if T:
+            os.unlink(tmp_path)
+        os.unlink(journal_path)
+        _durable_fs.fsync_parent_dir(scratch)
+        return RecoveryResult(row=8, decision="finalize", exit_code=0)
+
+    if state_hash == before_sha and T and _file_sha(tmp_path) == after_sha:
+        # Roll forward: replace state with tmp, drop journal.
+        _durable_fs.replace_with_retry(tmp_path, state_path)
+        _durable_fs.fsync_parent_dir(scratch)
+        fd = os.open(str(state_path), os.O_RDONLY)
+        try:
+            _durable_fs.fsync_file_durable(fd, path=state_path)
+        finally:
+            os.close(fd)
+        os.unlink(journal_path)
+        _durable_fs.fsync_parent_dir(scratch)
+        return RecoveryResult(row=7, decision="roll_forward", exit_code=0)
+
+    # Audit confirms but state matches neither before nor after.
+    return RecoveryResult(row=9, decision="undecidable", exit_code=14)
+
+
 def _now_iso() -> str:
     import datetime
 
@@ -242,8 +408,10 @@ __all__ = [
     "TxnError",
     "TxnLockMissingError",
     "TxnRequest",
+    "RecoveryResult",
     "JOURNAL_NAME",
     "TMP_NAME",
     "STATE_NAME",
     "commit_transaction",
+    "recover",
 ]
