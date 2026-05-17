@@ -618,6 +618,36 @@ class ParseRejectedLinesTests(unittest.TestCase):
         self.assertIn("shenanigans foo bar", rejected)
 
 
+class SubprocessTimeoutTests(unittest.TestCase):
+    """M5 — subprocess timeouts attributed to wall_clock_seconds + events."""
+
+    def test_subprocess_timeout_accumulates_to_wall_clock(self) -> None:
+        import subprocess as sp
+        from unittest import mock
+        from scripts.smoke import runner as rm
+
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="subtimeout."))
+        # 7 valid commands; each subprocess.run will raise TimeoutExpired.
+        cmds = "\n".join(["harness phase set plan"] * 7)
+        client = FakeClient(scripted_responses=[cmds])
+
+        def fake_run(argv, **kwargs):
+            raise sp.TimeoutExpired(cmd=argv, timeout=10)
+
+        with mock.patch.object(rm.subprocess, "run", side_effect=fake_run):
+            record = run_trial(fixture, 51, client, tmp / "scratch", tmp / "evidence")
+
+        # Each timeout adds ~10s; 7 timeouts ≈ 70s; accumulated into wall clock.
+        self.assertGreaterEqual(record.wall_clock_seconds, 70.0)
+        # Each command logged with a subprocess_timeout event.
+        timeout_entries = [
+            c for c in record.commands_executed
+            if c.get("event") == "subprocess_timeout"
+        ]
+        self.assertEqual(len(timeout_entries), 7)
+
+
 class WallClockHonestyTests(unittest.TestCase):
     """C2 — wall_clock_seconds must be real monotonic, not max(monotonic, client)."""
 
