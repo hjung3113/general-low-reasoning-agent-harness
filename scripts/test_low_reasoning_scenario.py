@@ -465,6 +465,27 @@ class RetryPersistenceTests(unittest.TestCase):
         self.assertIn("phase set plan", a1["judgment"]["reason"])
 
 
+class WallClockHonestyTests(unittest.TestCase):
+    """C2 — wall_clock_seconds must be real monotonic, not max(monotonic, client)."""
+
+    def test_wall_clock_is_real_monotonic_not_max(self) -> None:
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="wallhonest."))
+        # Client claims a huge wall time but actual runtime is small.
+        client = FakeClient(
+            scripted_responses=["harness phase set plan"],
+            scripted_wall_seconds=[999.0],
+        )
+        record = run_trial(fixture, 1, client, tmp / "scratch", tmp / "evidence")
+        # Real elapsed should be tiny.
+        self.assertLess(record.wall_clock_seconds, 5.0)
+        # Client-reported value preserved separately, informational only.
+        self.assertEqual(record.api_wall_seconds, 999.0)
+        # Budget enforcement uses real wall_clock — 999s would otherwise have
+        # tripped the cap; assert it did NOT.
+        self.assertNotIn("wall_clock", record.budget_caps_hit)
+
+
 class AggregatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="agg."))
