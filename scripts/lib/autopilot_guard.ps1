@@ -24,6 +24,13 @@ if ($env:HARNESS_AUTOPILOT_NETWORK -eq "deny") {
             at = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
             network_guard_posture = "windows_audit_guard_degraded"
         } | ConvertTo-Json -Compress
+        # P2-A4: ensure .harness/ directory exists before AppendAllText so
+        # audit row is never silently lost on a fresh clone where .harness/
+        # has not yet been created by the harness installer.
+        $dir = Split-Path $auditPath
+        if (-not (Test-Path $dir)) {
+            try { New-Item -ItemType Directory -Force -Path $dir | Out-Null } catch {}
+        }
         try {
             [System.IO.File]::AppendAllText($auditPath, $entry + "`n", (New-Object System.Text.UTF8Encoding($false)))
         } catch {}

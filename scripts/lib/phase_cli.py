@@ -483,8 +483,13 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     stdin_isatty: bool = sys.stdin.isatty()
     # P2-P2-2: os.ttyname is POSIX-only (raises AttributeError on Windows).
     # Guard with os.name == "posix" so Windows callers get an empty string
-    # instead of a traceback. The cross-TTY nonce check still functions
-    # because consumer_tty="" differs from any real minter_tty value.
+    # instead of a traceback.
+    # TODO(v0.8 P2-A2): On Windows, consumer_tty="" is passed here. The mint
+    # side (approval_nonce.mint) now stamps a unique "win:<pid>:<token>" into
+    # the nonce file so that "" != stored_minter_tty, preserving cross-TTY
+    # distinctness.  Real per-session enforcement on Windows requires the mint
+    # CLI to STORE its session identifier and the consume side to read its OWN
+    # session id (approve-nonce mint CLI carryover — v0.8 follow-up).
     consumer_tty: str = (
         os.ttyname(sys.stdin.fileno())
         if (stdin_isatty and os.name == "posix")

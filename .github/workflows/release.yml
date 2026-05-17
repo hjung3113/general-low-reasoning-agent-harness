@@ -53,6 +53,10 @@ jobs:
         env:
           HARNESS_OIDC_TEST_MODE: '1'
           # Per-provider stubs auto-set by the smoke runner via _ci_env_overrides()
+          # §12.7 P2-A3: strict verb registry for release-gate rows; nice-to-have
+          # and degraded-tolerant rows intentionally omitted so they don't block
+          # on warn-only verb additions during development.
+          HARNESS_STRICT_VERB_REGISTRY: ${{ (matrix.gate == 'release-gate') && '1' || '' }}
         continue-on-error: ${{ matrix.gate == 'nice-to-have' || matrix.gate == 'release-gate-degraded-tolerant' }}
         run: |
           ${{ matrix.launcher }} scripts/release_smoke_test.py --release --evidence-dir release-evidence

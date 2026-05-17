@@ -194,6 +194,32 @@ def file_state(
 # Install state read/write
 # ---------------------------------------------------------------------------
 
+def _git_user_email_sha256() -> str | None:
+    """§12.6 producer-side stamp: sha256(git config user.email) at install time.
+
+    Returns the lowercase-hex digest of ``email.lower().strip()`` encoded UTF-8,
+    or ``None`` if git is absent, ``user.email`` is unset, or the subprocess
+    call fails for any reason.
+
+    The field name is ``git_user_email_at_install_sha256`` in the install-record.
+    phase_approve's cycle-1 fix-B consumer side already handles None correctly.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        email = result.stdout.strip()
+        if not email:
+            return None
+        return hashlib.sha256(email.lower().strip().encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
 def write_install_state(
     *,
     root: Path,
@@ -251,6 +277,12 @@ def write_install_state(
     provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
+
+    # §12.6 producer-side: stamp gitconfig fingerprint so phase_approve can
+    # verify the approver's email matches the install-time git user.
+    # Value is None when git is absent or user.email is unset (phase_approve
+    # already skips the check when None — backward compat preserved).
+    installed["git_user_email_at_install_sha256"] = _git_user_email_sha256()
 
     # S12 — compute and stamp installed_files_chain_hash (§6)
     chain_manifest: dict[str, object] = {

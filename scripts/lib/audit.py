@@ -301,6 +301,7 @@ KNOWN_VERBS: frozenset = frozenset([
     "migrate.state_v2",
     "ci.oidc.jti.consumed",
     "ci.oidc.jti.replay",
+    "ci.oidc.jti.store_rotated",  # P2-A5: corrupted JTI store rotation event
     # FSD dashboard verbs (slash-command wrappers)
     "fsd-run-all",
     "fsd-run-phase",

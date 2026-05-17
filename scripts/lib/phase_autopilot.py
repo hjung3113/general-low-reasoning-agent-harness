@@ -47,6 +47,7 @@ import json
 import os
 import secrets
 import sys
+import time
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
@@ -315,10 +316,38 @@ def _check_and_record_jti(
     """
     jti_seen_path = harness_dir / "oidc_jti_seen.json"
     try:
-        if jti_seen_path.exists():
+        try:
             data = json.loads(jti_seen_path.read_text(encoding="utf-8"))
             seen: list = data.get("seen", [])
-        else:
+        except FileNotFoundError:
+            # Fresh install — no prior JTIs recorded yet.
+            seen = []
+        except json.JSONDecodeError:
+            # Corrupted-but-existent file: distinguish from "missing".
+            # Rotate the corrupt file aside with a timestamped backup so
+            # replay-protection history is not silently destroyed; audit the
+            # rotation event so the operator can investigate.
+            sys.stderr.write(
+                f"WARNING: JTI replay-protection store {jti_seen_path} is corrupted. "
+                f"Rotating to {jti_seen_path}.corrupted.{int(time.time())} and starting fresh.\n"
+            )
+            backup = jti_seen_path.with_suffix(
+                f".corrupted.{int(time.time())}"
+            )
+            try:
+                jti_seen_path.rename(backup)
+            except OSError:
+                pass  # best-effort; proceed with empty history
+            try:
+                _audit.audit_append(
+                    {
+                        "verb": "ci.oidc.jti.store_rotated",
+                        "args": {"backup": str(backup)},
+                    },
+                    audit_path=audit_path,
+                )
+            except Exception:
+                pass  # audit failure must not block the rotation
             seen = []
 
         if jti in seen:

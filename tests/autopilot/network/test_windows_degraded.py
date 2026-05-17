@@ -383,6 +383,9 @@ _PS1_REQUIRED = [
     "[System.Text.UTF8Encoding]",  # replaces utf8NoBOM (PS 6.0+ only)
     "[DateTime]::UtcNow",          # replaces Get-Date -AsUTC (PS 7.1+ only)
     "5.1",                         # PS 5.1 compatibility statement in banner
+    # P2-A4 contract pin: dir must be created before AppendAllText so audit
+    # row is never silently lost when .harness/ directory is absent.
+    "New-Item -ItemType Directory",
 ]
 _CURL_CMD_REQUIRED = [
     "HARNESS_AUTOPILOT_NETWORK",

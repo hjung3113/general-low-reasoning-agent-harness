@@ -82,6 +82,28 @@ def _gen_id() -> str:
     return base64.b32encode(raw).decode("ascii").rstrip("=").lower()
 
 
+def _ensure_windows_tty_path(tty_path: str) -> str:
+    """Defense-in-depth: on Windows, replace an empty tty_path with a unique
+    session identifier so that mint and consume in different processes always
+    produce *distinct* values, preserving the cross-TTY guard (§3.1.1).
+
+    On POSIX the OS-assigned tty device path is already unique per session, so
+    this function is a no-op there.
+
+    NOTE on same-process scenario: if the mint and consume calls run inside the
+    *same* process (same pid), they will produce the same identifier.  That is
+    intentional — a same-process mint+consume is exactly the self-approval spoof
+    the cross-TTY guard is designed to block.
+
+    TODO(v0.8): the approve-nonce mint CLI (P2-A5 carryover) should STORE its
+    session identifier alongside the nonce so the consume side can read its OWN
+    session id rather than computing it on the fly.
+    """
+    if not tty_path and os.name != "posix":
+        tty_path = f"win:{os.getpid()}:{secrets.token_hex(4)}"
+    return tty_path
+
+
 def mint(
     nonce_dir: Path,
     *,
@@ -90,6 +112,11 @@ def mint(
     ttl_seconds: int = 120,
 ) -> Nonce:
     """Write a single-use nonce file. Returns the in-memory Nonce."""
+    # §3.1.1 defense-in-depth: on Windows os.ttyname is unavailable and callers
+    # pass minter_tty="" — replace with a unique per-process session identifier
+    # so cross-TTY guard does not collapse to no-op when both sides use "".
+    minter_tty = _ensure_windows_tty_path(minter_tty)
+
     nonce_dir = Path(nonce_dir)
     nonce_dir.mkdir(parents=True, exist_ok=True)
     # Tighten dir perms on POSIX (best-effort).
