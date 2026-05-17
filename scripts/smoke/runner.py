@@ -171,6 +171,34 @@ def _budget_caps_hit(wall: float, input_tokens: int, output_tokens: int) -> list
     return hits
 
 
+def prepare_scratch(fixture: dict, dest: Path, scratch_root: Path) -> Path:
+    """Safely (re)prepare a scratch dir.
+
+    SecM2 — refuses to rmtree `dest` if it is a symlink OR if its resolved
+    real path is not contained under `scratch_root.realpath()`. Returns the
+    prepared `dest` path. This wrapper exists for symlink-attack hardening
+    around the runner's per-attempt directory reset.
+    """
+    dest = Path(dest)
+    scratch_root = Path(scratch_root).resolve()
+    if dest.exists() or dest.is_symlink():
+        if dest.is_symlink():
+            raise RuntimeError(
+                f"prepare_scratch: refuses to operate on symlink dest {dest!s}"
+            )
+        real = Path(os.path.realpath(dest))
+        try:
+            real.relative_to(scratch_root)
+        except ValueError:
+            raise RuntimeError(
+                f"prepare_scratch: dest realpath {real!s} escapes scratch_root "
+                f"{scratch_root!s}; refusing rmtree"
+            )
+        import shutil as _shutil
+        _shutil.rmtree(dest)
+    return prepare_scratch_dir(fixture, dest)
+
+
 def _is_live_client(client) -> bool:
     """C4 — detect HaikuClient (live API) vs FakeClient (unit-test double).
 
@@ -201,12 +229,8 @@ def _single_attempt(
     attempt_label: str,
 ) -> tuple[JudgeResult, TrialRecord, Path]:
     dest = Path(scratch_root) / f"trial-{fixture['fixture_id']}-{trial_index:03d}-{attempt_label}"
-    if dest.exists():
-        # Wipe stale dir for reproducibility (deterministic fixture rewrite).
-        import shutil
-
-        shutil.rmtree(dest)
-    prepare_scratch_dir(fixture, dest)
+    # SecM2 — symlink-safe rewrite.
+    prepare_scratch(fixture, dest, scratch_root=scratch_root)
     prompt = _render_prompt(fixture)
     t0 = time.monotonic()
     try:
