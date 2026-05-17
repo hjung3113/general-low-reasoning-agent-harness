@@ -11,6 +11,12 @@ from pathlib import Path
 
 import harness
 
+from lib.operational_paths import (
+    STATE_FILE_PATHS,
+    OPERATIONAL_PATHS,
+    INSTALL_PATHS,
+)
+
 
 CHOICES = {
     "1": "roo",
@@ -81,7 +87,41 @@ def run(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Also remove .harness/installed-manifest.json. Requires selecting all uninstall scopes.",
     )
+    # T0-3 flag split (CONTRACT-PIN §5.3). These flags iterate the
+    # operational_paths.py tuples and remove only those artifacts; they do
+    # NOT require --select.
+    parser.add_argument(
+        "--remove-state",
+        action="store_true",
+        help="Remove STATE_FILE_PATHS (e.g. .scratch/phase-state.json). T0-3.",
+    )
+    parser.add_argument(
+        "--remove-operational",
+        action="store_true",
+        help="Remove OPERATIONAL_PATHS (.harness/audit.log + .harness/session.lock + .harness/backups/). T0-3.",
+    )
+    parser.add_argument(
+        "--remove-install-state-only",
+        action="store_true",
+        help="Remove INSTALL_PATHS (.harness/installed-manifest.json) only. T0-3.",
+    )
+    parser.add_argument(
+        "--remove-all",
+        action="store_true",
+        help="Remove STATE + OPERATIONAL + INSTALL paths (union of T0-3 flags).",
+    )
     args = parser.parse_args(argv)
+    # Honour the T0-3 flag split first; bypass the --select gate when any
+    # path-tuple flag is set.
+    if args.remove_all or args.remove_state or args.remove_operational or args.remove_install_state_only:
+        if args.target is None:
+            parser.error("--target is required for path-tuple removal flags")
+        return _remove_path_tuples(
+            target=args.target,
+            remove_state=args.remove_state or args.remove_all,
+            remove_operational=args.remove_operational or args.remove_all,
+            remove_install_state=args.remove_install_state_only or args.remove_all,
+        )
     if args.interactive:
         args = prompt_interactive(args)
     if args.target is None:
@@ -176,6 +216,49 @@ def uninstall(
     print(f"removed_files={len(plan.remove_paths)}")
     print(f"removed_blocks={len(plan.remove_blocks)}")
     return 1 if plan.conflicts else 0
+
+
+def _remove_path_tuples(
+    *,
+    target: Path,
+    remove_state: bool,
+    remove_operational: bool,
+    remove_install_state: bool,
+) -> int:
+    """T0-3 flag-split removal: iterate STATE_FILE_PATHS/OPERATIONAL_PATHS/INSTALL_PATHS.
+
+    Each entry is interpreted as a path relative to ``target``. Entries
+    ending in ``/`` are removed as directory trees; other entries are
+    unlinked. Missing paths are silently tolerated (idempotent).
+    """
+    import shutil
+
+    target = target.resolve()
+    selected: list[str] = []
+    if remove_state:
+        selected.extend(STATE_FILE_PATHS)
+    if remove_operational:
+        selected.extend(OPERATIONAL_PATHS)
+    if remove_install_state:
+        selected.extend(INSTALL_PATHS)
+
+    removed = 0
+    for rel in selected:
+        path = target / rel
+        if rel.endswith("/"):
+            if path.exists():
+                shutil.rmtree(path)
+                removed += 1
+        else:
+            try:
+                path.unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+    print("path-tuple uninstall complete")
+    print(f"target={target}")
+    print(f"removed={removed}")
+    return 0
 
 
 def selects_all_scopes(selected: set[str]) -> bool:

@@ -1,0 +1,68 @@
+// DERIVED FROM ADR Artifact 1 — DO NOT REGENERATE FROM RUNTIME
+{
+  "audit_entries": [
+    {
+      "verb": "phase.set",
+      "args": {"phase": "discuss"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    },
+    {
+      "verb": "phase.set",
+      "args": {"phase": "plan"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    },
+    {
+      "verb": "phase.approve",
+      "args": {"by": "smoke"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    },
+    {
+      "verb": "phase.set",
+      "args": {"phase": "execute"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    },
+    {
+      "verb": "phase.approve",
+      "args": {"by": "smoke"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    },
+    {
+      "verb": "phase.set",
+      "args": {"phase": "done"},
+      "before_sha256": "<SHA256>",
+      "after_sha256": "<SHA256>",
+      "at": "<TIMESTAMP>",
+      "by": "<ACTOR>",
+      "index": "<MONOTONIC>"
+    }
+  ],
+  "final_state": {
+    "phase": "done",
+    "approved": "<ANY>",
+    "approved_at": "<ANY>",
+    "approved_by": "<ANY>",
+    "updated_at": "<TIMESTAMP>",
+    "updated_by": "<ACTOR>",
+    "state_schema_version": 2
+  }
+}

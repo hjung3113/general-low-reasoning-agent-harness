@@ -23,6 +23,7 @@ from lib.manifest import (
 )
 from lib.profiles import KNOWN_PROFILES
 from lib.append_block import parse_append_block, sha256_text, normalize_payload
+from lib.atomic_io import atomic_write_text
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +66,11 @@ def manifest_sha256(root: Path) -> str:
 # ---------------------------------------------------------------------------
 
 def write_json(path: Path, data: object) -> None:
+    # Routed through lib.atomic_io.atomic_write_text (T0-A) so a crash
+    # between open() and close() cannot corrupt managed JSON state.
+    # See .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md task 13.
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +235,11 @@ def read_install_state(target: Path) -> dict[str, object]:
     path = target / INSTALL_STATE
     if not path.exists():
         return {"version": None, "files": {}}
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Local import to avoid a top-level cycle: state_diagnostics has no
+    # cross-import back into state.py today, but the install-state reader
+    # is a hot path imported by check.py which also imports state.py.
+    from lib.state_diagnostics import load_state_json
+    return load_state_json(path)
 
 
 # ---------------------------------------------------------------------------

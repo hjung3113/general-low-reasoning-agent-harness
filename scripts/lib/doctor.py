@@ -68,10 +68,12 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(roadmap_state_doctor_findings(root))
     findings.extend(phase_state_path_doctor_findings(root))
     findings.extend(verification_contract_doctor_findings(root))
+    findings.extend(review_evidence_path_doctor_findings(root))
     findings.extend(installed_scope_doctor_findings(root))
     findings.extend(command_mode_doctor_findings(root))
     findings.extend(db_context_doctor_findings(root))
     findings.extend(opencode_profile_rules_doctor_findings(root))
+    findings.extend(scope_double_star_doctor_findings(root))
     findings.append(
         DoctorFinding(
             severity="P3",
@@ -238,6 +240,46 @@ def verification_contract_doctor_findings(root: Path) -> list[DoctorFinding]:
     return findings
 
 
+def review_evidence_path_doctor_findings(root: Path) -> list[DoctorFinding]:
+    """T0-4 (ADR-004): warn when ``review[i].evidence_path == ""``.
+
+    Non-failing finding. The schema accepts the empty-string sentinel so the
+    T0-4 migrator can produce valid output for soft-prefix entries it
+    relocates from ``verification``; this finding prompts maintainers to
+    backfill the path manually.
+    """
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return []
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    review = state.get("review") or []
+    if not isinstance(review, list):
+        return []
+    findings: list[DoctorFinding] = []
+    for index, entry in enumerate(review):
+        if not isinstance(entry, dict):
+            continue
+        ev = entry.get("evidence_path")
+        if ev == "":
+            actor = entry.get("actor", "?")
+            findings.append(
+                DoctorFinding(
+                    severity="P3",
+                    code="review_evidence_path_empty",
+                    path=".scratch/phase-state.json",
+                    cause=f"review[{index}] (actor={actor!r}) has empty evidence_path.",
+                    impact="Reviewers cannot audit which artifact supports the human evidence; "
+                           "the T0-4 migrator leaves this empty when it relocates a soft-prefix verification entry.",
+                    fix="Backfill review[{}].evidence_path with the URL or repo-relative path of the supporting artifact.".format(index),
+                    evidence=f"review[{index}].evidence_path=''",
+                )
+            )
+    return findings
+
+
 def installed_scope_doctor_findings(root: Path) -> list[DoctorFinding]:
     return [
         DoctorFinding(
@@ -377,6 +419,56 @@ def opencode_profile_rules_doctor_findings(root: Path) -> list[DoctorFinding]:
                     impact="Profile-specific rules will not be loaded when the command is invoked.",
                     fix=f"Add the profile-rules read instruction to .opencode/commands/{name}.",
                     evidence=f"{name}: missing .opencode/profile-rules/ read instruction",
+                )
+            )
+    return findings
+
+
+def scope_double_star_doctor_findings(root: Path) -> list[DoctorFinding]:
+    """T0-2-SecM1: warn when a scope entry contains literal `**`.
+
+    Per ADR-002 (G2-E) the loader treats `**` as a single-level `*`; this is
+    an easy misconception for operators familiar with gitignore/rsync. We
+    surface a P3 finding (non-failing) per offending entry so the operator
+    can rewrite the pattern using explicit deeper paths if recursion was
+    intended.
+    """
+    path = root / ".scratch/phase-state.json"
+    if not path.exists():
+        return []
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    findings: list[DoctorFinding] = []
+    for field in ("allowed_paths", "blocked_paths"):
+        entries = state.get(field, []) or []
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, str):
+                continue
+            if "**" not in entry:
+                continue
+            findings.append(
+                DoctorFinding(
+                    severity="P3",
+                    code="scope_double_star_treated_as_single_star",
+                    path=".scratch/phase-state.json",
+                    cause=(
+                        f"scope entry {entry!r} uses `**` which is treated as `*` "
+                        f"(single-level); use deeper paths if recursion intended."
+                    ),
+                    impact=(
+                        "Operators expecting gitignore-style recursive globbing may "
+                        "see fewer matches than intended; the loader silently treats "
+                        "`**` as a single segment per ADR-002."
+                    ),
+                    fix=(
+                        f"Rewrite {field}[{index}] using explicit deeper paths "
+                        f"(e.g., 'docs/a/*.md', 'docs/a/b/*.md') instead of `**`."
+                    ),
+                    evidence=f"{field}[{index}]={entry}",
                 )
             )
     return findings

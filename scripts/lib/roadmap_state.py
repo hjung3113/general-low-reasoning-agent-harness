@@ -156,7 +156,8 @@ def roadmap_state_sync_applicable(root: Path) -> bool:
     if not state_path.exists() or not roadmap_path.exists() or not phase_state_path.exists():
         return False
     state = parse_state_snapshot(state_path.read_text(encoding="utf-8"))
-    phase_state = json.loads(phase_state_path.read_text(encoding="utf-8"))
+    from lib.state_diagnostics import load_state_json
+    phase_state = load_state_json(phase_state_path)
     return any(
         (
             state.total_phases is not None,
@@ -186,7 +187,8 @@ def find_roadmap_state_sync_findings(root: Path) -> list[str]:
 
     phases = parse_roadmap_phases(roadmap_path.read_text(encoding="utf-8"))
     state = parse_state_snapshot(state_path.read_text(encoding="utf-8"))
-    phase_state = json.loads(phase_state_path.read_text(encoding="utf-8"))
+    from lib.state_diagnostics import load_state_json
+    phase_state = load_state_json(phase_state_path)
 
     if not phases:
         findings.append(".planning/ROADMAP.md has no parseable phase checklist under ## Phases")

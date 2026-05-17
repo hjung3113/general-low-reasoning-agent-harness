@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -20,6 +22,7 @@ from lib.manifest import (
     validate_scope_names,
 )
 from lib.profiles import PROFILE_MODE_OWNERS
+from lib.state_diagnostics import load_state_json
 from lib.roadmap_state import (
     check_roadmap_state_sync,
     roadmap_state_sync_applicable,
@@ -46,23 +49,158 @@ from lib.worktree import (
 from lib.workflow_static_checks import (
     verification_placeholder_reason,
 )
+from lib.managed_block import parse_blocks
+
+
+@dataclass(frozen=True)
+class ManagedBlockWarning:
+    code: str
+    path: str
+    message: str
+
+
+def _is_trivial_phase_state(state_path: Path) -> bool:
+    """Return True when ``state_path`` matches the clean-skeleton init signature.
+
+    The fresh-repo state has ``updated_by == "harness-init"`` AND
+    ``updated_at == "1970-01-01T00:00:00Z"`` (per
+    ``harness/skeleton/clean/.scratch/phase-state.json``). Either field
+    diverging means the file has been touched and drift detection should
+    not be silently suppressed when audit.log is absent.
+    """
+    if not state_path.exists():
+        return True
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return (
+        isinstance(data, dict)
+        and data.get("updated_by") == "harness-init"
+        and data.get("updated_at") == "1970-01-01T00:00:00Z"
+    )
+
+
+def check_drift(root: Path, *, stderr=None) -> None:
+    """Emit a drift warning if state SHA-256 diverges from last audit entry.
+
+    Per ADR-003a G2-D (T0-3 Task 8): compares the live
+    ``.scratch/phase-state.json`` SHA-256 against the last audit entry's
+    ``after_sha256`` in ``.harness/audit.log``. Drift never fails the check
+    — only stderr is touched.
+
+    Missing/empty audit.log handling (C1 amendment):
+
+    - audit.log absent/empty AND state is trivial (clean-skeleton init
+      signature) → silent return (legitimate first-use).
+    - audit.log absent/empty AND state has been edited → WARNING that drift
+      detection is disabled.
+
+    The warning template MUST NOT reference any future verbs such as
+    ``harness phase audit`` (deferred to 02c).
+    """
+    if stderr is None:
+        stderr = sys.stderr
+    audit_path = root / ".harness" / "audit.log"
+    state_path = root / ".scratch" / "phase-state.json"
+    if not audit_path.exists() or audit_path.stat().st_size == 0:
+        if _is_trivial_phase_state(state_path):
+            return  # G1-A first-write suppression on fresh repo
+        print(
+            "warning: audit log missing — drift detection disabled. "
+            "Run 'harness phase set ...' to re-establish baseline.",
+            file=stderr,
+        )
+        return
+    if not state_path.exists():
+        return
+    try:
+        from lib.audit import read_last_entry, compute_state_hash
+    except Exception:
+        return
+    last = read_last_entry(audit_path)
+    if last is None:
+        return
+    expected = last.get("after_sha256")
+    if not expected:
+        return
+    actual = compute_state_hash(state_path)
+    if expected == actual:
+        return
+    try:
+        current_phase = json.loads(state_path.read_text(encoding="utf-8")).get(
+            "phase", "<unknown>"
+        )
+    except Exception:
+        current_phase = "<unknown>"
+    print(
+        f"warning: .scratch/phase-state.json sha256 ({actual}) does not match "
+        f"the last audit entry's after_sha256 ({expected}) at index "
+        f"{last.get('index')}. Drift detected. To restore audit baseline, "
+        f"re-run the last CLI verb that should have produced this state "
+        f"(typically 'harness phase set {current_phase}' or "
+        f"'harness phase approve'). Manual edits are not currently tracked.",
+        file=stderr,
+    )
+
+
+_REQUIRED_MARKERS = (
+    (".planning/ROADMAP.md", "roadmap-phases"),
+    (".planning/STATE.md", "state-current"),
+)
+
+
+def managed_block_warnings(root: Path) -> list[ManagedBlockWarning]:
+    findings: list[ManagedBlockWarning] = []
+    for rel_path, slug in _REQUIRED_MARKERS:
+        path = root / rel_path
+        if not path.exists():
+            continue
+        try:
+            blocks = parse_blocks(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            findings.append(
+                ManagedBlockWarning(
+                    code="malformed_managed_block",
+                    path=rel_path,
+                    message=str(exc),
+                )
+            )
+            continue
+        if slug not in blocks:
+            findings.append(
+                ManagedBlockWarning(
+                    code="missing_managed_block",
+                    path=rel_path,
+                    message=(
+                        f"managed:{slug} block missing in {rel_path}; "
+                        f"run `python3 scripts/harness.py state repair` to add it."
+                    ),
+                )
+            )
+    return findings
 
 
 CLEAN_SKELETON = Path("harness/skeleton/clean")
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+#
+# T0-4 (ADR-004 / G4-A): the verification allowlist is the canonical 7-verb
+# tuple. The previous soft prefixes (Confirm/Review/Inspect/Validate/Roo/
+# core-only/OpenCode-only) AND `bash ` (D-G4) are intentionally rejected.
+# The core checker (this module) NEVER executes a verification string —
+# the field is a developer-trusted manifest consumed by external runners
+# (e.g., scripts/release_smoke_test.py). See ADR-004 G4-B + L19 in
+# CHANGELOG.md `### Breaking`.
 VERIFICATION_PREFIXES = (
     "python3 ",
     "git ",
     "jq ",
     "npx ",
-    "Validate ",
-    "Review ",
-    "Inspect ",
-    "Confirm ",
-    "core-only ",
-    "OpenCode-only ",
-    "Roo",
+    "pytest ",
+    "harness ",
+    "make ",
 )
+VERIFICATION_VERBS_INLINE = "python3, git, jq, npx, pytest, harness, make"
 REQUIRED_TARGET_PHRASES = {
     "AGENTS.md": (
         "Karpathy-Inspired Coding Guidelines",
@@ -95,6 +233,7 @@ def check(
             check_changed_paths(root, base)
         if worktree:
             check_worktree_paths(root)
+        check_drift(root)
         return
 
     manifest = load_manifest_data(root)
@@ -136,6 +275,8 @@ def check(
         check_changed_paths(check_target, base)
     if worktree:
         check_worktree_paths(check_target)
+    # G2-D drift detection (T0-3 Task 8) — always non-fatal.
+    check_drift(root)
 
 
 def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.0-dev+unknown") -> bool:
@@ -153,7 +294,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     installed_path = target / INSTALL_STATE
     if not installed_path.exists():
         raise SystemExit(f"Target is missing {INSTALL_STATE}")
-    installed = json.loads(installed_path.read_text(encoding="utf-8"))
+    installed = load_state_json(installed_path)
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")
     validate_installed_scope_names(installed)
@@ -239,6 +380,8 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             check_phase_state_semantics(path)
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
+    for warning in managed_block_warnings(target):
+        print(f"warning: {warning.code} in {warning.path}: {warning.message}")
 
 
 def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
@@ -293,7 +436,15 @@ def check_json(path: Path) -> None:
 
 
 def check_phase_state_semantics(path: Path) -> None:
-    state = json.loads(path.read_text(encoding="utf-8"))
+    state = load_state_json(path)
+    # ADR-001: state_schema_version is required (v2 = post-T0-1 shape). A
+    # record without this field is a pre-slice (v0) record and must be
+    # migrated forward before the rest of the checker runs.
+    if state.get("state_schema_version") != 2:
+        raise SystemExit(
+            f"{path} missing or stale state_schema_version (expected 2). "
+            f"Run: python3 scripts/harness.py migrate state --forward"
+        )
     for key in ("updated_at",):
         if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
             raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
@@ -330,6 +481,15 @@ def check_phase_state_semantics(path: Path) -> None:
     phase = state.get("phase")
     if phase not in {"discuss", "plan", "execute", "done"}:
         raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
+    # SM5: `approved`, when present, MUST be a bool. Reject string truthy
+    # values like "yes"/"true" across all phases. (Note: isinstance(x, bool)
+    # is the only correct test in Python; bool is a subclass of int so the
+    # ordering matters but `int` is not an accepted approval type either.)
+    if "approved" in state and not isinstance(state["approved"], bool):
+        raise SystemExit(
+            f"{path} approved must be a JSON boolean (true/false); got "
+            f"{type(state['approved']).__name__}={state['approved']!r}."
+        )
     if phase == "discuss" and state.get("approved") is not False:
         raise SystemExit(f"{path} discuss phase requires approved=false.")
     if phase == "plan":
@@ -372,30 +532,95 @@ def check_phase_state_semantics(path: Path) -> None:
     if phase == "done":
         required_done = (
             "plan_id",
-            "verification",
             "state_path",
             "plan_path",
             "checkpoint_path",
             "current_checkpoint",
             "next_action",
         )
+        # T0-4 (ADR-004): verification may be empty when `review` carries
+        # the closure evidence. The "verification OR review non-empty"
+        # constraint is enforced below, after both have been validated.
         missing = [key for key in required_done if not state.get(key)]
-        if state.get("approved") is not False:
-            missing.append("approved=false")
+        # ADR-001 option 3: the schema constraint on ``approved`` is dropped
+        # from the ``done`` branch — both ``approved=true`` and ``approved=false``
+        # are valid. See docs/adr/2026-05-16-hardening-bundle.md ADR-001.
         if missing:
             raise SystemExit(f"{path} done phase requires {', '.join(missing)}.")
     verification = state.get("verification", [])
-    if verification:
-        if not isinstance(verification, list):
-            raise SystemExit(f"{path} verification must be an array.")
-        for index, command in enumerate(verification):
-            if not isinstance(command, str) or not command.strip():
-                raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
-            placeholder_reason = verification_placeholder_reason(command)
-            if placeholder_reason:
-                raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
-            if not command.startswith(VERIFICATION_PREFIXES):
-                raise SystemExit(f"{path} verification[{index}] must start with an allowed command or review verb.")
+    if verification is None:
+        verification = []
+    if not isinstance(verification, list):
+        raise SystemExit(f"{path} verification must be an array.")
+    for index, command in enumerate(verification):
+        if not isinstance(command, str) or not command.strip():
+            raise SystemExit(f"{path} verification[{index}] must be a non-empty string.")
+        placeholder_reason = verification_placeholder_reason(command)
+        if placeholder_reason:
+            raise SystemExit(f"{path} verification[{index}] is a {placeholder_reason}.")
+        if not command.startswith(VERIFICATION_PREFIXES):
+            raise SystemExit(
+                f"{path} verification[{index}] = {command!r} does not start with an allowed verb.\n"
+                f"Allowed verbs: {VERIFICATION_VERBS_INLINE}.\n"
+                f"See docs/protocol-spec.md#verification-allowlist "
+                f"(source: scripts/lib/check.py VERIFICATION_PREFIXES)."
+            )
+    # T0-4 (ADR-004) review evidence validator.
+    review = state.get("review", [])
+    if review is None:
+        review = []
+    if not isinstance(review, list):
+        raise SystemExit(f"{path} review must be an array.")
+    for index, entry in enumerate(review):
+        if not isinstance(entry, dict):
+            raise SystemExit(f"{path} review[{index}] must be an object.")
+        # Reject extra properties (mirror schema additionalProperties: false).
+        allowed_keys = {"actor", "at", "evidence_path", "summary"}
+        extra = set(entry.keys()) - allowed_keys
+        if extra:
+            raise SystemExit(
+                f"{path} review[{index}] has unexpected keys: {sorted(extra)}."
+            )
+        for key in ("actor", "at", "evidence_path", "summary"):
+            if key not in entry:
+                raise SystemExit(f"{path} review[{index}].{key} is required.")
+            if not isinstance(entry[key], str):
+                raise SystemExit(
+                    f"{path} review[{index}].{key} must be a string; got "
+                    f"{type(entry[key]).__name__}."
+                )
+        # Non-empty constraints (evidence_path may be empty; doctor warns).
+        if not entry["actor"]:
+            raise SystemExit(f"{path} review[{index}].actor must be non-empty.")
+        if not entry["summary"]:
+            raise SystemExit(f"{path} review[{index}].summary must be non-empty.")
+        if not UTC_TIMESTAMP.fullmatch(entry["at"]):
+            raise SystemExit(
+                f"{path} review[{index}].at must be an ISO-8601 UTC timestamp; "
+                f"got {entry['at']!r}."
+            )
+        # T0-4 SecM4: when evidence_path is non-empty, reject traversal
+        # segments, absolute paths, and URL schemes. The empty string is
+        # accepted as a migration sentinel (see state_migrate_t04).
+        ev = entry["evidence_path"]
+        if ev:
+            ev_segments = ev.replace("\\", "/").split("/")
+            if (
+                ".." in ev_segments
+                or os.path.isabs(ev)
+                or "://" in ev
+            ):
+                raise SystemExit(
+                    f"{path} review[{index}].evidence_path: traversal or "
+                    f"absolute path not allowed (got: {ev})"
+                )
+    # T0-4 (ADR-004): a closed (done) phase requires verification OR review
+    # non-empty — at least one form of evidence must be present.
+    if state.get("phase") == "done" and not verification and not review:
+        raise SystemExit(
+            f"{path} done phase requires non-empty verification OR review "
+            f"(at least one form of evidence)."
+        )
 
 
 def check_command_modes(root: Path) -> None:
@@ -430,7 +655,7 @@ def check_phase_reference_drift(root: Path) -> None:
 
 def check_phase_state_paths(root: Path) -> None:
     state_path = root / ".scratch/phase-state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state = load_state_json(state_path)
     missing = []
     for key in ("state_path", "plan_path", "checkpoint_path"):
         value = state.get(key)

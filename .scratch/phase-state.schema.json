@@ -9,10 +9,16 @@
     "approved",
     "automation_mode",
     "auto_selected",
+    "state_schema_version",
     "updated_at",
-    "updated_by"
+    "updated_by",
+    "review"
   ],
   "properties": {
+    "state_schema_version": {
+      "type": "integer",
+      "description": "Migrator-owned schema version. v2 is the post-T0-1 shape (ADR-001)."
+    },
     "phase": {
       "type": "string",
       "enum": [
@@ -100,7 +106,7 @@
       },
       "minItems": 1,
       "uniqueItems": true,
-      "description": "Paths or path prefixes allowed during execute."
+      "description": "Paths matched against changed-file lists. Each entry is either a literal path, a literal directory prefix ending in '/', or a glob using ADR-002 grammar (*, ?, [abc], [!abc]; / is the separator and * does not cross it; ** is treated as *; case-sensitive)."
     },
     "blocked_paths": {
       "type": "array",
@@ -109,7 +115,7 @@
         "minLength": 1
       },
       "uniqueItems": true,
-      "description": "Paths or path prefixes that remain out of scope."
+      "description": "Glob/literal entries that override allowed_paths (ADR-002 precedence (a)). Same grammar as allowed_paths."
     },
     "acceptance_criteria": {
       "type": "array",
@@ -126,8 +132,40 @@
         "type": "string",
         "minLength": 1
       },
-      "minItems": 1,
-      "description": "Commands or checks expected during execute."
+      "minItems": 0,
+      "description": "Machine-executable commands; each item MUST start with one of the 7 allowed verbs (python3, git, jq, npx, pytest, harness, make) — enforced by scripts/lib/check.py VERIFICATION_PREFIXES (ADR-004 / G4-A). The core checker NEVER executes these strings (ADR-004 / G4-B)."
+    },
+    "review": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actor",
+          "at",
+          "evidence_path",
+          "summary"
+        ],
+        "properties": {
+          "actor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+          },
+          "evidence_path": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "minItems": 0,
+      "description": "Human-evidence entries (actor, ISO-8601-UTC at, evidence_path, summary). Empty evidence_path is accepted by the schema but flagged by `harness doctor` (T0-4)."
     },
     "notes": {
       "type": "array",
@@ -370,9 +408,6 @@
           "verification"
         ],
         "properties": {
-          "approved": {
-            "const": true
-          },
           "plan_id": {
             "type": "string"
           },
@@ -395,7 +430,23 @@
           "next_action": {
             "type": "string"
           }
-        }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "verification": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "review": {
+                "minItems": 1
+              }
+            }
+          }
+        ]
       }
     },
     {

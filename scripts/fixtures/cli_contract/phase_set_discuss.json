@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "verb": "phase.set",
+  "previous_phase": null,
+  "phase": "discuss",
+  "state_path": ".scratch/phase-state.json",
+  "audit_entry_index": 1,
+  "updated_at": "<NANOS>",
+  "updated_by": "<EMAIL>"
+}

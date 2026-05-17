@@ -419,6 +419,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": ".roo/commands/done.md",
+      "source": ".roo/commands/done.md",
+      "policy": "harness-owned"
+    },
+    {
       "path": ".roo/rules/global.md",
       "source": ".roo/rules/global.md",
       "policy": "harness-owned"
@@ -719,6 +724,31 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/atomic_io.py",
+      "source": "scripts/lib/atomic_io.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/backups.py",
+      "source": "scripts/lib/backups.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/exitcodes.py",
+      "source": "scripts/lib/exitcodes.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_diagnostics.py",
+      "source": "scripts/lib/state_diagnostics.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/operational_paths.py",
+      "source": "scripts/lib/operational_paths.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/state.py",
       "source": "scripts/lib/state.py",
       "policy": "harness-owned"
@@ -756,6 +786,21 @@
     {
       "path": "scripts/lib/upgrade.py",
       "source": "scripts/lib/upgrade.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/managed_block.py",
+      "source": "scripts/lib/managed_block.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_repair.py",
+      "source": "scripts/lib/state_repair.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/state_cli.py",
+      "source": "scripts/lib/state_cli.py",
       "policy": "harness-owned"
     },
     {

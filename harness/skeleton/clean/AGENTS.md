@@ -2,11 +2,38 @@
 
 Project-local workflow skills live under `.agents/skills/` as composable plugins and under adapter-owned folders for client-specific skills. Keep project-specific skills in the target repository instead of installing them globally.
 
+## Running Referenced Scripts
+
+When a skill, command, mode, or rule names a script (for example `python3 scripts/foo.py` or `bash scripts/bar.sh`), execute it with the Bash tool and read its stdout/stderr. Do NOT open the script with Read or any file-viewing tool to infer what it does — its output is the contract, the source is not. Only inspect the source if execution fails and you need to debug it.
+
 ## Planning State
 
-Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Start with `python3 scripts/show_phase_status.py` when available — execute it via Bash and read its output; do not Read the script file itself. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, and setup changes are allowed only when explicitly requested.
+
+On pre-commit exit 4 (scope violation): see `docs/protocol-spec.md#scope-enforcement`.
+
+### Managed marker blocks
+
+`.planning/ROADMAP.md` and `.planning/STATE.md` contain regions wrapped in
+`<!-- HARNESS:BEGIN managed:<slug> v1 -->` ... `<!-- HARNESS:END managed:<slug> -->`
+markers. Treat those regions as machine-owned: do not edit them by hand.
+
+- To view the live projection: `python3 scripts/harness.py state show`
+- To fix drifted or unmarked managed regions: `python3 scripts/harness.py state repair`
+
+Free-form sections (Notes, Session Continuity, free prose outside the marker
+block) remain agent-editable as before.
+
+Important caveats:
+- `state repair` re-renders the block from the existing parser source-of-truth.
+  It does NOT have a separate canonical hash, so if you accidentally edit
+  inside the block, repair cannot magically restore the previous content.
+  Recover by reverting the file via git.
+- If you add a phase-style line (e.g., `- [ ] **Phase 9: Foo**`) OUTSIDE the
+  managed block, `state repair` will warn about it instead of folding it in.
+  Move the line inside the block (or remove it) and re-run repair.
 
 Before creating or reshaping ROADMAP phases, phase folders, ADR decisions, or phase success criteria, run a `grill-me` style alignment pass: ask one question at a time, give the recommended answer and reason, inspect the repo instead of asking when the repo can answer, and record an alignment summary with confirmed facts, inferred facts, user preferences, recommended defaults, open questions, and blocked decisions. Do not turn unconfirmed preferences into phase commitments.
 

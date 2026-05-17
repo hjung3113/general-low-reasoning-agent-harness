@@ -1,0 +1,47 @@
+{
+  "phase": "done",
+  "approved": false,
+  "approved_by": "user",
+  "approved_at": "2026-05-14T15:00:00Z",
+  "plan_id": "generalized-harness-release-01",
+  "automation_mode": "manual",
+  "auto_selected": [],
+  "summary": "Generalized harness release work is approved in a separate repository copy.",
+  "state_path": ".planning/STATE.md",
+  "plan_path": ".planning/phases/01-generalized-harness-release/01-01-PLAN.md",
+  "checkpoint_path": ".planning/phases/01-generalized-harness-release/01-CHECKPOINTS.md",
+  "current_checkpoint": "CP-01-03",
+  "next_action": "Phase 1 release complete. Start a new discuss pass for any further scope.",
+  "allowed_paths": [
+    "README.md",
+    "CHANGELOG.md",
+    "AGENTS.md",
+    ".planning/",
+    ".scratch/phase-state.json",
+    ".opencode/",
+    ".roo/",
+    ".github/",
+    "docs/",
+    "harness/",
+    "scripts/"
+  ],
+  "blocked_paths": [],
+  "acceptance_criteria": [
+    "Reviewer P1 findings for adapter alias, gate enforcement, release evidence, and core neutrality are addressed.",
+    "README documents post-install commands and ready-to-use prompts.",
+    "Release verification evidence records source checks, target matrix smoke, adversarial review, commit, and push."
+  ],
+  "verification": [
+    "python3 -m unittest scripts/test_harness.py",
+    "python3 scripts/harness.py check",
+    "python3 scripts/harness.py check --worktree",
+    "python3 scripts/release_smoke_test.py"
+  ],
+  "notes": [
+    "This is a new repository copy created from the previous harness project.",
+    "Core must remain stack-neutral and client-neutral.",
+    "Skill packs are generic composable plugins."
+  ],
+  "updated_at": "2026-05-15T00:00:00Z",
+  "updated_by": "codex"
+}

@@ -98,3 +98,13 @@ Do not use this workflow for:
 ## Escalation Triggers
 
 Stop and route to a full workflow when the task grows beyond the original scope, requires design judgment, touches specialist domains, lacks focused verification, or creates disagreement between README, `.roo/**`, `.planning/**`, and `.scratch/phase-state.json`.
+
+
+## Canonical CLI Invocation
+
+Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`. See `.roo/skills/workflow-phase-gate/SKILL.md#canonical-phase-done-example-post-cli` for the G3-A canonical `phase=done` shape.
+
+```text
+harness phase set <discuss|plan|execute|done>     # long form: python3 scripts/harness.py phase set <X>
+harness phase approve                              # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
+```

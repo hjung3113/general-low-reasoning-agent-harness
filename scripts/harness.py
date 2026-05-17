@@ -136,6 +136,8 @@ from lib.check import (
     VERIFICATION_PREFIXES,
     REQUIRED_TARGET_PHRASES,
     CONTAMINATION_PATTERNS,
+    ManagedBlockWarning,
+    managed_block_warnings,
     check_installed_target,
     _check_roomodes_profile_sync,
     check_clean_skeleton,
@@ -173,6 +175,14 @@ from lib.upgrade import (
     install_state_migration_report,
 )
 from lib.planning_status import ProjectionError, load_projection
+from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair
+from lib.state_repair import repair as state_repair_fn, RepairReport as StateRepairReport
+from lib.managed_block import (
+    render_block as managed_render_block,
+    parse_blocks as managed_parse_blocks,
+    replace_block as managed_replace_block,
+    canonicalize as managed_canonicalize,
+)
 from lib.workflow_static_checks import (
     installed_scope_issues,
     optional_phase_pointer_keys,
@@ -230,6 +240,7 @@ __all__ = [
     "check", "check_installed_target", "should_check_as_installed_target",
     "check_clean_skeleton", "check_json", "check_phase_state_semantics",
     "check_command_modes", "check_phase_reference_drift", "check_phase_state_paths",
+    "ManagedBlockWarning", "managed_block_warnings",
     # doctor
     "DoctorFinding", "doctor", "collect_doctor_findings",
     "phase_status_projection_doctor_findings", "projection_warning_severity",
@@ -247,6 +258,10 @@ __all__ = [
     # workflow_static_checks
     "installed_scope_issues", "optional_phase_pointer_keys",
     "verification_contract_issues", "verification_placeholder_reason",
+    # state CLI
+    "state_run_show", "state_run_repair", "state_repair_fn", "StateRepairReport",
+    "managed_render_block", "managed_parse_blocks", "managed_replace_block",
+    "managed_canonicalize",
     # local
     "HARNESS_VERSION", "CLEAN_SKELETON", "UTC_TIMESTAMP", "VERIFICATION_PREFIXES",
     "REQUIRED_TARGET_PHRASES", "CONTAMINATION_PATTERNS",
@@ -346,6 +361,17 @@ def run(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install harness add-ons such as the pre-commit scope-check hook (T1-1).",
+    )
+    install_parser.add_argument("--target", required=True, type=Path)
+    install_parser.add_argument(
+        "--pre-commit",
+        action="store_true",
+        help="Install the pre-commit scope-check hook into <target>/.git/hooks/pre-commit (T1-1).",
+    )
+
     init_parser = subparsers.add_parser("init", help="Install the clean harness skeleton into a target project.")
     init_parser.add_argument("--target", required=True, type=Path)
     init_parser.add_argument("--dry-run", action="store_true")
@@ -400,6 +426,11 @@ def run(argv: list[str] | None = None) -> int:
     uninstall_parser.add_argument("--dry-run", action="store_true")
     uninstall_parser.add_argument("--interactive", action="store_true")
     uninstall_parser.add_argument("--remove-install-state", action="store_true")
+    uninstall_parser.add_argument(
+        "--pre-commit",
+        action="store_true",
+        help="Uninstall the pre-commit scope-check hook from <target>/.git/hooks/pre-commit (T1-1).",
+    )
 
     release_parser = subparsers.add_parser("release-check", help="Verify release version, tag, and worktree gates.")
     release_parser.add_argument("--expected-version", default=None, help="Optional expected vMAJOR.MINOR.PATCH release tag.")
@@ -409,6 +440,84 @@ def run(argv: list[str] | None = None) -> int:
         help="Fail unless the tagged commit equals origin/main.",
     )
 
+    state_parser = subparsers.add_parser(
+        "state",
+        help="Inspect and repair managed planning state.",
+    )
+    state_sub = state_parser.add_subparsers(dest="state_command", required=True)
+
+    state_show = state_sub.add_parser("show", help="Print phase-state projection (read-only).")
+    state_show.add_argument("--root", type=Path, default=None)
+    state_show.add_argument("--format", dest="state_format", choices=("text", "json"), default="text")
+
+    state_repair_p = state_sub.add_parser("repair", help="Canonicalize managed marker blocks.")
+    state_repair_p.add_argument("--root", type=Path, default=None)
+
+    # `harness migrate state ...` -- thin delegator to scripts/migrate_state.py
+    # (T0-1 CC1). All flags are forwarded verbatim.
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="Migrate harness state files between schema versions.",
+    )
+    migrate_sub = migrate_parser.add_subparsers(dest="migrate_command", required=True)
+    migrate_state_p = migrate_sub.add_parser(
+        "state",
+        help="Migrate .scratch/phase-state.json between v0 and v2 (ADR-001).",
+    )
+    mig_mode = migrate_state_p.add_mutually_exclusive_group(required=True)
+    mig_mode.add_argument("--forward", action="store_true",
+                          help="Apply v0 -> v2 transformation.")
+    mig_mode.add_argument("--reverse", action="store_true",
+                          help="Apply v2 -> v0 transformation.")
+    mig_mode.add_argument("--resume", action="store_true",
+                          help="Resume from sidecar after crash.")
+    migrate_state_p.add_argument("--target", default=".scratch/phase-state.json",
+                                 help="Path to phase-state file.")
+    migrate_state_p.add_argument("--dry-run", action="store_true",
+                                 help="Print canonical transformed output to stdout; no disk mutation.")
+
+    # ----- phase lifecycle verbs (ADR-003a Artifact 1, T0-3) -----
+    phase_parser = subparsers.add_parser(
+        "phase",
+        help="Phase lifecycle verbs (ADR-003a Artifact 1).",
+    )
+    phase_sub = phase_parser.add_subparsers(dest="phase_command", required=True)
+
+    p_set = phase_sub.add_parser(
+        "set", help="Set current phase (ADR-001 transition table)."
+    )
+    p_set.add_argument(
+        "phase", choices=["discuss", "plan", "execute", "done"]
+    )
+    p_set.add_argument("--plan-id", default=None)
+    p_set.add_argument("--summary", default=None)
+    p_set.add_argument("--reset-approval", action="store_true")
+    p_set.add_argument("--stdin-json", action="store_true")
+
+    p_approve = phase_sub.add_parser(
+        "approve", help="Approve current phase (ADR-003a verb 2)."
+    )
+    p_approve.add_argument("--by", default=None)
+    p_approve.add_argument("--at", default=None)
+    p_approve.add_argument("--stdin-json", action="store_true")
+
+    # ----- session operational verbs (ADR-003a verb 3, T0-3) -----
+    session_parser = subparsers.add_parser(
+        "session",
+        help="Session operational verbs (ADR-003a verb 3).",
+    )
+    session_sub = session_parser.add_subparsers(
+        dest="session_command", required=True
+    )
+    s_unlock = session_sub.add_parser(
+        "unlock", help="Remove a stale session lockfile (G1-B recovery)."
+    )
+    s_unlock.add_argument("--force", action="store_true")
+    s_unlock.add_argument(
+        "--print", dest="print_only", action="store_true",
+        help="Print the lockfile payload and exit 0 without removing.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -416,6 +525,17 @@ def run(argv: list[str] | None = None) -> int:
         command_root = upgrade_source_root(root, args.target)
     HARNESS_VERSION = resolve_harness_version(command_root, explicit=args.release_version)
 
+    if args.command == "install":
+        # T1-1 pre-commit hook installer. Other install scopes may be wired
+        # here in future slices.
+        from lib.hooks import install_pre_commit_hook
+        if args.pre_commit:
+            install_pre_commit_hook(args.target)
+            return 0
+        raise SystemExit(
+            "harness install: at least one install scope is required "
+            "(e.g., --pre-commit)"
+        )
     if args.command == "init":
         raw_profiles = parse_scope(args.profiles, default={"generic"})
         profiles_resolved = normalize_profiles(list(raw_profiles))
@@ -472,6 +592,14 @@ def run(argv: list[str] | None = None) -> int:
             command.extend(["--target", str(args.target)])
         return run_delegated_command(command, root)
     if args.command == "uninstall":
+        # T1-1 pre-commit hook removal short-circuits the standard
+        # uninstaller (which requires INSTALL_STATE in target).
+        if args.pre_commit:
+            from lib.hooks import uninstall_pre_commit_hook
+            if args.target is None:
+                raise SystemExit("--target is required for --pre-commit")
+            uninstall_pre_commit_hook(args.target)
+            return 0
         command = [
             sys.executable,
             str(root / "scripts/uninstall_harness.py"),
@@ -495,6 +623,41 @@ def run(argv: list[str] | None = None) -> int:
         )
         print(f"release-check PASS v{release_version}")
         return 0
+    if args.command == "state":
+        state_root = Path(args.root) if args.root else root
+        if args.state_command == "show":
+            return state_run_show(root=state_root, stream=sys.stdout, fmt=args.state_format)
+        if args.state_command == "repair":
+            return state_run_repair(root=state_root, stream=sys.stdout)
+        raise AssertionError(f"Unhandled state subcommand: {args.state_command}")
+    if args.command == "migrate":
+        if args.migrate_command == "state":
+            # Forward args to scripts/migrate_state.py:main().
+            import migrate_state as _migrate_state
+            forwarded: list[str] = []
+            if args.forward:
+                forwarded.append("--forward")
+            elif args.reverse:
+                forwarded.append("--reverse")
+            elif args.resume:
+                forwarded.append("--resume")
+            forwarded.extend(["--target", str(args.target)])
+            if args.dry_run:
+                forwarded.append("--dry-run")
+            return _migrate_state.main(forwarded)
+        raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
+    if args.command == "phase":
+        from lib.phase_cli import cmd_phase_set, cmd_phase_approve
+        if args.phase_command == "set":
+            return cmd_phase_set(args)
+        if args.phase_command == "approve":
+            return cmd_phase_approve(args)
+        raise AssertionError(f"Unhandled phase subcommand: {args.phase_command}")
+    if args.command == "session":
+        from lib.phase_cli import cmd_session_unlock
+        if args.session_command == "unlock":
+            return cmd_session_unlock(args)
+        raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
     raise AssertionError(f"Unhandled command: {args.command}")
 
 

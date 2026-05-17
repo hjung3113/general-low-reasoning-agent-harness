@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Run the release install/check smoke matrix for the harness source tree."""
+"""Run the release install/check smoke matrix for the harness source tree.
+
+G4-B trust boundary (ADR-004 / T0-4 / CHANGELOG L19): this smoke runner
+treats every ``verification[*]`` entry in ``.scratch/phase-state.json`` as
+DEVELOPER-TRUSTED shell input and may execute it on behalf of the
+developer. The core ``harness check`` CLI never executes verification
+strings; this runner is the one in-tree consumer that intentionally
+crosses the boundary. Do not pipe untrusted state files through this
+script.
+
+Three adapter-neutral lifecycle stages (core, Roo, OpenCode) run BEFORE
+the existing CASES matrix and gate on its success, plus a static grep
+gate against quarantined adapter commands. See spec §10.2 and
+``.planning/phases/02b-hardening/plans/02b-11-SMOKE-EXT-PLAN.md``.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +25,14 @@ import sys
 import tempfile
 import shutil
 from pathlib import Path
+
+# Allow direct invocation (`python3 scripts/release_smoke_test.py`) as
+# well as module-style import (`python3 -m scripts.release_smoke_test`).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.smoke_lifecycle import run_lifecycle_smoke  # noqa: E402
 
 
 CASES = [
@@ -84,11 +106,23 @@ def main() -> int:
     parser.add_argument("--keep-temp", action="store_true", help="Keep the temporary matrix directory.")
     parser.add_argument("--release", action="store_true", help="Require exact clean release tag before running the smoke matrix.")
     parser.add_argument("--expected-version", default=None, help="Expected vMAJOR.MINOR.PATCH release tag for --release.")
+    parser.add_argument("--skip-lifecycle-smoke", action="store_true", help="Debug only: skip the 02b-11 three-stage lifecycle smoke + grep gate.")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
     command_env = os.environ.copy()
     version_args: list[str] = []
+    release_mode = args.release or command_env.get("HARNESS_RELEASE_RUN") == "1"
+    if args.skip_lifecycle_smoke:
+        # SecM1: unconditional banner whenever the lifecycle smoke is
+        # skipped. Even if the run later hard-fails, the operator must
+        # see why this path was taken.
+        print("LIFECYCLE SMOKE SKIPPED — DEBUG ONLY", file=sys.stderr, flush=True)
+        if release_mode:
+            raise SystemExit(
+                "--skip-lifecycle-smoke forbidden under release mode "
+                "(--release or HARNESS_RELEASE_RUN=1)"
+            )
     if args.release:
         command_env.pop("HARNESS_VERSION", None)
         if not args.expected_version:
@@ -105,6 +139,8 @@ def main() -> int:
                 command.extend(["--expected-version", args.expected_version])
             command.append("--require-origin-main")
             run(command, cwd=root, env=command_env)
+        if not args.skip_lifecycle_smoke:
+            run_lifecycle_smoke(matrix_root / "lifecycle")
         for name, options in CASES:
             target = matrix_root / name
             run([sys.executable, "scripts/harness.py", *version_args, "init", "--target", str(target), *options], cwd=root, env=command_env)
