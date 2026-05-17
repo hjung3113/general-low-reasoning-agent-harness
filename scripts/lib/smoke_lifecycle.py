@@ -583,7 +583,13 @@ def _compare_to_golden(capture: dict, golden: dict, stage_no: int) -> str | None
         return f"final_state.phase {c_final.get('phase')!r} != golden {g_final.get('phase')!r}"
     if "approved" in g_final and g_final.get("approved") != "<ANY>" and g_final.get("approved") != c_final.get("approved"):
         return f"final_state.approved {c_final.get('approved')!r} != golden {g_final.get('approved')!r}"
-    if "state_schema_version" in g_final and g_final.get("state_schema_version") != "<ANY>" and g_final.get("state_schema_version") != c_final.get("state_schema_version"):
+    # T0-3 follow-up: state_schema_version is contractually pinned to 2 on
+    # every write (phase set / phase approve both stamp it). The <ANY>
+    # sentinel handling for THIS field was a workaround for the gap that
+    # the follow-up closes; the golden now carries the literal 2 and the
+    # comparator enforces it strictly. (The <ANY> sentinel remains valid
+    # for approved/approved_at/approved_by per ADR-001.)
+    if "state_schema_version" in g_final and g_final.get("state_schema_version") != c_final.get("state_schema_version"):
         return (
             f"final_state.state_schema_version {c_final.get('state_schema_version')!r} "
             f"!= golden {g_final.get('state_schema_version')!r}"

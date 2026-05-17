@@ -63,6 +63,6 @@
     "approved_by": "<ANY>",
     "updated_at": "<TIMESTAMP>",
     "updated_by": "<ACTOR>",
-    "state_schema_version": "<ANY>"
+    "state_schema_version": 2
   }
 }

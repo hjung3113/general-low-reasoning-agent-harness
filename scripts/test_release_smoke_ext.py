@@ -100,11 +100,11 @@ class TestGoldenFile(unittest.TestCase):
     def test_golden_final_state_done(self):
         data = load_golden()
         self.assertEqual(data["final_state"]["phase"], "done")
-        # state_schema_version is pinned to "<ANY>" pending runtime fix:
-        # phase set/approve does not stamp state_schema_version (only
-        # `harness migrate state --forward` does). Tracked as a follow-up
-        # contract gap; see CHANGELOG 02b-11 deviation note.
-        self.assertIn(data["final_state"]["state_schema_version"], (2, "<ANY>"))
+        # T0-3 follow-up resolved: state_schema_version is now stamped on
+        # every state write by phase set / phase approve. The golden
+        # therefore pins the literal 2; the <ANY> sentinel for this field
+        # is no longer accepted.
+        self.assertEqual(data["final_state"]["state_schema_version"], 2)
 
     def test_golden_is_static_not_generated_header(self):
         first_line = LIFECYCLE_GOLDEN_PATH.read_text(encoding="utf-8").splitlines()[0]
