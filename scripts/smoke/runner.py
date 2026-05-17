@@ -144,6 +144,13 @@ def _evidence_path(evidence_root: Path, fixture: dict, trial_index: int) -> Path
     return flow_dir / f"trial-{trial_index:03d}.json"
 
 
+def _attempts_dir(evidence_root: Path, fixture: dict, trial_index: int) -> Path:
+    flow_dir = Path(evidence_root) / fixture["flow"]
+    attempts = flow_dir / f"trial-{trial_index:03d}-attempts"
+    attempts.mkdir(parents=True, exist_ok=True)
+    return attempts
+
+
 def _single_attempt(
     fixture: dict,
     trial_index: int,
@@ -218,9 +225,17 @@ def run_trial(
     scratch_root = Path(scratch_root)
     scratch_root.mkdir(parents=True, exist_ok=True)
 
+    attempts_dir = _attempts_dir(evidence_root, fixture, trial_index)
+
+    def _persist_attempt(attempt_no: int, rec: TrialRecord) -> None:
+        # Preserve full per-attempt record (including failure signal).
+        path = attempts_dir / f"attempt-{attempt_no}.json"
+        path.write_text(rec.to_json(), encoding="utf-8")
+
     judgment, record, _ = _single_attempt(
         fixture, trial_index, model_client, scratch_root, attempt_label="orig"
     )
+    _persist_attempt(1, record)
     retry_count = 0
     while (
         not record.passed
@@ -231,9 +246,12 @@ def run_trial(
         judgment, record, _ = _single_attempt(
             fixture, trial_index, model_client, scratch_root, attempt_label=f"retry-{retry_count}"
         )
+        _persist_attempt(retry_count + 1, record)
 
     record.retry_count = retry_count
     record.noisy = retry_count > 0
     out = _evidence_path(evidence_root, fixture, trial_index)
     out.write_text(record.to_json(), encoding="utf-8")
+    # Also write the canonical final-result file inside the attempts dir.
+    (attempts_dir / "result.json").write_text(record.to_json(), encoding="utf-8")
     return record
