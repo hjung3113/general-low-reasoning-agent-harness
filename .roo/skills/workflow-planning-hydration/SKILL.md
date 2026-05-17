@@ -135,7 +135,7 @@ Do not mark planning context usable while P1 adversarial findings remain unresol
 ### 4. Apply automation flags
 
 - `--auto`: choose recommended defaults only for documentation wording, ordering, naming, or repo-proven defaults inside allowed paths; record auditable `auto_selected` entries.
-- `--chain`: continue from phase-local `discuss` to `plan` and then `execute` only when the generated plan has a concrete first slice, non-empty verification, non-empty allowed paths, current durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `harness check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`. Reach that state via `harness phase approve && harness phase set execute`.
+- `--chain`: continue from phase-local `discuss` to `plan` and then `execute` only when the generated plan has a concrete first slice, non-empty verification, non-empty allowed paths, current durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `harness check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `execution_mode=chain_autopilot`. Reach that state via `harness phase autopilot start --mode chain`.
 - Stop for user input on destructive, external, secret-bearing, deployment, deletion, irreversible, broad-scope, or ambiguous product-direction choices.
 
 ### 5. Detect planning state

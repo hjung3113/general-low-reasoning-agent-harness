@@ -21,7 +21,7 @@ Before doing any work:
 3. For `plan`, `execute`, and `done`, read `state_path`, `plan_path`, and `checkpoint_path` before classifying allowed work. If any pointer is missing or stale, treat the state as incomplete and return to `plan`.
 4. If `.planning/codebase/**` or the active phase document set is missing, placeholder-only, or stale for the current repository, treat the gate as incomplete for existing-repository adoption and return to `plan` to hydrate planning memory.
 5. Confirm roadmap/state sync: ROADMAP phase checklist totals and completion count must match STATE frontmatter progress, STATE active phase/checkpoint must match the active roadmap phase, and `.scratch/phase-state.json` must point to the same STATE and checkpoint.
-6. Identify `automation_mode` from `.scratch/phase-state.json` or the user's command flags. Default to `manual`.
+6. Identify `execution_mode` from `.scratch/phase-state.json`. Default to `manual`.
 7. If there is no state file, start in `discuss`.
 8. Do only the work allowed by the current phase and automation mode.
 
@@ -89,7 +89,7 @@ Rules:
 - Perform the phase-local `discuss` summary.
 - Write the plan with `plan_id`, `allowed_paths`, acceptance criteria, and verification.
 - Treat the user's `--chain` request as permission to prepare approval state for the generated plan, not as permission to bypass the execute gate.
-- Before implementation, ensure the live gate reads `phase=execute, approved=true` with the same `plan_id`. Reach that state via `harness phase approve` (in `phase=plan`) followed by `harness phase set execute`. The CLI writes `approved_by`, `approved_at`, and re-stamps `updated_at`; pre-conditions the CLI does NOT set — `allowed_paths`, `verification`, durable planning pointers, `automation_mode=chain` — remain user-editable and must be present before invoking `phase set execute`.
+- Before implementation, ensure the live gate reads `phase=execute, approved=true` with the same `plan_id`. Reach that state via `harness phase approve` (in `phase=plan`) followed by `harness phase set execute`. The CLI writes `approved_by`, `approved_at`, and re-stamps `updated_at`; pre-conditions the CLI does NOT set — `allowed_paths`, `verification`, durable planning pointers, `execution_mode=chain_autopilot` — remain user-editable and must be present before invoking `phase autopilot start --mode chain`.
 - Any `phase=execute` state with `approved=true` carries `approved_by` and `approved_at` provenance set by `harness phase approve` (stamped from `git config user.email` and a nanosecond-precision UTC timestamp per ADR-003a Verb 2). Manual mode and chain mode produce identical provenance shape.
 - If phase state cannot be updated or verified, stop before implementation.
 - Stop before execute if the plan lacks verification, `allowed_paths`, durable planning pointers, or a concrete first slice.
@@ -158,7 +158,7 @@ Next step:
 
 - Stop and ask for approval. Do not execute until the live gate has `phase=execute`, the same `plan_id`, and `approved=true`. Reach that state via `harness phase approve && harness phase set execute`.
 - With `--chain`, continue to `execute` only when the user requested chaining, the generated plan is concrete, verification is non-empty, allowed paths are non-empty, and no stop condition remains.
-- Under `--chain`, verify the live gate via `harness check` reports `phase=execute`, matching `plan_id`, `approved=true`, `automation_mode=chain`, non-empty `allowed_paths`, and non-empty `verification` before any implementation.
+- Under `--chain`, verify the live gate via `harness check` reports `phase=execute`, matching `plan_id`, `approved=true`, `execution_mode=chain_autopilot`, non-empty `allowed_paths`, and non-empty `verification` before any implementation.
 
 ### execute
 
@@ -232,7 +232,7 @@ plan_id: <id or none>
 approved: <true|false>
 allowed_work: <read-only|docs-plan-only|implementation|summary-only>
 planning_context: <complete|needs-codebase-hydration|needs-phase-hydration|stale>
-automation_mode: <manual|auto|chain>
+execution_mode: <manual|phase_autopilot|chain_autopilot>
 auto_selected: <none|summary>
 next_step: <one concrete next action>
 ```
@@ -266,7 +266,7 @@ A valid `phase-state.json` for `phase=done` after the ADR-003a CLI lands. Field-
   "approved_by": "hjung3113@gmail.com",
   "approved_at": "2026-05-16T19:30:45.123456789Z",
   "plan_id": "hardening-slice-01",
-  "automation_mode": "manual",
+  "execution_mode": "manual",
   "auto_selected": [],
   "summary": "Hardening slice 02b complete: ADRs locked, atomic primitive landed, smoke green.",
   "state_path": ".planning/STATE.md",

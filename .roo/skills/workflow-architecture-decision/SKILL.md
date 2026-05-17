@@ -48,7 +48,7 @@ If the task cannot proceed because planning context is missing, stale, placehold
 
 4. Apply automation flags only within the phase gate.
    - `--auto`: use recommended answers for reversible, low-risk, non-blocking choices and record them as `auto_selected`.
-   - `--chain`: continue from discuss to plan to execute using recommended answers only when a concrete plan has non-empty verification, allowed paths, durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `harness check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `automation_mode=chain`. Reach that state via `harness phase approve && harness phase set execute`.
+   - `--chain`: continue from discuss to plan to execute using recommended answers only when a concrete plan has non-empty verification, allowed paths, durable planning pointers, no unresolved P1 adversarial finding, and the live gate (via `harness check`) reports `phase=execute`, matching `plan_id`, `approved=true`, and `execution_mode=chain_autopilot`. Reach that state via `harness phase autopilot start --mode chain`.
    - Stop and ask the user for high-risk, destructive, external, security-sensitive, irreversible, or product-direction choices.
 
 5. Frame the decision.

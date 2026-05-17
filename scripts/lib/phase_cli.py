@@ -218,6 +218,25 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
     before_hash = compute_state_hash(STATE_PATH)
     target = args.phase
 
+    # §3.5.1 / §7 line 1020 env-as-state elimination guard (S13 step 2).
+    # If HARNESS_AUTOMATION is set to an autopilot mode but state.execution_mode
+    # is still "manual", the env cannot substitute for a legitimate `phase autopilot
+    # start` call. Reject with exit 2 (no_autopilot_context_in_state) to make
+    # env-only spoofing impossible — this is the mandatory invariant tested by
+    # release_smoke_test.py --case env-only-spoof-rejected.
+    _harness_automation = os.environ.get("HARNESS_AUTOMATION", "")
+    if _harness_automation in ("phase", "chain") and state.get("execution_mode", "manual") == "manual":
+        print(
+            "error: phase set refused: HARNESS_AUTOMATION is set to "
+            f"{_harness_automation!r} but state.execution_mode is 'manual' "
+            "(no_autopilot_context_in_state). "
+            "Fix: run 'harness phase autopilot start' first to establish "
+            "autopilot context in state; env vars alone cannot grant "
+            "autopilot privileges (design §3.5.1 / §7 line 1020).",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID_TRANSITION
+
     # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
     # Acquires primary lock briefly for the halt-commit if needed; released immediately.
     if state.get("execution_mode", "manual") != "manual":
