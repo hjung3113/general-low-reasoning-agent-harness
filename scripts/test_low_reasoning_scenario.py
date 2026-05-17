@@ -639,6 +639,22 @@ class WallClockHonestyTests(unittest.TestCase):
         self.assertNotIn("wall_clock", record.budget_caps_hit)
 
 
+class RunnerPinningMismatchTests(unittest.TestCase):
+    """M4 — pinning mismatch must record a trial fail, not raise AssertionError."""
+
+    def test_runner_records_pinning_mismatch_as_fail(self) -> None:
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="pinmismatch."))
+        # FakeClient defaulting to a wrong model id.
+        client = FakeClient(
+            scripted_responses=["harness phase set plan"],
+            model="claude-some-other-model",
+        )
+        record = run_trial(fixture, 41, client, tmp / "scratch", tmp / "evidence")
+        self.assertFalse(record.passed)
+        self.assertIn("client_misconfigured", record.judgment["reason"])
+
+
 class HaikuRetryTests(unittest.TestCase):
     """C3 — HaikuClient retries 429/5xx with backoff; raises HttpTransportError."""
 
