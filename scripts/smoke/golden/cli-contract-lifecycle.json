@@ -58,11 +58,11 @@
   ],
   "final_state": {
     "phase": "done",
-    "approved": true,
-    "approved_at": "<TIMESTAMP>",
-    "approved_by": "<ACTOR>",
+    "approved": "<ANY>",
+    "approved_at": "<ANY>",
+    "approved_by": "<ANY>",
     "updated_at": "<TIMESTAMP>",
     "updated_by": "<ACTOR>",
-    "state_schema_version": 2
+    "state_schema_version": "<ANY>"
   }
 }

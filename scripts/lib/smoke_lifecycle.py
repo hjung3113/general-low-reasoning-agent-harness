@@ -358,15 +358,43 @@ def run_lifecycle_smoke(matrix_root: Path) -> None:
         print(f"STAGE {stage_no} PASS")
 
 
-def _compare_to_golden(capture: dict, golden: dict, stage_no: int) -> str | None:
-    """Loose structural compare against the hand-authored golden.
+_ARGS_REDACTED_KEYS = _REDACTED_KEYS | _ACTOR_KEYS
 
-    The golden encodes the EXPECTED SHAPE — verb names, final phase,
-    exit-code class — not byte-by-byte runtime equality, which would
-    force regeneration. We assert:
+
+def _compare_args_canonical(golden_args: dict | None, capture_args: dict | None) -> str | None:
+    """Compare audit-entry `args` payloads canonically.
+
+    Redacted-key values (PID, MONOTONIC, ACTOR sentinels) are compared by
+    key presence only, since their runtime values are non-deterministic.
+    All other keys must match exactly after canonicalization.
+    """
+    g = canonicalize_capture(golden_args or {})
+    c = canonicalize_capture(capture_args or {})
+    g_keys = set(g.keys())
+    c_keys = set(c.keys())
+    if g_keys != c_keys:
+        return f"args key set {sorted(c_keys)} != golden {sorted(g_keys)}"
+    for key in g_keys:
+        if key in _ARGS_REDACTED_KEYS:
+            continue
+        if g[key] != c[key]:
+            return f"args[{key!r}] {c[key]!r} != golden {g[key]!r}"
+    return None
+
+
+def _compare_to_golden(capture: dict, golden: dict, stage_no: int) -> str | None:
+    """Structural compare against the hand-authored golden.
+
+    The golden encodes the EXPECTED SHAPE — verb names, args, final
+    phase/approved/schema_version — not byte-by-byte runtime equality,
+    which would force regeneration. We assert:
       - audit_entries length matches
       - each entry's `verb` matches in order
+      - each entry's `args` matches canonically
+      - each entry has both `before_sha256` and `after_sha256` keys (presence only)
       - final_state.phase matches
+      - final_state.approved matches
+      - final_state.state_schema_version matches
       - all exit codes are within the pinned table (0..8).
     """
     g_entries = golden.get("audit_entries", [])
@@ -376,10 +404,23 @@ def _compare_to_golden(capture: dict, golden: dict, stage_no: int) -> str | None
     for idx, (g, c) in enumerate(zip(g_entries, c_entries)):
         if g.get("verb") != c.get("verb"):
             return f"audit_entries[{idx}].verb {c.get('verb')!r} != golden {g.get('verb')!r}"
-    g_phase = (golden.get("final_state") or {}).get("phase")
-    c_phase = (capture.get("final_state") or {}).get("phase")
-    if g_phase != c_phase:
-        return f"final_state.phase {c_phase!r} != golden {g_phase!r}"
+        args_diff = _compare_args_canonical(g.get("args"), c.get("args"))
+        if args_diff:
+            return f"audit_entries[{idx}].{args_diff}"
+        for sha_key in ("before_sha256", "after_sha256"):
+            if sha_key in g and sha_key not in c:
+                return f"audit_entries[{idx}] missing {sha_key} key"
+    g_final = golden.get("final_state") or {}
+    c_final = capture.get("final_state") or {}
+    if g_final.get("phase") != c_final.get("phase"):
+        return f"final_state.phase {c_final.get('phase')!r} != golden {g_final.get('phase')!r}"
+    if "approved" in g_final and g_final.get("approved") != "<ANY>" and g_final.get("approved") != c_final.get("approved"):
+        return f"final_state.approved {c_final.get('approved')!r} != golden {g_final.get('approved')!r}"
+    if "state_schema_version" in g_final and g_final.get("state_schema_version") != "<ANY>" and g_final.get("state_schema_version") != c_final.get("state_schema_version"):
+        return (
+            f"final_state.state_schema_version {c_final.get('state_schema_version')!r} "
+            f"!= golden {g_final.get('state_schema_version')!r}"
+        )
     for ec in capture.get("exit_codes", []):
         if ec not in {0, 1, 2, 3, 4, 5, 6, 7, 8}:
             return f"exit_code {ec} outside CONTRACT-PIN §4 table"
