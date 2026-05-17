@@ -15,3 +15,6 @@ jobs.md
 # Harness runtime artifacts: .bak backups, audit log, lockfile, install
 # manifest — never enter version control (T0-1 CC2 / ADR Ledger L18).
 .harness/
+
+# Smoke/test fixture scratch — accumulates Python bytecode cache, can grow to GB.
+tmp/
