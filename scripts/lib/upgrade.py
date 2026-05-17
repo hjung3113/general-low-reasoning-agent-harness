@@ -63,6 +63,7 @@ from lib.manifest_reconciler import (
     ReconcileDecision,
     compute_manifest_hash_chain,
     reconcile_install as _reconcile_install,
+    verify_manifest_chain as _verify_manifest_chain,
 )
 from lib.manifest_v2 import read_manifest as _read_manifest_v2
 from lib.state import now_utc as _now_utc
@@ -433,12 +434,35 @@ def upgrade(
         try:
             prior_manifest_v2 = _read_manifest_v2(prior_installed_path)
         except SystemExit as _se:
+            # P5-P1-4: re-raise BOM / parse errors (int exit code 5).
+            # Only swallow schema_version mismatch, whose code is a str message.
+            if isinstance(_se.code, int):
+                raise  # BOM / parse exit 5 — propagate
             # Schema mismatch (e.g. v1 record): treat as no prior v2 history.
-            # parse-level exit 5 (BOM/malformed) already handled above; any
-            # remaining SystemExit here is schema_version mismatch → None is safe.
             prior_manifest_v2 = None
-        except Exception:
+        except Exception as _e:
+            # Unknown failure — warn loudly rather than silently masking.
+            sys.stderr.write(
+                f"WARNING: prior installed-manifest unreadable: {_e}\n"
+            )
             prior_manifest_v2 = None
+        if prior_manifest_v2 is not None:
+            # P5-P1-3: verify chain hash on read (§6 manifest integrity).
+            # Upgrade treats a chain mismatch as a WARNING (not hard stop) —
+            # the prior manifest may be a legacy record from an older harness
+            # that did not stamp installed_files_chain_hash.  Upgrade will
+            # re-stamp a correct chain hash when it writes the new manifest.
+            # Hard stop (ManifestChainTamperedError exit 5) is enforced by
+            # check.py and install.py on the CURRENT installed target.
+            from lib.manifest_reconciler import ManifestChainTamperedError as _MCTE
+            try:
+                _verify_manifest_chain(prior_manifest_v2)
+            except _MCTE as _ce:
+                sys.stderr.write(
+                    f"WARNING: prior installed-manifest chain hash mismatch "
+                    f"(possible tampering or legacy record). Upgrade proceeds "
+                    f"and will re-stamp hash. Detail: {_ce}\n"
+                )
     # classify_only=True: the existing upgrade conflict logic already handles
     # file moves. The reconciler is used here only for v2 hash classification
     # and field stamping — it must NOT move files a second time.

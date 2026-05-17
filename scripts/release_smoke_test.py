@@ -1829,6 +1829,325 @@ def case_fsd_status_opencode(args) -> "CaseResult":
             shutil.rmtree(repo, ignore_errors=True)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# §12.10 Cases — cycle-1 Group B (P5-P1-2): oidc-jti-replay, anchor-tampered,
+# gitconfig-rotated
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@register_case("oidc-jti-replay")
+def case_oidc_jti_replay(args) -> "CaseResult":
+    """§12.10 row 13 — oidc-jti-replay: OIDC token jti replay rejected (exit 6).
+
+    Preconditions:
+      - Fresh fixture repo with OIDC test-mode claims including a `jti` field.
+    Steps:
+      1. Run `harness fsd-run-phase 01-foo` with OIDC claims including jti=<uuid>.
+         → First call: jti is recorded in .harness/oidc_jti_seen.json; exit 0.
+      2. Run `harness fsd-run-phase 01-foo` again with the SAME jti.
+         → Replay detected; exit 6 sub_reason=ci_oidc_jti_replay.
+    Assert:
+      - First call exits 0.
+      - Second call exits 6.
+      - audit log contains verb=ci.oidc.jti.consumed once.
+
+    Spec: §12.4, §12.10 row 13
+    Slice: P5-P1-2 cycle-1 Group B
+    """
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo", "02-bar", "03-baz"])
+
+        # Inject a deterministic `jti` into the OIDC test claims
+        test_jti = "smoke-jti-replay-test-12345"
+        claims_with_jti = dict(_FAKE_OIDC_CLAIMS)
+        claims_with_jti["jti"] = test_jti
+
+        jti_env = dict(_ci_env_overrides())
+        jti_env["HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS"] = json.dumps(claims_with_jti)
+
+        # First call: should succeed (jti recorded)
+        proc1 = _run_harness("fsd-run-phase", "01-foo", cwd=repo, env=jti_env)
+        first_exit = proc1.returncode
+
+        assertions = []
+        assertions.append((
+            "first call (fresh jti) exits 0",
+            first_exit == 0,
+            f"first_exit={first_exit}; stderr: {proc1.stderr[:300]!r}",
+        ))
+
+        # JTI seen file should exist after first call
+        jti_seen = repo / ".harness" / "oidc_jti_seen.json"
+        jti_seen_exists = jti_seen.exists()
+        assertions.append((
+            ".harness/oidc_jti_seen.json created after first call",
+            jti_seen_exists,
+            f"path: {jti_seen}",
+        ))
+
+        # Second call with SAME jti: should be rejected (exit 6)
+        # Stop autopilot first so the replay check is reached
+        _run_harness("phase", "autopilot", "stop", "--reason", "reset-for-replay-test",
+                     cwd=repo, env=jti_env)
+
+        proc2 = _run_harness("fsd-run-phase", "01-foo", cwd=repo, env=jti_env)
+        second_exit = proc2.returncode
+
+        assertions.append((
+            "second call (same jti) exits 6 (jti replay rejected)",
+            second_exit == 6,
+            f"second_exit={second_exit}; stderr: {proc2.stderr[:300]!r}",
+        ))
+
+        # Audit log should contain ci.oidc.jti.consumed
+        audit = _read_audit_tail(repo, n=50)
+        consumed_entries = [e for e in audit if e.get("verb") == "ci.oidc.jti.consumed"]
+        assertions.append((
+            "audit log contains verb=ci.oidc.jti.consumed",
+            len(consumed_entries) >= 1,
+            f"consumed_entries: {len(consumed_entries)}; verbs: {[e.get('verb') for e in audit[-10:]]}",
+        ))
+
+        passed = (first_exit == 0 and second_exit == 6
+                  and all(ok for _, ok, _ in assertions))
+        return CaseResult(
+            case_name="oidc-jti-replay",
+            exit_code=second_exit,
+            expected_exit_code=6,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "first_stdout.txt": proc1.stdout,
+                "first_stderr.txt": proc1.stderr,
+                "second_stdout.txt": proc2.stdout,
+                "second_stderr.txt": proc2.stderr,
+                "audit_tail.json": json.dumps(audit[-20:], indent=2),
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("anchor-tampered")
+def case_anchor_tampered(args) -> "CaseResult":
+    """§12.10 row 14 — anchor-tampered: tampered anchor detected → exit 10.
+
+    Preconditions:
+      - Fresh fixture repo with audit entries (so audit tail is non-empty).
+      - Anchor written for the fixture repo.
+    Steps:
+      1. Emit an audit entry (so live tip is non-None).
+      2. Write a valid anchor for the fixture repo.
+      3. Tamper the anchor's audit_tip_entry_hash (mutate one hex digit).
+      4. Call verify_existing_anchor_for_repo(repo) → AnchorMismatchError
+         sub_reason=anchor_signature_invalid (HMAC does not match after tamper).
+         This maps to exit code 10 per §3.4.
+    Assert:
+      - AnchorMismatchError raised (tamper detected).
+      - sub_reason is anchor_signature_invalid or audit_tail_diverged_from_anchor.
+
+    Spec: §12.1, §12.10 row 14
+    Slice: P5-P1-2 cycle-1 Group B
+    """
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo"])
+
+        # Emit a second audit entry so live tip is non-zero
+        sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+        from lib import audit as _audit_lib  # type: ignore[import]
+        audit_path = repo / ".harness" / "audit.log"
+        _audit_lib.audit_append(
+            {"verb": "phase.approve", "at": "2026-05-18T00:01:00Z", "by": "alice@smoke.example.com"},
+            audit_path=audit_path,
+        )
+
+        # Read the live audit tail
+        from lib.audit import read_last_entry  # type: ignore[import]
+        last_entry = read_last_entry(audit_path)
+        live_tip = last_entry.get("entry_hash", "0" * 64) if last_entry else "0" * 64
+        live_seq = last_entry.get("seq_global", 0) if last_entry else 0
+
+        # Read install-record for anchor wiring
+        ir_path = repo / ".harness" / "install-record.json"
+        ir_bytes = ir_path.read_bytes()
+        import hashlib as _hl
+        ir_sha256 = _hl.sha256(ir_bytes).hexdigest()
+        ir_data = json.loads(ir_bytes.decode("utf-8"))
+        install_id = ir_data.get("install_id", "no-id")
+
+        # Write a valid anchor
+        from lib import secret_key as _sk  # type: ignore[import]
+        from lib import audit_anchor as _aa  # type: ignore[import]
+        _sk.ensure_secret_key()
+        _aa.write_anchor(
+            repo,
+            harness_version="v0.7.0",
+            install_id=install_id,
+            install_record_sha256=ir_sha256,
+            audit_tip_entry_hash=live_tip,
+            audit_tip_seq_global=live_seq,
+        )
+
+        # Tamper: mutate audit_tip_entry_hash in the anchor file (one hex digit)
+        apath = _aa.anchor_path(repo)
+        anchor_data = json.loads(apath.read_text(encoding="utf-8"))
+        orig_hash = anchor_data["audit_tip_entry_hash"]
+        tampered_hash = orig_hash[:-1] + ("0" if orig_hash[-1] != "0" else "1")
+        anchor_data["audit_tip_entry_hash"] = tampered_hash
+        apath.write_text(
+            json.dumps(anchor_data, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+        # Verify: call verify_existing_anchor_for_repo — must raise AnchorMismatchError
+        # (the HMAC signature will be invalid after the tamper since we didn't recompute it)
+        detected_mismatch = False
+        mismatch_reason = ""
+        try:
+            _aa.verify_existing_anchor_for_repo(repo)
+            actual_exit = 0  # no error — fail
+        except _aa.AnchorMismatchError as exc:
+            detected_mismatch = True
+            mismatch_reason = getattr(exc, "sub_reason", "") or str(exc)
+            actual_exit = 10  # maps to exit 10 per §3.4
+        except _aa.AnchorMissingError:
+            actual_exit = 0
+            mismatch_reason = "anchor_missing (unexpected)"
+        except Exception as exc:
+            actual_exit = 0
+            mismatch_reason = f"unexpected: {exc}"
+
+        assertions = []
+        assertions.append((
+            "AnchorMismatchError raised (tamper detected → exit 10)",
+            detected_mismatch,
+            f"mismatch_reason={mismatch_reason!r}",
+        ))
+        _VALID_REASONS = {"anchor_signature_invalid", "audit_tail_diverged_from_anchor"}
+        assertions.append((
+            "sub_reason is anchor_signature_invalid or audit_tail_diverged_from_anchor",
+            mismatch_reason in _VALID_REASONS,
+            f"sub_reason={mismatch_reason!r} not in {_VALID_REASONS}",
+        ))
+
+        passed = detected_mismatch and all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="anchor-tampered",
+            exit_code=actual_exit,
+            expected_exit_code=10,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "anchor_path.txt": str(apath),
+                "audit_tail.json": json.dumps(_read_audit_tail(repo), indent=2),
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("gitconfig-rotated")
+def case_gitconfig_rotated(args) -> "CaseResult":
+    """§12.10 row 15 — gitconfig-rotated: mutated gitconfig → exit 6.
+
+    Preconditions:
+      - Fresh fixture repo.
+      - install-record has git_user_email_at_install_sha256 = sha256("alice@smoke.example.com").
+      - User "rotates" git config user.email to a different address.
+    Steps:
+      1. Build a fixture install-record with git_user_email_at_install_sha256 recorded.
+      2. Invoke phase_approve.run_approve with gitconfig_email_lookup returning
+         a DIFFERENT email (simulating post-install gitconfig mutation).
+      3. Assert exit 6, sub_reason=gitconfig_mutated_post_install.
+
+    Spec: §12.6, §12.10 row 15
+    Slice: P5-P1-2 cycle-1 Group B
+    """
+    import hashlib as _hashlib
+    import tempfile as _tempfile
+
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo"])
+
+        harness_dir = repo / ".harness"
+        ir_path = harness_dir / "install-record.json"
+
+        # Patch the install-record to include git_user_email_at_install_sha256
+        # fingerprint for alice@smoke.example.com
+        install_record = json.loads(ir_path.read_text(encoding="utf-8"))
+        alice_email = "alice@smoke.example.com"
+        alice_sha256 = _hashlib.sha256(alice_email.lower().encode("utf-8")).hexdigest()
+        install_record["git_user_email_at_install_sha256"] = alice_sha256
+        ir_path.write_text(
+            json.dumps(install_record, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        # Use run_approve directly (TTY-gated; inject fake TTY + gitconfig lookup
+        # returning rotated email)
+        sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+        from lib import phase_approve as _pa  # type: ignore[import]
+        from lib import approval_nonce as _an  # type: ignore[import]
+
+        scratch = repo / ".scratch"
+        audit_path = harness_dir / "audit.log"
+        nonce_dir = harness_dir / "nonces"
+        nonce_dir.mkdir(exist_ok=True)
+
+        class _FakeArgs:
+            by = None
+            override_identity = None
+            override_reason = None
+
+        # Simulate rotated gitconfig: returns a DIFFERENT email than alice's
+        rotated_email = "rotated-user@different.example.com"
+
+        result = _pa.run_approve(
+            _FakeArgs(),
+            scratch=scratch,
+            harness_dir=harness_dir,
+            audit_path=audit_path,
+            install_record_path=ir_path,
+            nonce_dir=nonce_dir,
+            stdin_isatty=True,  # bypass TTY gate
+            consumer_tty="/dev/pts/99",
+            gitconfig_email_lookup=lambda: rotated_email,
+            skip_anchor_preflight=True,
+        )
+
+        assertions = []
+        assertions.append((
+            "phase approve exits 6 (gitconfig_mutated_post_install)",
+            result.exit_code == 6,
+            f"exit_code={result.exit_code}, sub_reason={result.sub_reason!r}",
+        ))
+        assertions.append((
+            "sub_reason=gitconfig_mutated_post_install",
+            result.sub_reason == "gitconfig_mutated_post_install",
+            f"sub_reason={result.sub_reason!r}",
+        ))
+
+        passed = (result.exit_code == 6
+                  and result.sub_reason == "gitconfig_mutated_post_install"
+                  and all(ok for _, ok, _ in assertions))
+        return CaseResult(
+            case_name="gitconfig-rotated",
+            exit_code=result.exit_code,
+            expected_exit_code=6,
+            passed=passed,
+            assertions=assertions,
+            artifacts={},
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
 CASES = [
     ("core", ["--adapters", "none"]),
     ("opencode", ["--adapters", "opencode"]),
@@ -2024,6 +2343,10 @@ _RELEASE_CASE_ORDER = [
     "deny-listed-verb-via-shim",
     "manifest-init-idempotency",
     "windows-exit-11",
+    # §12.10 rows 13/14/15 — P5-P1-2 cycle-1 Group B
+    "oidc-jti-replay",
+    "anchor-tampered",
+    "gitconfig-rotated",
 ]
 
 

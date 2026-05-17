@@ -77,6 +77,12 @@ def install(
     packs: set[str] | None = None,
     harness_version: str = "0.0.0-dev+unknown",
 ) -> None:
+    # P5-P1-3: verify prior installed-manifest chain hash before any install
+    # decision (§6 integrity). Raises ManifestChainTamperedError (exit 5) if
+    # the chain hash has been tampered. Returns False for fresh installs.
+    from lib.manifest_reconciler import verify_install_record_integrity as _vir
+    _vir(target.resolve() if hasattr(target, 'resolve') else Path(target).resolve())
+
     adapters = adapters if adapters is not None else {"roo"}
     profiles = profiles if profiles is not None else {"generic"}
     packs = packs if packs is not None else set()

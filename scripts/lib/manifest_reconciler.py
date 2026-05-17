@@ -343,9 +343,27 @@ def verify_manifest_chain(manifest: dict[str, Any]) -> bool:
         # Treat as no-op (caller can decide whether to require it).
         return True
 
-    # Compute the chain hash over a copy that excludes the stored field itself
-    # (the hash was computed before it was stamped in).
-    manifest_without_chain = {k: v for k, v in manifest.items() if k != "installed_files_chain_hash"}
+    # Compute the chain hash over a normalized copy that:
+    # 1. Excludes the stored chain-hash field itself (stamped after computation).
+    # 2. Strips file-entry fields beyond installed_sha256/current_sha256 — the
+    #    chain covers only those two SHA fields (§6 contract).  Extra fields
+    #    (scope, managed_append, etc.) are metadata and not part of the chain,
+    #    matching the projection used by state.py when stamping the hash.
+    raw_files: dict[str, Any] = manifest.get("files", {})
+    normalized_files: dict[str, Any] = {
+        path: {
+            k: entry[k]
+            for k in ("installed_sha256", "current_sha256")
+            if k in entry
+        }
+        for path, entry in raw_files.items()
+        if isinstance(entry, dict)
+    }
+    manifest_without_chain = {
+        k: v for k, v in manifest.items()
+        if k not in ("installed_files_chain_hash", "files")
+    }
+    manifest_without_chain["files"] = normalized_files
     recomputed = compute_manifest_hash_chain(manifest_without_chain)
 
     if recomputed != stored:

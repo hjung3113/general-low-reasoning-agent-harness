@@ -300,6 +300,69 @@ def _run_crash_recovery(
     return None
 
 
+def _check_and_record_jti(
+    jti: str,
+    *,
+    harness_dir: Path,
+    audit_path: Path,
+) -> Optional[_ci_provenance.CiOidcJtiReplayed]:
+    """§12.4 JTI replay defense: check jti against seen file; record if new.
+
+    If jti was already consumed, returns CiOidcJtiReplayed (caller raises).
+    If jti is new, records it to .harness/oidc_jti_seen.json and returns None.
+
+    Storage: .harness/oidc_jti_seen.json → {"seen": [<jti>, ...]} (append-only).
+    """
+    jti_seen_path = harness_dir / "oidc_jti_seen.json"
+    try:
+        if jti_seen_path.exists():
+            data = json.loads(jti_seen_path.read_text(encoding="utf-8"))
+            seen: list = data.get("seen", [])
+        else:
+            seen = []
+
+        if jti in seen:
+            # Audit the replay attempt before returning
+            try:
+                _audit.audit_append(
+                    {
+                        "verb": "ci.oidc.jti.replay",
+                        "args": {"jti": jti, "sub_reason": "ci_oidc_jti_replay"},
+                    },
+                    audit_path=audit_path,
+                )
+            except Exception:
+                pass  # audit failure must not mask the security rejection
+            return _ci_provenance.CiOidcJtiReplayed(
+                f"jti {jti!r} was already consumed; OIDC token replay rejected (§12.4)"
+            )
+
+        # Record the jti as consumed
+        seen.append(jti)
+        harness_dir.mkdir(parents=True, exist_ok=True)
+        jti_seen_path.write_text(
+            json.dumps({"seen": seen}, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        # Audit the first-use recording
+        try:
+            _audit.audit_append(
+                {
+                    "verb": "ci.oidc.jti.consumed",
+                    "args": {"jti": jti},
+                },
+                audit_path=audit_path,
+            )
+        except Exception:
+            pass  # audit failure must not block the happy path
+        return None
+    except Exception:
+        # JTI store unavailable — fail-open rather than blocking all CI runs.
+        # This is an acceptable degradation: the per-run audit trail + chain
+        # hash still provides tamper evidence. A future slice can harden this.
+        return None
+
+
 def run_start(
     *,
     scratch_root: Path,
@@ -581,6 +644,28 @@ def run_start(
         ci_oidc_claims = ci_result.ci_oidc_claims
         bot_identity = ci_result.bot_identity
         bot_identity_distinct_from_approvers = ci_result.bot_identity_distinct_from_approvers
+
+        # §12.4 JTI replay defense: if the verified claims include a `jti`,
+        # check it against the seen-JTIs file and reject replays (exit 6).
+        _jti = ci_oidc_claims.get("jti") if ci_oidc_claims else None
+        if _jti is not None:
+            _harness_dir = (
+                (Path(repo_root) / ".harness")
+                if repo_root is not None
+                else (Path(scratch_root).parent / ".harness")
+            )
+            _jti_exc = _check_and_record_jti(_jti, harness_dir=_harness_dir, audit_path=audit_path)
+            if _jti_exc is not None:
+                msg = (
+                    f"phase autopilot start refused: OIDC jti replay detected "
+                    f"(ci_oidc_jti_replay): jti {_jti!r} was already consumed"
+                )
+                print(f"error: {msg}", file=sys.stderr)
+                return AutopilotResult(
+                    exit_code=6,
+                    sub_reason="ci_oidc_jti_replay",
+                    message=msg,
+                )
 
     # --allow-network source check (§3.5 line 643 + §3.5.1).
     #

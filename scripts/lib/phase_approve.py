@@ -119,6 +119,10 @@ _FIX_ANCHOR_UNVERIFIABLE = (
     "verify the out-of-repo audit-tip anchor before reading state; "
     "or pass `skip_anchor_preflight=True` ONLY from controlled test paths"
 )
+_FIX_GITCONFIG_MUTATED = (
+    "Fix: pass `--by <email>` explicitly OR re-run `harness install` "
+    "to record the updated gitconfig email (§12.6 gitconfig fingerprint)"
+)
 _FIX_OVERRIDE_REASON_MISSING = (
     "Fix: pass `--reason \"<text>\"` together with `--override-identity` "
     "(the reason is mandatory and audited per ADR-001)"
@@ -265,6 +269,39 @@ def run_approve(
             file=sys.stderr,
         )
         return ApproveResult(exit_code=6, sub_reason="gitconfig_email_unset")
+
+    # ---------- Step 2a: gitconfig fingerprint check (§12.6) ----------
+    # Only runs when --by is NOT passed (gitconfig_auto path). If the
+    # install-record recorded git_user_email_at_install_sha256 and the
+    # current gitconfig email no longer matches that fingerprint, exit 6
+    # so a rotated/shared-workstation gitconfig cannot silently approve.
+    # When by_source == "explicit_by_flag" the user has explicitly asserted
+    # their identity; the fingerprint check is skipped (--by is opt-in bypass).
+    if by_source == "gitconfig_auto":
+        try:
+            _ir_for_fingerprint = _load_install_record(install_record_path)
+            stored_fingerprint = _ir_for_fingerprint.get("git_user_email_at_install_sha256")
+            if stored_fingerprint is not None:
+                import hashlib as _hashlib
+                current_fingerprint = _hashlib.sha256(
+                    resolved.lower().encode("utf-8")
+                ).hexdigest()
+                if current_fingerprint != stored_fingerprint:
+                    print(
+                        f"error: phase approve refused: current gitconfig user.email "
+                        f"sha256 does not match install-record fingerprint "
+                        f"(gitconfig_mutated_post_install). {_FIX_GITCONFIG_MUTATED}",
+                        file=sys.stderr,
+                    )
+                    return ApproveResult(
+                        exit_code=6,
+                        sub_reason="gitconfig_mutated_post_install",
+                        resolved_email=resolved,
+                        by_source=by_source,
+                    )
+        except FileNotFoundError:
+            # install_record missing — caught at step 3; skip fingerprint here
+            pass
 
     # ---------- Step 2b: override-identity handling (§3.1 step 4 + ADR-001) ----------
     # Design decision (under-specified clarification): §3.1 step 4 says

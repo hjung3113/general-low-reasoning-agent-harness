@@ -260,6 +260,16 @@ class CiOidcClaimMismatch(CiPredicateError):
         super().__init__(message, sub_reason="ci_oidc_claim_mismatch")
 
 
+class CiOidcJtiReplayed(CiPredicateError):
+    """OIDC token jti claim was already consumed (replay detected).
+    exit_code=6, sub_reason='ci_oidc_jti_replay' (§12.4 jti replay defense)."""
+
+    exit_code = 6
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, sub_reason="ci_oidc_jti_replay")
+
+
 # ---------------------------------------------------------------------------
 # Result dataclass
 # ---------------------------------------------------------------------------
@@ -534,9 +544,12 @@ def ci_predicate_satisfied(
             f"Provider {provider_key!r}: OIDC verifier raised unexpected error: {exc}"
         ) from exc
 
-    # Extract the §3.5.1 / §12.4 audit claim subset
+    # Extract the §3.5.1 / §12.4 audit claim subset.
+    # jti is always extracted if present (§12.4 replay defense key).
     claim_keys = spec["claim_keys"]
     ci_oidc_claims = {k: verified_claims.get(k) for k in claim_keys}
+    if "jti" in verified_claims:
+        ci_oidc_claims["jti"] = verified_claims["jti"]
 
     # ------------------------------------------------------------------
     # Step 7 — return result
@@ -558,6 +571,7 @@ __all__ = [
     "CiProviderAmbiguous",
     "CiOidcUnreachable",
     "CiOidcClaimMismatch",
+    "CiOidcJtiReplayed",
     "CiProvenanceResult",
     "ci_predicate_satisfied",
 ]
