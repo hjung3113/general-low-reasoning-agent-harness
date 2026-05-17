@@ -94,7 +94,8 @@ class TestDeprecatedFlagAudit:
         if audit_path.exists() and audit_path.stat().st_size > 0:
             entry = json.loads(audit_path.read_text().strip().splitlines()[-1])
             assert entry["verb"] == "cli.deprecated_flag"
-            assert entry.get("args", {}).get("deprecated_flag") in ("--chain", "--auto")
+            # §3.3 spec: args={"flag":"--chain"|"--auto"} (P2-2 schema alignment)
+            assert entry.get("args", {}).get("flag") in ("--chain", "--auto")
 
     def test_auto_flag_audit_verb(self, tmp_path):
         """harness --auto writes verb=cli.deprecated_flag to audit log."""
@@ -177,3 +178,103 @@ class TestDeprecatedFlagModule:
             entry = json.loads(audit_path.read_text().strip().splitlines()[-1])
             assert "entry_hash" in entry, "S07 audit entry must have S06 chain fields"
             assert "seq_global" in entry
+
+    def test_audit_entry_args_schema_flag_key(self, tmp_path):
+        """P2-2: args must use key 'flag' per §3.3 spec."""
+        from lib.cli_deprecated import check_deprecated_flags
+        audit_path = tmp_path / "audit.log"
+        check_deprecated_flags(["--chain"], audit_path=audit_path)
+        if audit_path.exists() and audit_path.stat().st_size > 0:
+            entry = json.loads(audit_path.read_text().strip().splitlines()[-1])
+            args = entry.get("args", {})
+            assert "flag" in args, "args must have 'flag' key per §3.3"
+            assert "deprecated_flag" not in args, "old key 'deprecated_flag' must not be present"
+
+
+# ---------------------------------------------------------------------------
+# P1-4: --chain=value / --auto=anything bypass detection
+# ---------------------------------------------------------------------------
+
+class TestDeprecatedFlagWithEqualsValue:
+    @pytest.mark.parametrize("arg", [
+        "--chain=foo",
+        "--auto=bar",
+        "--chain=",
+        "--auto=",
+    ])
+    def test_deprecated_flag_with_equals_value_rejected(self, tmp_path, arg):
+        """P1-4: --chain=value and --auto=value forms must be detected."""
+        from lib.cli_deprecated import check_deprecated_flags
+        result = check_deprecated_flags([arg], audit_path=tmp_path / "audit.log")
+        assert result is not None, (
+            f"check_deprecated_flags should detect {arg!r} as deprecated"
+        )
+        assert result.exit_code == 13
+
+    def test_prefix_match_normalizes_flag_name(self, tmp_path):
+        """P1-4: detected flag name for --chain=foo should normalize to --chain."""
+        from lib.cli_deprecated import check_deprecated_flags
+        result = check_deprecated_flags(["--chain=somevalue"])
+        assert result is not None
+        assert result.flag == "--chain"
+
+    def test_non_deprecated_equals_args_pass(self, tmp_path):
+        """--other=value flags that aren't deprecated must not trigger."""
+        from lib.cli_deprecated import check_deprecated_flags
+        result = check_deprecated_flags(["--mode=chain", "--auto-approve=yes"])
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# P2-2: §3.3 args schema alignment
+# ---------------------------------------------------------------------------
+
+class TestArgsSchemaAlignment:
+    def test_args_has_flag_key(self, tmp_path):
+        """§3.3: args={"flag":"--chain"|"--auto"} — 'flag' key required."""
+        from lib.cli_deprecated import check_deprecated_flags
+        audit_path = tmp_path / "audit.log"
+        check_deprecated_flags(["--auto"], audit_path=audit_path)
+        if audit_path.exists() and audit_path.stat().st_size > 0:
+            entry = json.loads(audit_path.read_text().strip().splitlines()[-1])
+            assert entry.get("args", {}).get("flag") == "--auto"
+
+    def test_args_has_replacement_command(self, tmp_path):
+        """args must also carry replacement_command."""
+        from lib.cli_deprecated import check_deprecated_flags
+        audit_path = tmp_path / "audit.log"
+        check_deprecated_flags(["--chain"], audit_path=audit_path)
+        if audit_path.exists() and audit_path.stat().st_size > 0:
+            entry = json.loads(audit_path.read_text().strip().splitlines()[-1])
+            assert "replacement_command" in entry.get("args", {})
+
+
+# ---------------------------------------------------------------------------
+# P2-4: --fixture path existence check
+# ---------------------------------------------------------------------------
+
+class TestFixtureExistenceCheck:
+    def test_nonexistent_fixture_dir_exits_10(self, tmp_path):
+        """P2-4: --fixture pointing at non-existent dir must exit 10."""
+        import types
+        from lib.audit_verify_cli import cmd_verify_audit
+        args = types.SimpleNamespace(verify_fixture=str(tmp_path / "nonexistent"))
+        rc = cmd_verify_audit(args, tmp_path)
+        assert rc == 10
+
+    def test_fixture_dir_without_audit_log_exits_10(self, tmp_path):
+        """P2-4: --fixture pointing at dir without audit.log must exit 10."""
+        import types
+        from lib.audit_verify_cli import cmd_verify_audit
+        args = types.SimpleNamespace(verify_fixture=str(tmp_path))
+        rc = cmd_verify_audit(args, tmp_path)
+        assert rc == 10
+
+    def test_fixture_dir_with_audit_log_ok(self, tmp_path):
+        """P2-4: --fixture pointing at valid dir with audit.log must proceed."""
+        import types
+        from lib.audit_verify_cli import cmd_verify_audit
+        (tmp_path / "audit.log").write_text("", encoding="utf-8")
+        args = types.SimpleNamespace(verify_fixture=str(tmp_path))
+        rc = cmd_verify_audit(args, tmp_path)
+        assert rc == 0  # empty log is OK

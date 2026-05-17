@@ -4,7 +4,7 @@ Owning plan: .planning/phases/02b-hardening/plans/02b-04-T0-3-PLAN.md
 Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1.
 
 Each lifecycle write appends one JSON line to ``.harness/audit.log``.
-Lines are bounded at ``AUDIT_MAX_LINE_BYTES`` (700 bytes — raised from
+Lines are bounded at ``AUDIT_MAX_LINE_BYTES`` (1024 bytes — raised from
 512 in S06 to accommodate ~140 bytes of per-entry chain fields: seq,
 seq_global, previous_entry_hash, entry_hash). When the encoded line
 exceeds the budget, the ``args`` payload is replaced with
@@ -106,14 +106,77 @@ def read_last_entry(audit_path: Path) -> Optional[dict]:
     return None
 
 
-def _rotate(audit_path: Path) -> None:
-    """Rename ``audit.log.N`` → ``audit.log.N+1`` then ``audit.log`` → ``audit.log.1``.
+def _rotate(audit_path: Path, *, fd: int) -> str:
+    """Emit audit.rotated seam entry, then rename audit.log → audit.log.1.
 
-    POSIX ``rename`` is atomic. Callers MUST hold the flock; the rename
-    survives the lock because ``flock`` binds the fd (inode), not the
-    pathname.
+    §2.5 requires the LAST entry of the rotated-out file to be
+    ``verb=audit.rotated`` with ``next_file_seed_previous_entry_hash`` so
+    verifiers and the new-file opener can walk across the rotation boundary
+    without out-of-band metadata.
+
+    Steps (all under the already-held flock on ``fd``):
+      1. Read current chain tip to get tip_hash, tip_seq, tip_seq_global.
+      2. Build and stamp the ``audit.rotated`` seam entry (chained).
+      3. Write + fsync the seam entry to ``audit.log`` via ``fd``.
+      4. fsync parent dir.
+      5. Shift existing rotation files (N → N+1) then rename current → .1.
+      6. Return ``next_file_seed_previous_entry_hash`` for the new file's
+         first entry.
+
+    Callers MUST hold the flock on ``fd`` before calling this function.
+    POSIX ``rename`` is atomic; ``flock`` binds the inode so the lock
+    survives the rename.
     """
-    # Drop the oldest if it would exceed retention.
+    import datetime
+    from .audit_chain import stamp_chain_fields
+
+    # Step 1 — read current tip
+    prev_hash, last_seq, last_seq_global = _read_chain_tip(audit_path)
+
+    # Step 2 — build seam entry
+    # The seam entry is a normal chained entry (entry_hash covers all fields
+    # except entry_hash and previous_entry_hash per the ADR D-3 formula).
+    # next_file_seed_previous_entry_hash is set to the seam entry's own
+    # entry_hash so the verifier and next-file opener can find the seed
+    # without recomputing.  The new file's first entry uses this value as
+    # its previous_entry_hash.
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    seam_seq = last_seq + 1
+    seam_seq_global = last_seq_global + 1
+    seam_draft = {
+        "verb": "audit.rotated",
+        "at": now,
+        "index": _read_last_index(audit_path) + 1,
+    }
+    # Stamp to get the chained entry_hash
+    seam_entry = stamp_chain_fields(
+        seam_draft,
+        previous_entry_hash=prev_hash,
+        seq=seam_seq,
+        seq_global=seam_seq_global,
+    )
+    # Store the seam entry's entry_hash as the seed for the new file's first
+    # entry.  This field is metadata (forward-pointer) and is NOT included in
+    # the seam entry's own hash computation (entry_hash was already finalized).
+    seed_hash = seam_entry["entry_hash"]
+    seam_entry["next_file_seed_previous_entry_hash"] = seed_hash
+
+    # Step 3 — write seam entry to current audit.log via the held fd
+    line = json.dumps(seam_entry, separators=(",", ":"), sort_keys=True) + "\n"
+    os.write(fd, line.encode("utf-8"))
+    os.fsync(fd)
+
+    # Step 4 — fsync parent directory
+    try:
+        parent_fd = os.open(str(audit_path.parent), os.O_RDONLY)
+        try:
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+    except OSError:
+        pass  # Best-effort; main fsync already done above
+
+    # Step 5 — shift and rename
     oldest = audit_path.with_name(f"{audit_path.name}.{ROTATION_KEEP}")
     if oldest.exists():
         oldest.unlink()
@@ -123,6 +186,8 @@ def _rotate(audit_path: Path) -> None:
         if src.exists():
             os.rename(src, dst)
     os.rename(audit_path, audit_path.with_name(f"{audit_path.name}.1"))
+
+    return seed_hash
 
 
 def _write_overflow(audit_path: Path, index: int, full_entry: dict) -> None:
@@ -219,8 +284,13 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
         st_size = os.fstat(fd).st_size
         last_idx = _read_last_index(audit_path)
         rotated = False
+        rotation_seed_hash: Optional[str] = None
         if st_size >= ROTATION_BYTES or last_idx >= ROTATION_ENTRIES:
-            _rotate(audit_path)
+            # _rotate emits the audit.rotated seam entry (§2.5 P1-3) under
+            # the held flock, then renames audit.log → audit.log.1.
+            # audit_append holds flock on the file via audit_append's flock
+            # protocol; _rotate is race-safe via the file lock.
+            rotation_seed_hash = _rotate(audit_path, fd=fd)
             rotated = True
             # Open the new (empty) audit.log. The old fd (still flocked)
             # now refers to audit.log.1; closing it releases the old-inode
@@ -240,8 +310,18 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
             fd = new_fd
             last_idx = 0
 
-        # S06: read chain tip to stamp chain fields
-        prev_hash, last_seq, last_seq_global = _read_chain_tip(audit_path)
+        # S06: read chain tip to stamp chain fields.
+        # After rotation, use the seam entry's entry_hash as previous_entry_hash
+        # for the new file's first entry (§2.5 seam seed wiring).
+        if rotated and rotation_seed_hash is not None:
+            prev_hash = rotation_seed_hash
+            last_seq = 0
+            # seq_global: read from the rotated file's seam entry
+            rotated_file = audit_path.with_name(f"{audit_path.name}.1")
+            seam_entry_last = read_last_entry(rotated_file)
+            last_seq_global = seam_entry_last.get("seq_global", 0) if seam_entry_last else 0
+        else:
+            prev_hash, last_seq, last_seq_global = _read_chain_tip(audit_path)
 
         index = last_idx + 1
         seq = last_seq + 1 if not rotated else 1

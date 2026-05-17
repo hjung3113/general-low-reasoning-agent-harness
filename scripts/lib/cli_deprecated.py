@@ -42,6 +42,18 @@ class DeprecatedFlagError:
             self.hint = _HINT_TEMPLATE.format(flag=self.flag)
 
 
+def _is_deprecated_flag(arg: str) -> bool:
+    """Return True if *arg* is or starts with a deprecated flag.
+
+    Matches exact form (``--chain``) AND value-attached form
+    (``--chain=foo``, ``--auto=bar``) so that ``--chain=value`` cannot
+    bypass the deprecation gate (P1-4).
+    """
+    return arg in DEPRECATED_FLAGS or any(
+        arg.startswith(f + "=") for f in DEPRECATED_FLAGS
+    )
+
+
 def check_deprecated_flags(
     argv: list[str],
     *,
@@ -56,11 +68,13 @@ def check_deprecated_flags(
     Flags are detected anywhere in argv (not just position 0) to catch both:
       harness --chain phase set plan
       harness phase set execute --auto
+    Also detects value-attached form: --chain=foo, --auto=bar (P1-4).
     """
     detected: Optional[str] = None
     for arg in argv:
-        if arg in DEPRECATED_FLAGS:
-            detected = arg
+        if _is_deprecated_flag(arg):
+            # Normalise to the bare flag name for the hint template
+            detected = arg if arg in DEPRECATED_FLAGS else arg.split("=", 1)[0]
             break
 
     if detected is None:
@@ -91,7 +105,8 @@ def _write_audit_entry(flag: str, hint: str, *, audit_path: Path) -> None:
         "verb": "cli.deprecated_flag",
         "at": now,
         "args": {
-            "deprecated_flag": flag,
+            # §3.3 spec: args={"flag":"--chain"|"--auto"} (P2-2 schema alignment)
+            "flag": flag,
             "replacement_command": (
                 "harness phase autopilot start [--mode chain|phase]"
             ),
@@ -101,10 +116,20 @@ def _write_audit_entry(flag: str, hint: str, *, audit_path: Path) -> None:
 
     try:
         audit_path.parent.mkdir(parents=True, exist_ok=True)
+        # audit_append is race-safe via fcntl.flock (LOCK_EX) held internally;
+        # no additional lock is acquired here (P2-5).
         audit_append(entry, audit_path=audit_path)
-    except Exception:
-        # Audit write failure must NOT suppress the exit-13 path
+    except (FileNotFoundError, PermissionError):
+        # repo_root() resolution failure or read-only audit.log — silently skip
+        # so the exit-13 deprecation path is never suppressed (P2-1).
         pass
+    except OSError as exc:
+        # Other OS-level failures (e.g. ENOSPC) — warn to stderr but still exit 13
+        import sys as _sys
+        print(
+            f"Warning: audit write failed ({exc}); exit-13 deprecation path continues.",
+            file=_sys.stderr,
+        )
 
 
 def print_and_exit(error: DeprecatedFlagError) -> None:

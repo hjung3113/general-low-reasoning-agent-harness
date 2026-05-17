@@ -58,7 +58,12 @@ def _write_entries_to_file(path: Path, entries: list[dict],
 
 
 def _setup_rotation(tmp_path: Path, *, n_old: int = 3, n_new: int = 2):
-    """Create audit.log.1 (old) and audit.log (current tip) with valid seam."""
+    """Create audit.log.1 (old) and audit.log (current tip) with valid seam.
+
+    §2.5 / P1-3: the last entry in audit.log.1 MUST be verb=audit.rotated
+    with next_file_seed_previous_entry_hash set to its own entry_hash.
+    The first entry of audit.log uses that hash as previous_entry_hash.
+    """
     old_log = tmp_path / "audit.log.1"
     cur_log = tmp_path / "audit.log"
 
@@ -67,10 +72,27 @@ def _setup_rotation(tmp_path: Path, *, n_old: int = 3, n_new: int = 2):
                                            start_seq=1, start_seq_global=1,
                                            first_prev_hash=GENESIS_HASH)
 
+    # Append audit.rotated seam entry to old log
+    seam_seq = n_old + 1
+    seam_seq_global = n_old + 1
+    seam_draft = {"verb": "audit.rotated", "at": "2026-05-17T00:00:00Z",
+                  "index": n_old + 1, "schema_version": 2}
+    seam_stamped = stamp_chain_fields(
+        seam_draft,
+        previous_entry_hash=last_old_hash,
+        seq=seam_seq,
+        seq_global=seam_seq_global,
+    )
+    # next_file_seed_previous_entry_hash = seam entry's own entry_hash
+    seed_hash = seam_stamped["entry_hash"]
+    seam_stamped["next_file_seed_previous_entry_hash"] = seed_hash
+    with open(old_log, "a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(seam_stamped, separators=(",", ":"), sort_keys=True) + "\n")
+
     new_entries = [_make_entry(f"phase.approve_{i}") for i in range(n_new)]
     _write_entries_to_file(cur_log, new_entries,
-                           start_seq=1, start_seq_global=n_old + 1,
-                           first_prev_hash=last_old_hash)
+                           start_seq=1, start_seq_global=n_old + 2,
+                           first_prev_hash=seed_hash)
     return old_log, cur_log
 
 
@@ -114,14 +136,16 @@ class TestRotationSeamClean:
         _setup_rotation(tmp_path, n_old=3, n_new=2)
         result = verify_chain(tmp_path / "audit.log", rotation_dir=tmp_path)
         assert result.ok is True
-        assert result.entries_walked == 5
+        # 3 old + 1 seam (audit.rotated) + 2 new = 6
+        assert result.entries_walked == 6
         assert result.rotation_files_traversed == 1
 
     def test_seq_global_monotonic(self, tmp_path):
         _setup_rotation(tmp_path, n_old=3, n_new=2)
         steps = list(walk_chain(tmp_path / "audit.log", rotation_dir=tmp_path))
         seq_globals = [s.entry["seq_global"] for s in steps if "seq_global" in s.entry]
-        assert seq_globals == list(range(1, 6))
+        # 1,2,3 (old) + 4 (seam) + 5,6 (new)
+        assert seq_globals == list(range(1, 7))
 
 
 # ---------------------------------------------------------------------------
