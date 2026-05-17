@@ -60,21 +60,27 @@ def coerce_legacy_execution_mode(state: Mapping[str, Any]) -> dict[str, Any]:
     """Return a new dict where ``execution_mode`` is derived per design §1.2.
 
     Precedence:
-      1. If ``state["execution_mode"]`` is present and valid → keep it
+      1. If the ``execution_mode`` **key is present** in ``state`` → keep it
          (authoritative; legacy alias is ignored to match design §1.1
-         "Single source of truth").
-      2. Else if ``state["automation_mode"]`` is present → translate via
-         ``LEGACY_AUTOMATION_TO_EXECUTION``.
-      3. Else (pristine v0.6.1 install with both fields absent) → ``manual``.
+         "Single source of truth"). An explicit JSON ``null`` is treated as
+         an invalid explicit value and rejected.
+      2. Else if the ``automation_mode`` **key is present** → translate via
+         ``LEGACY_AUTOMATION_TO_EXECUTION``. An explicit ``null`` here is
+         likewise rejected — only true absence is the v0.6.1 shape.
+      3. Else (pristine v0.6.1 install: both keys absent) → ``manual``.
 
     Raises ``ValueError`` on unrecognised explicit values to fail closed:
     a forged or hand-edited state file should NOT silently degrade to a
     permissive default. Filesystem-level forgery defence is the state-trust
     preflight (S01-E); this is the in-memory equivalent.
+
+    Key-presence (``in``) is intentional rather than ``.get(...) is None``:
+    design §1.2 distinguishes "absent" from "explicit null" — only the
+    former triggers the default path.
     """
     out = dict(state)
-    explicit = out.get("execution_mode")
-    if explicit is not None:
+    if "execution_mode" in out:
+        explicit = out["execution_mode"]
         if explicit not in EXECUTION_MODES:
             raise ValueError(
                 f"unknown execution_mode={explicit!r}; "
@@ -82,18 +88,17 @@ def coerce_legacy_execution_mode(state: Mapping[str, Any]) -> dict[str, Any]:
             )
         return out
 
-    legacy = out.get("automation_mode")
-    if legacy is None:
+    if "automation_mode" not in out:
         out["execution_mode"] = "manual"
         return out
 
-    try:
-        out["execution_mode"] = LEGACY_AUTOMATION_TO_EXECUTION[legacy]
-    except KeyError as exc:
+    legacy = out["automation_mode"]
+    if legacy not in LEGACY_AUTOMATION_TO_EXECUTION:
         raise ValueError(
             f"unknown legacy automation_mode={legacy!r}; "
             f"expected one of {sorted(LEGACY_AUTOMATION_TO_EXECUTION)}"
-        ) from exc
+        )
+    out["execution_mode"] = LEGACY_AUTOMATION_TO_EXECUTION[legacy]
     return out
 
 

@@ -79,3 +79,35 @@ def test_unknown_execution_mode_value_rejected():
     state = {"execution_mode": "warp_speed"}
     with pytest.raises(ValueError, match="execution_mode"):
         coerce_legacy_execution_mode(state)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix (P1, 2026-05-17): explicit-null vs absent distinction.
+#
+# Per design §1.2: "If `execution_mode` is absent and `automation_mode` is
+# present, coerce as ...". Only **absent** triggers the v0.6.1 default path;
+# an explicit JSON `null` is an invalid explicit value and MUST fail closed.
+# Prior implementation used `.get()` which conflated absence and null.
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_null_execution_mode_rejected():
+    """JSON `null` for execution_mode is an invalid explicit value, not absent."""
+    state = {"execution_mode": None, "phase": "discuss"}
+    with pytest.raises(ValueError, match="execution_mode"):
+        coerce_legacy_execution_mode(state)
+
+
+def test_explicit_null_execution_mode_rejected_even_with_valid_legacy_alias():
+    """Explicit null on execution_mode must not be papered over by a legacy alias."""
+    state = {"execution_mode": None, "automation_mode": "chain"}
+    with pytest.raises(ValueError, match="execution_mode"):
+        coerce_legacy_execution_mode(state)
+
+
+def test_explicit_null_automation_mode_rejected():
+    """JSON `null` for automation_mode is an invalid explicit legacy value,
+    not the v0.6.1 'both absent' shape — fail closed."""
+    state = {"automation_mode": None}
+    with pytest.raises(ValueError, match="automation_mode"):
+        coerce_legacy_execution_mode(state)
