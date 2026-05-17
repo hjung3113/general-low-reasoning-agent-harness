@@ -109,8 +109,41 @@ def _load_state() -> tuple[dict, Optional[str]]:
     return (data, data.get("phase"))
 
 
+_EXPECTED_STATE_SCHEMA_VERSION = 2
+
+
+def _ensure_state_schema_version(data: dict) -> None:
+    """Stamp ``state_schema_version=2`` on the state, or refuse with exit 5.
+
+    Contract: CONTRACT-PIN §7 L2 + ADR-001 Decision L2 require every v2 state
+    write to carry ``state_schema_version=2``. The canonical producer is
+    ``scripts/lib/state_migrate.py:forward`` (see MIGRATOR doc). Prior to
+    this stamp, ``phase set`` / ``phase approve`` silently omitted the field,
+    forcing the smoke comparator to use an ``<ANY>`` sentinel for the field
+    (see 02b-11 commit bab5c5d). Mutates ``data`` in-place.
+
+    Semantics:
+    - field absent  -> stamp to 2.
+    - field == 2    -> no-op.
+    - field == N!=2 -> exit 5 with a remediation line naming the migrator.
+    """
+    current = data.get("state_schema_version")
+    if current is None:
+        data["state_schema_version"] = _EXPECTED_STATE_SCHEMA_VERSION
+        return
+    if current == _EXPECTED_STATE_SCHEMA_VERSION:
+        return
+    print(
+        f"error: state_schema_version={current!r} expected {_EXPECTED_STATE_SCHEMA_VERSION}; "
+        f"run 'harness migrate state --forward' first",
+        file=sys.stderr,
+    )
+    sys.exit(EXIT_UNPARSEABLE_JSON)
+
+
 def _write_state_atomic(data: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_state_schema_version(data)
     atomic_write_text(STATE_PATH, json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
