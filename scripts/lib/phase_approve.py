@@ -118,6 +118,43 @@ _FIX_ANCHOR_UNVERIFIABLE = (
     "verify the out-of-repo audit-tip anchor before reading state; "
     "or pass `skip_anchor_preflight=True` ONLY from controlled test paths"
 )
+_FIX_OVERRIDE_REASON_MISSING = (
+    "Fix: pass `--reason \"<text>\"` together with `--override-identity` "
+    "(the reason is mandatory and audited per ADR-001)"
+)
+_FIX_OVERRIDE_REASON_CHARS = (
+    "Fix: --override-reason must not contain NUL / newlines / control "
+    "chars / Unicode bidi controls (audit-line framing hazard)"
+)
+_FIX_OVERRIDE_REASON_LEN = (
+    "Fix: --override-reason is capped at 1024 chars (design §3.1.1)"
+)
+_FIX_OVERRIDE_IDENTITY_CHARS = (
+    "Fix: --override-identity must not contain NUL / newlines / "
+    "control chars / Unicode bidi controls"
+)
+
+
+# ---------------------------------------------------------------------------
+# Sanitization (§3.1.1 final paragraph + §12.6)
+# ---------------------------------------------------------------------------
+
+
+_SANITIZE_MAX_LEN = 1024
+# C0 controls (0x00-0x1f), DEL (0x7f). We accept ordinary space (0x20+).
+_C0_CONTROLS = frozenset(chr(c) for c in range(0x00, 0x20))
+# Unicode bidi/isolate formatting controls — visual-spoof hazard
+# (Trojan-Source class). LRM/RLM/LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI.
+_BIDI_CONTROLS = frozenset([
+    "‎", "‏",
+    "‪", "‫", "‬", "‭", "‮",
+    "⁦", "⁧", "⁨", "⁩",
+])
+_FORBIDDEN_CHARS = _C0_CONTROLS | {"\x7f"} | _BIDI_CONTROLS
+
+
+def _has_forbidden_chars(s: str) -> bool:
+    return any(c in _FORBIDDEN_CHARS for c in s)
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +270,81 @@ def run_approve(
         )
         return ApproveResult(exit_code=6, sub_reason="gitconfig_email_unset")
 
+    # ---------- Step 2b: override-identity handling (§3.1 step 4 + ADR-001) ----------
+    # Design decision (under-specified clarification): §3.1 step 4 says
+    # `--override-identity` "bypasses step 3". We read this as "the
+    # AUDIT-DISPLAYED identity differs from the resolved one", NOT "the
+    # gate is removed". The resolved email (gitconfig or --by) MUST
+    # still be in approvers — otherwise the override flag is just an
+    # env-spoof rename. The override changes the audit `by` field
+    # (forensic display) and flips `by_source=override_identity` so
+    # reviewers can grep for unusual provenance. The `override_reason`
+    # is mandatory and audited.
+    override_identity_raw = getattr(args, "override_identity", None)
+    override_identity: Optional[str] = None
+    override_reason_clean: Optional[str] = None
+    if override_identity_raw not in (None, False, ""):
+        if not isinstance(override_identity_raw, str):
+            override_identity_raw = str(override_identity_raw)
+        # Reason mandatory.
+        raw_reason = getattr(args, "override_reason", None)
+        if raw_reason is None or not str(raw_reason).strip():
+            print(
+                f"error: phase approve refused: --override-identity requires "
+                f"--reason. {_FIX_OVERRIDE_REASON_MISSING}",
+                file=sys.stderr,
+            )
+            return ApproveResult(
+                exit_code=6,
+                sub_reason="override_reason_missing",
+                resolved_email=resolved,
+                by_source="override_identity",
+            )
+        reason_str = str(raw_reason)
+        # Length cap.
+        if len(reason_str) > _SANITIZE_MAX_LEN:
+            print(
+                f"error: phase approve refused: --override-reason exceeds "
+                f"{_SANITIZE_MAX_LEN} chars. {_FIX_OVERRIDE_REASON_LEN}",
+                file=sys.stderr,
+            )
+            return ApproveResult(
+                exit_code=6,
+                sub_reason="override_reason_too_long",
+                resolved_email=resolved,
+                by_source="override_identity",
+            )
+        # Charset.
+        if _has_forbidden_chars(reason_str):
+            print(
+                f"error: phase approve refused: --override-reason contains "
+                f"forbidden chars. {_FIX_OVERRIDE_REASON_CHARS}",
+                file=sys.stderr,
+            )
+            return ApproveResult(
+                exit_code=6,
+                sub_reason="override_reason_invalid_chars",
+                resolved_email=resolved,
+                by_source="override_identity",
+            )
+        # Identity itself sanitized too (same charset).
+        if _has_forbidden_chars(override_identity_raw) or \
+                len(override_identity_raw) > _SANITIZE_MAX_LEN:
+            print(
+                f"error: phase approve refused: --override-identity contains "
+                f"forbidden chars. {_FIX_OVERRIDE_IDENTITY_CHARS}",
+                file=sys.stderr,
+            )
+            return ApproveResult(
+                exit_code=6,
+                sub_reason="override_identity_invalid_chars",
+                resolved_email=resolved,
+                by_source="override_identity",
+            )
+        override_identity = override_identity_raw.strip()
+        override_reason_clean = reason_str.strip()
+        by_source = "override_identity"
+
     # ---------- Step 3: install-record approvers membership ----------
     try:
         install_record = _load_install_record(install_record_path)
@@ -245,9 +357,13 @@ def run_approve(
         return ApproveResult(exit_code=6, sub_reason="install_record_missing")
 
     approvers = _approvers_emails(install_record)
-    if resolved.lower() not in approvers and not getattr(
-        args, "override_identity", False
-    ):
+    # Note: prior code had a bypass `and not getattr(args, "override_identity", False)`.
+    # S05 removes that bypass — the resolved identity (gitconfig or --by)
+    # MUST still be a listed approver even when `--override-identity` is
+    # set. The override changes only the audit-displayed identity; the
+    # GATE remains "humans listed in install-record approve". See the
+    # design decision comment in the override branch above.
+    if resolved.lower() not in approvers:
         print(
             f"error: phase approve refused: {resolved!r} is not in "
             f"install-record approvers[]. {_FIX_APPROVER_MEMBERSHIP}",
@@ -470,7 +586,10 @@ def run_approve(
         )
         after_state = dict(before_state)
         after_state["approved"] = True
-        after_state["approved_by"] = resolved
+        # State `approved_by` records the AUDIT-DISPLAYED identity
+        # (override when set; resolved otherwise) so `harness status`
+        # surfaces the same value the audit log carries.
+        after_state["approved_by"] = override_identity or resolved
         after_state["approved_at"] = approved_at
 
         # Audit entry shape:
@@ -510,11 +629,23 @@ def run_approve(
             .isoformat()
             .replace("+00:00", "Z")
         )
+        # S05: when override_identity is set, the audit `by` field is the
+        # override (forensic-displayed identity); `by_source` is
+        # "override_identity"; `confirmation_kind` is also
+        # "override_identity" so reviewers can detect this branch from
+        # either field (truncation-resilient cross-check). The original
+        # resolved email lives at top-level `resolved_email` for audit
+        # forensics. `args.override_reason` carries the sanitized text.
+        audit_by = override_identity or resolved
+        if override_identity is not None:
+            confirmation_kind = "override_identity"
+        else:
+            confirmation_kind = "human_nonce"
         audit_draft = {
             "verb": "phase.approve",
-            "by": resolved,
+            "by": audit_by,
             "by_source": by_source,
-            "confirmation_kind": "human_nonce",
+            "confirmation_kind": confirmation_kind,
             "nonce_id": nonce.nonce_id,
             "nonce_minter_tty": nonce.minter_tty,
             "nonce_consumer_tty": consumer_tty,
@@ -524,6 +655,17 @@ def run_approve(
                 "approved_at": approved_at,
             },
         }
+        if override_identity is not None:
+            # The override-displayed identity is ALREADY the top-level
+            # `by` field; `by_source=override_identity` is the truncation-
+            # resilient discriminator. The resolved-vs-displayed pair and
+            # the sanitized reason live in `args` and the overflow archive
+            # (the line is too tight after sha256 + tty fields to host
+            # additional top-level mirrors without forcing the minimal
+            # fallback in audit.py, which would drop `by_source`).
+            audit_draft["args"]["override_reason"] = override_reason_clean
+            audit_draft["args"]["override_identity"] = override_identity
+            audit_draft["args"]["resolved_email"] = resolved
         # NOTE: `commit_transaction` reads `_phase_txn` via module-level
         # symbol; tests that monkeypatch `phase_txn.commit_transaction`
         # also monkeypatch `phase_approve._phase_txn` to the live module
