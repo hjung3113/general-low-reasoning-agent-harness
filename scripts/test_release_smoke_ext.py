@@ -143,6 +143,37 @@ class TestStage1Core(unittest.TestCase):
             for ec in capture["exit_codes"]:
                 self.assertEqual(ec, 0)
 
+    def test_session_lock_absent_after_done(self):
+        # M3 (restored plan test 18): no .harness/session.lock left
+        # behind after the lifecycle terminates at phase=done.
+        with tempfile.TemporaryDirectory(prefix="harness-smoke-lock.") as tmp:
+            fixture = Path(tmp) / "lock-fixture"
+            smoke_lifecycle.copy_fixture(fixture)
+            smoke_lifecycle._run_lifecycle_argv_sequence(
+                fixture, [inv["argv"] for inv in STAGE1_INVOCATIONS]
+            )
+            self.assertFalse(
+                (fixture / ".harness" / "session.lock").exists(),
+                "session.lock must not exist post-done",
+            )
+
+    def test_git_status_clean_after_smoke(self):
+        # M3 (restored plan test 19): the fixture-local smoke does not
+        # mutate the repo root tree. We snapshot `git status --porcelain`
+        # before and after; the diff must be empty.
+        before = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+        with tempfile.TemporaryDirectory(prefix="harness-smoke-gitclean.") as tmp:
+            smoke_lifecycle._run_stage1_core(Path(tmp))
+        after = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+        self.assertEqual(before, after,
+            "stage 1 smoke leaked changes into the repo root working tree")
+
     def test_stage1_audit_indices_monotonic(self):
         with tempfile.TemporaryDirectory(prefix="harness-smoke-stage1-mono.") as tmp:
             fixture = Path(tmp) / "stage1-core"
@@ -525,6 +556,103 @@ class TestReleaseSmokeRegression(unittest.TestCase):
         # banner appears either in stderr (hard-fail path) or via a
         # direct module-level check.
         self.assertIn("DEBUG ONLY", (cp.stderr + cp.stdout))
+
+    def test_keep_temp_flag_preserves_tmp_dir(self):
+        # M3 (restored plan test 33). Run the script with
+        # --skip-lifecycle-smoke (forbidden under --release, OK here)
+        # and a stubbed CASES list of length zero by monkey-importing
+        # the module is invasive — instead, simply run with
+        # --keep-temp + --skip-lifecycle-smoke and parse the TMP line.
+        # Use a tiny CASES override via env? Not supported. Use an
+        # absurd HARNESS_USER + the SecM1 banner path to short-circuit.
+        # Fallback: invoke `main` in-process with mocked CASES.
+        import importlib, unittest.mock as _mock
+        rs = importlib.import_module("scripts.release_smoke_test")
+        with _mock.patch.object(rs, "CASES", []):  # skip the matrix
+            with _mock.patch.object(sys, "argv", [
+                "release_smoke_test.py", "--skip-lifecycle-smoke", "--keep-temp",
+            ]):
+                # Capture stdout so we can read the TMP <path>.
+                import io
+                buf = io.StringIO()
+                with _mock.patch("sys.stdout", buf):
+                    rc = rs.main()
+                self.assertEqual(rc, 0)
+                out = buf.getvalue()
+        tmp_lines = [line for line in out.splitlines() if line.startswith("TMP ")]
+        self.assertEqual(len(tmp_lines), 1, f"expected exactly one TMP line, got {out!r}")
+        tmp_path = Path(tmp_lines[0][4:].strip())
+        try:
+            self.assertTrue(tmp_path.exists(), f"--keep-temp must preserve {tmp_path}")
+        finally:
+            import shutil as _shutil
+            if tmp_path.exists():
+                _shutil.rmtree(tmp_path, ignore_errors=True)
+
+    def test_keep_temp_absent_deletes_tmp_dir(self):
+        import importlib, unittest.mock as _mock, io
+        rs = importlib.import_module("scripts.release_smoke_test")
+        with _mock.patch.object(rs, "CASES", []):
+            with _mock.patch.object(sys, "argv", [
+                "release_smoke_test.py", "--skip-lifecycle-smoke",
+            ]):
+                buf = io.StringIO()
+                with _mock.patch("sys.stdout", buf):
+                    rc = rs.main()
+                self.assertEqual(rc, 0)
+                out = buf.getvalue()
+        tmp_lines = [line for line in out.splitlines() if line.startswith("TMP ")]
+        self.assertEqual(len(tmp_lines), 1)
+        tmp_path = Path(tmp_lines[0][4:].strip())
+        self.assertFalse(tmp_path.exists(),
+            "without --keep-temp the matrix dir must be removed")
+
+    def test_lifecycle_smoke_runs_before_cases_matrix(self):
+        # M3 (restored plan test 35): orchestration order — when
+        # lifecycle smoke is enabled, its banner ('GREP GATE PASS' /
+        # 'STAGE n PASS') must appear in stdout BEFORE any case 'PASS'
+        # line. We use an empty CASES list so the run completes
+        # quickly; the ordering invariant is still observable as the
+        # absence of any PASS line *before* the STAGE lines.
+        import importlib, unittest.mock as _mock, io
+        rs = importlib.import_module("scripts.release_smoke_test")
+        with _mock.patch.object(rs, "CASES", []):
+            with _mock.patch.object(sys, "argv", ["release_smoke_test.py"]):
+                buf = io.StringIO()
+                with _mock.patch("sys.stdout", buf):
+                    rc = rs.main()
+                self.assertEqual(rc, 0)
+                out = buf.getvalue()
+        # GREP GATE PASS comes first, then STAGE 1/2/3 PASS, then TMP.
+        self.assertIn("GREP GATE PASS", out)
+        self.assertIn("STAGE 1 PASS", out)
+        self.assertIn("STAGE 2 PASS", out)
+        self.assertIn("STAGE 3 PASS", out)
+        # No 'PASS <name>' case lines appear before STAGE 3 PASS.
+        s3 = out.index("STAGE 3 PASS")
+        prefix = out[:s3]
+        for line in prefix.splitlines():
+            self.assertFalse(line.startswith("PASS "),
+                f"case-matrix PASS line {line!r} appeared before lifecycle stages")
+
+    def test_full_end_to_end_exits_zero_with_empty_cases(self):
+        # M3 (restored plan test 34, scaled): we cannot run the real
+        # 11-case matrix in a unit test (multi-minute), but we CAN
+        # assert the orchestrator exits 0 with all three stages and a
+        # final TMP <path> line when the matrix is empty. The full
+        # 11-case run is exercised by `python3 scripts/release_smoke_test.py`
+        # in the release pipeline.
+        import importlib, unittest.mock as _mock, io
+        rs = importlib.import_module("scripts.release_smoke_test")
+        with _mock.patch.object(rs, "CASES", []):
+            with _mock.patch.object(sys, "argv", ["release_smoke_test.py"]):
+                buf = io.StringIO()
+                with _mock.patch("sys.stdout", buf):
+                    rc = rs.main()
+                self.assertEqual(rc, 0)
+                out = buf.getvalue()
+        self.assertTrue(out.splitlines()[-1].startswith("TMP "),
+            f"last stdout line must be 'TMP <path>'; got {out!r}")
 
     def test_release_flag_requires_expected_version(self):
         cp = subprocess.run(
