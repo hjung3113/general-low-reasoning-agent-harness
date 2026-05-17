@@ -446,6 +446,22 @@ class JudgeSystemExitTests(unittest.TestCase):
             self.assertIn("unparseable", result.reason)
 
 
+class JudgeAuditSymlinkTests(unittest.TestCase):
+    """SecM4 — audit-log reader uses O_NOFOLLOW; refuses to follow a symlink."""
+
+    def test_judge_refuses_symlink_audit_log(self) -> None:
+        from scripts.smoke import judge as jm
+
+        tmp = Path(tempfile.mkdtemp(prefix="auditsym."))
+        (tmp / ".harness").mkdir()
+        target = tmp / "elsewhere.log"
+        target.write_text(json.dumps({"verb": "phase.set"}) + "\n", encoding="utf-8")
+        log = tmp / ".harness" / "audit.log"
+        os.symlink(target, log)
+        with self.assertRaises(jm.AuditLogSymlinkError):
+            jm._read_audit(tmp)
+
+
 class JudgeMetaTests(unittest.TestCase):
     """Meta-tests per plan §5.1 tests 14-15."""
 
