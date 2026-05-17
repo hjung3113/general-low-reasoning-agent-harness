@@ -662,6 +662,22 @@ class ParseRejectedLinesTests(unittest.TestCase):
         self.assertIn("shenanigans foo bar", rejected)
 
 
+class PrepareScratchSymlinkGuardTests(unittest.TestCase):
+    """SecM2 — runner refuses to rmtree a dest that's a symlink or escapes root."""
+
+    def test_prepare_scratch_refuses_symlink_dest(self) -> None:
+        from scripts.smoke.runner import prepare_scratch
+
+        scratch_root = Path(tempfile.mkdtemp(prefix="symguard."))
+        # Create a destination outside the scratch root.
+        outside = Path(tempfile.mkdtemp(prefix="outside."))
+        symlink_dest = scratch_root / "evil"
+        os.symlink(outside, symlink_dest)
+        with self.assertRaises(RuntimeError) as cm:
+            prepare_scratch(_load(FX01), symlink_dest, scratch_root=scratch_root)
+        self.assertIn("symlink", str(cm.exception).lower())
+
+
 class SubprocessTimeoutTests(unittest.TestCase):
     """M5 — subprocess timeouts attributed to wall_clock_seconds + events."""
 
