@@ -219,6 +219,16 @@ All notable changes to this harness.
 Note: this slice preserves the `## Unreleased (develop)` heading verbatim;
 normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
 
+### Tooling
+
+- **02b-11**: Smoke harness extended with three adapter-neutral lifecycle stages
+  (core, Roo, OpenCode) and static grep gate against quarantined adapter
+  commands. Each stage drives the same scripted `discuss → plan → approve →
+  execute → approve → done` flow through `scripts/lib/smoke_lifecycle.py` and
+  asserts shape parity against `scripts/smoke/golden/cli-contract-lifecycle.json`
+  (hand-derived from ADR Artifact 1; never regenerated from runtime). Per spec
+  §10.2 and `.planning/phases/02b-hardening/plans/02b-11-SMOKE-EXT-PLAN.md`.
+
 ### Added
 
 - `python3 scripts/harness.py state show` — phase-state projection 출력 (text 또는 `--format json`).
