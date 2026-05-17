@@ -221,6 +221,21 @@ normalization to `## [Unreleased]` (Keep-a-Changelog) is deferred to T3.
 
 ### Tooling
 
+- **02b-10**: Phase E low-reasoning scenario harness (N=50 Haiku-4.5 trials
+  per flow, ≥80% pass threshold, evidence-based release gate per spec §9.1).
+  Ships `scripts/smoke/low_reasoning_scenario.py` plus four deterministic
+  fixtures (`discuss→plan`, `plan→approve`, `execute→done`, full lifecycle),
+  programmatic judge (no LLM-as-judge; routes through
+  `scripts.lib.state_diagnostics.load_state_json` + `VERIFICATION_PREFIXES`),
+  budget caps (60s wall / 20k input / 4k output tokens — hard fail, no
+  retry), max-2 flake-retry with noisy-trial tracking, per-trial JSON
+  evidence under `.planning/phases/02b-hardening/evidence/<timestamp>/per-flow/`,
+  and aggregator that writes `SUMMARY.json` + `SUMMARY.md` with a
+  RELEASE-GATE verdict. Escape clause: if `ANTHROPIC_API_KEY` is absent the
+  runner writes `SKIPPED.md` and exits 0 with a `SLICE BLOCKED` banner
+  (spec §9.1 — never silent unmeasured claim). 32 self-tests run without
+  the key via `FakeClient`; one optional live smoke gates on
+  `HARNESS_E2E_LIVE=1`.
 - **02b-11**: Smoke harness extended with three adapter-neutral lifecycle stages
   (core, Roo, OpenCode) and static grep gate against quarantined adapter
   commands. Each stage drives the same scripted `discuss → plan → approve →
