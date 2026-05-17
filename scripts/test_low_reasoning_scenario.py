@@ -496,6 +496,104 @@ class WallClockHonestyTests(unittest.TestCase):
         self.assertNotIn("wall_clock", record.budget_caps_hit)
 
 
+class HaikuRetryTests(unittest.TestCase):
+    """C3 — HaikuClient retries 429/5xx with backoff; raises HttpTransportError."""
+
+    def _make_client(self):
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test-fake"
+        from scripts.smoke.model_client import HaikuClient
+        return HaikuClient()
+
+    def test_haiku_client_retries_on_429(self) -> None:
+        from unittest import mock
+        import urllib.error
+        from io import BytesIO
+
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test-fake"
+        from scripts.smoke import model_client as mc
+
+        ok_payload = json.dumps(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            }
+        ).encode("utf-8")
+
+        class _OKResp:
+            def __init__(self, data):
+                self._d = data
+
+            def read(self):
+                return self._d
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        attempts = []
+
+        def fake_urlopen(req, timeout=None):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise urllib.error.HTTPError(
+                    req.full_url, 429, "rate limited", {}, BytesIO(b"rate limit")
+                )
+            return _OKResp(ok_payload)
+
+        client = self._make_client()
+        with mock.patch.object(mc.urllib.request, "urlopen", side_effect=fake_urlopen), \
+             mock.patch.object(mc.time, "sleep", lambda s: None):
+            resp = client.respond("hello")
+        self.assertEqual(resp.text, "ok")
+        self.assertEqual(len(attempts), 3)
+
+    def test_haiku_client_raises_transport_error_on_exhaustion(self) -> None:
+        from unittest import mock
+        import urllib.error
+        from io import BytesIO
+
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test-fake"
+        from scripts.smoke import model_client as mc
+        from scripts.smoke.model_client import HttpTransportError
+
+        def always_503(req, timeout=None):
+            raise urllib.error.HTTPError(
+                req.full_url, 503, "down", {}, BytesIO(b"server down")
+            )
+
+        client = self._make_client()
+        with mock.patch.object(mc.urllib.request, "urlopen", side_effect=always_503), \
+             mock.patch.object(mc.time, "sleep", lambda s: None):
+            with self.assertRaises(HttpTransportError):
+                client.respond("x")
+
+
+class RunnerTransportErrorTests(unittest.TestCase):
+    """C3 — runner records HttpTransportError as a trial-level fail, not abort."""
+
+    def test_runner_records_transport_error_as_trial_fail(self) -> None:
+        from scripts.smoke.model_client import HttpTransportError
+
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="transport."))
+
+        class BoomClient:
+            model = PINNED_MODEL
+            temperature = 0.0
+            last_call: dict = {}
+
+            def respond(self, prompt):
+                self.last_call = {"model": self.model, "temperature": self.temperature}
+                raise HttpTransportError("simulated 429 exhaustion")
+
+        client = BoomClient()
+        record = run_trial(fixture, 99, client, tmp / "scratch", tmp / "evidence")
+        self.assertFalse(record.passed)
+        self.assertTrue(getattr(record, "transport_error", False))
+
+
 class AggregatorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="agg."))
