@@ -518,6 +518,31 @@ def run(argv: list[str] | None = None) -> int:
         help="Print the lockfile payload and exit 0 without removing.",
     )
 
+    # Audit-tip anchor admin verbs (design doc §12.1, S00.7-anchor).
+    anchor_parser = subparsers.add_parser(
+        "anchor",
+        help="Out-of-repo audit-tip anchor admin verbs (TTY-only).",
+    )
+    anchor_sub = anchor_parser.add_subparsers(dest="anchor_command", required=True)
+    a_repair = anchor_sub.add_parser(
+        "repair",
+        help="Rebuild ~/.harness/audit-tip/<repo-id>.json from current live state.",
+    )
+    a_repair.add_argument(
+        "--by",
+        dest="anchor_by",
+        default=None,
+        help="Acting user email (recorded in the future audit entry that wraps repair).",
+    )
+    a_repair.add_argument(
+        "--accept-no-audit",
+        action="store_true",
+        help=(
+            "Allow repair before any audit entries exist (S00.7 boot path). "
+            "Without this flag, repair refuses when no audit tail is found."
+        ),
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -658,6 +683,11 @@ def run(argv: list[str] | None = None) -> int:
         if args.session_command == "unlock":
             return cmd_session_unlock(args)
         raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
+    if args.command == "anchor":
+        from lib.anchor_cli import cmd_anchor_repair
+        if args.anchor_command == "repair":
+            return cmd_anchor_repair(args, root)
+        raise AssertionError(f"Unhandled anchor subcommand: {args.anchor_command}")
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
