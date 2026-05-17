@@ -57,6 +57,10 @@ def get_exempt_paths(repo_root: Path) -> frozenset[str]:
         "docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md",
         # This script itself.
         "scripts/smoke/grep_gate_slash_rename.py",
+        # Consolidated stale-term gate (S14): its Consolidation section
+        # mentions the old slash names in a remark about grep_gate_slash_rename.py
+        # scope; this is explanatory prose, not a live reference.
+        "scripts/smoke/grep_gate_stale_terms.py",
         # CHANGELOG / release notes may mention the rename.
         "CHANGELOG.md",
         "CHANGELOG",
