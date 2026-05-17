@@ -11,10 +11,16 @@ parsing routes through `scripts.lib.state_diagnostics.load_state_json`.
 """
 from __future__ import annotations
 
+import errno
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+
+class AuditLogSymlinkError(RuntimeError):
+    """SecM4 — raised when `.harness/audit.log` is a symlink (O_NOFOLLOW guard)."""
 
 # Make the bare `lib.*` imports inside state_diagnostics work.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -72,10 +78,30 @@ def _read_state(scratch_dir: Path) -> dict | None:
 
 def _read_audit(scratch_dir: Path) -> list[dict]:
     log = Path(scratch_dir) / ".harness" / "audit.log"
-    if not log.exists():
+    if not log.exists() and not log.is_symlink():
         return []
+    # SecM4 — open via O_NOFOLLOW so a symlinked audit.log cannot redirect
+    # the judge to read attacker-chosen content. ELOOP -> AuditLogSymlinkError.
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(str(log), os.O_RDONLY | nofollow)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.EMLINK):
+            raise AuditLogSymlinkError(
+                f"audit.log is a symlink (refused): {log}"
+            ) from exc
+        raise
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
     out: list[dict] = []
-    for line in log.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
