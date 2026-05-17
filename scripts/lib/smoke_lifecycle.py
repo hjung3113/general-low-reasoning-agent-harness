@@ -126,7 +126,11 @@ def load_golden() -> dict:
     lines = text.splitlines()
     if not lines or "DERIVED FROM ADR" not in lines[0]:
         raise RuntimeError(
-            f"golden file missing required header marker: {LIFECYCLE_GOLDEN_PATH}"
+            f"golden file missing required 'DERIVED FROM ADR' header marker: {LIFECYCLE_GOLDEN_PATH}"
+        )
+    if "DO NOT REGENERATE" not in lines[0]:
+        raise RuntimeError(
+            f"golden file missing required 'DO NOT REGENERATE' header marker: {LIFECYCLE_GOLDEN_PATH}"
         )
     body = "\n".join(lines[1:])
     return json.loads(body)

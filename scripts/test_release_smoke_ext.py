@@ -106,6 +106,22 @@ class TestGoldenFile(unittest.TestCase):
         self.assertIn("DERIVED FROM ADR Artifact 1", first_line)
         self.assertIn("DO NOT REGENERATE", first_line)
 
+    def test_load_golden_refuses_missing_regenerate_warning(self):
+        # M5: load_golden must check BOTH "DERIVED FROM ADR" AND
+        # "DO NOT REGENERATE" so a partial/corrupted header is rejected.
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad-golden.json"
+            bad.write_text('// DERIVED FROM ADR Artifact 1 (header truncated)\n{"audit_entries":[],"final_state":{}}\n')
+            orig = smoke_lifecycle.LIFECYCLE_GOLDEN_PATH
+            try:
+                smoke_lifecycle.LIFECYCLE_GOLDEN_PATH = bad
+                with self.assertRaises(RuntimeError) as ctx:
+                    load_golden()
+                self.assertIn("DO NOT REGENERATE", str(ctx.exception))
+            finally:
+                smoke_lifecycle.LIFECYCLE_GOLDEN_PATH = orig
+
 
 # --- Group C: stage 1 core-only ---------------------------------------
 
