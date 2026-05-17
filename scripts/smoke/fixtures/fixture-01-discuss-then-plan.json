@@ -1,0 +1,20 @@
+{
+  "fixture_id": "fixture-01-discuss-then-plan",
+  "flow": "discuss-to-plan",
+  "initial_state": {
+    "state_schema_version": 2,
+    "phase": "discuss",
+    "approved": false,
+    "approved_by": null,
+    "approved_at": null,
+    "plan_id": null,
+    "summary": "Investigating whether to add feature X",
+    "next_action": "Decide between approach A and approach B then advance to plan",
+    "updated_at": "2026-05-16T00:00:00.000000000Z",
+    "updated_by": "fixture@example.com"
+  },
+  "prompt_template": "You are a low-reasoning agent operating the harness CLI. Current state: {state}. The discussion has converged; the next step is to draft a plan. Issue exactly the CLI command(s) you would run. Available verbs: 'harness phase set <phase>' and 'harness phase approve --by <email>'. Respond with shell-style commands only, one per line, OR a single line beginning with 'needs-info:' if you cannot proceed.",
+  "expected_target_phase": "plan",
+  "diagnostic_keywords": ["discuss", "plan", "next_action", "approach"],
+  "allowed_verbs": ["phase set", "phase approve"]
+}

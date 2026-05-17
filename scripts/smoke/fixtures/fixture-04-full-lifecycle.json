@@ -1,0 +1,28 @@
+{
+  "fixture_id": "fixture-04-full-lifecycle",
+  "flow": "full-lifecycle",
+  "initial_state": {
+    "state_schema_version": 2,
+    "phase": "discuss",
+    "approved": false,
+    "approved_by": null,
+    "approved_at": null,
+    "plan_id": null,
+    "summary": "Fresh repo; full lifecycle drive",
+    "next_action": "Drive the full discuss -> plan -> approve -> execute -> approve -> done lifecycle",
+    "verification": ["pytest scripts/", "harness check"],
+    "updated_at": "2026-05-16T00:00:00.000000000Z",
+    "updated_by": "fixture@example.com"
+  },
+  "prompt_template": "You are a low-reasoning agent operating the harness CLI. Current state: {state}. Drive the full lifecycle: discuss -> plan -> approve -> execute -> approve -> done. Issue every CLI command in order. Available verbs: 'harness phase set <phase>' and 'harness phase approve --by <email>'. Respond with shell-style commands only, one per line, OR a single line beginning with 'needs-info:' if you cannot proceed.",
+  "expected_target_phase": "done",
+  "expected_audit_sequence": [
+    {"verb": "phase.set", "phase": "plan"},
+    {"verb": "phase.approve"},
+    {"verb": "phase.set", "phase": "execute"},
+    {"verb": "phase.approve"},
+    {"verb": "phase.set", "phase": "done"}
+  ],
+  "diagnostic_keywords": ["discuss", "plan", "execute", "done", "approve", "lifecycle"],
+  "allowed_verbs": ["phase set", "phase approve"]
+}
