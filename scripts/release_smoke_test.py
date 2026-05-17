@@ -112,6 +112,17 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     command_env = os.environ.copy()
     version_args: list[str] = []
+    release_mode = args.release or command_env.get("HARNESS_RELEASE_RUN") == "1"
+    if args.skip_lifecycle_smoke:
+        # SecM1: unconditional banner whenever the lifecycle smoke is
+        # skipped. Even if the run later hard-fails, the operator must
+        # see why this path was taken.
+        print("LIFECYCLE SMOKE SKIPPED — DEBUG ONLY", file=sys.stderr, flush=True)
+        if release_mode:
+            raise SystemExit(
+                "--skip-lifecycle-smoke forbidden under release mode "
+                "(--release or HARNESS_RELEASE_RUN=1)"
+            )
     if args.release:
         command_env.pop("HARNESS_VERSION", None)
         if not args.expected_version:
