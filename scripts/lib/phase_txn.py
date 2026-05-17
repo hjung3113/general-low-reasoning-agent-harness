@@ -59,6 +59,26 @@ class TxnLockMissingError(TxnError):
     """Caller invoked commit_transaction without an acquired LockHandle."""
 
 
+class BudgetExhaustedError(TxnError):
+    """Raised by commit_transaction when a count-based budget is exhausted.
+
+    Design decision (§3.4 + §5.3): exit code 9, sub_reason
+    "budget_exhausted:<capability>".  Raised BEFORE any journal write so no
+    partial artefacts are left on disk.
+
+    Caller-contract: the commit is NOT attempted — the caller should either
+    apply_budget_halt and commit the halted state (which will pass because
+    execution_mode will be "manual" by then), or propagate exit 9.
+    """
+
+    def __init__(self, *, capability: str, remaining: int, message: str) -> None:
+        super().__init__(message)
+        self.exit_code: int = 9
+        self.sub_reason: str = f"budget_exhausted:{capability}"
+        self.capability: str = capability
+        self.remaining: int = remaining
+
+
 @dataclasses.dataclass
 class TxnRequest:
     """Inputs to one commit. `before_state` may be `None` for a from-
@@ -140,6 +160,18 @@ def commit_transaction(
 ) -> str:
     """Execute steps 1-5 of design §3.8 in order. Returns the assigned `txn_id`.
 
+    Budget check (§3.5 + §5.3 caller-contract):
+    BEFORE step 1 (journal write), if request.before_state has
+    execution_mode != "manual" AND cli_budgets_remaining is set, check the
+    "file_mutation_ops" budget. If exhausted, raise BudgetExhaustedError
+    (exit_code=9, sub_reason="budget_exhausted:file_mutation_ops") before any
+    artefact is written.
+
+    Caller-contract for decrement: callers that want the after_state to reflect
+    the decremented budget MUST apply `with_budget_decrement(after_state)`
+    themselves before building the TxnRequest.  See `with_budget_decrement`
+    below.  This keeps commit_transaction free of budget-semantics coupling.
+
     Step 1: write journal {txn_id, action, before_sha256, after_sha256,
             audit_entry_draft, started_at_monotonic}; fsync(journal_fd);
             fsync_parent_dir(scratch).
@@ -155,6 +187,26 @@ def commit_transaction(
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
+
+    # Budget pre-check (BEFORE journal write — no artefacts written yet).
+    # Only applied when autopilot is active AND budgets are configured.
+    if request.before_state is not None:
+        _exec_mode = request.before_state.get("execution_mode", "manual")
+        if _exec_mode != "manual":
+            _budgets = request.before_state.get("cli_budgets_remaining")
+            if _budgets is not None:
+                _remaining = _budgets.get("file_mutation_ops")
+                if _remaining is not None and _remaining <= 0:
+                    raise BudgetExhaustedError(
+                        capability="file_mutation_ops",
+                        remaining=0,
+                        message=(
+                            f"commit_transaction rejected: file_mutation_ops budget "
+                            f"exhausted (remaining={_remaining}). "
+                            "Apply apply_budget_halt and commit the halted state, "
+                            "or let the caller exit 9. (§3.5 caller-contract)"
+                        ),
+                    )
 
     journal_path = scratch / JOURNAL_NAME
     tmp_path = scratch / TMP_NAME
@@ -485,14 +537,56 @@ def _now_iso() -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# with_budget_decrement — caller-contract helper
+# ---------------------------------------------------------------------------
+
+
+def with_budget_decrement(
+    after_state: Mapping[str, Any],
+    *,
+    capability: str = "file_mutation_ops",
+) -> dict:
+    """Caller-contract helper: return a copy of `after_state` with the named
+    capability decremented by 1 (clamped to 0).
+
+    Design decision (§3.5 caller-contract): commit_transaction does NOT
+    auto-decrement budgets to keep it free of budget semantics.  Callers that
+    want the persisted state to reflect consumption MUST apply this helper to
+    `after_state` before building the TxnRequest.  Opt-in, not mandatory —
+    callers that don't decrement will hit the budget check on the next commit
+    (the check uses `before_state.cli_budgets_remaining`).
+
+    No-op when:
+      - after_state.execution_mode == "manual" (no autopilot → no budget)
+      - after_state.cli_budgets_remaining is None (no budgets configured)
+      - capability not in cli_budgets_remaining (capability not tracked)
+      - capability == "wall_seconds" (wall_seconds is time-checked, not counted)
+    """
+    # Lazy import to avoid circular at module load time.
+    from . import cli_budgets as _cli_budgets
+
+    exec_mode = after_state.get("execution_mode", "manual")
+    if exec_mode == "manual":
+        return dict(after_state)
+
+    budgets = after_state.get("cli_budgets_remaining")
+    if budgets is None:
+        return dict(after_state)
+
+    return _cli_budgets.decrement(dict(after_state), capability=capability)  # type: ignore[arg-type]
+
+
 __all__ = [
     "TxnError",
     "TxnLockMissingError",
+    "BudgetExhaustedError",
     "TxnRequest",
     "RecoveryResult",
     "JOURNAL_NAME",
     "TMP_NAME",
     "STATE_NAME",
     "commit_transaction",
+    "with_budget_decrement",
     "recover",
 ]

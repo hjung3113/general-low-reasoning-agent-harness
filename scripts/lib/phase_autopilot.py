@@ -53,6 +53,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from . import approval_nonce as _approval_nonce
 from . import ci_provenance as _ci_provenance
+from . import cli_budgets as _cli_budgets
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
@@ -713,6 +714,11 @@ def run_start(
 
     # Audit entry (§3.5 + §3.5.1 fields).
     now_iso = _phase_preflight.now_iso_z()
+
+    # §3.5 / §1.1 integration (S10a step 2):
+    # Stamp autopilot_started_at_iso as the wall-clock anchor for wall_seconds
+    # budget enforcement. REPLACE semantics: each new run_start resets the anchor.
+    after_state = _cli_budgets.stamp_autopilot_started_at(after_state, now_iso=now_iso)
     audit_draft: dict = {
         "verb": "phase.autopilot.start",
         "authorization_source": authorization_source,
@@ -899,6 +905,10 @@ def run_stop(
     after_state["autopilot_phase_slug"] = None
     after_state["autopilot_start_entry_hash"] = None
     after_state["cli_budgets_remaining"] = None
+
+    # §3.5 / §1.1 integration (S10a step 2):
+    # Clear autopilot_started_at_iso so wall_seconds anchor is gone on stop.
+    after_state = _cli_budgets.clear_autopilot_started_at(after_state)
 
     audit_draft = {
         "verb": "phase.autopilot.stop",

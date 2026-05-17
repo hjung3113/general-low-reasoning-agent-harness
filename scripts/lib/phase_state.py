@@ -46,6 +46,11 @@ NEW_V2_FIELDS: dict[str, Any] = {
     "autopilot_phase_slug": None,
     "autopilot_start_entry_hash": None,
     "autopilot_allow_network": False,
+    # S10a step 2: wall-clock anchor for wall_seconds budget enforcement.
+    # Stamped by cli_budgets.stamp_autopilot_started_at on run_start;
+    # cleared by cli_budgets.clear_autopilot_started_at on run_stop/halt.
+    # Existing v2 state files lacking this field default to None on read.
+    "autopilot_started_at_iso": None,
     "cli_budgets_remaining": None,
     "last_halt": None,
     "last_halt_history": [],

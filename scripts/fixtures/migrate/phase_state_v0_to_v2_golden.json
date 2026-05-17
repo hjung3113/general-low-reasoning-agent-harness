@@ -27,6 +27,7 @@
   "autopilot_phase_slug": null,
   "autopilot_run_id": null,
   "autopilot_start_entry_hash": null,
+  "autopilot_started_at_iso": null,
   "blocked_paths": [],
   "checkpoint_path": ".planning/phases/01-generalized-harness-release/01-CHECKPOINTS.md",
   "cli_budgets_remaining": null,

@@ -607,6 +607,96 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
     return result.exit_code
 
 
+# ---------------------------------------------------------------------------
+# _wall_seconds_check_and_maybe_halt — budget guard helper
+# ---------------------------------------------------------------------------
+
+
+def _wall_seconds_check_and_maybe_halt(
+    *,
+    before_state: dict,
+    scratch_root,
+    audit_path,
+    lock_handle,
+    now_iso: str | None = None,
+) -> int | None:
+    """If autopilot is active and wall_seconds budget exhausted, apply halt +
+    commit the halted state and return exit code 9.  Otherwise return None
+    (caller should proceed normally).
+
+    Design (§3.5 / §5.3 / S10a step 2):
+      - Only fires when execution_mode != "manual".
+      - Uses cli_budgets.budget_check(capability="wall_seconds").
+      - On exhaustion: build diary → apply_budget_halt → commit halted state
+        (manual mode so the budget check in commit_transaction is bypassed).
+      - Returns 9 on exhaustion, None on OK.
+
+    Position contract: call AFTER state-trust preflight (state is trusted),
+    BEFORE verb-specific mutation logic.  The caller MUST hold the lock.
+
+    shell_invocations enforcement note: shell_invocations is NOT checked here
+    (S10a step 2 limited-enforcement scope: the harness CLI itself does not
+    heavily shell out; shell_invocations is stamped at start + checked only
+    if a future step wires subprocess counting).
+    """
+    from . import cli_budgets as _cli_budgets
+    from . import phase_txn as _phase_txn
+    from . import phase_preflight as _phase_preflight
+    from pathlib import Path
+
+    # Only enforce when autopilot is active.
+    exec_mode = before_state.get("execution_mode", "manual")
+    if exec_mode == "manual":
+        return None
+
+    _now = now_iso or _phase_preflight.now_iso_z()
+    check = _cli_budgets.budget_check(
+        before_state,
+        capability="wall_seconds",
+        now_iso=_now,
+    )
+    if not check.exhausted:
+        return None
+
+    # Budget exhausted: build diary, apply halt, commit.
+    diary = _cli_budgets.build_budget_halt_diary(
+        result=check,
+        state=before_state,
+        now_iso=_now,
+    )
+    halted_state = _cli_budgets.apply_budget_halt(before_state, diary=diary)
+
+    scratch = Path(scratch_root)
+    audit_path_p = Path(audit_path)
+
+    try:
+        _phase_txn.commit_transaction(
+            scratch,
+            lock=lock_handle,
+            request=_phase_txn.TxnRequest(
+                action="phase.autopilot.halt.budget",
+                before_state=before_state,
+                after_state=halted_state,
+                audit_entry_draft={
+                    "verb": "phase.autopilot.halt",
+                    "args": {
+                        "reason": diary.reason,
+                        "capability": diary.capability,
+                        "remaining_at_halt": diary.remaining_at_halt,
+                        "halted_at": _now,
+                    },
+                },
+            ),
+            audit_path=audit_path_p,
+        )
+    except Exception:
+        # If the halt commit itself fails, still return 9 so the caller
+        # knows not to proceed with the original mutation.
+        pass
+
+    return 9
+
+
 __all__ = [
     "cmd_phase_autopilot_start",
     "cmd_phase_autopilot_stop",
@@ -617,4 +707,5 @@ __all__ = [
     "_verify_anchor",
     "_walk_up_for_repo_root",
     "_cwd_repo_root",
+    "_wall_seconds_check_and_maybe_halt",
 ]
