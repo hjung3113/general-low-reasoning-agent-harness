@@ -266,6 +266,8 @@ __all__ = [
     "HARNESS_VERSION", "CLEAN_SKELETON", "UTC_TIMESTAMP", "VERIFICATION_PREFIXES",
     "REQUIRED_TARGET_PHRASES", "CONTAMINATION_PATTERNS",
     "run", "run_delegated_command",
+    # status-next
+    "cmd_status", "cmd_next",
 ]
 
 
@@ -816,6 +818,37 @@ def run(argv: list[str] | None = None) -> int:
         ),
     )
 
+    # ----- harness status (§3.9) -----
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show current phase + halt diary + next action (§3.9).",
+    )
+    status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output machine-readable JSON.",
+    )
+
+    # ----- harness next (§3.9) -----
+    next_parser = subparsers.add_parser(
+        "next",
+        help="Recommended next action (§3.9).",
+    )
+    next_group = next_parser.add_mutually_exclusive_group()
+    next_group.add_argument(
+        "--shell",
+        action="store_true",
+        help=(
+            "Stdout safe for shell execution; exit 17 if requires_human, "
+            "exit 18 if autopilot active."
+        ),
+    )
+    next_group.add_argument(
+        "--json",
+        action="store_true",
+        help="Structured output: {requires_human, agent_safe, command, reason}.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -992,6 +1025,12 @@ def run(argv: list[str] | None = None) -> int:
         if args.anchor_command == "repair":
             return cmd_anchor_repair(args, root)
         raise AssertionError(f"Unhandled anchor subcommand: {args.anchor_command}")
+    if args.command == "status":
+        from lib.status_next_cli import cmd_status
+        return cmd_status(args)
+    if args.command == "next":
+        from lib.status_next_cli import cmd_next
+        return cmd_next(args)
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
