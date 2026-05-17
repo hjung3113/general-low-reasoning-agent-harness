@@ -322,6 +322,31 @@ class JudgeInvariantModeTests(unittest.TestCase):
         self.assertIn("orphan", result.reason)
 
 
+class SummarizeOnlyLatestTests(unittest.TestCase):
+    """M2 — --summarize-only walks base_evidence and picks newest timestamp dir."""
+
+    def test_summarize_only_finds_latest_run(self) -> None:
+        from scripts.smoke import low_reasoning_scenario as lrs
+
+        base = Path(tempfile.mkdtemp(prefix="latest."))
+        old_run = base / "20260516T000000Z" / "per-flow" / "discuss-to-plan"
+        new_run = base / "20260517T000000Z" / "per-flow" / "discuss-to-plan"
+        for d in (old_run, new_run):
+            d.mkdir(parents=True)
+            (d / "trial-001.json").write_text(
+                json.dumps({"passed": True, "noisy": False}),
+                encoding="utf-8",
+            )
+
+        rc = lrs.main(["--summarize-only", "--evidence-dir", str(base)])
+        self.assertEqual(rc, 0)
+        # Summary should land under the newest timestamp dir.
+        newest_summary = base / "20260517T000000Z" / "per-flow" / "SUMMARY.json"
+        oldest_summary = base / "20260516T000000Z" / "per-flow" / "SUMMARY.json"
+        self.assertTrue(newest_summary.exists())
+        self.assertFalse(oldest_summary.exists(), "summary leaked into older run")
+
+
 class JudgeSystemExitTests(unittest.TestCase):
     """C5 — judge only swallows SystemExit(5); other codes propagate."""
 
