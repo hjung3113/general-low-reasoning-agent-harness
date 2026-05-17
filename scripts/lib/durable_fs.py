@@ -267,17 +267,23 @@ def replace_with_retry(src: Union[str, "os.PathLike[str]"], dst: Union[str, "os.
     spath_src = os.fspath(src)
     spath_dst = os.fspath(dst)
     last_exc: PermissionError | None = None
+    total = len(_REPLACE_BACKOFF_SECONDS)
     for attempt, backoff in enumerate(_REPLACE_BACKOFF_SECONDS, start=1):
         try:
             os.replace(spath_src, spath_dst)
             return
         except PermissionError as exc:
             last_exc = exc
-            time.sleep(backoff)
-    # All five attempts exhausted; raise as the documented fault.
+            # S01-B review fix (P2): no point sleeping after the final
+            # attempt — there is no retry that follows. The backoff
+            # schedule [50, 100, 200, 400, _] thus fires 4 sleeps total
+            # across the 5 attempts of an exhaustion run.
+            if attempt < total:
+                time.sleep(backoff)
+    # All attempts exhausted; raise as the documented fault.
     raise DurableFsError(
         f"replace({spath_src!r} -> {spath_dst!r}) blocked after "
-        f"{len(_REPLACE_BACKOFF_SECONDS)} PermissionError retries: {last_exc}"
+        f"{total} PermissionError retries: {last_exc}"
     ) from last_exc
 
 

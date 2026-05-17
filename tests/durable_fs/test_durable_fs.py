@@ -207,8 +207,10 @@ def test_replace_with_retry_exhausts_after_five_failures(tmp_path: Path):
         with pytest.raises(durable_fs.DurableFsError, match="replace"):
             durable_fs.replace_with_retry(src, dst)
 
-    # 5 attempts → 4 sleeps between them (after attempt 1-4); final raise.
-    assert sleeps == [0.05, 0.10, 0.20, 0.40, 0.80]
+    # 5 attempts → 4 sleeps between attempts 1-2, 2-3, 3-4, 4-5; the 5th
+    # attempt's failure is the terminal one — no sleep follows it because
+    # no retry follows it either (S01-B P2 review fix).
+    assert sleeps == [0.05, 0.10, 0.20, 0.40]
 
 
 def test_replace_with_retry_propagates_non_permission_errors(tmp_path: Path):
