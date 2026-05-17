@@ -637,7 +637,7 @@ def check_phase_state_semantics(path: Path) -> None:
         )
 
 
-_ROO_BUILTIN_MODES = frozenset({"ask", "code", "architect", "debug", "orchestrator"})
+from .roo_modes import ROO_BUILTIN_MODES as _ROO_BUILTIN_MODES  # single source of truth
 
 
 def check_command_modes(root: Path) -> None:

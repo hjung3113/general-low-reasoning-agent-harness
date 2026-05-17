@@ -65,25 +65,50 @@ def _read_state_with_preflight(
 
     state_path = scratch / STATE_NAME
     if not state_path.exists():
-        # No state file — return empty defaults (bootstrap state)
+        # Bootstrap case: no state file yet — anchor irrelevant, return defaults.
         return ({"phase": "discuss", "execution_mode": "manual"}, 0)
 
-    # Anchor verification (fail-closed — same pattern as other verbs)
+    # Anchor verification — fail-closed, same pattern as phase_approve.run_approve
+    # (S01-E review-fix reference: scripts/lib/phase_approve.py:411-422).
+    # A state file exists: we MUST verify the anchor before trusting the state.
     anchor_verified = False
     try:
         _audit_anchor.verify_existing_anchor_for_repo(cwd)
         anchor_verified = True
     except _audit_anchor.AnchorMissingError:
-        # Anchor missing — treat as unverified; proceed with reduced trust
-        # For read-only status/next, we degrade gracefully rather than blocking
-        # (matches §3.9 "agent-safe read-only" spirit).
-        anchor_verified = False
-    except Exception:
-        anchor_verified = False
+        # Anchor absent but state exists → fail-closed (attacker path).
+        print(
+            "error: harness status/next refused: audit-tip anchor not found "
+            "but phase-state.json exists. "
+            "Fix: run 'harness init' or restore .harness/audit.tip-anchor.json",
+            file=sys.stderr,
+        )
+        return None, 6  # sub_reason: anchor_missing
+    except _audit_anchor.AnchorMismatchError as exc:
+        sub = getattr(exc, "sub_reason", None) or "anchor_mismatch"
+        print(
+            f"error: harness status/next refused: audit-tip anchor verification "
+            f"failed ({sub}: {exc}). "
+            "Fix: run 'harness verify --audit' to diagnose",
+            file=sys.stderr,
+        )
+        return None, 6  # sub_reason: anchor_mismatch
+    except _audit_anchor.AnchorError as exc:
+        # Schema/unreadable/etc. — surface verbatim; do not swallow.
+        sub = getattr(exc, "sub_reason", None) or "anchor_error"
+        print(
+            f"error: harness status/next refused: audit-tip anchor unreadable "
+            f"({sub}: {exc}). "
+            "Fix: run 'harness verify --audit' to diagnose",
+            file=sys.stderr,
+        )
+        return None, 6  # sub_reason: anchor_error
 
-    # Brief lock acquire + preflight + release (option a, §3.9 line 554)
+    # Brief lock acquire + preflight + release (option a, §3.9 line 554).
+    # audit_path=None ensures stale-lock recovery does not write an audit row;
+    # §3.9 line 578 mandates auditless status.
     try:
-        lock = _phase_lock.acquire_primary(scratch, timeout_s=5.0, audit_path=audit_path)
+        lock = _phase_lock.acquire_primary(scratch, timeout_s=5.0, audit_path=None)
     except _phase_lock.LockError as exc:
         print(
             f"error: harness status/next: cannot acquire state lock: {exc}\n"

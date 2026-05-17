@@ -367,9 +367,17 @@ def format_status_human(result: StatusResult) -> str:
     else:
         lines.append("Approved        : no")
 
-    # Execution mode line
+    # Execution mode line — append [reverted from <mode>] annotation when
+    # the mode is manual but last_halt records a non-null previous mode.
     em = result.execution_mode
-    lines.append(f"Execution mode  : {em}")
+    em_str = em
+    if (
+        em == "manual"
+        and result.last_halt is not None
+        and result.last_halt.get("mode") is not None
+    ):
+        em_str = f"{em} [reverted from {result.last_halt['mode']}]"
+    lines.append(f"Execution mode  : {em_str}")
 
     # Autopilot line
     if result.autopilot_run_id:

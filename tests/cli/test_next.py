@@ -322,3 +322,58 @@ def test_next_agent_safe_false_when_no_command():
     result = sn.compute_next(state=state, audit_path=None)
     assert result.agent_safe is False
     assert result.command is None
+
+
+# ---------------------------------------------------------------------------
+# P1-1: anchor fail-closed for next
+# ---------------------------------------------------------------------------
+
+
+def test_next_fails_closed_when_anchor_missing(tmp_path: Path):
+    """next returns exit 6 when anchor is missing but state file exists (P1-1)."""
+    import json
+    from lib import status_next_cli as cli
+
+    (tmp_path / ".git").mkdir()
+    scratch = tmp_path / ".scratch"
+    scratch.mkdir()
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+
+    # Write a state file (so anchor check is triggered).
+    state_path = scratch / "phase-state.json"
+    state_path.write_text(
+        json.dumps({"phase": "discuss", "approved": False, "execution_mode": "manual",
+                    "state_schema_version": 2}) + "\n",
+        encoding="utf-8",
+    )
+
+    # No anchor file — should fail-closed.
+    result_state, exit_code = cli._read_state_with_preflight(
+        scratch=scratch,
+        audit_path=harness_dir / "audit.log",
+        cwd=tmp_path,
+    )
+    assert result_state is None, "Expected None state on anchor_missing for next"
+    assert exit_code == 6, f"Expected exit 6, got {exit_code}"
+
+
+# ---------------------------------------------------------------------------
+# P2-1: JSON shape pin
+# ---------------------------------------------------------------------------
+
+
+def test_next_json_shape_complete():
+    """JSON next output key set matches the expected complete shape — prevents silent field renames (P2-1)."""
+    state = _make_state(phase="discuss")
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_json(result)
+    parsed = json.loads(text)
+
+    # Per §3.9 line 591: {requires_human, agent_safe, command, reason}.
+    expected_keys = {"requires_human", "agent_safe", "command", "reason"}
+    assert set(parsed.keys()) == expected_keys, (
+        f"JSON shape mismatch.\n"
+        f"  Extra keys  : {set(parsed.keys()) - expected_keys}\n"
+        f"  Missing keys: {expected_keys - set(parsed.keys())}"
+    )

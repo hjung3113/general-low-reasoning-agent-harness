@@ -874,6 +874,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/roo_modes.py",
+      "source": "scripts/lib/roo_modes.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/worktree.py",
       "source": "scripts/lib/worktree.py",
       "policy": "harness-owned"

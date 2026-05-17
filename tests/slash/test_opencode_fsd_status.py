@@ -67,3 +67,31 @@ class TestOpencodeFsdStatusBodyShape:
 
     def test_no_forbidden_literals(self, content, assert_no_forbidden_literals):
         assert_no_forbidden_literals(content)
+
+    def test_body_byte_equal_to_spec(self):
+        """Byte-equal pin to §12.11 body — spec changes must be propagated explicitly."""
+        # This constant is the authoritative §12.11 body for the OpenCode adapter.
+        # If the spec changes, update this constant AND the file atomically.
+        # \xe2\x80\x94 = U+2014 EM DASH (—)
+        _EXPECTED = (
+            b"# fsd-status\n"
+            b"\n"
+            b"Run exactly:\n"
+            b"\n"
+            b"`harness status`\n"
+            b"\n"
+            b"Then run:\n"
+            b"\n"
+            b"`harness next --json`\n"
+            b"\n"
+            b"If `.requires_human == true` in the JSON output, surface the value of `.command`"
+            b" to the user with the prefix \"please run this in your terminal:\""
+            b" \xe2\x80\x94 do not execute it."
+            b" Otherwise execute `.command` only if `.agent_safe == true`;"
+            b" else surface and stop.\n"
+        )
+        actual = COMMAND_FILE.read_bytes()
+        assert actual == _EXPECTED, (
+            "OpenCode fsd-status.md byte content does not match §12.11 pin.\n"
+            "If the spec changed, update both the file and this constant atomically."
+        )
