@@ -758,6 +758,13 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/release_smoke_test.py",
+      "source": "scripts/release_smoke_test.py",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "S13 §12.10 release smoke case dispatcher + 5 fundamental cases (step 1)."
+    },
+    {
       "path": "scripts/show_phase_status.py",
       "source": "scripts/show_phase_status.py",
       "policy": "harness-owned"
