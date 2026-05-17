@@ -109,3 +109,81 @@ def test_classify_ambiguous_when_proc_lookup_raises():
 def test_classify_returns_only_one_of_four_verdicts():
     """Pin the public enum so callers can rely on a fixed set."""
     assert phase_lock.LOCK_VERDICTS == frozenset({"live", "foreign_host", "stale", "ambiguous"})
+
+
+# ---------------------------------------------------------------------------
+# S01-C review-fix (P1, 2026-05-17): psutil.Error is NOT a subclass of OSError
+# (psutil 7.x: psutil.Error(Exception)). classify() MUST catch both families,
+# otherwise NoSuchProcess / AccessDenied / ZombieProcess bubble out and a
+# transient lookup failure surfaces as an unhandled traceback instead of the
+# documented "ambiguous" verdict (design §3.7 ambiguous → exit 3 force-recover).
+# ---------------------------------------------------------------------------
+
+
+def test_classify_ambiguous_when_psutil_no_such_process_raised():
+    import psutil
+
+    rec = _record()
+
+    def lookup(pid):
+        raise psutil.NoSuchProcess(pid)
+
+    v = phase_lock.classify(
+        rec,
+        current_hostname="host-a",
+        current_boot_id="boot-X",
+        proc_lookup=lookup,
+    )
+    assert v == "ambiguous"
+
+
+def test_classify_ambiguous_when_psutil_access_denied_raised():
+    import psutil
+
+    rec = _record()
+
+    def lookup(pid):
+        raise psutil.AccessDenied(pid)
+
+    v = phase_lock.classify(
+        rec,
+        current_hostname="host-a",
+        current_boot_id="boot-X",
+        proc_lookup=lookup,
+    )
+    assert v == "ambiguous"
+
+
+def test_classify_ambiguous_when_psutil_zombie_process_raised():
+    import psutil
+
+    rec = _record()
+
+    def lookup(pid):
+        raise psutil.ZombieProcess(pid)
+
+    v = phase_lock.classify(
+        rec,
+        current_hostname="host-a",
+        current_boot_id="boot-X",
+        proc_lookup=lookup,
+    )
+    assert v == "ambiguous"
+
+
+def test_classify_propagates_unexpected_exceptions():
+    """Any *other* exception (not OSError or psutil.Error) is a bug and must
+    propagate, not silently downgrade to ambiguous — that would mask real
+    problems (KeyboardInterrupt, programmer errors)."""
+    rec = _record()
+
+    def lookup(pid):
+        raise ValueError("bug in caller")
+
+    with pytest.raises(ValueError):
+        phase_lock.classify(
+            rec,
+            current_hostname="host-a",
+            current_boot_id="boot-X",
+            proc_lookup=lookup,
+        )

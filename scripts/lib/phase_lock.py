@@ -149,19 +149,18 @@ def _current_boot_id() -> str:
         except (OSError, subprocess.SubprocessError):
             return "darwin-boot-id-unavailable"
 
-    if os.name == "nt":  # pragma: no cover — windows-only
-        try:
-            import ctypes
-
-            _k = ctypes.WinDLL("kernel32", use_last_error=True)
-            _k.GetTickCount64.restype = ctypes.c_uint64
-            ticks = _k.GetTickCount64()
-            # Anchor to wall-clock approximation: now - ticks (epoch seconds).
-            return f"win-tick-{int(time.time()) - ticks // 1000}"
-        except OSError:
-            return "windows-boot-id-unavailable"
-
-    return f"unknown-os-{sys.platform}"
+    # S01-C review-fix (P2, 2026-05-17): the original Windows fallback
+    # computed `int(time.time()) - GetTickCount64()//1000` which separately
+    # truncated both sides and could drift by one full second between
+    # calls, breaking the i1 "same boot → same boot_id" requirement.
+    # `psutil.boot_time()` returns a stable float per boot session on
+    # every supported platform — use it for the non-Linux/non-darwin
+    # fallback (covers Windows, FreeBSD, etc.). The S13 release-smoke
+    # matrix substitutes the canonical WMI LastBootUpTime per design §3.7.
+    try:
+        return f"psutil-boot-{psutil.boot_time()}"
+    except (OSError, psutil.Error):
+        return f"unknown-os-{sys.platform}"
 
 
 def _proc_lookup(pid: int) -> tuple[bool, Optional[float]]:
@@ -195,7 +194,10 @@ def current_owner_record(*, owner_token: Optional[str] = None) -> dict[str, Any]
     pid = os.getpid()
     try:
         _, create_time = _proc_lookup(pid)
-    except OSError:
+    except (OSError, psutil.Error):
+        # S01-C review-fix (P1): psutil.Error is NOT a subclass of OSError
+        # in psutil 7.x. NoSuchProcess / AccessDenied / ZombieProcess must
+        # not bubble out of record construction; degrade to start_time=0.0.
         create_time = None
     return {
         "pid": pid,
@@ -244,7 +246,12 @@ def classify(
         return "stale"
     try:
         alive, create_time = proc_lookup(int(record.get("pid", -1)))
-    except OSError:
+    except (OSError, psutil.Error):
+        # S01-C review-fix (P1): psutil.Error is NOT an OSError subclass
+        # in psutil 7.x — NoSuchProcess / AccessDenied / ZombieProcess
+        # need to map to "ambiguous" per §3.7. Any *other* exception
+        # (ValueError, KeyboardInterrupt, programmer bug) intentionally
+        # propagates so it surfaces during testing.
         return "ambiguous"
     if not alive:
         return "stale"
@@ -352,7 +359,17 @@ def acquire_primary(
 
         # STEP D — verdict == "stale". Attempt recovery and re-enter STEP A.
         try_recover(scratch, observed_token=existing.get("owner_token", ""), audit_path=audit_path)
-        backoff = BACKOFF_INITIAL_S
+        # S01-C review-fix (P-note): if try_recover() is a no-op because a
+        # racing recoverer holds the mutex (or the primary record doesn't
+        # match `observed_token` after a re-acquire window), the loop
+        # would spin forever without a deadline check. Honour the caller's
+        # `timeout_s` here so the stale-recovery path terminates.
+        if time.monotonic() >= deadline:
+            raise LockTimeoutError(
+                f"timeout while attempting stale-lock recovery at {primary}"
+            )
+        time.sleep(backoff)
+        backoff = min(backoff * 2, BACKOFF_MAX_S)
 
 
 def release_primary(handle: LockHandle) -> None:

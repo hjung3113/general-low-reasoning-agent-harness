@@ -57,6 +57,24 @@ def test_read_owner_record_raises_file_not_found(tmp_path: Path):
         phase_lock._read_owner_record(tmp_path / "nope")
 
 
+def test_current_owner_record_tolerates_psutil_error_during_lookup(monkeypatch):
+    """S01-C review-fix (P1): if psutil raises NoSuchProcess during the
+    initial self-lookup (race with rapid PID reuse, container weirdness),
+    current_owner_record() MUST still produce a complete record. It is
+    only used by the lock-acquire path, so degrading to
+    process_start_time=0.0 is acceptable; raising a stack trace is not."""
+    import psutil
+
+    def fake_lookup(pid):
+        raise psutil.AccessDenied(pid)
+
+    monkeypatch.setattr(phase_lock, "_proc_lookup", fake_lookup)
+    rec = phase_lock.current_owner_record()
+    # Did not raise; record is well-formed.
+    assert rec["pid"] == os.getpid()
+    assert rec["process_start_time"] == 0.0
+
+
 def test_write_owner_record_serializes_canonically(tmp_path: Path):
     """Canonical JSON: sorted keys, no BOM, LF newline. Reviewer
     cross-checks against §2.3 (rfc8785) in the audit chain — for the

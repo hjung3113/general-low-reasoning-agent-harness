@@ -128,6 +128,40 @@ def test_acquire_primary_raises_on_ambiguous_classification(scratch: Path, monke
         phase_lock.acquire_primary(scratch, timeout_s=0.5)
 
 
+def test_acquire_primary_times_out_when_stale_recovery_keeps_racing(
+    scratch: Path, monkeypatch
+):
+    """S01-C review-fix (P-note): if every try_recover() call no-ops because
+    another (mock) recoverer keeps the recovery mutex around, the
+    acquire_primary loop MUST eventually hit `deadline` rather than
+    spinning forever. Pins the deadline contract for the stale-recovery
+    loop."""
+    primary = scratch / "phase-state.json.lock"
+    stale_rec = {
+        "pid": 999_999,
+        "hostname": "host-a",
+        "process_start_time": 1.0,
+        "boot_id": "boot-X",
+        "monotonic_acquired_at": 0.0,
+        "acquired_iso": "2026-05-17T00:00:00Z",
+        "owner_token": "a" * 32,
+    }
+    primary.write_text(json.dumps(stale_rec, sort_keys=True) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(phase_lock, "_current_hostname", lambda: "host-a")
+    monkeypatch.setattr(phase_lock, "_current_boot_id", lambda: "boot-X")
+    monkeypatch.setattr(phase_lock, "_proc_lookup", lambda pid: (False, None))
+
+    # Pin the recovery path to do nothing — primary stays in place forever.
+    def no_op_recover(scratch, *, observed_token, audit_path=None):
+        return None
+
+    monkeypatch.setattr(phase_lock, "try_recover", no_op_recover)
+
+    with pytest.raises(phase_lock.LockTimeoutError):
+        phase_lock.acquire_primary(scratch, timeout_s=0.3)
+
+
 def test_acquire_primary_recover_emits_lock_recovered_audit_when_audit_path_set(
     scratch: Path, monkeypatch, tmp_path: Path
 ):
