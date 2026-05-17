@@ -304,7 +304,44 @@ def _run_stage3_opencode(matrix_root: Path) -> dict:
 
 
 _STATE_PATH_LITERAL = ".scratch/phase-state.json"
-_WRITE_VERBS = ("write", "replace", " > ", ">>")
+
+# Substring/literal write tokens (always matched as substrings; safe
+# from boundary issues since they contain non-word characters).
+_WRITE_LITERAL_TOKENS = (
+    " > ", ">>", "dd of=", "printf >", "exec >", "cat <<",
+)
+
+# Word-boundary write verbs. Matched with \b<verb>\b so `write` does NOT
+# match `rewrite`/`overwrite`. `sed -i` and `python -c` and `install`
+# and `awk` etc. each have a distinct word so they match as single
+# tokens. `tee`, `cp`, `mv`, `replace` likewise.
+_WRITE_WORD_VERBS = (
+    "write", "replace", "tee", "cp", "mv", "install", "awk",
+)
+
+# Multi-word verb patterns: anchored on the leading word boundary and
+# then required to be followed by the specific tail (e.g., `sed` alone
+# is too broad — only `sed -i` rewrites in place).
+_WRITE_MULTIWORD_PATTERNS = (
+    re.compile(r"\bsed\s+-i\b"),
+    re.compile(r"\bpython\s+-c\b"),
+)
+
+# Back-compat alias (some external callers may import this).
+_WRITE_VERBS = tuple(_WRITE_LITERAL_TOKENS) + tuple(f" {v} " for v in _WRITE_WORD_VERBS)
+
+
+def _line_has_write_verb(line: str) -> bool:
+    for tok in _WRITE_LITERAL_TOKENS:
+        if tok in line:
+            return True
+    for verb in _WRITE_WORD_VERBS:
+        if re.search(rf"\b{re.escape(verb)}\b", line):
+            return True
+    for pat in _WRITE_MULTIWORD_PATTERNS:
+        if pat.search(line):
+            return True
+    return False
 
 
 def run_grep_gate(*, root: Path | None = None) -> list[Violation]:
@@ -318,8 +355,15 @@ def run_grep_gate(*, root: Path | None = None) -> list[Violation]:
     is intentional: low-reasoning agents have been observed using
     "documentation" comments as a smuggling channel. Operators who need
     to mention the state path in a comment must phrase it without any
-    of the tokens in ``_WRITE_VERBS``. Treat this gate as
-    defense-in-depth, not authoritative parsing.
+    of the tokens in ``_WRITE_LITERAL_TOKENS`` / ``_WRITE_WORD_VERBS`` /
+    ``_WRITE_MULTIWORD_PATTERNS``. Treat this gate as defense-in-depth,
+    not authoritative parsing.
+
+    Limitation: this is a static grep gate; it is not exhaustive. Novel
+    shell idioms (custom binaries, Python f-string redirection helpers,
+    base64-decoded payloads) can still evade it. The verb table is
+    intentionally pessimistic on common idioms and word-boundary-strict
+    on `write` (so `rewrite`/`overwrite` in prose do NOT false-positive).
     """
     root = root or REPO_ROOT
     violations: list[Violation] = []
@@ -330,7 +374,7 @@ def run_grep_gate(*, root: Path | None = None) -> list[Violation]:
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if _STATE_PATH_LITERAL not in line:
                 continue
-            if any(verb in line for verb in _WRITE_VERBS):
+            if _line_has_write_verb(line):
                 violations.append(Violation(file=str(path), line_number=i, line_text=line))
     return violations
 

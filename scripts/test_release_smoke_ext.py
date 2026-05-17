@@ -243,6 +243,43 @@ class TestGrepGate(unittest.TestCase):
             violations = run_grep_gate(root=root)
             self.assertEqual(violations, [])
 
+    def test_grep_gate_catches_tee_into_state_path(self):
+        # SecM2: expanded write-verb table catches `tee`.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cmd_dir = root / ".roo" / "commands"
+            cmd_dir.mkdir(parents=True)
+            (cmd_dir / "adr.md").write_text(
+                "echo '{}' | tee .scratch/phase-state.json\n"
+            )
+            violations = run_grep_gate(root=root)
+            self.assertEqual(len(violations), 1)
+
+    def test_grep_gate_catches_sed_i_into_state_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cmd_dir = root / ".roo" / "commands"
+            cmd_dir.mkdir(parents=True)
+            (cmd_dir / "bugfix.md").write_text(
+                "sed -i s/foo/bar/ .scratch/phase-state.json\n"
+            )
+            violations = run_grep_gate(root=root)
+            self.assertEqual(len(violations), 1)
+
+    def test_grep_gate_no_false_positive_on_rewrite(self):
+        # SecM2: word-boundary on `write` must not match `rewrite`
+        # or `overwrite` on a documentary line.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cmd_dir = root / ".roo" / "commands"
+            cmd_dir.mkdir(parents=True)
+            (cmd_dir / "adr.md").write_text(
+                "Do not rewrite or overwrite .scratch/phase-state.json from here.\n"
+            )
+            violations = run_grep_gate(root=root)
+            self.assertEqual(violations, [],
+                "word-boundary check on 'write' must not match 'rewrite'/'overwrite'")
+
     def test_gate_conservative_design_flags_write_verb_inside_comment(self):
         # M2: planted HTML comment WITH a write verb. The gate is
         # substring-based (conservative-by-design); it MAY false-positive
