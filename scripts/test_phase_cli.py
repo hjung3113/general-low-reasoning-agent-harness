@@ -211,6 +211,84 @@ class PhaseApproveTests(unittest.TestCase):
         self.assertIn("not within 24h", r.stderr)
 
 
+class SchemaVersionStampTests(unittest.TestCase):
+    """T0-3 follow-up: phase set / phase approve must stamp
+    state_schema_version=2 on every write path. This closes a contract gap
+    (CONTRACT-PIN §7 L2, ADR-001 Decision L2) discovered during 02b-11 review.
+
+    Acceptance:
+    - phase set on a fresh tree stamps state_schema_version=2.
+    - phase set on an already-v2 state preserves the field.
+    - phase set on a state with unknown state_schema_version (e.g. 1, 99)
+      refuses with exit 5 and a remediation message naming the migrator.
+    - phase approve similarly stamps and refuses unknown versions.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / ".scratch").mkdir()
+        (self.tmp / ".harness").mkdir()
+
+    def _state(self) -> dict:
+        return json.loads((self.tmp / ".scratch" / "phase-state.json").read_text())
+
+    def test_phase_set_stamps_state_schema_version_on_fresh_tree(self) -> None:
+        r = run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._state().get("state_schema_version"), 2)
+
+    def test_phase_set_preserves_existing_v2_field(self) -> None:
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        self.assertEqual(self._state().get("state_schema_version"), 2)
+
+    def test_phase_set_noop_restamp_stamps_state_schema_version(self) -> None:
+        # No-op restamp path (phase=X -> phase=X) must also ensure v2 stamp.
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        # Manually drop the field to simulate a legacy pre-stamp state.
+        s = self._state()
+        s.pop("state_schema_version", None)
+        (self.tmp / ".scratch" / "phase-state.json").write_text(json.dumps(s))
+        r = run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._state().get("state_schema_version"), 2)
+
+    def test_phase_approve_stamps_state_schema_version(self) -> None:
+        run_harness(["phase", "set", "discuss"], cwd=self.tmp)
+        run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        # Drop the field to prove approve stamps it back.
+        s = self._state()
+        s.pop("state_schema_version", None)
+        (self.tmp / ".scratch" / "phase-state.json").write_text(json.dumps(s))
+        r = run_harness(["phase", "approve"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._state().get("state_schema_version"), 2)
+
+    def test_phase_set_refuses_unknown_schema_version(self) -> None:
+        # Plant a state with state_schema_version=1 (older). Refuse with
+        # exit 5 + structured remediation referencing the migrator.
+        (self.tmp / ".scratch" / "phase-state.json").write_text(json.dumps({
+            "phase": "discuss",
+            "state_schema_version": 1,
+        }))
+        r = run_harness(["phase", "set", "plan"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 5, r.stderr)
+        self.assertIn("state_schema_version=1", r.stderr)
+        self.assertIn("expected 2", r.stderr)
+        self.assertIn("harness migrate state --forward", r.stderr)
+
+    def test_phase_approve_refuses_unknown_schema_version(self) -> None:
+        (self.tmp / ".scratch" / "phase-state.json").write_text(json.dumps({
+            "phase": "plan",
+            "state_schema_version": 99,
+        }))
+        r = run_harness(["phase", "approve"], cwd=self.tmp)
+        self.assertEqual(r.returncode, 5, r.stderr)
+        self.assertIn("state_schema_version=99", r.stderr)
+        self.assertIn("expected 2", r.stderr)
+        self.assertIn("harness migrate state --forward", r.stderr)
+
+
 class SessionUnlockTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
