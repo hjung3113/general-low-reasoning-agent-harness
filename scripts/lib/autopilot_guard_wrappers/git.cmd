@@ -23,9 +23,12 @@ if "%HARNESS_AUTOPILOT_NETWORK%"=="deny" (
     if "%1"=="submodule" (
         if "%2"=="update" (
             REM Check for --remote anywhere in remaining args.
+            REM P4-P2-3 fix: use /c:"--remote" for literal-string match.
+            REM The prior form used backslash escapes interpreted as character-class
+            REM regex by findstr and never matched "--remote". /c: forces literal match.
             REM !ERRORLEVEL! (not %ERRORLEVEL%) is required here because we are
             REM inside a parenthesized block — see banner comment above.
-            echo %* | findstr /i "\-\-remote" >nul 2>&1
+            echo %* | findstr /i /c:"--remote" >nul 2>&1
             if !ERRORLEVEL!==0 goto :denied_sub
         )
     )

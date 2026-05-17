@@ -26,6 +26,7 @@ Reason values:
   "symlink_in_path"                  -- symlink encountered in path walk
   "not_in_allowed_paths"             -- path doesn't match any allowed prefix,
                                         or allowed_paths is None / []
+  "dotfile_component_rejected"       -- path component starts with "." (P3-P2-3)
   "fence_disabled_manual_mode"       -- execution_mode == "manual"
   "execution_mode_missing_fail_closed" -- execution_mode field absent from state
 
@@ -100,7 +101,8 @@ class FenceCheckResult:
     reason: str
     # Reason values:
     # "allowed" | "path_outside_anchor" | "symlink_in_path" |
-    # "not_in_allowed_paths" | "fence_disabled_manual_mode"
+    # "not_in_allowed_paths" | "dotfile_component_rejected" |
+    # "fence_disabled_manual_mode"
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +218,20 @@ def _path_matches_allowed(
     Each allowed_paths entry is a POSIX prefix (e.g. 'scripts/', '.harness/').
     The match is a simple string prefix check on the normalized POSIX form.
     """
+    return _find_matching_prefix(path, allowed_paths=allowed_paths) is not None
+
+
+def _find_matching_prefix(
+    path: str,
+    *,
+    allowed_paths: list[str],
+) -> "str | None":
+    """Return the first matching allowed_paths entry, or None if no match.
+
+    Each allowed_paths entry is a POSIX prefix (e.g. 'scripts/', '.harness/').
+    Returns the raw entry string (as provided in allowed_paths) so the caller
+    can compute which suffix components lie beyond the authorized prefix.
+    """
     from pathlib import PurePosixPath
 
     # Normalize to POSIX forward-slash form
@@ -225,8 +241,8 @@ def _path_matches_allowed(
         # Normalize entry too
         posix_entry = PurePosixPath(entry).as_posix()
         if posix_path == posix_entry or posix_path.startswith(posix_entry.rstrip("/") + "/"):
-            return True
-    return False
+            return entry
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +306,29 @@ def check_write_path(
         return FenceCheckResult(allowed=False, reason="not_in_allowed_paths")
 
     # Step 4 — prefix match
-    if _path_matches_allowed(path_str, allowed_paths=allowed_paths):
+    matching_prefix = _find_matching_prefix(path_str, allowed_paths=allowed_paths)
+    if matching_prefix is not None:
+        # P3-P2-3 (cycle-1 review fix): after prefix match, reject any dotfile
+        # component that is NOT covered by the matched allowed_paths prefix.
+        # For example, if "scripts/" matched, then "scripts/.git/config" has a
+        # dotfile component ".git" that lies WITHIN the allowed prefix and must
+        # be denied — an LLM coder could write to .git/hooks/ this way.
+        # However, if the allowed prefix is itself ".harness/" and the path is
+        # ".harness/audit.log", the dotfile component IS the authorized prefix
+        # and must remain allowed (the state's allowed_paths entry is the grant).
+        #
+        # Implementation: strip the matched prefix from the path, then check
+        # for dotfile components in the REMAINING suffix only.
+        from pathlib import PurePosixPath as _PPP
+        _full_parts = _PPP(path_str).parts
+        _prefix_parts = _PPP(matching_prefix.rstrip("/")).parts
+        # Suffix components are those beyond the prefix
+        _suffix_parts = _full_parts[len(_prefix_parts):]
+        for _p in _suffix_parts:
+            if _p.startswith(".") and _p not in (".", ".."):
+                return FenceCheckResult(
+                    allowed=False, reason="dotfile_component_rejected"
+                )
         return FenceCheckResult(allowed=True, reason="allowed")
 
     return FenceCheckResult(allowed=False, reason="not_in_allowed_paths")

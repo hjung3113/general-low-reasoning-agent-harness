@@ -166,9 +166,43 @@ _EXTRA_INVISIBLES = frozenset([
     " ",  # LINE SEPARATOR (LS)
     " ",  # PARAGRAPH SEPARATOR (PS)
 ])
+# P3-P2-1 (cycle-1 review fix): extend forbidden chars to cover homograph /
+# confusable vectors not blocked by the existing sets:
+#   - Variation selectors (VS1-VS16, U+FE00-U+FE0F) -- silently alter glyph
+#     without changing the base character; audit log records the combined form.
+#   - Variation selectors supplement (VS17-VS256, U+E0100-U+E01EF).
+#   - Unicode tag characters (U+E0020-U+E007E) -- invisible control plane tags
+#     used in Trojan-Source-class payloads.
+#   - Unpaired UTF-16 surrogates (U+D800-U+DFFF) -- Python str can hold these
+#     via surrogate escape; reject explicitly to avoid encode/decode hazards.
+# Math Alphanumeric and compatibility forms are handled by NFKC normalization
+# (applied in _sanitize_string before the forbidden-char scan), which folds
+# them to their ASCII equivalents so the audit log records the canonical form.
+_VARIATION_SELECTORS = frozenset(chr(c) for c in range(0xFE00, 0xFE10))
+_VARIATION_SELECTORS_SUPPLEMENT = frozenset(chr(c) for c in range(0xE0100, 0xE01F0))
+_TAG_CHARS = frozenset(chr(c) for c in range(0xE0020, 0xE007F))
+_SURROGATES = frozenset(chr(c) for c in range(0xD800, 0xE000))
 _FORBIDDEN_CHARS = (
     _C0_CONTROLS | {"\x7f"} | _BIDI_CONTROLS | _EXTRA_INVISIBLES
+    | _VARIATION_SELECTORS | _VARIATION_SELECTORS_SUPPLEMENT
+    | _TAG_CHARS | _SURROGATES
 )
+
+
+def _sanitize_string(s: str) -> str:
+    """Apply NFKC normalization and return the normalized string.
+
+    NFKC folds compatibility forms (Mathematical Alphanumeric Symbols,
+    full-width Latin, etc.) to their ASCII equivalents before the
+    forbidden-char scan.  This means e.g. '\U0001d41a\U0000646d\U0000696e' (math-bold
+    "adm") -> "adm" in the audit log -- the normalized canonical form is
+    stored, removing the homograph spoof while preserving semantic content.
+
+    The caller passes the normalized form to _has_forbidden_chars and to
+    the audit entry.  Spec: §3.1.1 + cycle-1 review P3-P2-1.
+    """
+    import unicodedata
+    return unicodedata.normalize("NFKC", s)
 
 
 def _has_forbidden_chars(s: str) -> bool:
@@ -333,7 +367,9 @@ def run_approve(
                 resolved_email=resolved,
                 by_source="override_identity",
             )
-        reason_str = str(raw_reason)
+        # P3-P2-1: NFKC-normalize before length/charset checks.
+        # Folds Math Alphanumeric and other compatibility forms to ASCII.
+        reason_str = _sanitize_string(str(raw_reason))
         # Length cap.
         if len(reason_str) > _SANITIZE_MAX_LEN:
             print(
@@ -361,6 +397,7 @@ def run_approve(
                 by_source="override_identity",
             )
         # Identity itself sanitized too (same charset).
+        override_identity_raw = _sanitize_string(override_identity_raw)
         if _has_forbidden_chars(override_identity_raw) or \
                 len(override_identity_raw) > _SANITIZE_MAX_LEN:
             print(

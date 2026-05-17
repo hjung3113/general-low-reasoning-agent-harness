@@ -258,12 +258,78 @@ def _read_chain_tip(audit_path: Path) -> tuple[str, int, int]:
     return (GENESIS_HASH, seq, seq_global)
 
 
+# ---------------------------------------------------------------------------
+# P5-P2-1 (cycle-1 review fix): §12.7 verb registry
+#
+# KNOWN_VERBS is the authoritative table of all verb literals emitted by
+# scripts/lib/.  In HARNESS_STRICT_VERB_REGISTRY=1 mode, audit_append
+# rejects unknown verbs with exit 10.  In the default (permissive) mode,
+# an unknown verb logs a WARNING to stderr but still appends (new verbs may
+# be added intentionally during development without needing to update this
+# table first).
+#
+# When adding a new verb to scripts/lib/ ALSO add it here.
+# Spec: §12.7 verb registry.
+# ---------------------------------------------------------------------------
+
+KNOWN_VERBS: frozenset = frozenset([
+    # Phase lifecycle verbs
+    "phase.set",
+    "phase.set.noop",
+    "phase.approve",
+    "phase.reopen",
+    # Autopilot verbs
+    "phase.autopilot.start",
+    "phase.autopilot.stop",
+    "phase.autopilot.halt",
+    "phase.autopilot.start_hash_finalized",   # hash committed after start
+    "phase.autopilot.start.refused",          # start refused (budget/preflight)
+    "phase.autopilot.start.recover_pending",  # recovery path from pending start
+    # Audit infrastructure verbs
+    "audit.rotated",
+    "audit.repair",
+    # Halt diary verbs
+    "halt_diary.clear",
+    # Fence / network guard verbs
+    "autopilot.fence.deny",
+    "autopilot.network.deny",
+    # CLI / session verbs
+    "cli.deprecated_flag",
+    "session.unlock",
+    "lock.recovered",
+    # Migration / CI verbs
+    "migrate.state_v2",
+    "ci.oidc.jti.consumed",
+    "ci.oidc.jti.replay",
+    # FSD dashboard verbs (slash-command wrappers)
+    "fsd-run-all",
+    "fsd-run-phase",
+])
+
+
 def audit_append(entry: dict, *, audit_path: Path) -> int:
     """Append one JSON-line audit entry with S06 chain fields. Returns the assigned index.
 
     S06: stamps schema_version=2, seq, seq_global, previous_entry_hash,
     entry_hash on every new entry before serialization.
+
+    P5-P2-1: validates entry verb against KNOWN_VERBS.  In strict mode
+    (HARNESS_STRICT_VERB_REGISTRY=1) an unknown verb raises SystemExit(10).
+    In permissive mode (default) a WARNING is printed to stderr.
     """
+    # Verb registry check (P5-P2-1)
+    verb = entry.get("verb", "")
+    if verb not in KNOWN_VERBS:
+        import sys as _sys
+        msg = (
+            f"audit_append: unknown verb {verb!r} not in KNOWN_VERBS registry "
+            f"(§12.7). Add it to KNOWN_VERBS in scripts/lib/audit.py."
+        )
+        if os.environ.get("HARNESS_STRICT_VERB_REGISTRY") == "1":
+            _sys.stderr.write(f"error: {msg}\n")
+            raise SystemExit(10)
+        else:
+            _sys.stderr.write(f"WARNING: {msg}\n")
     audit_path = Path(audit_path)
     audit_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -422,6 +488,7 @@ __all__ = [
     "ROTATION_BYTES",
     "ROTATION_ENTRIES",
     "ROTATION_KEEP",
+    "KNOWN_VERBS",
     "audit_append",
     "read_last_entry",
     "compute_state_hash",

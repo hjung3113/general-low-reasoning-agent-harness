@@ -481,7 +481,15 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     )
 
     stdin_isatty: bool = sys.stdin.isatty()
-    consumer_tty: str = os.ttyname(sys.stdin.fileno()) if stdin_isatty else ""
+    # P2-P2-2: os.ttyname is POSIX-only (raises AttributeError on Windows).
+    # Guard with os.name == "posix" so Windows callers get an empty string
+    # instead of a traceback. The cross-TTY nonce check still functions
+    # because consumer_tty="" differs from any real minter_tty value.
+    consumer_tty: str = (
+        os.ttyname(sys.stdin.fileno())
+        if (stdin_isatty and os.name == "posix")
+        else ""
+    )
 
     result = _phase_approve.run_approve(
         args,

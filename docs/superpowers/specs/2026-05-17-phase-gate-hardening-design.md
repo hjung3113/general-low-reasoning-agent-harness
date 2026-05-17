@@ -236,7 +236,7 @@ What it **does** defend: adapters that satisfy the approval-proof capability con
 
 **Audit `by_source` values**: `"gitconfig_auto"` | `"explicit_by_flag"` | `"override_identity"`.
 
-**`--by` / `--reason` / `--override-reason` sanitization** (Round-2): max 1024 chars; control characters rejected; literal newlines replaced with `\n` token before audit write. Same rules apply to `phase reopen --reason` and all identity fields written to audit (`HARNESS_BY_TRUST`, `HARNESS_AUTOMATION` at autopilot-start time).
+**`--by` / `--reason` / `--override-reason` sanitization** (Round-2 + cycle-1 amendment): max 1024 chars; literal newlines + all C0 control chars (U+0000–U+001F) + DEL (U+007F) REJECTED with exit 6 sub\_reason=invalid\_reason\_chars (defense-in-depth; rejection is safer than escape replacement — the earlier "literal newlines replaced with `\n` token" wording was aspirational; the implementation has always rejected them, which is the correct behavior). Unicode bidi/isolate controls, zero-width joiners, variation selectors, tag characters, and unpaired surrogates are also rejected. Input is NFKC-normalized before the forbidden-char scan so Math Alphanumeric and other compatibility forms are folded to ASCII in the audit log, removing homograph spoofs. Same rules apply to `phase reopen --reason` and all identity fields written to audit (`HARNESS_BY_TRUST`, `HARNESS_AUTOMATION` at autopilot-start time). **Spec amendment note (P3-P1-B, cycle-1):** spec previously read "literal newlines replaced with `\n` token"; corrected to match implementation.
 
 ### 3.2 `phase reopen` (NEW verb) — TTY-only
 
@@ -1352,7 +1352,35 @@ Canonical list of `harness` verbs in v0.7 (each defined elsewhere in §3 or §22
 
 Audit verb registry (every `verb=...` emitted into `audit.log`):
 
-`phase.autopilot.start`, `phase.autopilot.stop`, `phase.autopilot.halt`, `phase.reopen`, `phase.set`, `phase.approve`, `migrate.state_v2`, `repair.bom_stripped`, `lock.recovered`, `autopilot.network.deny`, `autopilot.fence.deny`, `cli.deprecated_flag`, `audit.rotated`, `ci_oidc_consumed_jti`, `fsd_run_phase.noop`, `fsd_run_all.ignored_args`, `harness.init`, `harness.substrate.degraded`, `durable_fs.close_failed`, `anchor.repaired`.
+| Verb | Description | Added |
+|---|---|---|
+| `phase.set` | Phase transition (any slug) | Round-1 |
+| `phase.set.noop` | Phase set no-op (slug unchanged) | S01 |
+| `phase.approve` | Human approval gate passed | Round-1 |
+| `phase.reopen` | Phase re-opened after approval | Round-1 |
+| `phase.autopilot.start` | Autopilot mode started | Round-3 |
+| `phase.autopilot.stop` | Autopilot mode stopped | Round-3 |
+| `phase.autopilot.halt` | Autopilot halted (budget/error) | Round-3 |
+| `phase.autopilot.start_hash_finalized` | Post-start hash committed to state | S01-A (Group A) |
+| `phase.autopilot.start.refused` | Start refused (budget/preflight failure) | S01-A (Group A) |
+| `phase.autopilot.start.recover_pending` | Recovery path from interrupted start | S01-A (Group A) |
+| `halt_diary.clear` | halt diary cleared by operator | S11 (Group A) |
+| `audit.rotated` | Audit log rotation seam entry | S06 |
+| `audit.repair` | Audit log repaired (repair-tail) | S06 |
+| `autopilot.fence.deny` | Write path denied by fs fence | S10b |
+| `autopilot.network.deny` | Network call denied by guard | S10c |
+| `cli.deprecated_flag` | Deprecated CLI flag used | S03 |
+| `session.unlock` | Session lock released by operator | S01-C (Group A) |
+| `lock.recovered` | Lock recovered after stale detection | S01-C (Group A) |
+| `migrate.state_v2` | State schema migrated to v2 | S00.7 |
+| `ci.oidc.jti.consumed` | CI OIDC JTI token consumed | S08 |
+| `ci.oidc.jti.replay` | CI OIDC JTI replay attempt detected | S08 |
+| `fsd-run-all` | fsd-run-all slash command executed | S12 |
+| `fsd-run-phase` | fsd-run-phase slash command executed | S12 |
+
+**Cycle-1 amendment (P5-P2-1):** The following verbs were emitted by code but absent from this table prior to cycle-1 review: `halt_diary.clear`, `phase.autopilot.start_hash_finalized`, `phase.autopilot.start.refused`, `phase.autopilot.start.recover_pending`, `phase.set.noop`, `session.unlock`, `lock.recovered`. A machine-readable `KNOWN_VERBS` frozenset is maintained in `scripts/lib/audit.py`; `HARNESS_STRICT_VERB_REGISTRY=1` enables rejection of unknown verbs at append time.
+
+Legacy verbs (deprecated, no longer emitted in new code): `repair.bom_stripped`, `ci_oidc_consumed_jti` (replaced by `ci.oidc.jti.consumed`), `fsd_run_phase.noop`, `fsd_run_all.ignored_args`, `harness.init`, `harness.substrate.degraded`, `durable_fs.close_failed`, `anchor.repaired`.
 
 `phase.empty_bucket` (legacy) is **deprecated** and forbidden in new code; §4.5 carve-out emits `phase.set` with `confirmation_kind=empty_bucket_bootstrap` instead.
 
