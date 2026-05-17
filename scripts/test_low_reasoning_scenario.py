@@ -281,6 +281,27 @@ class JudgeFixture04Tests(unittest.TestCase):
         self.assertIn("orphan", result.reason)
 
 
+class JudgeFixture02PhaseGuardTests(unittest.TestCase):
+    """M3 — judge_fixture_02 rejects state where phase != 'plan'."""
+
+    def test_judge_fixture_02_rejects_wrong_phase(self) -> None:
+        fixture = _load(FX02)
+        tmp = Path(tempfile.mkdtemp(prefix="fx02guard."))
+        _write_state(
+            tmp,
+            {
+                "phase": "execute",  # wrong: should be plan
+                "approved": True,
+                "approved_by": "agent",
+                "plan_id": "plan-007",
+                "state_schema_version": 2,
+            },
+        )
+        result = judge_fixture_02(tmp, fixture, response_text="")
+        self.assertFalse(result.passed)
+        self.assertIn("phase", result.reason.lower())
+
+
 class JudgeInvariantModeTests(unittest.TestCase):
     """C4 — environment invariants advisory in FakeClient mode, enforced in live."""
 
