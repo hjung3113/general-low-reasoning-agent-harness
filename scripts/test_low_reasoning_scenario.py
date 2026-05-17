@@ -553,6 +553,25 @@ class RetryPersistenceTests(unittest.TestCase):
         self.assertIn("phase set plan", a1["judgment"]["reason"])
 
 
+class ParseRejectedLinesTests(unittest.TestCase):
+    """M1 — _parse_commands returns rejected lines; runner records them."""
+
+    def test_parse_rejected_lines_recorded(self) -> None:
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="rejected."))
+        client = FakeClient(
+            scripted_responses=[
+                "I think I'll do nothing.\nharness phase set plan\nshenanigans foo bar"
+            ]
+        )
+        record = run_trial(fixture, 21, client, tmp / "scratch", tmp / "evidence")
+        # The non-`harness ` lines should be preserved in evidence.
+        rejected = getattr(record, "rejected_lines", None)
+        self.assertIsNotNone(rejected, "rejected_lines field missing on TrialRecord")
+        self.assertIn("I think I'll do nothing.", rejected)
+        self.assertIn("shenanigans foo bar", rejected)
+
+
 class WallClockHonestyTests(unittest.TestCase):
     """C2 — wall_clock_seconds must be real monotonic, not max(monotonic, client)."""
 
