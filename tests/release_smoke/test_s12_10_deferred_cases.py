@@ -8,7 +8,9 @@ S13 step-1 implemented 5 fundamental cases (rows 1/2/3/5/6).
 S13 step-2 implements 7 more cases (rows 4/7/8/12 + phase-autopilot-stop +
 deny-listed-verb-via-shim + manifest-init-idempotency + windows-exit-11).
 
-Remaining 3 cases (rows 9/10/11) stay skipped pending S15 (harness status/next).
+S15 step-2 implements 3 previously-deferred cases (rows 9/10/11):
+  status-after-halt, fsd-status-roo, fsd-status-opencode.
+All 3 are now flipped from skipped to live subprocess invocations.
 
 S13 implementer checklist:
   1. Build `release_smoke_test.py --case <case_id>` infrastructure. ← DONE (step 1)
@@ -148,11 +150,10 @@ def test_release_smoke_case_step2(case_id):
 
 
 # ---------------------------------------------------------------------------
-# Remaining deferred cases (S15 dependency — kept skipped)
+# S15 step-2: 3 previously-deferred cases (rows 9/10/11) — now live
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="S15 dependency: harness status / harness next not yet built")
 @pytest.mark.parametrize(
     "case_id",
     [
@@ -164,10 +165,30 @@ def test_release_smoke_case_step2(case_id):
         "fsd-status-opencode",
     ],
 )
-def test_release_smoke_case_deferred_s15(case_id):
-    """Placeholder pinned to §12.10 case catalogue. Flips to real test when S15 lands.
+def test_release_smoke_case_s15(case_id):
+    """Subprocess-invoke release_smoke_test.py --case <id>, assert exit 0.
 
-    Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §12.10
-    Slice: S15 (harness status / harness next — not yet built)
+    Flipped from skipped to live in S15 step 2 — harness status/next built,
+    /fsd-status slash files created for Roo + OpenCode (§12.11).
+
+    Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §12.10 + §12.11
+    Slice: S15 step 2
     """
-    pytest.fail("S15 harness-status/harness-next not yet built")
+    env = {**os.environ, **_CI_ENV}
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "release_smoke_test.py"),
+            "--case", case_id,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+        timeout=120,
+    )
+    assert result.returncode == 0, (
+        f"case {case_id!r} failed (exit={result.returncode}):\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )

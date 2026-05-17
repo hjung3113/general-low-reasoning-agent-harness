@@ -438,6 +438,13 @@
       "adapter": "opencode"
     },
     {
+      "path": ".opencode/commands/fsd-status.md",
+      "source": ".opencode/commands/fsd-status.md",
+      "policy": "harness-owned",
+      "owner": "adapter:opencode",
+      "adapter": "opencode"
+    },
+    {
       "path": ".roo/README.md",
       "source": ".roo/README.md",
       "policy": "harness-owned"
@@ -471,6 +478,13 @@
       "path": ".roo/commands/fsd-run-all.md",
       "source": ".roo/commands/fsd-run-all.md",
       "policy": "harness-owned"
+    },
+    {
+      "path": ".roo/commands/fsd-status.md",
+      "source": ".roo/commands/fsd-status.md",
+      "policy": "harness-owned",
+      "owner": "adapter:roo",
+      "adapter": "roo"
     },
     {
       "path": ".roo/commands/feature.md",

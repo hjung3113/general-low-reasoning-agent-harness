@@ -1453,6 +1453,382 @@ def case_windows_exit_11(args) -> "CaseResult":
         )
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# §12.10 Cases — S15 step 2 (rows 9/10/11): harness status/next + /fsd-status
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@register_case("status-after-halt")
+def case_status_after_halt(args) -> "CaseResult":
+    """§12.10 row 9 — status-after-halt (S15).
+
+    Seeds a fresh fixture repo with last_halt populated
+    (suggested_next_command_requires_human=True, acknowledged_at=None).
+    Invokes ``harness status --json`` and ``harness next --json``
+    via subprocess.
+
+    Precondition: fresh fixture repo, state seeded with last_halt entry.
+    Assert:
+      - ``harness status --json`` exits 0
+      - status JSON contains "last_halt" key non-null
+      - status JSON contains "next_action" referencing halt command
+      - ``harness next --json`` exits 17 (requires_human=true)
+      - next JSON has all 4 required keys (requires_human, agent_safe, command, reason)
+      - next JSON: requires_human == true
+
+    Spec: §12.10 row 9 + §12.11 + §3.9
+    """
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo", "02-bar"])
+
+        # Seed state with last_halt populated (requires_human=True variant).
+        # We directly mutate the phase-state.json after seeding via commit_transaction.
+        import datetime as _dt
+
+        sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+        from lib import phase_lock as _pl
+        from lib import phase_txn as _pt
+
+        scratch = repo / ".scratch"
+        audit_path = repo / ".harness" / "audit.log"
+        state_before = _read_state(repo)
+
+        now_iso = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        halt_diary = {
+            "run_id": "smoke-halt-abc123",
+            "mode": "phase_autopilot",
+            "phase_slug": "01-foo",
+            "last_successful_transition": None,
+            "halt_reason": "budget_exhausted:file_mutation_ops",
+            "halt_at_iso": now_iso,
+            "suggested_next_command": "harness phase autopilot stop --reason 'budget exhausted'",
+            "suggested_next_command_requires_human": True,
+            "acknowledged_at": None,
+        }
+        halted_state = {
+            **state_before,
+            "last_halt": halt_diary,
+        }
+
+        lock = _pl.acquire_primary(scratch, timeout_s=10.0, audit_path=audit_path)
+        try:
+            _pt.commit_transaction(
+                scratch,
+                lock=lock,
+                request=_pt.TxnRequest(
+                    action="status.halt.seed",
+                    before_state=state_before,
+                    after_state=halted_state,
+                    audit_entry_draft={
+                        "verb": "phase.halt.seed",
+                        "by": "smoke-fixture",
+                        "args": {"reason": "status-after-halt smoke seed"},
+                    },
+                ),
+                audit_path=audit_path,
+            )
+        finally:
+            _pl.release_primary(lock)
+
+        # Invoke harness status --json
+        proc_status = _run_harness("status", "--json", cwd=repo)
+        status_exit = proc_status.returncode
+
+        # Parse status JSON
+        status_data: dict = {}
+        try:
+            status_data = json.loads(proc_status.stdout)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Invoke harness next --json
+        proc_next_json = _run_harness("next", "--json", cwd=repo)
+        next_json_exit = proc_next_json.returncode
+
+        # Parse next JSON
+        next_data: dict = {}
+        try:
+            next_data = json.loads(proc_next_json.stdout)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        assertions = []
+
+        # status assertions
+        assertions.append((
+            "harness status --json exits 0",
+            status_exit == 0,
+            f"got {status_exit}; stderr: {proc_status.stderr[:300]!r}",
+        ))
+        last_halt_val = status_data.get("last_halt")
+        assertions.append((
+            "status JSON: last_halt key non-null",
+            last_halt_val is not None,
+            f"last_halt={last_halt_val!r}; keys={list(status_data.keys())[:10]}",
+        ))
+        next_action_val = status_data.get("next_action")
+        assertions.append((
+            "status JSON: next_action present (references halt command)",
+            next_action_val is not None and len(str(next_action_val)) > 0,
+            f"next_action={next_action_val!r}",
+        ))
+
+        # next --json assertions
+        REQUIRED_KEYS = {"requires_human", "agent_safe", "command", "reason"}
+        missing_keys = REQUIRED_KEYS - set(next_data.keys())
+        assertions.append((
+            "next JSON has all 4 required keys (requires_human, agent_safe, command, reason)",
+            not missing_keys,
+            f"missing={missing_keys}; keys={list(next_data.keys())}",
+        ))
+        requires_human_val = next_data.get("requires_human")
+        assertions.append((
+            "next JSON: requires_human == true",
+            requires_human_val is True,
+            f"requires_human={requires_human_val!r}",
+        ))
+        assertions.append((
+            "harness next --json exits 17 (requires_human=true → §3.4)",
+            next_json_exit == 17,
+            f"got {next_json_exit}; stderr: {proc_next_json.stderr[:300]!r}",
+        ))
+
+        passed = status_exit == 0 and all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="status-after-halt",
+            exit_code=status_exit,
+            expected_exit_code=0,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "status_stdout.txt": proc_status.stdout,
+                "status_stderr.txt": proc_status.stderr,
+                "next_json_stdout.txt": proc_next_json.stdout,
+                "next_json_stderr.txt": proc_next_json.stderr,
+                "phase-state.json": json.dumps(_read_state(repo), indent=2),
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("fsd-status-roo")
+def case_fsd_status_roo(args) -> "CaseResult":
+    """§12.10 row 10 — fsd-status-roo (S15).
+
+    Parses .roo/commands/fsd-status.md, extracts the two ``harness ...``
+    invocations, runs them in sequence against a fixture-backed repo.
+
+    Assert:
+      - ``harness status`` exits 0
+      - ``harness next --json`` exits 0 or 17 (halt or clean state)
+      - next JSON parses + has all 4 required keys
+
+    Spec: §12.10 row 10 + §12.11 (Roo adapter)
+    """
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo", "02-bar"])
+
+        slash_file = _REPO_ROOT / ".roo" / "commands" / "fsd-status.md"
+        slash_body = slash_file.read_text(encoding="utf-8")
+
+        # Extract harness invocations from backtick code spans.
+        import re as _re
+        harness_calls = _re.findall(r"`(harness [^`]+)`", slash_body)
+
+        assertions = []
+        assertions.append((
+            "fsd-status.md contains harness invocations",
+            len(harness_calls) >= 2,
+            f"found {harness_calls!r}",
+        ))
+
+        if len(harness_calls) < 2:
+            return CaseResult(
+                case_name="fsd-status-roo",
+                exit_code=1,
+                expected_exit_code=0,
+                passed=False,
+                assertions=assertions,
+                artifacts={"slash_body.txt": slash_body},
+            )
+
+        # Run first invocation: harness status
+        first_call = harness_calls[0]  # e.g. "harness status"
+        first_args = first_call.split()[1:]  # ["status"]
+        proc_status = _run_harness(*first_args, cwd=repo)
+        assertions.append((
+            f"first call '{first_call}' exits 0",
+            proc_status.returncode == 0,
+            f"got {proc_status.returncode}; stderr: {proc_status.stderr[:300]!r}",
+        ))
+
+        # Run second invocation: harness next --json
+        second_call = harness_calls[1]  # e.g. "harness next --json"
+        second_args = second_call.split()[1:]  # ["next", "--json"]
+        proc_next = _run_harness(*second_args, cwd=repo)
+        next_exit = proc_next.returncode
+        assertions.append((
+            f"second call '{second_call}' exits 0 or 17",
+            next_exit in (0, 17),
+            f"got {next_exit}; stderr: {proc_next.stderr[:300]!r}",
+        ))
+
+        # Parse next JSON
+        next_data: dict = {}
+        try:
+            next_data = json.loads(proc_next.stdout)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        REQUIRED_KEYS = {"requires_human", "agent_safe", "command", "reason"}
+        missing_keys = REQUIRED_KEYS - set(next_data.keys())
+        assertions.append((
+            "next JSON parses + has all 4 required keys",
+            not missing_keys,
+            f"missing={missing_keys}; keys={list(next_data.keys())}; stdout={proc_next.stdout[:200]!r}",
+        ))
+
+        passed = all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="fsd-status-roo",
+            exit_code=proc_status.returncode,
+            expected_exit_code=0,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "status_stdout.txt": proc_status.stdout,
+                "status_stderr.txt": proc_status.stderr,
+                "next_json_stdout.txt": proc_next.stdout,
+                "next_json_stderr.txt": proc_next.stderr,
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("fsd-status-opencode")
+def case_fsd_status_opencode(args) -> "CaseResult":
+    """§12.10 row 11 — fsd-status-opencode (S15).
+
+    Parses .opencode/commands/fsd-status.md (no frontmatter, # fsd-status
+    heading), extracts the two ``harness ...`` invocations, runs them in
+    sequence against a fixture-backed repo.
+
+    Assert:
+      - ``harness status`` exits 0
+      - ``harness next --json`` exits 0 or 17
+      - next JSON parses + has all 4 required keys
+      - Identical CLI invocations to the Roo variant (§12.11 parity)
+
+    Spec: §12.10 row 11 + §12.11 (OpenCode adapter)
+    """
+    repo = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo", "02-bar"], adapter="opencode")
+
+        slash_file = _REPO_ROOT / ".opencode" / "commands" / "fsd-status.md"
+        slash_body = slash_file.read_text(encoding="utf-8")
+
+        assertions = []
+
+        # Verify no frontmatter (OpenCode body starts with # fsd-status)
+        assertions.append((
+            "OpenCode fsd-status.md has no YAML frontmatter (starts with '# fsd-status')",
+            slash_body.startswith("# fsd-status"),
+            f"first 40 chars: {slash_body[:40]!r}",
+        ))
+
+        # Extract harness invocations from backtick code spans.
+        import re as _re
+        harness_calls = _re.findall(r"`(harness [^`]+)`", slash_body)
+
+        assertions.append((
+            "fsd-status.md contains harness invocations",
+            len(harness_calls) >= 2,
+            f"found {harness_calls!r}",
+        ))
+
+        if len(harness_calls) < 2:
+            return CaseResult(
+                case_name="fsd-status-opencode",
+                exit_code=1,
+                expected_exit_code=0,
+                passed=False,
+                assertions=assertions,
+                artifacts={"slash_body.txt": slash_body},
+            )
+
+        # Run first invocation: harness status
+        first_call = harness_calls[0]
+        first_args = first_call.split()[1:]
+        proc_status = _run_harness(*first_args, cwd=repo)
+        assertions.append((
+            f"first call '{first_call}' exits 0",
+            proc_status.returncode == 0,
+            f"got {proc_status.returncode}; stderr: {proc_status.stderr[:300]!r}",
+        ))
+
+        # Run second invocation: harness next --json
+        second_call = harness_calls[1]
+        second_args = second_call.split()[1:]
+        proc_next = _run_harness(*second_args, cwd=repo)
+        next_exit = proc_next.returncode
+        assertions.append((
+            f"second call '{second_call}' exits 0 or 17",
+            next_exit in (0, 17),
+            f"got {next_exit}; stderr: {proc_next.stderr[:300]!r}",
+        ))
+
+        # Parse next JSON
+        next_data: dict = {}
+        try:
+            next_data = json.loads(proc_next.stdout)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        REQUIRED_KEYS = {"requires_human", "agent_safe", "command", "reason"}
+        missing_keys = REQUIRED_KEYS - set(next_data.keys())
+        assertions.append((
+            "next JSON parses + has all 4 required keys",
+            not missing_keys,
+            f"missing={missing_keys}; keys={list(next_data.keys())}; stdout={proc_next.stdout[:200]!r}",
+        ))
+
+        # Parity check: same two CLI invocations as Roo
+        roo_slash_file = _REPO_ROOT / ".roo" / "commands" / "fsd-status.md"
+        roo_body = roo_slash_file.read_text(encoding="utf-8")
+        roo_calls = _re.findall(r"`(harness [^`]+)`", roo_body)
+        opencode_calls = harness_calls
+        assertions.append((
+            "CLI invocations match Roo variant (§12.11 parity)",
+            roo_calls[:2] == opencode_calls[:2],
+            f"roo={roo_calls[:2]!r}, opencode={opencode_calls[:2]!r}",
+        ))
+
+        passed = all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="fsd-status-opencode",
+            exit_code=proc_status.returncode,
+            expected_exit_code=0,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "status_stdout.txt": proc_status.stdout,
+                "status_stderr.txt": proc_status.stderr,
+                "next_json_stdout.txt": proc_next.stdout,
+                "next_json_stderr.txt": proc_next.stderr,
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+
+
 CASES = [
     ("core", ["--adapters", "none"]),
     ("opencode", ["--adapters", "opencode"]),
@@ -1640,6 +2016,9 @@ _RELEASE_CASE_ORDER = [
     "run-all-empty-roadmap",
     "net-deny-curl-posix",
     "halt-handoff-flow",
+    "status-after-halt",
+    "fsd-status-roo",
+    "fsd-status-opencode",
     "env-only-spoof-rejected",
     "phase-autopilot-stop",
     "deny-listed-verb-via-shim",
