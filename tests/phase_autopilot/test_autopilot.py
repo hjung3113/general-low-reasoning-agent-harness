@@ -219,10 +219,10 @@ def _start(
     _nonce_dir = nonce_dir or env["nonce_dir"]
 
     # Mint nonce for TTY path.
-    _nonce_id: str | None = None
+    _consumer_tty: str | None = None
     if stdin_is_tty and mint_nonce:
         nonce = _mint_nonce(_nonce_dir, minter_tty="/dev/ttys001")
-        _nonce_id = "/dev/ttys002"  # consumer_tty (different from minter)
+        _consumer_tty = "/dev/ttys002"  # consumer_tty (different from minter)
 
     _env = ci_env if not stdin_is_tty else None
 
@@ -243,7 +243,7 @@ def _start(
             roadmap_root=env["roadmap_root"],
             env=_env,
             stdin_is_tty=stdin_is_tty,
-            nonce_id=_nonce_id,
+            consumer_tty=_consumer_tty,
             nonce_audience="phase.autopilot.start",
             nonce_dir=_nonce_dir if stdin_is_tty else None,
             by_email=by_email if stdin_is_tty else None,
@@ -503,7 +503,7 @@ def test_run_start_rejects_without_anchor_when_not_skipped(env):
             roadmap_root=env["roadmap_root"],
             stdin_is_tty=True,
             by_email="alice@example.com",
-            nonce_id="/dev/ttys002",
+            consumer_tty="/dev/ttys002",
             nonce_audience="phase.autopilot.start",
             nonce_dir=env["nonce_dir"],
             install_record_root=env["install_record_root"],
@@ -703,7 +703,7 @@ def test_run_start_raises_if_lock_is_none(env):
             roadmap_root=env["roadmap_root"],
             stdin_is_tty=True,
             by_email="alice@example.com",
-            nonce_id="/dev/ttys002",
+            consumer_tty="/dev/ttys002",
             nonce_audience="phase.autopilot.start",
             nonce_dir=env["nonce_dir"],
             install_record_root=env["install_record_root"],
@@ -733,16 +733,19 @@ def test_run_stop_raises_if_lock_is_released(env):
 def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
     """Verify: `harness phase autopilot start` argparse routes to run_start.
 
-    Uses direct handler invocation with a constructed argparse.Namespace.
-    The anchor preflight is patched to return (True, 0, "") so the test
-    exercises the routing logic without requiring a real out-of-repo anchor.
-    The TTY path is exercised using the env fixture's nonce + alice@example.com.
-
-    Previously xfail-strict (deferred); now a real PASS after step 5 CLI wiring.
+    Strengthened (P2-A2 fix): patches phase_autopilot.run_start with a spy
+    that records kwargs and returns a known AutopilotResult(exit_code=0).
+    Asserts:
+      - spy called exactly once
+      - kwargs include required fields: phase_slug, mode, lock_handle,
+        audit_path, scratch_root, anchor_verified=True, env, stdin_is_tty
+      - exit_code == 0 (not "in (0, 6)")
     """
     import argparse
 
     from lib.phase_autopilot_cli import cmd_phase_autopilot_start, _parse_budgets
+    import lib.phase_autopilot as _pa_mod
+    import lib.phase_autopilot_cli as _cli_mod
 
     # Verify the CLI module exposes the handler callable.
     assert callable(cmd_phase_autopilot_start), (
@@ -753,15 +756,27 @@ def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
     assert _parse_budgets(["shell_invocations=50"]) == {"shell_invocations": 50}
 
     # Patch anchor + cwd so the handler operates against the fixture dir.
-    import lib.phase_autopilot_cli as _cli_mod
-
     monkeypatch.setattr(
         _cli_mod, "_verify_anchor", lambda cwd: (True, 0, "")
     )
     monkeypatch.setattr(_cli_mod, "_cwd_repo_root", lambda: env["tmp_path"])
 
-    # Mint a nonce for the TTY path.
-    nonce = phase_autopilot._approval_nonce.mint(
+    # Spy on run_start: record kwargs, return known success result.
+    spy_calls: list[dict] = []
+
+    def _spy_run_start(**kwargs):
+        spy_calls.append(kwargs)
+        return phase_autopilot.AutopilotResult(
+            exit_code=0,
+            sub_reason="started",
+            message="autopilot started (spy)",
+            autopilot_run_id="spy-run-id-001",
+        )
+
+    monkeypatch.setattr(_pa_mod, "run_start", _spy_run_start)
+
+    # Mint a nonce for the args (the spy won't actually consume it).
+    phase_autopilot._approval_nonce.mint(
         nonce_dir=env["nonce_dir"],
         audience="phase.autopilot.start",
         minter_tty="/dev/ttys001",
@@ -775,20 +790,35 @@ def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
         allow_network=False,
         accept_degraded_windows_containment=False,
         by="alice@example.com",
-        nonce_id="/dev/ttys002",
+        consumer_tty="/dev/ttys002",
         nonce_dir=str(env["nonce_dir"]),
     )
 
     exit_code = cmd_phase_autopilot_start(args)
-    # Expected exit 0: CI path (stdin is piped in pytest → isatty()=False).
-    # Since no HARNESS_AUTOMATION in env, the CI predicate fails → exit 6.
-    # This is the expected real-world outcome; the important assertion is that
-    # the CLI *routes* to run_start (no AttributeError / ImportError /
-    # argparse 2 exit from "unrecognized command").
-    assert exit_code in (0, 6), (
-        f"cmd_phase_autopilot_start returned unexpected exit {exit_code}; "
-        "expected 0 (started) or 6 (auth/anchor failure from test env). "
-        "Exit 2 would indicate argparse rejected the subcommand (routing broken)."
+
+    # Assert spy was called exactly once (routing confirmed).
+    assert len(spy_calls) == 1, (
+        f"run_start spy called {len(spy_calls)} times; expected exactly 1. "
+        "Exit 2 from argparse would mean routing broken."
+    )
+
+    # Assert kwargs shape (required fields must be present).
+    kwargs = spy_calls[0]
+    assert "phase_slug" in kwargs, "run_start must receive phase_slug"
+    assert kwargs["phase_slug"] == "phase-alpha"
+    assert "mode" in kwargs and kwargs["mode"] == "phase"
+    assert "lock_handle" in kwargs, "run_start must receive lock_handle"
+    assert "audit_path" in kwargs
+    assert "scratch_root" in kwargs
+    assert "anchor_verified" in kwargs and kwargs["anchor_verified"] is True
+    assert "env" in kwargs
+    assert "stdin_is_tty" in kwargs
+
+    # Assert exit_code == 0 (spy returns 0, so routing succeeded completely).
+    assert exit_code == 0, (
+        f"cmd_phase_autopilot_start returned exit {exit_code}; "
+        "expected 0 when run_start spy returns AutopilotResult(exit_code=0). "
+        "Non-zero indicates the CLI handler itself failed before reaching run_start."
     )
 
 
@@ -869,7 +899,7 @@ def test_tty_path_no_nonce_dir(env):
             roadmap_root=env["roadmap_root"],
             stdin_is_tty=True,
             by_email="alice@example.com",
-            nonce_id=None,       # missing
+            consumer_tty=None,   # missing
             nonce_audience=None, # missing
             nonce_dir=None,      # missing
             install_record_root=env["install_record_root"],
@@ -965,3 +995,273 @@ def test_ci_path_two_provider_markers_propagates_ambiguous(env):
     rc = _start(env, stdin_is_tty=False, ci_env=ci_env)
     assert rc.exit_code == 6
     assert rc.sub_reason == "ci_provider_ambiguous"
+
+
+# ---------------------------------------------------------------------------
+# 17. NEW: P1-A1 regression — CLI handler refuses OIDC in production mode
+# ---------------------------------------------------------------------------
+
+
+def test_cli_handler_refuses_oidc_in_production_mode(env, monkeypatch):
+    """P1-A1: CLI handler passes oidc_fetcher=None to run_start.
+
+    Without HARNESS_OIDC_TEST_MODE=1, ci_predicate_satisfied raises
+    CiOidcUnreachable when the default stub would be reached (step 5).
+    The CLI handler must propagate this as exit 6.
+
+    Test uses a real CI env dict (stdin_is_tty=False) so ci_predicate_satisfied
+    is called. HARNESS_OIDC_TEST_MODE must NOT be set.
+    """
+    import lib.phase_autopilot_cli as _cli_mod
+
+    monkeypatch.delenv("HARNESS_OIDC_TEST_MODE", raising=False)
+    monkeypatch.setattr(_cli_mod, "_verify_anchor", lambda cwd: (True, 0, ""))
+    monkeypatch.setattr(_cli_mod, "_cwd_repo_root", lambda: env["tmp_path"])
+
+    import argparse
+    from lib.phase_autopilot_cli import cmd_phase_autopilot_start
+
+    # Provide all GitHub Actions CI env vars so the predicate gets past steps 1-4
+    # and reaches step 5 (OIDC fetch) where the production gate fires.
+    ci_env_vars = {
+        "HARNESS_AUTOMATION": "phase",
+        "HARNESS_BY_TRUST": "ci-bot@example.com",
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_RUN_ID": "111",
+        "GITHUB_REPOSITORY": "org/repo",
+        "GITHUB_SHA": "abc",
+        "GITHUB_WORKFLOW": "ci.yml",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "https://example.com/oidc",
+    }
+    for k, v in ci_env_vars.items():
+        monkeypatch.setenv(k, v)
+
+    args = argparse.Namespace(
+        phase_slug="phase-alpha",
+        mode="phase",
+        budget=None,
+        allow_network=False,
+        accept_degraded_windows_containment=False,
+        by=None,  # no by_email → CI path
+        consumer_tty=None,
+        nonce_dir=None,
+    )
+
+    exit_code = cmd_phase_autopilot_start(args)
+    # CI path is taken (stdin is not a tty in pytest). Without HARNESS_OIDC_TEST_MODE=1,
+    # the production gate must fire (CiOidcUnreachable → exit 6).
+    assert exit_code == 6, (
+        f"Expected exit 6 (production OIDC gate refused), got {exit_code}. "
+        "The CLI must not silently accept test stub tokens in production mode."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 18. NEW: P1-A2 regression — repo-root walk-up and empty-approvers rejection
+# ---------------------------------------------------------------------------
+
+
+def test_cli_walks_up_from_subdirectory_to_repo_root(env, monkeypatch, tmp_path):
+    """P1-A2: _walk_up_for_repo_root finds .harness/ when called from a subdir.
+
+    Creates a temp repo with .harness/install-record.json at root,
+    confirms walk-up from a nested subdirectory reaches it.
+    """
+    from lib.phase_autopilot_cli import _walk_up_for_repo_root
+
+    # env["tmp_path"] has .harness/ already (created by the env fixture).
+    repo_root = env["tmp_path"]
+    assert (repo_root / ".harness").is_dir()
+
+    # Create a nested subdir two levels deep.
+    subdir = repo_root / "src" / "deep" / "nesting"
+    subdir.mkdir(parents=True)
+
+    found = _walk_up_for_repo_root(subdir)
+    assert found == repo_root, (
+        f"Walk-up from {subdir} should return {repo_root}, got {found}"
+    )
+
+
+def test_cli_no_repo_root_rejects(monkeypatch, tmp_path):
+    """P1-A2: CLI handler returns exit 6 when no .git/.harness found up to root.
+
+    Uses a tmp dir with no .git/.harness ancestors as CWD.
+    """
+    import argparse
+    import lib.phase_autopilot_cli as _cli_mod
+    from lib.phase_autopilot_cli import cmd_phase_autopilot_start
+
+    # Make _cwd_repo_root raise FileNotFoundError by providing a dir without .git/.harness.
+    # We patch _cwd_repo_root directly (the CLI calls it early, before lock acquisition).
+    monkeypatch.setattr(
+        _cli_mod,
+        "_cwd_repo_root",
+        lambda: (_ for _ in ()).throw(
+            FileNotFoundError("No .git/ or .harness/ found from /tmp up to root")
+        ),
+    )
+
+    args = argparse.Namespace(
+        phase_slug="phase-alpha",
+        mode="phase",
+        budget=None,
+        allow_network=False,
+        accept_degraded_windows_containment=False,
+        by=None,
+        consumer_tty=None,
+        nonce_dir=None,
+    )
+    exit_code = cmd_phase_autopilot_start(args)
+    assert exit_code == 6, (
+        f"Expected exit 6 when no repo root found, got {exit_code}"
+    )
+
+
+def test_run_start_rejects_empty_approvers_with_by_email(env):
+    """P1-A2: run_start with empty install_record_root (no install-record.json) +
+    by_email supplied → exit 6 install_record_missing (NOT silently accepted).
+
+    Previously, empty approvers_set + by_email caused the check to be skipped
+    (the `if approvers_set and ...` guard only ran when approvers_set was non-empty).
+    After the fix, an empty set with by_email supplied must reject.
+    """
+    # Create a fresh scratch dir with no install-record.json.
+    from pathlib import Path
+    import tempfile, json
+    from lib import phase_autopilot, phase_lock, phase_txn
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scratch = Path(tmpdir) / ".scratch"
+        scratch.mkdir()
+        harness = Path(tmpdir) / ".harness"
+        harness.mkdir()
+        audit_path = harness / "audit.log"
+        planning = Path(tmpdir) / ".planning" / "phases"
+        planning.mkdir(parents=True)
+        (planning / "phase-alpha").mkdir()
+        nonce_dir = Path(tmpdir) / "nonces"
+        nonce_dir.mkdir()
+
+        # Seed state.
+        seed_state = {
+            "phase": "plan", "approved": False, "approved_at": None,
+            "approved_by": None, "execution_mode": "manual",
+            "autopilot_run_id": None, "autopilot_mode": None,
+            "autopilot_phase_slug": None, "autopilot_start_entry_hash": None,
+            "cli_budgets_remaining": None, "autopilot_allow_network": False,
+            "last_halt": None, "last_halt_history": [],
+            "state_schema_version": 2,
+        }
+        lock0 = phase_lock.acquire_primary(scratch, timeout_s=2.0)
+        try:
+            phase_txn.commit_transaction(
+                scratch, lock=lock0,
+                request=phase_txn.TxnRequest(
+                    action="phase.set", before_state=None, after_state=seed_state,
+                    audit_entry_draft={"verb": "phase.set", "by": "seed", "args": {}},
+                ),
+                audit_path=audit_path,
+            )
+        finally:
+            phase_lock.release_primary(lock0)
+
+        # Mint a nonce (TTY path).
+        from lib import approval_nonce
+        approval_nonce.mint(
+            nonce_dir=nonce_dir,
+            audience="phase.autopilot.start",
+            minter_tty="/dev/ttys001",
+            ttl_seconds=120,
+        )
+
+        # No install-record.json in tmpdir → approvers_set will be empty.
+        lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
+        try:
+            rc = phase_autopilot.run_start(
+                scratch_root=scratch,
+                audit_path=audit_path,
+                lock_handle=lock,
+                phase_slug="phase-alpha",
+                mode="phase",
+                budgets=None,
+                allow_network=False,
+                anchor_verified=True,
+                skip_anchor_preflight=True,
+                roadmap_root=planning,
+                stdin_is_tty=True,
+                by_email="anyone@example.com",  # any email — must be rejected
+                consumer_tty="/dev/ttys002",
+                nonce_audience="phase.autopilot.start",
+                nonce_dir=nonce_dir,
+                install_record_root=Path(tmpdir),  # has no install-record.json
+            )
+        finally:
+            phase_lock.release_primary(lock)
+
+    # Must reject — empty approvers + by_email should NOT silently accept.
+    assert rc.exit_code == 6, (
+        f"Expected exit 6 (install_record_missing), got {rc.exit_code} ({rc.sub_reason}). "
+        "Empty approvers_set + by_email must reject, not silently accept any email."
+    )
+    assert rc.sub_reason == "install_record_missing", (
+        f"Expected sub_reason='install_record_missing', got {rc.sub_reason!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 19. NEW: P2-A1 regression — nonce_id deprecation alias
+# ---------------------------------------------------------------------------
+
+
+def test_nonce_id_deprecation_alias_works_and_warns(env):
+    """P2-A1: nonce_id= kwarg is a deprecated alias for consumer_tty=.
+
+    run_start must:
+      - accept nonce_id= kwarg
+      - emit DeprecationWarning
+      - behave identically to consumer_tty= kwarg
+    """
+    import warnings
+
+    _mint_nonce(env["nonce_dir"], minter_tty="/dev/ttys001")
+
+    lock = phase_lock.acquire_primary(env["scratch"], timeout_s=2.0)
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            rc = phase_autopilot.run_start(
+                scratch_root=env["scratch"],
+                audit_path=env["audit_path"],
+                lock_handle=lock,
+                phase_slug="phase-alpha",
+                mode="phase",
+                budgets=None,
+                allow_network=False,
+                anchor_verified=True,
+                skip_anchor_preflight=True,
+                roadmap_root=env["roadmap_root"],
+                stdin_is_tty=True,
+                by_email="alice@example.com",
+                nonce_id="/dev/ttys002",   # deprecated alias
+                nonce_audience="phase.autopilot.start",
+                nonce_dir=env["nonce_dir"],
+                install_record_root=env["install_record_root"],
+            )
+    finally:
+        phase_lock.release_primary(lock)
+
+    # Must succeed (alias works).
+    assert rc.exit_code == 0, (
+        f"nonce_id alias should work identically to consumer_tty; got exit {rc.exit_code}"
+    )
+
+    # Must have emitted a DeprecationWarning.
+    dep_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(dep_warnings) >= 1, (
+        "run_start with nonce_id= must emit at least one DeprecationWarning"
+    )
+    assert "nonce_id" in str(dep_warnings[0].message).lower(), (
+        f"DeprecationWarning message must mention 'nonce_id'; got: {dep_warnings[0].message}"
+    )

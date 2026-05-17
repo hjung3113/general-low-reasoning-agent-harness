@@ -53,13 +53,37 @@ INSTALL_RECORD_ROOT = Path(".")  # install-record.json is at .harness/install-re
 # ---------------------------------------------------------------------------
 
 
-def _cwd_repo_root() -> Path:
-    """Return the current working directory as the repo root.
+def _walk_up_for_repo_root(start: Path) -> Path:
+    """Walk parent directories looking for ``.git/`` or ``.harness/``.
 
-    The autopilot CLI operates against the project directory the user is
-    currently in (CWD), not the harness source tree.
+    Returns the first ancestor directory that contains either marker.
+    Raises ``FileNotFoundError`` if neither is found before the filesystem root.
+
+    This is needed so ``harness phase autopilot start`` works correctly when
+    invoked from a subdirectory of the repo (e.g. ``scripts/`` or ``src/``).
+    Without walk-up, ``.harness/install-record.json`` is not found, the
+    approvers_set stays empty, and the ``if approvers_set and ...`` guard
+    silently accepts any email (P1-A2 bypass).
     """
-    return Path.cwd()
+    cur = start.resolve()
+    while True:
+        if (cur / ".git").exists() or (cur / ".harness").exists():
+            return cur
+        if cur.parent == cur:
+            raise FileNotFoundError(
+                f"No .git/ or .harness/ directory found walking up from {start} "
+                "to the filesystem root. Ensure you are inside a harness-managed "
+                "repository before running autopilot commands."
+            )
+        cur = cur.parent
+
+
+def _cwd_repo_root() -> Path:
+    """Return the repo root by walking up from CWD to the first .git/.harness ancestor.
+
+    Raises FileNotFoundError if no repo root is found.
+    """
+    return _walk_up_for_repo_root(Path.cwd())
 
 
 def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
@@ -151,7 +175,16 @@ def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
     from . import phase_lock as _phase_lock
     from . import phase_preflight as _phase_preflight
 
-    cwd = _cwd_repo_root()
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        print(
+            f"error: phase autopilot start refused: {exc}. "
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
@@ -168,8 +201,10 @@ def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
         except Exception:
             by_email = None
 
-    # Resolve nonce kwargs from --nonce-id.
-    nonce_id: Optional[str] = getattr(args, "nonce_id", None)
+    # Resolve consumer_tty kwargs from --consumer-tty (or legacy --nonce-id).
+    consumer_tty: Optional[str] = getattr(args, "consumer_tty", None)
+    if consumer_tty is None:
+        consumer_tty = getattr(args, "nonce_id", None)  # legacy compat
     nonce_audience: Optional[str] = "phase.autopilot.start"
     nonce_dir_raw: Optional[str] = getattr(args, "nonce_dir", None)
     nonce_dir: Optional[Path] = Path(nonce_dir_raw) if nonce_dir_raw else None
@@ -214,13 +249,13 @@ def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
             roadmap_root=roadmap_root,
             env=os.environ,
             stdin_is_tty=stdin_is_tty,
-            nonce_id=nonce_id,
+            consumer_tty=consumer_tty,
             nonce_audience=nonce_audience,
             nonce_dir=nonce_dir,
             by_email=by_email,
             install_record_root=cwd,
-            oidc_fetcher=None,   # TEST-ONLY stubs; production OIDC wiring deferred
-            oidc_verifier=None,  # TEST-ONLY stubs; production OIDC wiring deferred
+            oidc_fetcher=None,   # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
+            oidc_verifier=None,  # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
         )
     finally:
         _phase_lock.release_primary(lock)
@@ -258,7 +293,16 @@ def cmd_phase_autopilot_stop(args) -> int:  # type: ignore[no-untyped-def]
     from . import phase_autopilot as _phase_autopilot
     from . import phase_lock as _phase_lock
 
-    cwd = _cwd_repo_root()
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        print(
+            f"error: phase autopilot stop refused: {exc}. "
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
@@ -302,7 +346,16 @@ def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
     from . import phase_autopilot as _phase_autopilot
     from . import phase_lock as _phase_lock
 
-    cwd = _cwd_repo_root()
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        print(
+            f"error: phase next-pending refused: {exc}. "
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
@@ -357,7 +410,16 @@ def cmd_fsd_run_phase(args) -> int:  # type: ignore[no-untyped-def]
     from . import fsd_wrappers as _fsd_wrappers
     from . import phase_preflight as _phase_preflight
 
-    cwd = _cwd_repo_root()
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        print(
+            f"error: fsd-run-phase refused: {exc}. "
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
@@ -381,7 +443,9 @@ def cmd_fsd_run_phase(args) -> int:  # type: ignore[no-untyped-def]
         except Exception:
             by_email = None
 
-    nonce_id: Optional[str] = getattr(args, "nonce_id", None)
+    consumer_tty: Optional[str] = getattr(args, "consumer_tty", None)
+    if consumer_tty is None:
+        consumer_tty = getattr(args, "nonce_id", None)  # legacy compat
     nonce_dir_raw: Optional[str] = getattr(args, "nonce_dir", None)
     nonce_dir: Optional[Path] = Path(nonce_dir_raw) if nonce_dir_raw else None
 
@@ -401,13 +465,13 @@ def cmd_fsd_run_phase(args) -> int:  # type: ignore[no-untyped-def]
         repo_root=cwd,
         env=os.environ,
         stdin_is_tty=sys.stdin.isatty(),
-        nonce_id=nonce_id,
+        consumer_tty=consumer_tty,
         nonce_audience="phase.autopilot.start",
         nonce_dir=nonce_dir,
         by_email=by_email,
         install_record_root=cwd,
-        oidc_fetcher=None,   # TEST-ONLY stubs; production OIDC wiring deferred
-        oidc_verifier=None,  # TEST-ONLY stubs; production OIDC wiring deferred
+        oidc_fetcher=None,   # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
+        oidc_verifier=None,  # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
         budgets=budgets,
         allow_network=allow_network,
         accept_degraded_windows_containment=accept_degraded,
@@ -447,7 +511,16 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
     from . import fsd_wrappers as _fsd_wrappers
     from . import phase_preflight as _phase_preflight
 
-    cwd = _cwd_repo_root()
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        print(
+            f"error: fsd-run-all refused: {exc}. "
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
@@ -463,7 +536,9 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
         except Exception:
             by_email = None
 
-    nonce_id: Optional[str] = getattr(args, "nonce_id", None)
+    consumer_tty: Optional[str] = getattr(args, "consumer_tty", None)
+    if consumer_tty is None:
+        consumer_tty = getattr(args, "nonce_id", None)  # legacy compat
     nonce_dir_raw: Optional[str] = getattr(args, "nonce_dir", None)
     nonce_dir: Optional[Path] = Path(nonce_dir_raw) if nonce_dir_raw else None
 
@@ -482,13 +557,13 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
         repo_root=cwd,
         env=os.environ,
         stdin_is_tty=sys.stdin.isatty(),
-        nonce_id=nonce_id,
+        consumer_tty=consumer_tty,
         nonce_audience="phase.autopilot.start",
         nonce_dir=nonce_dir,
         by_email=by_email,
         install_record_root=cwd,
-        oidc_fetcher=None,   # TEST-ONLY stubs; production OIDC wiring deferred
-        oidc_verifier=None,  # TEST-ONLY stubs; production OIDC wiring deferred
+        oidc_fetcher=None,   # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
+        oidc_verifier=None,  # production OIDC wiring deferred; needs HARNESS_OIDC_TEST_MODE=1 for stubs
         budgets=budgets,
         allow_network=allow_network,
         accept_degraded_windows_containment=accept_degraded,
@@ -521,4 +596,6 @@ __all__ = [
     "cmd_fsd_run_all",
     "_parse_budgets",
     "_verify_anchor",
+    "_walk_up_for_repo_root",
+    "_cwd_repo_root",
 ]

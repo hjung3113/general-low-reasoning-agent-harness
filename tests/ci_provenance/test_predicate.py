@@ -602,6 +602,8 @@ class TestStep5OidcFetch:
 
     def test_default_fetcher_stub_no_env_var_raises_unreachable(self, monkeypatch):
         """Default TEST-ONLY stub raises CiOidcUnreachable when env var absent."""
+        # Enable test mode so the stub path is reached (not the production gate).
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "1")
         # Remove the test env var so default stub raises
         monkeypatch.delenv("HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS", raising=False)
         with pytest.raises(CiOidcUnreachable):
@@ -645,6 +647,8 @@ class TestStep6OidcClaimVerification:
 
     def test_default_verifier_stub_no_env_var_raises_mismatch(self, monkeypatch):
         """Default TEST-ONLY stub raises CiOidcClaimMismatch when env var absent."""
+        # Enable test mode so the stub path is reached (not the production gate).
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "1")
         monkeypatch.delenv("HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS", raising=False)
         # Provide a custom fetcher so we get past step 5
         with pytest.raises(CiOidcClaimMismatch):
@@ -657,6 +661,8 @@ class TestStep6OidcClaimVerification:
 
     def test_default_verifier_stub_with_env_var_succeeds(self, monkeypatch):
         """Default TEST-ONLY stub parses HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS."""
+        # Enable test mode to allow the stub path.
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "1")
         monkeypatch.setenv(
             "HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS",
             json.dumps(_FAKE_CLAIMS),
@@ -671,7 +677,8 @@ class TestStep6OidcClaimVerification:
         assert result.ci_oidc_claims["iss"] == _FAKE_CLAIMS["iss"]
 
     def test_default_fetcher_and_verifier_both_env_vars(self, monkeypatch):
-        """Both TEST-ONLY env vars set → full success without any injected callables."""
+        """Both TEST-ONLY env vars set + HARNESS_OIDC_TEST_MODE=1 → full success."""
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "1")
         monkeypatch.setenv(
             "HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS",
             "eyJhbGciOiJSUzI1NiJ9.stub",
@@ -808,3 +815,93 @@ class TestAuditFieldShape:
         assert result.authorization_source == "ci_buildkite"
         assert result.ci_signature["BUILDKITE_PIPELINE_SLUG"] == "my-pipeline"
         assert result.ci_oidc_claims["iss"] == "https://agent.buildkite.com"
+
+
+# ===========================================================================
+# P1-A1 regression tests — production OIDC gate (HARNESS_OIDC_TEST_MODE)
+# ===========================================================================
+
+
+class TestProductionOidcGate:
+    """Regression: production mode must refuse to use test stubs.
+
+    P1-A1 fix: when oidc_fetcher/oidc_verifier=None and HARNESS_OIDC_TEST_MODE
+    is NOT set to "1", ci_predicate_satisfied MUST raise CiOidcUnreachable
+    instead of silently falling back to the env-var stubs.
+    """
+
+    def test_production_oidc_fetcher_missing_rejects(self, monkeypatch):
+        """No oidc_fetcher + no HARNESS_OIDC_TEST_MODE → CiOidcUnreachable raised.
+
+        Even if HARNESS_TEST_OIDC_TOKEN_* and HARNESS_TEST_OIDC_CLAIMS_* env vars
+        are set (as an attacker might arrange), the production gate refuses.
+        """
+        # Ensure HARNESS_OIDC_TEST_MODE is NOT set.
+        monkeypatch.delenv("HARNESS_OIDC_TEST_MODE", raising=False)
+        # Set the test-stub env vars that would have been used before the fix.
+        monkeypatch.setenv(
+            "HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS",
+            "attacker-controlled-token",
+        )
+        monkeypatch.setenv(
+            "HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS",
+            '{"iss": "https://token.actions.githubusercontent.com", "sub": "evil", '
+            '"repository": "acme/repo", "ref": "main", "sha": "abc"}',
+        )
+        with pytest.raises(CiOidcUnreachable) as exc_info:
+            ci_predicate_satisfied(
+                env=_github_env(),
+                install_record_approvers=_APPROVERS,
+                # oidc_fetcher=None (default) — production gate must trigger
+                # oidc_verifier=None (default)
+            )
+        assert exc_info.value.exit_code == 6
+        assert exc_info.value.sub_reason == "ci_oidc_unreachable"
+        assert "production" in str(exc_info.value).lower()
+
+    def test_production_oidc_verifier_missing_rejects(self, monkeypatch):
+        """No oidc_verifier + no HARNESS_OIDC_TEST_MODE → CiOidcUnreachable raised."""
+        monkeypatch.delenv("HARNESS_OIDC_TEST_MODE", raising=False)
+        with pytest.raises(CiOidcUnreachable):
+            ci_predicate_satisfied(
+                env=_github_env(),
+                install_record_approvers=_APPROVERS,
+                oidc_fetcher=_injected_fetcher(),  # fetcher supplied
+                # oidc_verifier=None — production gate must trigger
+            )
+
+    def test_harness_oidc_test_mode_zero_still_rejects(self, monkeypatch):
+        """HARNESS_OIDC_TEST_MODE=0 is NOT test mode → production gate still fires."""
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "0")
+        with pytest.raises(CiOidcUnreachable):
+            ci_predicate_satisfied(
+                env=_github_env(),
+                install_record_approvers=_APPROVERS,
+                # both stubs None
+            )
+
+    def test_harness_oidc_test_mode_empty_still_rejects(self, monkeypatch):
+        """HARNESS_OIDC_TEST_MODE="" is NOT test mode → production gate fires."""
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "")
+        with pytest.raises(CiOidcUnreachable):
+            ci_predicate_satisfied(
+                env=_github_env(),
+                install_record_approvers=_APPROVERS,
+            )
+
+    def test_harness_oidc_test_mode_1_allows_stub(self, monkeypatch):
+        """HARNESS_OIDC_TEST_MODE=1 allows the stub path (explicit test opt-in)."""
+        monkeypatch.setenv("HARNESS_OIDC_TEST_MODE", "1")
+        monkeypatch.setenv(
+            "HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS", "stub-token"
+        )
+        monkeypatch.setenv(
+            "HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS",
+            '{"iss": "x", "sub": "y", "repository": "r", "ref": "r", "sha": "s"}',
+        )
+        result = ci_predicate_satisfied(
+            env=_github_env(),
+            install_record_approvers=_APPROVERS,
+            # both stubs None — allowed because HARNESS_OIDC_TEST_MODE=1
+        )
+        assert result.ci_oidc_verified is True

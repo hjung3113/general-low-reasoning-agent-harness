@@ -312,11 +312,12 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
     """Verify: `harness fsd-run-phase` / `harness fsd-run-all` argparse routes
     to fsd_wrappers module.
 
-    Uses direct handler invocation with constructed argparse.Namespace objects.
-    The anchor preflight is patched to (True, 0, "") so routing logic is
-    exercised without a real out-of-repo anchor.
-
-    Previously xfail-strict (deferred to step 5); now a real PASS after CLI wiring.
+    Strengthened (P2-A2 fix): patches fsd_wrappers.run_fsd_run_phase and
+    run_fsd_run_all with spies that record kwargs and return known results.
+    Asserts:
+      - spy called exactly once for each handler
+      - kwargs include required fields
+      - exit_code == 0 (not "in (0, 6)")
     """
     import argparse
 
@@ -325,14 +326,14 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
         cmd_fsd_run_all,
         _parse_budgets,
     )
+    import lib.fsd_wrappers as _fsd_mod
+    import lib.phase_autopilot_cli as _cli_mod
 
     # Verify handlers are importable callables.
     assert callable(cmd_fsd_run_phase), "cmd_fsd_run_phase must be callable"
     assert callable(cmd_fsd_run_all), "cmd_fsd_run_all must be callable"
 
     # Patch anchor + cwd.
-    import lib.phase_autopilot_cli as _cli_mod
-
     monkeypatch.setattr(
         _cli_mod, "_verify_anchor", lambda cwd: (True, 0, "")
     )
@@ -340,37 +341,79 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
         _cli_mod, "_cwd_repo_root", lambda: harness_env["tmp_path"]
     )
 
+    # Spy on run_fsd_run_phase.
+    spy_phase_calls: list[dict] = []
+
+    def _spy_run_fsd_run_phase(**kwargs):
+        spy_phase_calls.append(kwargs)
+        return fsd_wrappers.FsdWrapperResult(
+            exit_code=0,
+            sub_reason="started",
+            message="spy",
+        )
+
+    monkeypatch.setattr(_fsd_mod, "run_fsd_run_phase", _spy_run_fsd_run_phase)
+
+    # Spy on run_fsd_run_all.
+    spy_all_calls: list[dict] = []
+
+    def _spy_run_fsd_run_all(**kwargs):
+        spy_all_calls.append(kwargs)
+        return fsd_wrappers.FsdWrapperResult(
+            exit_code=0,
+            sub_reason="started",
+            message="spy",
+        )
+
+    monkeypatch.setattr(_fsd_mod, "run_fsd_run_all", _spy_run_fsd_run_all)
+
     # --- fsd-run-phase: no slug → next-pending route ---
     args_phase = argparse.Namespace(
         slug=None,
         by=None,
-        nonce_id=None,
+        consumer_tty=None,
         nonce_dir=None,
         budget=None,
         allow_network=False,
         accept_degraded_windows_containment=False,
     )
     exit_fsd_phase = cmd_fsd_run_phase(args_phase)
-    # Without HARNESS_AUTOMATION / TTY, CI predicate fails → exit 6.
-    # all_phases_done → exit 0. Either is acceptable; exit 2 means routing broken.
-    assert exit_fsd_phase in (0, 6), (
-        f"cmd_fsd_run_phase returned unexpected exit {exit_fsd_phase}; "
-        "expected 0 (all-done or started) or 6 (auth failure from test env). "
-        "Exit 2 would indicate slug validation rejected it (routing broken)."
+
+    # Assert spy called exactly once.
+    assert len(spy_phase_calls) == 1, (
+        f"run_fsd_run_phase spy called {len(spy_phase_calls)} times; expected 1."
+    )
+    # Assert kwargs shape.
+    pk = spy_phase_calls[0]
+    assert "scratch_root" in pk
+    assert "audit_path" in pk
+    assert "repo_root" in pk
+    assert "anchor_verified" in pk and pk["anchor_verified"] is True
+    assert "env" in pk
+    assert "stdin_is_tty" in pk
+    # Assert exit_code == 0.
+    assert exit_fsd_phase == 0, (
+        f"cmd_fsd_run_phase returned exit {exit_fsd_phase}; expected 0 from spy."
     )
 
     # --- fsd-run-all: chain route ---
     args_all = argparse.Namespace(
         by=None,
-        nonce_id=None,
+        consumer_tty=None,
         nonce_dir=None,
         budget=None,
         allow_network=False,
         accept_degraded_windows_containment=False,
     )
     exit_fsd_all = cmd_fsd_run_all(args_all)
-    assert exit_fsd_all in (0, 6), (
-        f"cmd_fsd_run_all returned unexpected exit {exit_fsd_all}; "
-        "expected 0 (all-done or started) or 6 (auth failure from test env). "
-        "Exit 2 would indicate argparse rejected the subcommand (routing broken)."
+
+    assert len(spy_all_calls) == 1, (
+        f"run_fsd_run_all spy called {len(spy_all_calls)} times; expected 1."
+    )
+    ak = spy_all_calls[0]
+    assert "scratch_root" in ak
+    assert "audit_path" in ak
+    assert "anchor_verified" in ak and ak["anchor_verified"] is True
+    assert exit_fsd_all == 0, (
+        f"cmd_fsd_run_all returned exit {exit_fsd_all}; expected 0 from spy."
     )

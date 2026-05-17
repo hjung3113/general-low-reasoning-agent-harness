@@ -168,11 +168,11 @@ def common_kwargs(env: dict, *, stdin_is_tty: bool = True, mint: bool = True) ->
     Uses TTY path by default (stdin_is_tty=True, alice@example.com, fresh nonce).
     """
     nonce_dir = env["nonce_dir"]
-    nonce_id: str | None = None
+    consumer_tty: str | None = None
 
     if stdin_is_tty and mint:
         mint_nonce(nonce_dir, minter_tty="/dev/ttys001")
-        nonce_id = "/dev/ttys002"
+        consumer_tty = "/dev/ttys002"
 
     return {
         "scratch_root": env["scratch"],
@@ -180,7 +180,7 @@ def common_kwargs(env: dict, *, stdin_is_tty: bool = True, mint: bool = True) ->
         "repo_root": None,
         "env": None,
         "stdin_is_tty": stdin_is_tty,
-        "nonce_id": nonce_id,
+        "consumer_tty": consumer_tty,
         "nonce_audience": "phase.autopilot.start",
         "nonce_dir": nonce_dir,
         "by_email": "alice@example.com" if stdin_is_tty else None,

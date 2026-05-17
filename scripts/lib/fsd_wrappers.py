@@ -172,7 +172,7 @@ def run_fsd_run_phase(
     repo_root: Optional[Path],
     env: Optional[Mapping[str, str]] = None,
     stdin_is_tty: Optional[bool] = None,
-    nonce_id: Optional[str] = None,
+    consumer_tty: Optional[str] = None,
     nonce_audience: Optional[str] = None,
     nonce_dir: Optional[Path] = None,
     by_email: Optional[str] = None,
@@ -184,6 +184,8 @@ def run_fsd_run_phase(
     accept_degraded_windows_containment: bool = False,
     anchor_verified: bool = False,
     roadmap_root: Optional[Path] = None,
+    # Deprecated alias (one release cycle): use consumer_tty instead.
+    nonce_id: Optional[str] = None,
 ) -> FsdWrapperResult:
     """§3.5 `harness fsd-run-phase` wrapper.
 
@@ -198,7 +200,19 @@ def run_fsd_run_phase(
 
     The wrapper holds the lock for the full duration and passes lock_handle
     into run_next_pending and run_start directly (they require lock already held).
+
+    nonce_id is deprecated; use consumer_tty instead.
     """
+    import warnings
+    if nonce_id is not None:
+        warnings.warn(
+            "run_fsd_run_phase() kwarg 'nonce_id' is deprecated; use 'consumer_tty' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if consumer_tty is None:
+            consumer_tty = nonce_id
+
     scratch_root = Path(scratch_root)
     audit_path = Path(audit_path)
 
@@ -242,7 +256,7 @@ def run_fsd_run_phase(
             roadmap_root=roadmap_root,
             env=env,
             stdin_is_tty=stdin_is_tty,
-            nonce_id=nonce_id,
+            consumer_tty=consumer_tty,
             nonce_audience=nonce_audience,
             nonce_dir=nonce_dir,
             by_email=by_email,
@@ -273,7 +287,7 @@ def run_fsd_run_all(
     repo_root: Optional[Path],
     env: Optional[Mapping[str, str]] = None,
     stdin_is_tty: Optional[bool] = None,
-    nonce_id: Optional[str] = None,
+    consumer_tty: Optional[str] = None,
     nonce_audience: Optional[str] = None,
     nonce_dir: Optional[Path] = None,
     by_email: Optional[str] = None,
@@ -285,6 +299,8 @@ def run_fsd_run_all(
     accept_degraded_windows_containment: bool = False,
     anchor_verified: bool = False,
     roadmap_root: Optional[Path] = None,
+    # Deprecated alias (one release cycle): use consumer_tty instead.
+    nonce_id: Optional[str] = None,
 ) -> FsdWrapperResult:
     """§3.5 `harness fsd-run-all` chain wrapper.
 
@@ -293,7 +309,19 @@ def run_fsd_run_all(
 
     Lock contract: acquire once → next-pending (lock held) → run_start (lock
     held) → release in finally.
+
+    nonce_id is deprecated; use consumer_tty instead.
     """
+    import warnings
+    if nonce_id is not None:
+        warnings.warn(
+            "run_fsd_run_all() kwarg 'nonce_id' is deprecated; use 'consumer_tty' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if consumer_tty is None:
+            consumer_tty = nonce_id
+
     scratch_root = Path(scratch_root)
     audit_path = Path(audit_path)
 
@@ -330,7 +358,7 @@ def run_fsd_run_all(
             roadmap_root=roadmap_root,
             env=env,
             stdin_is_tty=stdin_is_tty,
-            nonce_id=nonce_id,
+            consumer_tty=consumer_tty,
             nonce_audience=nonce_audience,
             nonce_dir=nonce_dir,
             by_email=by_email,

@@ -47,6 +47,7 @@ import json
 import os
 import secrets
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
@@ -272,13 +273,15 @@ def run_start(
     # run_start runs the algorithm and derives authorization_source.
     env: Optional[Mapping[str, str]] = None,
     stdin_is_tty: Optional[bool] = None,
-    nonce_id: Optional[str] = None,
+    consumer_tty: Optional[str] = None,
     nonce_audience: Optional[str] = None,
     nonce_dir: Optional[Path] = None,
     by_email: Optional[str] = None,
     install_record_root: Optional[Path] = None,
     oidc_fetcher: Optional[Callable] = None,
     oidc_verifier: Optional[Callable] = None,
+    # Deprecated alias (one release cycle): use consumer_tty instead.
+    nonce_id: Optional[str] = None,
 ) -> AutopilotResult:
     """Execute the §3.5 `phase autopilot start` sequence.
 
@@ -312,8 +315,10 @@ def run_start(
         Environment mapping. Defaults to os.environ (used for CI path).
     stdin_is_tty : bool | None
         Whether stdin is a TTY. Defaults to sys.stdin.isatty().
-    nonce_id : str | None
-        Nonce ID for TTY human proof (required if stdin_is_tty=True).
+    consumer_tty : str | None
+        TTY path of the consuming process (must differ from the minter TTY
+        per §3.1.1 cross-TTY human proof semantics). Required if stdin_is_tty=True.
+        Passed verbatim as `consumer_tty` to `approval_nonce.consume_newest_valid`.
     nonce_audience : str | None
         Nonce audience for TTY human proof (required if stdin_is_tty=True).
     nonce_dir : Path | None
@@ -324,10 +329,25 @@ def run_start(
         Directory containing install-record.json for approvers lookup.
         Falls back to repo_root if None.
     oidc_fetcher : Callable | None
-        Injected OIDC fetcher for ci_provenance (TEST-ONLY stubs if None).
+        Injected OIDC fetcher for ci_provenance (TEST-ONLY stubs if None and
+        HARNESS_OIDC_TEST_MODE=1; otherwise raises CiOidcUnreachable).
     oidc_verifier : Callable | None
-        Injected OIDC verifier for ci_provenance (TEST-ONLY stubs if None).
+        Injected OIDC verifier for ci_provenance (TEST-ONLY stubs if None and
+        HARNESS_OIDC_TEST_MODE=1; otherwise raises CiOidcUnreachable).
+    nonce_id : str | None
+        DEPRECATED — use ``consumer_tty`` instead. Accepted for one release
+        cycle; emits DeprecationWarning.
     """
+    # Handle deprecated nonce_id alias.
+    if nonce_id is not None:
+        warnings.warn(
+            "run_start() kwarg 'nonce_id' is deprecated; use 'consumer_tty' instead. "
+            "'nonce_id' will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if consumer_tty is None:
+            consumer_tty = nonce_id
     scratch = Path(scratch_root)
     audit_path = Path(audit_path)
 
@@ -395,7 +415,9 @@ def run_start(
     if resolved_stdin_is_tty:
         # TTY human proof path (§3.1.1).
 
-        # 1. by_email must be in approvers (if install record is available).
+        # 1. by_email must be in approvers.
+        #    Empty approvers_set (install-record missing) + by_email supplied
+        #    → reject with install_record_missing (do NOT silently accept).
         if not by_email:
             msg = (
                 "phase autopilot start refused: by_email is required for TTY path. "
@@ -407,7 +429,19 @@ def run_start(
                 sub_reason="approver_not_in_install_record",
                 message=msg,
             )
-        if approvers_set and by_email.strip().lower() not in approvers_set:
+        if not approvers_set:
+            msg = (
+                "phase autopilot start refused: install-record approvers list is "
+                "empty or install-record.json is missing; cannot verify "
+                f"{by_email!r}. {_FIX_APPROVER_NOT_IN_INSTALL_RECORD}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=6,
+                sub_reason="install_record_missing",
+                message=msg,
+            )
+        if by_email.strip().lower() not in approvers_set:
             msg = (
                 f"phase autopilot start refused: {by_email!r} is not in "
                 f"install-record approvers. {_FIX_APPROVER_NOT_IN_INSTALL_RECORD}"
@@ -419,10 +453,10 @@ def run_start(
                 message=msg,
             )
 
-        # 2. Require nonce_id + nonce_audience + nonce_dir; consume nonce.
-        if not nonce_id or not nonce_audience or nonce_dir is None:
+        # 2. Require consumer_tty + nonce_audience + nonce_dir; consume nonce.
+        if not consumer_tty or not nonce_audience or nonce_dir is None:
             msg = (
-                "phase autopilot start refused: nonce_id, nonce_audience, "
+                "phase autopilot start refused: consumer_tty, nonce_audience, "
                 f"and nonce_dir are required for TTY human proof. {_FIX_HUMAN_PROOF}"
             )
             print(f"error: {msg}", file=sys.stderr)
@@ -435,7 +469,7 @@ def run_start(
         consume_result = _approval_nonce.consume_newest_valid(
             Path(nonce_dir),
             audience=nonce_audience,
-            consumer_tty=nonce_id,
+            consumer_tty=consumer_tty,
         )
 
         _OUTCOME_TO_SUB = {

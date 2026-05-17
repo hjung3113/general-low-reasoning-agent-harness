@@ -38,14 +38,27 @@ Two callables are injected so tests never hit the network:
   oidc_fetcher(url: str) -> str
       Default stub reads env var HARNESS_TEST_OIDC_TOKEN_<PROVIDER>
       (e.g. HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS).  If absent,
-      raises CiOidcUnreachable.  TEST-ONLY — production wiring deferred
-      to S07-prep step 3.
+      raises CiOidcUnreachable.  TEST-ONLY — requires HARNESS_OIDC_TEST_MODE=1
+      in environment (see _is_test_mode()).  Production wiring deferred to
+      S07-prep step 3.
 
   oidc_verifier(token: str, expected_claims: dict) -> dict
       Default stub reads env var HARNESS_TEST_OIDC_CLAIMS_<PROVIDER>
       (JSON) and returns parsed dict.  If the env var is absent, raises
-      CiOidcClaimMismatch.  TEST-ONLY — production JWT/crypto wiring
-      deferred to S07-prep step 3.
+      CiOidcClaimMismatch.  TEST-ONLY — requires HARNESS_OIDC_TEST_MODE=1
+      in environment.  Production JWT/crypto wiring deferred to S07-prep step 3.
+
+Production-mode safety gate
+----------------------------
+When ``oidc_fetcher=None`` or ``oidc_verifier=None`` is passed AND
+``HARNESS_OIDC_TEST_MODE`` is NOT set to ``"1"``, ``ci_predicate_satisfied``
+raises ``CiOidcUnreachable`` immediately — it refuses to fall back to the
+test stubs in production environments.
+
+To enable the test stubs in CI/unit tests set:
+    HARNESS_OIDC_TEST_MODE=1  (explicit opt-in)
+
+This env var is TEST-ONLY and must never be set in real CI pipelines.
 
 The real HTTP + cryptographic verification path (JWKS fetch, RS256
 signature verification, jti replay defense) is deferred to a follow-up
@@ -269,13 +282,30 @@ class CiProvenanceResult:
 
 
 # ---------------------------------------------------------------------------
-# Default test-seam implementations (TEST-ONLY)
+# Test-mode gate
 # ---------------------------------------------------------------------------
 
-def _default_oidc_fetcher_factory(provider_key: str) -> Callable[[str], str]:
+
+def _is_test_mode() -> bool:
+    """Return True ONLY if HARNESS_OIDC_TEST_MODE=1 is set in os.environ.
+
+    TEST-ONLY explicit opt-in.  Must NOT be set in real CI pipelines.
+    Gating on this env var prevents the test stubs (which accept any
+    attacker-controlled env var as a valid OIDC token) from running in
+    production.
+    """
+    return os.environ.get("HARNESS_OIDC_TEST_MODE", "") == "1"
+
+
+# ---------------------------------------------------------------------------
+# Default test-seam implementations (TEST-ONLY — requires HARNESS_OIDC_TEST_MODE=1)
+# ---------------------------------------------------------------------------
+
+def _test_oidc_fetcher_factory(provider_key: str) -> Callable[[str], str]:
     """Return a fetcher that reads HARNESS_TEST_OIDC_TOKEN_<SUFFIX>.
 
-    TEST-ONLY — production HTTP wiring is deferred to S07-prep step 3.
+    TEST-ONLY — requires HARNESS_OIDC_TEST_MODE=1.  Production HTTP wiring
+    is deferred to S07-prep step 3.
     """
     suffix = _PROVIDERS[provider_key]["test_env_suffix"]
     env_var = f"HARNESS_TEST_OIDC_TOKEN_{suffix}"
@@ -292,10 +322,11 @@ def _default_oidc_fetcher_factory(provider_key: str) -> Callable[[str], str]:
     return _fetcher
 
 
-def _default_oidc_verifier_factory(provider_key: str) -> Callable[[str, dict], dict]:
+def _test_oidc_verifier_factory(provider_key: str) -> Callable[[str, dict], dict]:
     """Return a verifier that reads HARNESS_TEST_OIDC_CLAIMS_<SUFFIX> (JSON).
 
-    TEST-ONLY — production JWT/crypto wiring is deferred to S07-prep step 3.
+    TEST-ONLY — requires HARNESS_OIDC_TEST_MODE=1.  Production JWT/crypto
+    wiring is deferred to S07-prep step 3.
     """
     suffix = _PROVIDERS[provider_key]["test_env_suffix"]
     env_var = f"HARNESS_TEST_OIDC_CLAIMS_{suffix}"
@@ -450,7 +481,13 @@ def ci_predicate_satisfied(
     # Step 5 — fetch OIDC token
     # ------------------------------------------------------------------
     if oidc_fetcher is None:
-        oidc_fetcher = _default_oidc_fetcher_factory(provider_key)
+        if not _is_test_mode():
+            raise CiOidcUnreachable(
+                "production OIDC fetcher not configured; refusing to authorize via "
+                "CI predicate. Set HARNESS_OIDC_TEST_MODE=1 ONLY in test environments "
+                "to enable the TEST-ONLY env-var stub."
+            )
+        oidc_fetcher = _test_oidc_fetcher_factory(provider_key)
 
     # Determine token URL (GitHub uses a URL env var; others have token directly)
     token_url_var = spec.get("token_url_var")
@@ -478,7 +515,13 @@ def ci_predicate_satisfied(
     # Step 6 — verify token claims
     # ------------------------------------------------------------------
     if oidc_verifier is None:
-        oidc_verifier = _default_oidc_verifier_factory(provider_key)
+        if not _is_test_mode():
+            raise CiOidcUnreachable(
+                "production OIDC verifier not configured; refusing to authorize via "
+                "CI predicate. Set HARNESS_OIDC_TEST_MODE=1 ONLY in test environments "
+                "to enable the TEST-ONLY env-var stub."
+            )
+        oidc_verifier = _test_oidc_verifier_factory(provider_key)
 
     expected_claims: dict = {}  # stub — real expected claims built from env snapshot
 
