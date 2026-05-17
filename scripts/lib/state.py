@@ -54,6 +54,17 @@ def file_hash(path: Path) -> str:
 
 
 def now_utc() -> str:
+    """Return current UTC timestamp as ISO-8601 string.
+
+    TEST SEAM: if the environment variable ``HARNESS_FIXED_NOW_ISO`` is set,
+    return its value verbatim.  This allows smoke tests and unit tests to pin
+    the timestamp to a fixed value, making manifests byte-identical across
+    multiple runs within the same second boundary.
+    """
+    import os as _os
+    _fixed = _os.environ.get("HARNESS_FIXED_NOW_ISO")
+    if _fixed:
+        return _fixed
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -241,7 +252,7 @@ def write_install_state(
     if provenance:
         installed["source_provenance"] = provenance
 
-    # S12 — compute and stamp manifest_chain_hash (§6)
+    # S12 — compute and stamp installed_files_chain_hash (§6)
     chain_manifest: dict[str, object] = {
         "schema_version": 2,
         "harness_version": harness_ver,
@@ -255,7 +266,7 @@ def write_install_state(
         },
         "removed_in_version": [],
     }
-    installed["manifest_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
+    installed["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
 
     write_json(target / INSTALL_STATE, installed)
 

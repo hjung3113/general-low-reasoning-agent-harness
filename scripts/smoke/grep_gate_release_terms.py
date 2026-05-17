@@ -43,10 +43,31 @@ Slice: S13-smoke step 2
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Terms that require word-boundary matching (identifier-style: must not be
+# embedded in a larger identifier word).  E.g. "containment_" should match
+# "containment_layer" but NOT "nocontainment_layer".
+_WORD_BOUNDARY_TERMS: frozenset[str] = frozenset({"containment_"})
+_WB_PATTERNS: dict[str, re.Pattern] = {
+    t: re.compile(r"(?<![A-Za-z0-9_])" + re.escape(t)) for t in _WORD_BOUNDARY_TERMS
+}
+
+
+def _term_in_line(term: str, line: str) -> bool:
+    """Return True if *term* is present in *line*.
+
+    For terms in _WORD_BOUNDARY_TERMS, uses a word-boundary regex to avoid
+    false positives from embedded substrings.  For all other terms, uses a
+    plain substring check.
+    """
+    if term in _WORD_BOUNDARY_TERMS:
+        return bool(_WB_PATTERNS[term].search(line))
+    return term in line
 
 # Forbidden terms per §7 line 1022 (S13 step-2 mandatory set).
 RELEASE_TERMS: tuple[str, ...] = (
@@ -55,7 +76,7 @@ RELEASE_TERMS: tuple[str, ...] = (
     "last_good_commit_sha",
     "chain --resume",
     "chain --abort",
-    "containment_",           # prefix match — catches containment_layer, containment_posture, etc.
+    "containment_",           # identifier prefix — use word-boundary regex (see _term_in_line)
     "autopilot_budgets_remaining",
 )
 
@@ -109,7 +130,7 @@ def scan(files: list[Path]) -> list[tuple[Path, int, str]]:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             for term in RELEASE_TERMS:
-                if term in line:
+                if _term_in_line(term, line):
                     hits.append((path, lineno, term))
     return hits
 

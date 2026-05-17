@@ -14,21 +14,25 @@ Decision table:
   else             → USER_MODIFIED_QUARANTINE (user edited; move to conflicts/)
 
 Backward compat: if the prior manifest has schema_version < 2 (or absent),
-``prior_current_sha256`` is treated as None for all entries and the path
-falls through to the UNCHANGED_SAFE_REPLACE branch (no upgrade history →
-behave like a fresh install-after-prior-install).
+``prior_current_sha256`` is treated as None for all entries.  The decision
+then depends on the disk hash: disk == release → UNCHANGED_SAFE_REPLACE;
+disk differs → USER_MODIFIED_QUARANTINE (no upgrade history to consult —
+any divergence is treated as a user edit rather than a safe harness upgrade).
 
 Hash chain:
   ``compute_manifest_hash_chain`` produces a sha256 over the canonicalized
   content of the manifest (schema_version, harness_version, sorted file
   entries, sorted removed_in_version list). Stored as top-level
-  ``manifest_chain_hash`` and checked on read to detect manifest tampering.
+  ``installed_files_chain_hash`` and checked on read to detect tampering of
+  the installed_sha256 / current_sha256 fields.  The hash covers only those
+  two fields per entry (not policy/owner/sha256); field named accordingly.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import shutil
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -148,7 +152,9 @@ def reconcile_file(
         rel_str = path.name
 
     ts_safe = _sanitize_ts(now_iso)
-    q_name = f"{rel_str}.{ts_safe}"
+    # Append uuid4 short-hex suffix to avoid collision when two reconciles
+    # share the same UTC second (P2-1 review fix).
+    q_name = f"{rel_str}.{ts_safe}.{uuid.uuid4().hex[:8]}"
     q_path = quarantine_dir / q_name
 
     if not classify_only:
@@ -178,6 +184,12 @@ def reconcile_install(
     classify_only: bool = False,
 ) -> list[ReconcileResult]:
     """Iterate all paths in release_manifest and reconcile each.
+
+    # SECURITY: trust-root contract not yet enforced.
+    # See upgrade.py:_build_release_manifest_v2 TODO (§6, deferred to S14+).
+    # The release_manifest passed here is built from the local repo source tree,
+    # not a signed release tarball.  Reconciliation detects accidental drift but
+    # does NOT protect against an attacker who controls both source and target.
 
     Backward compat: if prior_manifest has schema_version < 2 (or absent),
     treat ALL entries as prior_current_sha256=None (no upgrade history).
@@ -260,7 +272,10 @@ def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     - sorted removed_in_version entries by path
 
     Returns a 64-char lowercase sha256 hex string. Stored as top-level
-    ``manifest_chain_hash`` and checked on read to detect tampering.
+    ``installed_files_chain_hash`` (renamed from manifest_chain_hash to be
+    honest about coverage: the hash covers only the fields present in the
+    manifest dict passed in — callers in upgrade.py pass installed_sha256 +
+    current_sha256 only, not the full file entry).
 
     Stability guarantee: independent of dict insertion order (sorts all keys).
     """
@@ -289,40 +304,105 @@ def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# verify_install_record_integrity (stub — anchor integration deferred to S14)
+# ManifestChainTamperedError
+# ---------------------------------------------------------------------------
+
+class ManifestChainTamperedError(SystemExit):
+    """Raised when the installed_files_chain_hash does not match the recomputed value.
+
+    Inherits SystemExit so callers catch it with `except SystemExit` and the
+    process exits cleanly with code 5.
+    """
+    def __init__(self, message: str = "installed_files_chain_hash mismatch — manifest tampered") -> None:
+        super().__init__(5)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
+
+
+# ---------------------------------------------------------------------------
+# verify_manifest_chain
+# ---------------------------------------------------------------------------
+
+def verify_manifest_chain(manifest: dict[str, Any]) -> bool:
+    """Recompute installed_files_chain_hash and compare against the stored value.
+
+    Returns True if the chain hash is absent (pre-v2 manifest; no chain to
+    check) or if the recomputed hash matches.
+
+    Raises ManifestChainTamperedError (SystemExit code 5) if the stored hash
+    is present but does not match the recomputed value.
+
+    Called from verify_install_record_integrity to detect post-write manifest
+    tampering.  Also callable standalone for testing.
+    """
+    stored = manifest.get("installed_files_chain_hash")
+    if stored is None:
+        # No chain hash recorded — pre-v2 manifest or hash not yet stamped.
+        # Treat as no-op (caller can decide whether to require it).
+        return True
+
+    # Compute the chain hash over a copy that excludes the stored field itself
+    # (the hash was computed before it was stamped in).
+    manifest_without_chain = {k: v for k, v in manifest.items() if k != "installed_files_chain_hash"}
+    recomputed = compute_manifest_hash_chain(manifest_without_chain)
+
+    if recomputed != stored:
+        raise ManifestChainTamperedError(
+            f"installed_files_chain_hash mismatch: stored={stored!r}, "
+            f"recomputed={recomputed!r}. Manifest may have been tampered with."
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# verify_install_record_integrity (minimally functional — anchor deferred S14)
 # ---------------------------------------------------------------------------
 
 def verify_install_record_integrity(
     repo_root: Path,
-    anchor: object,
-) -> None:
-    """Verify that the install-record has not been mutated post-install.
+    anchor: object = None,
+) -> bool:
+    """Verify that the installed-manifest has not been mutated post-install.
 
-    TODO (S14 sweep): Wire to the §12.1 anchor's ``install_record_sha256``
-    field (written by anchor_cli.py). The anchor is already writing this
-    field as of S00.7; this stub gates the full integrity check until the
-    anchor-integration test suite is in place.
+    Minimally functional implementation (S14 review fix):
+    1. Reads .harness/installed-manifest.json.
+    2. Rejects BOM → SystemExit(5) per §2.4.
+    3. Verifies installed_files_chain_hash via verify_manifest_chain.
+    4. Returns True on pass, False if the file is absent (fresh install).
 
-    When implemented, this function should:
-    1. Read .harness/install-record.json.
-    2. Reject BOM (exit 5) per §2.4.
-    3. Compute sha256 of the canonical bytes.
-    4. Compare against anchor.install_record_sha256.
-    5. Raise SystemExit(6) on mismatch (install_record_mutated_post_install).
-
-    For now: raises NotImplementedError to signal caller to skip anchor check.
+    TODO (S14 sweep): Wire anchor.install_record_sha256 comparison.
+    The anchor writes this field as of S00.7; full anchor-integration
+    wiring (step 4/5 of the original spec) is deferred to S14.
+    Step 4 (compare against anchor.install_record_sha256) and
+    Step 5 (SystemExit(6) on mismatch) are NOT yet implemented.
     """
-    raise NotImplementedError(
-        "verify_install_record_integrity: anchor integration deferred to S14. "
-        "See TODO above and §12.1 anchor spec."
-    )
+    from lib.manifest_v2 import read_manifest as _read_manifest_v2  # avoid circular import
+
+    install_record = repo_root / ".harness" / "installed-manifest.json"
+    if not install_record.exists():
+        return False  # fresh install — no record to verify
+
+    # Step 2: BOM rejection + parsing (read_manifest raises SystemExit(5) on BOM)
+    manifest = _read_manifest_v2(install_record)
+
+    # Step 3: chain hash verification
+    verify_manifest_chain(manifest)  # raises ManifestChainTamperedError on mismatch
+
+    # TODO(S14): compare manifest bytes sha256 against anchor.install_record_sha256
+    # and raise SystemExit(6) on mismatch.
+
+    return True
 
 
 __all__ = [
     "ReconcileDecision",
     "ReconcileResult",
+    "ManifestChainTamperedError",
     "reconcile_file",
     "reconcile_install",
     "compute_manifest_hash_chain",
+    "verify_manifest_chain",
     "verify_install_record_integrity",
 ]

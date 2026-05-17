@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Iterable
 
@@ -63,6 +64,7 @@ from lib.manifest_reconciler import (
     compute_manifest_hash_chain,
     reconcile_install as _reconcile_install,
 )
+from lib.manifest_v2 import read_manifest as _read_manifest_v2
 from lib.state import now_utc as _now_utc
 
 
@@ -123,7 +125,22 @@ def _build_release_manifest_v2(
     For each entry compute ``installed_sha256`` from the source file in *root*.
     ``current_sha256`` mirrors ``installed_sha256`` (the release is the new truth).
     Backward compat: if a source file is missing (e.g. conditional content), skip it.
+
+    # TODO(§6 trust root, deferred to S14+): release-bundled manifest with
+    # signed installed_sha256 is not yet implemented.  Currently the "release
+    # manifest" is computed from the local repo source tree, which means an
+    # attacker who controls the repo can defeat the 3-way reconciler by
+    # modifying both source and target files.  The reconciler still provides
+    # value for *accidental* drift detection but NOT for tamper resistance.
+    # Production trust requires the released tarball to ship a signed manifest
+    # validated against a pinned public key before reconcile.
     """
+    warnings.warn(
+        "SECURITY(§6 trust root, deferred): _build_release_manifest_v2 computes "
+        "installed_sha256 from local repo source tree, not a signed release tarball. "
+        "Tamper resistance is NOT enforced. See upgrade.py TODO for S14+ remediation.",
+        stacklevel=2,
+    )
     files: dict[str, object] = {}
     for entry in entries:
         if entry.policy == "exclude":
@@ -160,7 +177,7 @@ def _stamp_installed_manifest_v2(
     - ``schema_version: 2``
     - ``harness_version``
     - Per file-entry: ``installed_sha256``, ``current_sha256``
-    - ``manifest_chain_hash`` (computed over the final installed dict)
+    - ``installed_files_chain_hash`` (computed over the final installed dict)
 
     USER_MODIFIED_QUARANTINE entries get a ``quarantine_path`` note.
     WARN lines for quarantined files go to stderr.
@@ -175,6 +192,8 @@ def _stamp_installed_manifest_v2(
     # Build a lookup of reconcile results by path
     reconcile_by_path: dict[str, object] = {r.path: r for r in reconcile_results}
 
+    quarantined_paths: list[tuple[str, str]] = []  # (path_str, quarantine_path)
+
     for path_str, entry_info in list(installed_files.items()):
         if not isinstance(entry_info, dict):
             continue
@@ -185,14 +204,22 @@ def _stamp_installed_manifest_v2(
         entry_info["current_sha256"] = rel_entry.get("current_sha256", "")
         rr = reconcile_by_path.get(path_str)
         if rr is not None and rr.decision == ReconcileDecision.USER_MODIFIED_QUARANTINE:
-            entry_info["quarantine_path"] = rr.quarantine_path or ""
-            print(
-                f"WARN: {path_str} diverged from release — moved to {rr.quarantine_path}. "
-                "Release version installed.",
-                file=_sys.stderr,
-            )
+            qp = rr.quarantine_path or ""
+            entry_info["quarantine_path"] = qp
+            quarantined_paths.append((path_str, qp))
 
-    # Compute and stamp manifest_chain_hash
+    # P2-3: loud quarantine summary block so users notice their files were moved
+    if quarantined_paths:
+        n = len(quarantined_paths)
+        print("====================================================================", file=_sys.stderr)
+        print(f"WARNING: harness upgrade quarantined {n} user-modified file(s).", file=_sys.stderr)
+        print("The new versions have been installed; your modified copies are at:", file=_sys.stderr)
+        for _p, _q in quarantined_paths:
+            print(f"  {_q}", file=_sys.stderr)
+        print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
+        print("====================================================================", file=_sys.stderr)
+
+    # Compute and stamp installed_files_chain_hash
     chain_manifest: dict[str, object] = {
         "schema_version": 2,
         "harness_version": harness_version,
@@ -203,7 +230,7 @@ def _stamp_installed_manifest_v2(
         },
         "removed_in_version": [],
     }
-    installed["manifest_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
+    installed["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
 
 
 def upgrade(
@@ -384,7 +411,7 @@ def upgrade(
             installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
 
     # S12 — manifest v2 reconciler pass (§6): stamp installed_sha256,
-    # current_sha256, and manifest_chain_hash onto the installed dict.
+    # current_sha256, and installed_files_chain_hash onto the installed dict.
     # Backward compat: if prior manifest schema_version < 2, prior_manifest
     # is treated as None (no upgrade history) — reconcile_install handles this.
     release_manifest_v2 = _build_release_manifest_v2(
@@ -395,11 +422,21 @@ def upgrade(
     prior_installed_path = target / INSTALL_STATE
     prior_manifest_v2 = None
     if prior_installed_path.exists():
+        # Use read_manifest to enforce §2.4 BOM rejection (→ exit 5) and CRLF
+        # normalisation.  Schema mismatch (v1 prior → upgrading to v2) is
+        # treated as "no prior v2 history" so the reconciler falls through to
+        # fresh-install-after-prior-install mode.
+        _raw = prior_installed_path.read_bytes()
+        if _raw.startswith(b"\xef\xbb\xbf"):
+            # BOM in installed-manifest → hard exit 5 per §2.4
+            raise SystemExit(5)
         try:
-            import json as _json
-            _raw = prior_installed_path.read_bytes()
-            if not _raw.startswith(b"\xef\xbb\xbf"):  # skip BOM files
-                prior_manifest_v2 = _json.loads(_raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
+            prior_manifest_v2 = _read_manifest_v2(prior_installed_path)
+        except SystemExit as _se:
+            # Schema mismatch (e.g. v1 record): treat as no prior v2 history.
+            # parse-level exit 5 (BOM/malformed) already handled above; any
+            # remaining SystemExit here is schema_version mismatch → None is safe.
+            prior_manifest_v2 = None
         except Exception:
             prior_manifest_v2 = None
     # classify_only=True: the existing upgrade conflict logic already handles

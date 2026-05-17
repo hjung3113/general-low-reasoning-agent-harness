@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   release-smoke:
-    name: release-smoke (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.launcher_tag }}, ${{ matrix.shell }})
+    name: release-smoke (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.launcher_tag }}, ${{ matrix.shell_label || matrix.shell }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,15 +24,15 @@ jobs:
           # release-gate rows per §7.1
           - { os: ubuntu-latest,  python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: release-gate }
           - { os: ubuntu-latest,  python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: release-gate }
-          - { os: macos-latest,   python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: release-gate }
-          - { os: macos-latest,   python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: release-gate }
+          - { os: macos-latest,   python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: 'zsh -e {0}', shell_label: zsh, gate: release-gate }
+          - { os: macos-latest,   python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: 'zsh -e {0}', shell_label: zsh, gate: release-gate }
           - { os: windows-latest, python: '3.11', launcher: 'py -3.11',  launcher_tag: 'py',  shell: pwsh,      gate: release-gate }
           - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: pwsh,      gate: release-gate }
           # §12.13: windows cmd row is degraded-tolerant — runs but does NOT block release
           - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: cmd,       gate: release-gate-degraded-tolerant }
           # nice-to-have rows
-          - { os: ubuntu-latest,  python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: nice-to-have }
-          - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: 'Git Bash', gate: nice-to-have }
+          - { os: ubuntu-latest,  python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: 'zsh -e {0}', shell_label: zsh, gate: nice-to-have }
+          - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: bash,       gate: nice-to-have }
           - { os: macos-latest,   python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: nice-to-have }
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-smoke-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.launcher_tag }}-${{ matrix.shell }}
+          name: release-smoke-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.launcher_tag }}-${{ matrix.shell_label || matrix.shell }}
           path: release-evidence/
           if-no-files-found: warn
 

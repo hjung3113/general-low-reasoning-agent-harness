@@ -5,7 +5,7 @@ Schema additions over v1 (state_schema_version=2):
 - Top-level ``harness_version`` — e.g. "v0.7.0"
 - Per-entry ``installed_sha256`` — content hash at install time (trust root)
 - Per-entry ``current_sha256`` — content hash at last-known-good upgrade
-- Top-level ``manifest_chain_hash`` — deterministic self-verifier (see
+- Top-level ``installed_files_chain_hash`` — deterministic self-verifier (see
   manifest_reconciler.compute_manifest_hash_chain)
 
 Backward compat: callers that read schema_version < 2 (or absent) receive a
@@ -85,13 +85,18 @@ def read_manifest(path: Path) -> dict[str, Any]:
     try:
         data: dict[str, Any] = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise SystemExit(
-            f"installed-manifest parse error (exit 5): {exc}"
-        ) from exc
+        import sys as _sys
+        _sys.stderr.write(f"installed-manifest parse error (exit 5): {exc}\n")
+        raise SystemExit(_EXIT_PARSE_ERROR) from exc
 
     # Step 4: schema_version check
     sv = data.get("schema_version")
     if sv != MANIFEST_SCHEMA_VERSION:
+        import sys as _sys
+        _sys.stderr.write(
+            f"installed-manifest schema_version must be {MANIFEST_SCHEMA_VERSION}, "
+            f"got {sv!r}. Run 'harness install' to upgrade.\n"
+        )
         raise SystemExit(
             f"installed-manifest schema_version must be {MANIFEST_SCHEMA_VERSION}, "
             f"got {sv!r}. Run 'harness install' to upgrade."
