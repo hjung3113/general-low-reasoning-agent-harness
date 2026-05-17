@@ -60,10 +60,14 @@ def _read_state(scratch_dir: Path) -> dict | None:
         return None
     try:
         return load_state_json(state_path)
-    except SystemExit:
-        # load_state_json exits 5 on unparseable input — judge treats this
-        # as a structural fail, not a crash.
-        return None
+    except SystemExit as exc:
+        # C5 — only EXIT_UNPARSEABLE_JSON (code 5) is treated as a structural
+        # "state unreadable" signal; any other exit code is a genuine bug
+        # in the diagnostics layer and must propagate, not be silently
+        # converted to a judge-fail.
+        if exc.code == EXIT_UNPARSEABLE_JSON:
+            return None
+        raise
 
 
 def _read_audit(scratch_dir: Path) -> list[dict]:
