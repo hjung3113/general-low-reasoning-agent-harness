@@ -338,7 +338,7 @@ WORKFLOW_ENTRYPOINT_MATRIX = [
     ("roo-phase-discuss", ".roo/commands/phase-discuss.md", "fresh phase discuss pass"),
     ("roo-phase-plan", ".roo/commands/phase-plan.md", "canonical plan and approval request"),
     ("roo-phase-execute", ".roo/commands/phase-execute.md", "canonical execute gate"),
-    ("roo-fsd-phase", ".roo/commands/fsd-phase.md", "continuous discuss-to-done gate preservation"),
+    ("roo-fsd-run-phase", ".roo/commands/fsd-run-phase.md", "continuous discuss-to-done gate preservation"),
     ("roo-simple", ".roo/commands/simple.md", "lightweight path cannot bypass gate"),
     ("roo-review", ".roo/commands/review.md", "projected active scope and verification"),
     ("roo-doctor", ".roo/commands/doctor.md", "reports projection, fallback, and instruction drift"),
@@ -479,7 +479,7 @@ Expected: exit `0`, including target install/check coverage for the new status s
 
 Add or run a target smoke check that validates the installed workflow-entrypoint
 matrix after upgrade. The smoke must cover OpenCode discuss/plan/execute/done;
-Roo phase-discuss/phase-plan/phase-execute/fsd-phase/simple/review/doctor/
+Roo phase-discuss/phase-plan/phase-execute/fsd-run-phase/simple/review/doctor/
 feature/bugfix/adr/issues/ops; always-on Roo rules; Roo skills; `--auto`;
 `--chain`; and the target's post-upgrade `show_phase_status.py` plus
 `harness.py check` commands.

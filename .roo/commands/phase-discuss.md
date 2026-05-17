@@ -16,7 +16,7 @@ Use `/phase-discuss` for phase-local discovery only:
 4. Do not draft the implementation plan yet.
 5. Do not edit implementation files.
 
-For one-pass automation, use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`; canonical automation rules live in `workflow-phase-gate`.
+For one-pass automation, use `/fsd-run-phase <phase>` or another phase-gated workflow command; canonical automation rules live in `workflow-phase-gate`.
 
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 

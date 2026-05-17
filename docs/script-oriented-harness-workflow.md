@@ -366,7 +366,7 @@ Roo command and rule surfaces:
 - `.roo/commands/bugfix.md`
 - `.roo/commands/doctor.md`
 - `.roo/commands/feature.md`
-- `.roo/commands/fsd-phase.md`
+- `.roo/commands/fsd-run-phase.md`
 - `.roo/commands/issues.md`
 - `.roo/commands/ops.md`
 - `.roo/commands/phase-discuss.md`

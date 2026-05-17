@@ -129,11 +129,10 @@ class AdapterArtifactMatrixTests(unittest.TestCase):
         # The slash-command files (Roo + OpenCode) MUST instruct the agent
         # to invoke 'harness phase ...' verbs. Drift here means a model
         # following the command will not exercise the harness state machine.
-        # Carve-out: `.roo/commands/fsd-phase.md` is a router that delegates
-        # to other modes/skills; it is allowed to omit the verb. Tracked as
-        # a doc-clarity carry item for 02c (the SKILL it dispatches to
-        # should surface the verb instead).
-        ROUTER_CARVE_OUTS = {".roo/commands/fsd-phase.md"}
+        # Carve-out: `.roo/commands/fsd-run-phase.md` delegates to CLI wrapper;
+        # the verb is embedded in the harness CLI invocation, not inline.
+        # Tracked as a doc-clarity carry item for 02c.
+        ROUTER_CARVE_OUTS = {".roo/commands/fsd-run-phase.md"}
         phase_cmd_files = []
         for adapter in ("roo", "opencode"):
             root = self.dirs[adapter]

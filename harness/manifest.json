@@ -374,8 +374,8 @@
       "policy": "harness-owned"
     },
     {
-      "path": ".roo/commands/fsd-phase.md",
-      "source": ".roo/commands/fsd-phase.md",
+      "path": ".roo/commands/fsd-run-phase.md",
+      "source": ".roo/commands/fsd-run-phase.md",
       "policy": "harness-owned"
     },
     {

@@ -37,7 +37,8 @@ class HarnessToolTests(unittest.TestCase):
         ("roo-phase-discuss", ".roo/commands/phase-discuss.md", (".roo/rules/phase-gate.md",)),
         ("roo-phase-plan", ".roo/commands/phase-plan.md", (".roo/rules/phase-gate.md",)),
         ("roo-phase-execute", ".roo/commands/phase-execute.md", (".roo/rules/phase-gate.md",)),
-        ("roo-fsd-phase", ".roo/commands/fsd-phase.md", (".roo/rules/phase-gate.md",)),
+        # fsd-run-phase is a CLI-wrapper command (§4.3a); preflight is inside harness CLI.
+        ("roo-fsd-run-phase", ".roo/commands/fsd-run-phase.md", ()),
         ("roo-simple", ".roo/commands/simple.md", (".roo/rules-orchestrator/rules.md",)),
         ("roo-review", ".roo/commands/review.md", (".roo/rules-orchestrator/rules.md",)),
         ("roo-doctor", ".roo/commands/doctor.md", (".roo/rules-orchestrator/rules.md",)),
@@ -2156,7 +2157,15 @@ progress:
         root = harness.repo_root()
         failures = []
 
+        # CLI-wrapper commands delegate preflight to the harness CLI binary;
+        # they start with 'harness <cmd> $ARGUMENTS' and are exempt from the
+        # inline show-phase-status preflight requirement (§4.3a pattern).
+        CLI_WRAPPER_COMMANDS: frozenset[str] = frozenset({
+            "roo-fsd-run-phase",
+        })
         for name, relative, delegates in self.WORKFLOW_ENTRYPOINT_MATRIX:
+            if name in CLI_WRAPPER_COMMANDS:
+                continue
             path = root / relative
             text = path.read_text(encoding="utf-8")
             has_preflight = self.SHOW_PHASE_STATUS_PREFLIGHT in text
@@ -2551,7 +2560,7 @@ progress:
         root = harness.repo_root()
         manifest_entries = {entry.path.as_posix(): entry for entry in harness.load_manifest(root)}
         required_commands = {
-            ".roo/commands/fsd-phase.md",
+            ".roo/commands/fsd-run-phase.md",
             ".roo/commands/phase-discuss.md",
             ".roo/commands/phase-plan.md",
             ".roo/commands/phase-execute.md",
@@ -2600,7 +2609,7 @@ progress:
             "/phase-discuss": ("`workflow-phase-gate`", "`architect`"),
             "/phase-plan": ("`workflow-phase-gate`", "`architect`"),
             "/phase-execute": ("`workflow-phase-gate`", "`orchestrator` then owning mode"),
-            "/fsd-phase": ("`workflow-phase-gate`", "`orchestrator` then owning modes"),
+            "/fsd-run-phase": ("`workflow-phase-gate`", "`orchestrator` then owning modes"),
         }
 
         for command, (workflow, owner) in expected_rows.items():
@@ -2608,7 +2617,7 @@ progress:
             self.assertEqual(workflow, routing_rows[command]["workflow"])
             self.assertEqual(owner, routing_rows[command]["owner"])
         self.assertLess(routing_rows["/phase-execute"]["index"], routing_rows["harness request"]["index"])
-        self.assertLess(routing_rows["/fsd-phase"]["index"], routing_rows["harness request"]["index"])
+        self.assertLess(routing_rows["/fsd-run-phase"]["index"], routing_rows["harness request"]["index"])
         self.assertIn("Phase command rows do not override Subtask-First Execution", rules)
         for phrase in ("`phase=execute`", "`approved=true`", "`plan_id`", "`allowed_paths`", "`verification`"):
             self.assertIn(phrase, rules)
@@ -2633,16 +2642,16 @@ progress:
     def test_phase_command_files_keep_thin_workflow_contract(self) -> None:
         root = harness.repo_root()
         expected_modes = {
-            "fsd-phase.md": "orchestrator",
+            "fsd-run-phase.md": "orchestrator",
             "phase-discuss.md": "architect",
             "phase-plan.md": "architect",
             "phase-execute.md": "orchestrator",
         }
         required_phrases = {
-            "fsd-phase.md": [
-                "Use the `workflow-phase-gate` skill for $ARGUMENTS.",
-                "not an inline implementation command",
-                "If `new_task` is unavailable, output the handoff packet and stop.",
+            "fsd-run-phase.md": [
+                "harness fsd-run-phase $ARGUMENTS",
+                "execution_mode=phase_autopilot",
+                "harness phase set done",
             ],
             "phase-discuss.md": [
                 "Use the `workflow-phase-gate` skill for $ARGUMENTS.",
@@ -2807,7 +2816,7 @@ progress:
     def test_init_installs_phase_commands_from_manifest_sources(self) -> None:
         root = harness.repo_root()
         command_paths = [
-            ".roo/commands/fsd-phase.md",
+            ".roo/commands/fsd-run-phase.md",
             ".roo/commands/phase-discuss.md",
             ".roo/commands/phase-plan.md",
             ".roo/commands/phase-execute.md",

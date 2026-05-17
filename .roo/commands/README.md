@@ -26,7 +26,7 @@ Before planning hydration finishes, keep the visible command set small:
 | `/phase-discuss` | `architect` | Run the phase-gate discuss step only: read-only discovery, alignment, constraints, and open questions. |
 | `/phase-plan` | `architect` | Run the phase-gate plan step only: plan docs, scope, acceptance criteria, verification, and approval request. |
 | `/phase-execute` | `orchestrator` | Verify an approved execute gate and hand off implementation to the owning mode; the orchestrator does not implement inline. |
-| `/fsd-phase` | `orchestrator` | Recommended one-command phase entry; routes discuss -> plan -> execute through the canonical phase gate and subtask handoffs. |
+| `/fsd-run-phase` | `orchestrator` | Recommended one-command phase entry; runs one phase under `execution_mode=phase_autopilot` through the canonical phase gate and subtask handoffs. |
 
 Slash commands stay thin. Use `.roo/rules-orchestrator/rules.md` for exclusive routing and tie breakers; use the workflow skill or owning mode for the actual sequence.
 
@@ -42,6 +42,6 @@ Flags do not skip phase-local `discuss`, alignment summary, adversarial review, 
 ## Phase Command Usage
 
 - Manual step-by-step: `/phase-discuss` -> `/phase-plan` -> `/phase-execute`.
-- One-pass automation: use `/fsd-phase <phase> --chain` or another phase-gated workflow command with `--chain`.
+- One-pass automation: use `/fsd-run-phase <phase>` or another phase-gated workflow command.
 - Execute remains subtask-first: the orchestrator verifies the gate, creates the owning-mode handoff packet, and stops if `new_task` is unavailable.
 - `--chain` does not skip gate safety checks; if canonical conditions fail, stop before execute.
