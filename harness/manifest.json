@@ -906,5 +906,12 @@
       "source": "harness/profiles/react-web/rules/ui-engineer-extras.md",
       "policy": "harness-owned", "owner": "profile:react-web",
       "profile": "react-web", "adapter": "opencode" }
+  ],
+  "removed_in_version": [
+    {
+      "path": ".roo/commands/fsd-phase.md",
+      "removed_in": "v0.7.0",
+      "replaced_by": ".roo/commands/fsd-run-phase.md"
+    }
   ]
 }

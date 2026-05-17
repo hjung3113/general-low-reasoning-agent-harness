@@ -612,6 +612,39 @@ def run(argv: list[str] | None = None) -> int:
         help="Human-readable reason for stopping (audited).",
     )
 
+    # ----- phase reopen (design §3.2) -----
+    reopen_parser = phase_sub.add_parser(
+        "reopen",
+        help="Rewind phase to plan or discuss (design §3.2).",
+    )
+    reopen_parser.add_argument(
+        "--to",
+        choices=["plan", "discuss"],
+        default="plan",
+        help="Target phase to rewind to (default: plan).",
+    )
+    reopen_parser.add_argument(
+        "--by",
+        default=None,
+        help="Approver email (defaults to gitconfig).",
+    )
+    reopen_parser.add_argument(
+        "--reason",
+        default=None,
+        help="Optional reason (audited).",
+    )
+    reopen_parser.add_argument(
+        "--consumer-tty",
+        dest="consumer_tty",
+        default=None,
+        help="Consumer TTY path for nonce (cross-TTY proof).",
+    )
+    reopen_parser.add_argument(
+        "--nonce-id",
+        dest="consumer_tty",
+        help=argparse.SUPPRESS,  # deprecated alias for --consumer-tty
+    )
+
     # ----- phase next-pending (design §3.5, Round-4) -----
     phase_sub.add_parser(
         "next-pending",
@@ -884,7 +917,7 @@ def run(argv: list[str] | None = None) -> int:
             return _migrate_state.main(forwarded)
         raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
     if args.command == "phase":
-        from lib.phase_cli import cmd_phase_set, cmd_phase_approve
+        from lib.phase_cli import cmd_phase_set, cmd_phase_approve, cmd_phase_reopen
         from lib.phase_autopilot_cli import (
             cmd_phase_autopilot_start,
             cmd_phase_autopilot_stop,
@@ -894,6 +927,8 @@ def run(argv: list[str] | None = None) -> int:
             return cmd_phase_set(args)
         if args.phase_command == "approve":
             return cmd_phase_approve(args)
+        if args.phase_command == "reopen":
+            return cmd_phase_reopen(args)
         if args.phase_command == "autopilot":
             if args.autopilot_command == "start":
                 return cmd_phase_autopilot_start(args)

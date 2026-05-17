@@ -97,7 +97,10 @@ def _validate_argument(argument: Optional[str]) -> tuple[Optional[str], Optional
         )
 
     # Single token: validate against canonical slug regex.
-    if not CANONICAL_SLUG_RE.match(argument):
+    # Use fullmatch (not match) so trailing newline/whitespace is rejected —
+    # Python's $ in re.match matches before a final \n, allowing "slug\n"
+    # to pass incorrectly. fullmatch requires the ENTIRE string to match.
+    if not CANONICAL_SLUG_RE.fullmatch(argument):
         return None, FsdWrapperResult(
             exit_code=2,
             sub_reason="slug_regex_mismatch",

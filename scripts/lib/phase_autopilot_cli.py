@@ -86,14 +86,17 @@ def _cwd_repo_root() -> Path:
     return _walk_up_for_repo_root(Path.cwd())
 
 
+MAX_BUDGET_VALUE = 10_000_000  # upper bound for any single budget integer (P2-B2)
+
+
 def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
     """Parse repeated ``--budget key=value`` flags into a dict.
 
     Example: ``["shell_invocations=100", "wall_seconds=300"]``
              → ``{"shell_invocations": 100, "wall_seconds": 300}``
 
-    Only integer values are accepted (budget values are counts / seconds).
-    Malformed entries print a warning to stderr and are skipped.
+    Only non-negative integers in [0, MAX_BUDGET_VALUE] are accepted.
+    Malformed, negative, or oversized values cause exit 2 with a clear error.
     """
     if not budget_list:
         return None
@@ -101,22 +104,38 @@ def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
     for item in budget_list:
         if "=" not in item:
             print(
-                f"warning: --budget item {item!r} ignored "
+                f"error: --budget item {item!r} is malformed "
                 "(expected key=value format, e.g. shell_invocations=100)",
                 file=sys.stderr,
             )
-            continue
+            raise SystemExit(2)
         key, _, raw_val = item.partition("=")
         key = key.strip()
         raw_val = raw_val.strip()
         try:
-            result[key] = int(raw_val)
+            val = int(raw_val)
         except ValueError:
             print(
-                f"warning: --budget item {item!r} ignored "
-                f"(value {raw_val!r} is not an integer)",
+                f"error: --budget item {item!r} has non-integer value {raw_val!r} "
+                "(budget values must be non-negative integers)",
                 file=sys.stderr,
             )
+            raise SystemExit(2)
+        if val < 0:
+            print(
+                f"error: --budget item {item!r} has negative value {val} "
+                "(budget values must be >= 0)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        if val > MAX_BUDGET_VALUE:
+            print(
+                f"error: --budget item {item!r} has value {val} exceeding "
+                f"maximum allowed budget value {MAX_BUDGET_VALUE}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        result[key] = val
     return result or None
 
 

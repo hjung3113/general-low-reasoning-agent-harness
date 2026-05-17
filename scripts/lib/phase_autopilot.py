@@ -255,6 +255,48 @@ def _run_state_trust_preflight_for_autopilot(
 # ---------------------------------------------------------------------------
 
 
+def _run_crash_recovery(
+    *,
+    scratch: Path,
+    audit_path: Path,
+    lock: Any,
+) -> Optional["AutopilotResult"]:
+    """Run crash recovery (§3.5.2 / §3.8). Returns AutopilotResult on undecidable failure, None on success.
+
+    This MUST be called before reading state in run_start, run_stop, and
+    run_next_pending (§3.5.2 line 319 / line 312). The lock MUST already be held.
+    """
+    try:
+        recovery = _phase_txn.recover(scratch, audit_path=audit_path, lock=lock)
+        if recovery.exit_code != 0:
+            msg = (
+                f"crash recovery undecidable (row={recovery.row}, "
+                f"decision={recovery.decision!r}); "
+                "Fix: run `harness verify --audit` to inspect audit chain, "
+                "then `harness anchor repair` if the anchor is stale."
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=recovery.exit_code,
+                sub_reason=f"crash_recovery_undecidable:{recovery.decision}",
+                message=msg,
+            )
+    except _phase_txn.TxnLockMissingError:
+        raise  # propagate — callers handle this at the lock-contract-check step
+    except Exception as exc:
+        msg = (
+            f"crash recovery raised unexpected error ({exc}); "
+            "Fix: run `harness verify --audit` to inspect state."
+        )
+        print(f"error: {msg}", file=sys.stderr)
+        return AutopilotResult(
+            exit_code=14,
+            sub_reason="crash_recovery_error",
+            message=msg,
+        )
+    return None
+
+
 def run_start(
     *,
     scratch_root: Path,
@@ -353,6 +395,11 @@ def run_start(
 
     # Step 1: lock contract check (raises TxnLockMissingError if not held).
     _phase_txn._check_lock(lock_handle, scratch)
+
+    # Step 1b: crash recovery (§3.5.2 line 312 — run BEFORE reading state).
+    fail = _run_crash_recovery(scratch=scratch, audit_path=audit_path, lock=lock_handle)
+    if fail is not None:
+        return fail
 
     # Step 2: anchor preflight.
     fail = _run_anchor_preflight_for_autopilot(
@@ -532,15 +579,24 @@ def run_start(
         bot_identity = ci_result.bot_identity
         bot_identity_distinct_from_approvers = ci_result.bot_identity_distinct_from_approvers
 
-    # --allow-network source check (§3.5 line 643).
-    # HARNESS_ALLOW_NETWORK=1 in env WITHOUT authorization established above → refuse.
-    # (The authorization established above IS sufficient — no second-pass needed.)
-    # We detect unauthorized network flag: env has HARNESS_ALLOW_NETWORK=1 but
-    # allow_network=False was passed (caller not using the env override path);
-    # OR allow_network=True was derived from env but authorization is not satisfied.
-    # Simplified: if env has HARNESS_ALLOW_NETWORK=1 AND allow_network=False, the
-    # env alone is not enough (caller should pass allow_network=True).
-    # If allow_network=True, it's sourced from the same authorization already done above.
+    # --allow-network source check (§3.5 line 643 + §3.5.1).
+    #
+    # Per-flag re-evaluation interpretation (P2-B1 design decision):
+    # §3.5.1 says "follows the same predicate independently (per-flag re-evaluation)".
+    # The §3.1.1 nonce protocol does NOT currently bind audience claims to specific
+    # capability flags (allow_network is not part of the nonce audience string today).
+    # Therefore, per-flag re-evaluation is implemented as AUDIT-LABEL ONLY:
+    #   - allow_network_by_source records WHICH authorization path authorized this run.
+    #   - This provides full auditability of who authorized network access and via what path.
+    #   - Flag-specific re-authorization (e.g., nonce audience binding for allow_network)
+    #     is deferred to a future slice when §3.1.1 nonce audience binding is extended.
+    # Consequence: if allow_network=True, it is recorded as sourced from authorization_source
+    # (i.e. the same TTY-human or CI path that authorized the run), NOT from a separate
+    # allow_network-specific verification.
+    #
+    # The env-only-HARNESS_ALLOW_NETWORK path (without proper authorization) is NOT
+    # honored: allow_network must be explicitly passed as True by the caller (which
+    # means the caller parsed --allow-network from the CLI, not env alone).
     allow_network_by_source: Optional[str] = (
         authorization_source if allow_network else None
     )
@@ -677,17 +733,20 @@ def run_start(
         },
     }
 
-    # Design decision: §1.1 says autopilot_start_entry_hash = "the entry_hash
-    # of the verb=phase.autopilot.start audit entry". S06 (hash-chain) will
-    # supply the actual entry_hash. For this slice we use the pre-generated
-    # txn_id as the cross-reference anchor — forward-compatible because S06
-    # will replace this field's source of truth.
-    #
-    # We pre-generate txn_id here and embed it in BOTH after_state and the
-    # audit draft so a single commit_transaction sets the field atomically.
-    pre_txn_id = _phase_txn._new_txn_id()
-    after_state["autopilot_start_entry_hash"] = pre_txn_id
-    audit_draft["args"]["autopilot_start_entry_hash_ref"] = pre_txn_id
+    # Design decision (§1.1): autopilot_start_entry_hash MUST equal the
+    # actual entry_hash of the verb=phase.autopilot.start audit entry (64 hex
+    # chars, sha256 per ADR D-3). We use a TWO-PHASE COMMIT pattern:
+    #   1. First commit_transaction with autopilot_start_entry_hash="PENDING"
+    #      sentinel. This writes the audit row and stamps chain fields (including
+    #      entry_hash) via audit_append.
+    #   2. Read back the real entry_hash from the audit tail.
+    #   3. Second commit_transaction with verb=phase.autopilot.start_hash_finalized
+    #      that updates ONLY autopilot_start_entry_hash to the real hash.
+    # This ensures the field is always a valid 64-hex entry_hash, not a
+    # random token_hex, satisfying §1.1 without requiring a pre-computation
+    # that would require locking the audit file during the state computation.
+    after_state["autopilot_start_entry_hash"] = "PENDING"
+    audit_draft["args"]["autopilot_start_entry_hash_ref"] = "PENDING"
 
     txn_id = _phase_txn.commit_transaction(
         scratch,
@@ -700,6 +759,36 @@ def run_start(
         ),
         audit_path=audit_path,
     )
+
+    # Phase 2: read real entry_hash from the audit tail and finalize.
+    start_tail = _phase_txn._audit_tail_entry(audit_path)
+    real_entry_hash: Optional[str] = (
+        start_tail.get("entry_hash") if start_tail else None
+    )
+    if real_entry_hash and len(real_entry_hash) == 64:
+        # Second commit: update autopilot_start_entry_hash to the real hash.
+        finalize_before = dict(after_state)
+        finalize_after = dict(after_state)
+        finalize_after["autopilot_start_entry_hash"] = real_entry_hash
+        finalize_audit = {
+            "verb": "phase.autopilot.start_hash_finalized",
+            "args": {
+                "autopilot_start_entry_hash": real_entry_hash,
+                "autopilot_run_id": new_run_id,
+            },
+        }
+        _phase_txn.commit_transaction(
+            scratch,
+            lock=lock_handle,
+            request=_phase_txn.TxnRequest(
+                action="phase.autopilot.start_hash_finalized",
+                before_state=finalize_before,
+                after_state=finalize_after,
+                audit_entry_draft=finalize_audit,
+            ),
+            audit_path=audit_path,
+        )
+        after_state = finalize_after
 
     print(
         json.dumps(
@@ -755,6 +844,11 @@ def run_stop(
 
     # Lock contract check.
     _phase_txn._check_lock(lock_handle, scratch)
+
+    # Crash recovery (§3.5.2 line 312 — run BEFORE reading state).
+    fail = _run_crash_recovery(scratch=scratch, audit_path=audit_path, lock=lock_handle)
+    if fail is not None:
+        return fail
 
     # Anchor preflight.
     fail = _run_anchor_preflight_for_autopilot(
@@ -876,6 +970,17 @@ def run_next_pending(
     # Lock contract check.
     _phase_txn._check_lock(lock_handle, scratch)
 
+    # Crash recovery (§3.5.2 line 319 — "next-pending acquires the state lock
+    # briefly (consistent-snapshot read AFTER running crash recovery)").
+    # Must run before any state read.
+    cr_fail = _run_crash_recovery(scratch=scratch, audit_path=audit_path_p, lock=lock_handle)
+    if cr_fail is not None:
+        return NextPendingResult(
+            exit_code=cr_fail.exit_code,
+            next_slug="",
+            all_done=False,
+        )
+
     # Anchor preflight.
     fail = _run_anchor_preflight_for_autopilot(
         skip_anchor_preflight=skip_anchor_preflight,
@@ -887,7 +992,7 @@ def run_next_pending(
 
     av = anchor_verified if not skip_anchor_preflight else True
 
-    # State-trust preflight (crash recovery runs inside here).
+    # State-trust preflight.
     fail = _run_state_trust_preflight_for_autopilot(
         scratch=scratch,
         audit_path=audit_path_p,
@@ -910,6 +1015,7 @@ def run_next_pending(
 __all__ = [
     "AutopilotResult",
     "NextPendingResult",
+    "_run_crash_recovery",
     "run_start",
     "run_stop",
     "run_next_pending",
