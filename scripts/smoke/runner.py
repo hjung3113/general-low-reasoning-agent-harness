@@ -123,16 +123,35 @@ def _pinned_env(cwd: Path) -> dict[str, str]:
     }
 
 
+SUBPROCESS_TIMEOUT_SECONDS = 10
+
+
 def _run_command(argv: list[str], cwd: Path) -> dict:
-    cp = subprocess.run(
-        [sys.executable, str(_HARNESS_CLI), *argv],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=_pinned_env(cwd),
-        check=False,
-    )
+    """Run a single harness CLI command.
+
+    M5 — on `subprocess.TimeoutExpired`, return a `subprocess_timeout` event
+    so the runner can attribute the elapsed seconds to wall_clock_seconds
+    rather than blowing up the trial with an uncaught exception.
+    """
+    try:
+        cp = subprocess.run(
+            [sys.executable, str(_HARNESS_CLI), *argv],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+            env=_pinned_env(cwd),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "cmd": argv,
+            "event": "subprocess_timeout",
+            "elapsed_seconds": float(exc.timeout or SUBPROCESS_TIMEOUT_SECONDS),
+            "exit": None,
+            "stdout_tail": "",
+            "stderr_tail": f"TimeoutExpired after {exc.timeout}s",
+        }
     return {
         "cmd": argv,
         "exit": cp.returncode,
@@ -276,14 +295,21 @@ def _single_attempt(
             dest,
         )
 
-    caps_hit = _budget_caps_hit(wall, response.input_tokens, response.output_tokens)
     commands_log: list[dict] = []
     parsed_cmds: list[list[str]] = []
     rejected: list[str] = []
+    # Compute caps_hit before subprocess loop; subprocess timeouts may
+    # additionally push wall over the cap, recomputed below (M5).
+    caps_hit = _budget_caps_hit(wall, response.input_tokens, response.output_tokens)
     if not caps_hit:
         parsed_cmds, rejected = _parse_commands(response.text)
         for argv in parsed_cmds:
-            commands_log.append(_run_command(argv, dest))
+            entry = _run_command(argv, dest)
+            commands_log.append(entry)
+            if entry.get("event") == "subprocess_timeout":
+                wall += float(entry.get("elapsed_seconds") or 0.0)
+        # Re-evaluate caps after subprocess accumulation.
+        caps_hit = _budget_caps_hit(wall, response.input_tokens, response.output_tokens)
 
     if caps_hit:
         judgment = JudgeResult(False, f"budget caps hit: {caps_hit}", retry_recommended=False)
