@@ -21,6 +21,6 @@ For one-pass automation, use `/fsd-phase <phase> --chain` or another phase-gated
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-harness phase approve                                # long form: python3 scripts/harness.py phase approve; record approval provenance (CLI writes approved_by, approved_at)
-harness phase set execute                            # long form: python3 scripts/harness.py phase set execute; plan → execute (must be approved first)
+harness phase approve
+harness phase set execute
 ```

@@ -4,7 +4,7 @@ Use this command for `phase=discuss` work only.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.
 
-Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 Preflight checklist:
 
@@ -37,8 +37,8 @@ Forbidden work:
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-harness phase set plan                              # long form: python3 scripts/harness.py phase set plan; discuss → plan
-harness phase approve                                # long form: python3 scripts/harness.py phase approve; only in phase=plan or phase=execute; exit 6 in done (G2-C)
+harness phase set plan
+harness phase approve
 ```
 
 Output checklist:

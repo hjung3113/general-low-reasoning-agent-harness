@@ -21,3 +21,7 @@ tmp/
 
 # Claude Code worktrees — content lives in linked branches (already merged to develop).
 .claude/
+
+# Python build / install artifacts
+__pycache__/
+*.egg-info/

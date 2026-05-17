@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "general-low-reasoning-agent-harness"
+version = "0.7.0.dev0"
+description = "Low-reasoning AI agent guardrails — phase gate, audit chain, autopilot guards."
+requires-python = ">=3.11"
+# Runtime is intentionally dependency-light. RFC 8785 canonicalization
+# (ADR 2026-05-17-audit-canonicalization-locking-and-state-trust) is required
+# from S01 onward; psutil is used by the lock recovery protocol (§3.7).
+dependencies = [
+  "rfc8785>=0.1.4,<0.2.0",
+  "psutil>=5.9",
+]
+
+[project.scripts]
+harness = "harness_cli:main"
+
+[tool.setuptools]
+py-modules = ["harness_cli"]
+
+[tool.setuptools.packages.find]
+include = ["scripts*"]
+exclude = [
+  "scripts.fixtures*",
+  "scripts.smoke.fixtures*",
+  "scripts.smoke.golden*",
+  "scripts.test_*",
+]
