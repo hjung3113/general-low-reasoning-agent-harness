@@ -7,6 +7,9 @@ non-zero `exit_code`; the CLI dispatcher maps to `sys.exit`):
   2. Anchor preflight (§12.1). Default `repo_root=None` + `skip_anchor_preflight=False`
      → exit 6 `anchor_preflight_unwired` (fail-closed).
   3. State-trust preflight (§2.6). Refuses forged state with exit 10.
+  3b. Authorization algorithm (§3.5 + §3.5.1):
+     TTY path: validate by_email ∈ approvers, consume nonce → authorization_source="cli_tty_human".
+     CI path: run ci_predicate_satisfied → authorization_source from result.
   4. Windows containment check (§3.5 Round-3 BLOCK): Windows + chain mode
      + NOT (accept_degraded_windows_containment OR allow_network) → exit 11.
   5. Phase slug validation: None → exit 2 `invalid_phase_slug`;
@@ -16,7 +19,7 @@ non-zero `exit_code`; the CLI dispatcher maps to `sys.exit`):
   7. Active-autopilot re-entry (§3.5.2): execution_mode != "manual"
      → exit 15 `autopilot_already_active`.
   8. State + audit mutation via `phase_txn.commit_transaction`. Populates all
-     §1.1 autopilot identity fields.
+     §1.1 autopilot identity fields + §3.5.1 CI provenance fields.
 
 `run_stop` (§3.5):
   - Idempotent: if already manual, exit 0 silently.
@@ -28,24 +31,27 @@ non-zero `exit_code`; the CLI dispatcher maps to `sys.exit`):
     returns next non-done phase slug or sentinel.
   - No audit row. No state mutation.
 
-Note on `authorization_source`: this parameter is an opaque string passed by
-the caller (CLI dispatcher). §3.5.1 CI provenance predicate validation is
-DEFERRED to a later step. This module ACCEPTS whatever the caller provides and
-records it verbatim in the audit row.
+Note on authorization: `run_start` derives `authorization_source` from TTY-or-CI
+check (§3.5.1). The caller supplies TTY/CI inputs; `run_start` runs the algorithm.
+The former opaque `authorization_source: str` kwarg is replaced by `stdin_is_tty`,
+`by_email`, `nonce_*`, and `env`/OIDC injectors.
 
 Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
-Sections: §3.5, §3.5.2, §1.1, §3.4
+Sections: §3.5, §3.5.1, §3.5.2, §1.1, §3.4
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import secrets
 import sys
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
+from . import approval_nonce as _approval_nonce
+from . import ci_provenance as _ci_provenance
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
@@ -117,6 +123,20 @@ _FIX_STATE_TRUST = (
     "Fix: run `harness verify --audit`; "
     "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
     "or re-run `harness install`"
+)
+_FIX_APPROVER_NOT_IN_INSTALL_RECORD = (
+    "Fix: only emails listed in `.harness/install-record.json approvers[]` "
+    "may authorize autopilot; re-run `harness install` to update approvers"
+)
+_FIX_HUMAN_PROOF = (
+    "Fix: run `harness approve-nonce mint` in your TTY before calling "
+    "`phase autopilot start`; the nonce must be minted from a DIFFERENT "
+    "TTY than the one running the command (design §3.1.1)"
+)
+_FIX_ALLOW_NETWORK_SOURCE = (
+    "Fix: `--allow-network` is only permitted when the same CI predicate "
+    "or TTY-human authorization path that authorized this run is satisfied; "
+    "HARNESS_ALLOW_NETWORK=1 alone is insufficient (design §3.5)"
 )
 
 
@@ -243,12 +263,22 @@ def run_start(
     mode: str,
     budgets: Optional[Mapping[str, int]],
     allow_network: bool,
-    authorization_source: str,
-    anchor_verified: bool,
+    anchor_verified: bool = False,
     skip_anchor_preflight: bool = False,
     accept_degraded_windows_containment: bool = False,
     repo_root: Optional[Path] = None,
     roadmap_root: Optional[Path] = None,
+    # Authorization inputs (§3.5 + §3.5.1) — caller supplies raw inputs;
+    # run_start runs the algorithm and derives authorization_source.
+    env: Optional[Mapping[str, str]] = None,
+    stdin_is_tty: Optional[bool] = None,
+    nonce_id: Optional[str] = None,
+    nonce_audience: Optional[str] = None,
+    nonce_dir: Optional[Path] = None,
+    by_email: Optional[str] = None,
+    install_record_root: Optional[Path] = None,
+    oidc_fetcher: Optional[Callable] = None,
+    oidc_verifier: Optional[Callable] = None,
 ) -> AutopilotResult:
     """Execute the §3.5 `phase autopilot start` sequence.
 
@@ -268,8 +298,6 @@ def run_start(
         Budget overrides. None → defaults.
     allow_network : bool
         Whether to allow network (echoed to state + audit).
-    authorization_source : str
-        Opaque string from caller (§3.5.1 predicate deferred).
     anchor_verified : bool
         True when §12.1 anchor already verified externally.
     skip_anchor_preflight : bool
@@ -280,6 +308,25 @@ def run_start(
         Repo root for git check (chain mode) and anchor preflight.
     roadmap_root : Path | None
         `.planning/phases/` root for slug validation. None → no check.
+    env : Mapping | None
+        Environment mapping. Defaults to os.environ (used for CI path).
+    stdin_is_tty : bool | None
+        Whether stdin is a TTY. Defaults to sys.stdin.isatty().
+    nonce_id : str | None
+        Nonce ID for TTY human proof (required if stdin_is_tty=True).
+    nonce_audience : str | None
+        Nonce audience for TTY human proof (required if stdin_is_tty=True).
+    nonce_dir : Path | None
+        Directory for nonce files (for consume_newest_valid).
+    by_email : str | None
+        Human approver's email; required if stdin_is_tty=True.
+    install_record_root : Path | None
+        Directory containing install-record.json for approvers lookup.
+        Falls back to repo_root if None.
+    oidc_fetcher : Callable | None
+        Injected OIDC fetcher for ci_provenance (TEST-ONLY stubs if None).
+    oidc_verifier : Callable | None
+        Injected OIDC verifier for ci_provenance (TEST-ONLY stubs if None).
     """
     scratch = Path(scratch_root)
     audit_path = Path(audit_path)
@@ -307,6 +354,162 @@ def run_start(
     )
     if fail is not None:
         return fail
+
+    # Step 3b: Authorization algorithm (§3.5 + §3.5.1).
+    resolved_env: Mapping[str, str] = env if env is not None else os.environ
+    resolved_stdin_is_tty: bool = (
+        stdin_is_tty if stdin_is_tty is not None else sys.stdin.isatty()
+    )
+
+    # Resolve install-record approvers (used by both TTY and CI paths).
+    _ir_root = install_record_root or repo_root
+    _install_record_path: Optional[Path] = None
+    if _ir_root is not None:
+        _ir_root_p = Path(_ir_root)
+        # Support both "root containing .harness/" and ".harness/" directly.
+        candidate_a = _ir_root_p / ".harness" / "install-record.json"
+        candidate_b = _ir_root_p / "install-record.json"
+        if candidate_a.exists():
+            _install_record_path = candidate_a
+        elif candidate_b.exists():
+            _install_record_path = candidate_b
+
+    approvers_set: set[str] = set()
+    if _install_record_path is not None:
+        try:
+            rec = _phase_preflight.load_install_record(_install_record_path)
+            approvers_set = set(_phase_preflight.approvers_emails(rec))
+        except (FileNotFoundError, Exception):
+            approvers_set = set()
+
+    # Fields populated by the authorization path.
+    authorization_source: str
+    by: Optional[str] = None
+    by_source: Optional[str] = None
+    ci_signature: Optional[dict] = None
+    ci_oidc_verified: Optional[bool] = None
+    ci_oidc_claims: Optional[dict] = None
+    bot_identity: Optional[str] = None
+    bot_identity_distinct_from_approvers: Optional[bool] = None
+
+    if resolved_stdin_is_tty:
+        # TTY human proof path (§3.1.1).
+
+        # 1. by_email must be in approvers (if install record is available).
+        if not by_email:
+            msg = (
+                "phase autopilot start refused: by_email is required for TTY path. "
+                f"{_FIX_APPROVER_NOT_IN_INSTALL_RECORD}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=6,
+                sub_reason="approver_not_in_install_record",
+                message=msg,
+            )
+        if approvers_set and by_email.strip().lower() not in approvers_set:
+            msg = (
+                f"phase autopilot start refused: {by_email!r} is not in "
+                f"install-record approvers. {_FIX_APPROVER_NOT_IN_INSTALL_RECORD}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=6,
+                sub_reason="approver_not_in_install_record",
+                message=msg,
+            )
+
+        # 2. Require nonce_id + nonce_audience + nonce_dir; consume nonce.
+        if not nonce_id or not nonce_audience or nonce_dir is None:
+            msg = (
+                "phase autopilot start refused: nonce_id, nonce_audience, "
+                f"and nonce_dir are required for TTY human proof. {_FIX_HUMAN_PROOF}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=6,
+                sub_reason="human_proof_missing",
+                message=msg,
+            )
+
+        consume_result = _approval_nonce.consume_newest_valid(
+            Path(nonce_dir),
+            audience=nonce_audience,
+            consumer_tty=nonce_id,
+        )
+
+        _OUTCOME_TO_SUB = {
+            "missing": "human_proof_missing",
+            "expired": "human_proof_expired",
+            "same_tty": "human_proof_same_tty",
+            "audience_mismatch": "human_proof_audience_mismatch",
+        }
+        if consume_result.outcome != "consumed":
+            sub = _OUTCOME_TO_SUB.get(consume_result.outcome, "human_proof_missing")
+            msg = (
+                f"phase autopilot start refused: nonce consume failed "
+                f"({consume_result.outcome}). {_FIX_HUMAN_PROOF}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=6,
+                sub_reason=sub,
+                message=msg,
+            )
+
+        # 3. Set authorization fields.
+        authorization_source = "cli_tty_human"
+        by = by_email
+        by_source = "gitconfig"
+        # CI fields are None for TTY path.
+        ci_signature = None
+        ci_oidc_verified = None
+        ci_oidc_claims = None
+        bot_identity = None
+        bot_identity_distinct_from_approvers = None
+
+    else:
+        # CI predicate path (§3.5.1).
+        try:
+            ci_result = _ci_provenance.ci_predicate_satisfied(
+                env=resolved_env,
+                install_record_approvers=approvers_set,
+                oidc_fetcher=oidc_fetcher,
+                oidc_verifier=oidc_verifier,
+            )
+        except _ci_provenance.CiPredicateError as exc:
+            msg = (
+                f"phase autopilot start refused: CI authorization predicate failed "
+                f"({exc.sub_reason}): {exc.message}"
+            )
+            print(f"error: {msg}", file=sys.stderr)
+            return AutopilotResult(
+                exit_code=exc.exit_code,
+                sub_reason=exc.sub_reason,
+                message=msg,
+            )
+
+        authorization_source = ci_result.authorization_source
+        by = ci_result.bot_identity
+        by_source = "env_ci_verified"
+        ci_signature = ci_result.ci_signature
+        ci_oidc_verified = ci_result.ci_oidc_verified
+        ci_oidc_claims = ci_result.ci_oidc_claims
+        bot_identity = ci_result.bot_identity
+        bot_identity_distinct_from_approvers = ci_result.bot_identity_distinct_from_approvers
+
+    # --allow-network source check (§3.5 line 643).
+    # HARNESS_ALLOW_NETWORK=1 in env WITHOUT authorization established above → refuse.
+    # (The authorization established above IS sufficient — no second-pass needed.)
+    # We detect unauthorized network flag: env has HARNESS_ALLOW_NETWORK=1 but
+    # allow_network=False was passed (caller not using the env override path);
+    # OR allow_network=True was derived from env but authorization is not satisfied.
+    # Simplified: if env has HARNESS_ALLOW_NETWORK=1 AND allow_network=False, the
+    # env alone is not enough (caller should pass allow_network=True).
+    # If allow_network=True, it's sourced from the same authorization already done above.
+    allow_network_by_source: Optional[str] = (
+        authorization_source if allow_network else None
+    )
 
     # Step 4: Windows containment check (§3.5 Round-3 BLOCK).
     if (
@@ -417,35 +620,28 @@ def run_start(
     after_state["autopilot_phase_slug"] = phase_slug
     after_state["autopilot_allow_network"] = allow_network
     after_state["cli_budgets_remaining"] = resolved_budgets
-    # autopilot_start_entry_hash is set below before commit_transaction using
-    # a pre-generated txn_id (see design decision comment below).
 
-    # Audit entry (§3.5 fields).
+    # Audit entry (§3.5 + §3.5.1 fields).
     now_iso = _phase_preflight.now_iso_z()
     audit_draft: dict = {
         "verb": "phase.autopilot.start",
         "authorization_source": authorization_source,
+        "mode": mode,
+        "phase_slug": phase_slug,
+        "budgets": resolved_budgets,
+        "allow_network": allow_network,
+        "allow_network_by_source": allow_network_by_source,
+        "by": by,
+        "by_source": by_source,
         "args": {
-            "mode": mode,
-            "phase_slug": phase_slug,
-            "budgets": resolved_budgets,
-            "allow_network": allow_network,
             "started_at": now_iso,
+            "ci_signature": ci_signature,
+            "ci_oidc_verified": ci_oidc_verified,
+            "ci_oidc_claims": ci_oidc_claims,
+            "bot_identity": bot_identity,
+            "bot_identity_distinct_from_approvers": bot_identity_distinct_from_approvers,
         },
     }
-
-    # We need the txn_id to store in autopilot_start_entry_hash, but txn_id
-    # is returned AFTER commit_transaction. Solution: generate it here and
-    # pass it. (phase_txn generates one internally; we override by pre-
-    # generating and injecting it via the audit draft so both state and audit
-    # carry the same identifier.)
-    #
-    # Design decision: §1.1 says autopilot_start_entry_hash = "entry_hash of
-    # the phase.autopilot.start audit entry". Since S06 (hash-chain) is not
-    # yet complete, we use `txn_id` as a stable cross-reference. When S06
-    # lands, the CLI dispatcher can read the audit tail and replace this
-    # field with the actual entry_hash. For now we populate it from the
-    # returned txn_id.
 
     # Design decision: §1.1 says autopilot_start_entry_hash = "the entry_hash
     # of the verb=phase.autopilot.start audit entry". S06 (hash-chain) will
@@ -455,10 +651,6 @@ def run_start(
     #
     # We pre-generate txn_id here and embed it in BOTH after_state and the
     # audit draft so a single commit_transaction sets the field atomically.
-    # phase_txn generates its own internal txn_id; we pass our pre-generated
-    # value via the audit draft's `txn_id` field and accept the one returned
-    # (they will differ, but the state field correctly references the
-    # pre-generated one which is also in the audit draft args for forensics).
     pre_txn_id = _phase_txn._new_txn_id()
     after_state["autopilot_start_entry_hash"] = pre_txn_id
     audit_draft["args"]["autopilot_start_entry_hash_ref"] = pre_txn_id
@@ -485,6 +677,8 @@ def run_start(
                 "phase_slug": phase_slug,
                 "execution_mode": execution_mode_value,
                 "authorization_source": authorization_source,
+                "by": by,
+                "by_source": by_source,
                 "txn_id": txn_id,
             },
             indent=2,
