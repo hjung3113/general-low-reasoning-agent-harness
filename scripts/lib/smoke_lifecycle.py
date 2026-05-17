@@ -146,6 +146,30 @@ def copy_fixture(dest: Path) -> None:
         (dest / ".scratch").mkdir(exist_ok=True)
 
 
+def _pinned_smoke_env(cwd: Path) -> dict[str, str]:
+    """M4: build a minimal pinned env so the smoke is insensitive to
+    the host's git config and shell environment.
+
+    Only PATH, HOME (set to the fixture so any rc-file reads stay
+    local), HARNESS_USER, and the GIT_{AUTHOR,COMMITTER}_{NAME,EMAIL}
+    quartet are passed through. PYTHONPATH is forwarded when set so
+    that pytest/unittest runners can still locate `scripts` as a
+    package (the harness CLI itself is invoked by absolute path).
+    """
+    env: dict[str, str] = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(cwd),
+        "HARNESS_USER": "smoke",
+        "GIT_AUTHOR_NAME": "smoke",
+        "GIT_AUTHOR_EMAIL": "smoke@local",
+        "GIT_COMMITTER_NAME": "smoke",
+        "GIT_COMMITTER_EMAIL": "smoke@local",
+    }
+    if "PYTHONPATH" in os.environ:
+        env["PYTHONPATH"] = os.environ["PYTHONPATH"]
+    return env
+
+
 def _run_harness(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "harness.py"), *argv],
@@ -153,7 +177,7 @@ def _run_harness(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ},
+        env=_pinned_smoke_env(cwd),
     )
 
 

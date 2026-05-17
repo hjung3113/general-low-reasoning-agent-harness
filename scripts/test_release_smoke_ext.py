@@ -333,6 +333,35 @@ class TestOrchestration(unittest.TestCase):
                 smoke_lifecycle._run_stage1_core(matrix)
 
 
+class TestEnvIsolation(unittest.TestCase):
+    """M4: _run_harness builds a minimal pinned env to keep the smoke
+    insensitive to the host's git config and shell environment."""
+
+    def test_smoke_uses_pinned_user_not_host_git_config(self):
+        # The audit `by` field for `phase set` is populated from the
+        # env (HARNESS_USER / GIT_AUTHOR_*). With pinned env, every
+        # entry's `by` MUST equal 'smoke' or 'smoke@local', NEVER the
+        # host's git email (which contains '@' but not '@local').
+        with tempfile.TemporaryDirectory(prefix="harness-smoke-env.") as tmp:
+            capture_raw = smoke_lifecycle._run_lifecycle_argv_sequence(
+                Path(tmp) / "env-fixture",
+                [inv["argv"] for inv in STAGE1_INVOCATIONS],
+            ) if False else None
+            # Use the helper that sets up the fixture and runs stage 1
+            # directly so we hit _run_harness with the pinned env.
+            smoke_lifecycle.copy_fixture(Path(tmp) / "env-fixture")
+            cap = smoke_lifecycle._run_lifecycle_argv_sequence(
+                Path(tmp) / "env-fixture",
+                [inv["argv"] for inv in STAGE1_INVOCATIONS],
+            )
+            for entry in cap["audit_entries"]:
+                by = entry.get("by", "")
+                self.assertIn(
+                    by, ("smoke", "smoke@local"),
+                    f"audit entry leaked host identity: by={by!r}",
+                )
+
+
 class TestCompareToGolden(unittest.TestCase):
     """C1: _compare_to_golden compares verb, args, final_state.{phase,approved,
     state_schema_version}, and presence of sha256 keys."""
