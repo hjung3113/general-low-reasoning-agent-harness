@@ -637,9 +637,12 @@ def check_phase_state_semantics(path: Path) -> None:
         )
 
 
+_ROO_BUILTIN_MODES = frozenset({"ask", "code", "architect", "debug", "orchestrator"})
+
+
 def check_command_modes(root: Path) -> None:
     modes = json.loads((root / ".roomodes").read_text(encoding="utf-8"))
-    known = {mode["slug"] for mode in modes.get("customModes", [])}
+    known = {mode["slug"] for mode in modes.get("customModes", [])} | _ROO_BUILTIN_MODES
     unknown: list[str] = []
     for command in (root / ".roo/commands").glob("*.md"):
         text = command.read_text(encoding="utf-8")

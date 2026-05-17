@@ -314,7 +314,8 @@ def command_mode_doctor_findings(root: Path) -> list[DoctorFinding]:
                 evidence=f"line {exc.lineno} column {exc.colno}",
             )
         ]
-    known = {mode["slug"] for mode in modes.get("customModes", []) if isinstance(mode, dict) and "slug" in mode}
+    _roo_builtin = frozenset({"ask", "code", "architect", "debug", "orchestrator"})
+    known = {mode["slug"] for mode in modes.get("customModes", []) if isinstance(mode, dict) and "slug" in mode} | _roo_builtin
     findings: list[DoctorFinding] = []
     for command in commands_dir.glob("*.md"):
         text = command.read_text(encoding="utf-8")
