@@ -75,6 +75,19 @@ class AnchorError(RuntimeError):
         self.sub_reason = sub_reason
 
 
+class AnchorMissingError(AnchorError):
+    """Subclass — the anchor file does not exist on disk. Surfaced by
+    `verify_existing_anchor_for_repo` so callers can route to the
+    `harness anchor repair` remediation path. Distinct from
+    `AnchorMismatchError` so per-error exit-code mapping is clean."""
+
+
+class AnchorMismatchError(AnchorError):
+    """Subclass — anchor present but does not verify against live state
+    (signature invalid, audit-tail diverged, install-record mutated, or
+    rollback refused). Surfaced by `verify_existing_anchor_for_repo`."""
+
+
 @dataclass(frozen=True)
 class Anchor:
     anchor_schema_version: int
@@ -365,6 +378,112 @@ def reset_seen_for_testing() -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+_ZERO_HASH = "0" * 64
+
+
+def _live_audit_tail(repo_root: Path) -> tuple[str, int]:
+    """Return `(entry_hash, seq_global)` of the last well-formed audit
+    entry under `<repo_root>/.scratch/audit.log`. Returns
+    `(_ZERO_HASH, 0)` if the file is absent or empty.
+
+    NOTE: audit entries do not yet carry `entry_hash` / `seq_global`
+    fields in v0.7 (the hash chain lands at S06). Until then this helper
+    returns whatever the tail entry exposes (or zero defaults), and
+    anchor verification still chains via `install_record_sha256` +
+    `repo_root_canonical` + HMAC signature. The strict
+    audit_tail_entry_hash equality check will start biting once S06
+    writes those fields.
+    """
+    path = repo_root / ".scratch" / "audit.log"
+    if not path.exists():
+        return _ZERO_HASH, 0
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _ZERO_HASH, 0
+    last = None
+    for line in reversed(raw.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            last = json.loads(line)
+            break
+        except json.JSONDecodeError:
+            continue
+    if not last:
+        return _ZERO_HASH, 0
+    entry_hash = last.get("entry_hash") or _ZERO_HASH
+    try:
+        seq_global = int(last.get("seq_global") or 0)
+    except (TypeError, ValueError):
+        seq_global = 0
+    return entry_hash, seq_global
+
+
+def _live_install_record_sha256(repo_root: Path) -> str:
+    path = repo_root / ".harness" / "install-record.json"
+    if not path.exists():
+        return _ZERO_HASH
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_existing_anchor_for_repo(repo_root: Path) -> Anchor:
+    """High-level §12.1 trust-chain entry point used by callers (e.g.
+    `phase_approve.run_approve`) that need to chain through the
+    out-of-repo anchor BEFORE trusting `.scratch/audit.log`.
+
+    Steps:
+      1. Locate the anchor file via `anchor_path(repo_root)`.
+         Missing → raise `AnchorMissingError` (sub_reason="anchor_missing").
+      2. Load + parse it via `read_anchor` (re-raises `AnchorError`
+         subclasses on schema mismatch / unreadable).
+      3. Compute live `install_record_sha256` from
+         `<repo>/.harness/install-record.json`.
+      4. Compute live `audit_tip_entry_hash` / `audit_tip_seq_global`
+         from the tail of `<repo>/.scratch/audit.log` (see
+         `_live_audit_tail` note about S06 hash-chain wiring).
+      5. Call `verify_anchor(...)`. On any verification failure,
+         re-raise as `AnchorMismatchError` preserving `sub_reason` so
+         the caller's exit-code mapping is straightforward.
+
+    Returns the verified `Anchor` on success.
+
+    Raises:
+        AnchorMissingError      -- anchor file absent
+        AnchorMismatchError     -- anchor present but verification failed
+        AnchorError             -- other unrecoverable anchor faults (e.g.
+                                   unreadable, schema mismatch — surfaced
+                                   directly by `read_anchor`).
+    """
+    repo_root = Path(repo_root)
+    path = anchor_path(repo_root)
+    if not path.exists():
+        raise AnchorMissingError(
+            f"anchor not found at {path}. "
+            f"Fix: run `harness anchor repair` from a TTY to mint the "
+            f"out-of-repo audit-tip anchor (see design §12.1).",
+            sub_reason="anchor_missing",
+        )
+    anchor = read_anchor(repo_root)
+
+    install_record_sha = _live_install_record_sha256(repo_root)
+    audit_tip_hash, audit_tip_seq = _live_audit_tail(repo_root)
+    try:
+        verify_anchor(
+            anchor,
+            audit_tip_entry_hash=audit_tip_hash,
+            audit_tip_seq_global=audit_tip_seq,
+            install_record_sha256=install_record_sha,
+            repo_root=repo_root,
+        )
+    except AnchorError as exc:
+        # Re-raise as the typed mismatch subclass so callers can route
+        # mismatch failures to a distinct exit code from "missing".
+        # Preserve the original sub_reason for forensic taxonomy.
+        raise AnchorMismatchError(str(exc), sub_reason=exc.sub_reason) from exc
+    return anchor
 
 
 def repair_anchor(

@@ -48,6 +48,7 @@ from lib.session import (
 )
 from lib.timestamps import now_iso_nanos, parse_iso_nanos
 from lib import transition as _transition
+from lib import phase_state as _phase_state
 from lib.transition import InvalidTransition
 
 STATE_PATH = Path(".scratch/phase-state.json")
@@ -309,6 +310,14 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
         for k, v in extra.items():
             if k in ALLOWED_STDIN_FIELDS:
                 new_state[k] = v
+
+    # Review-fix P1-2: stamp §1.1 / §3.6 transition timestamps so the
+    # producer side matches the validator's expectations. Without this
+    # `validate_transition_with_state` rejects every real-world state
+    # with `plan_finalized_at_missing` / `execute_attempt_started_at_missing`.
+    new_state = _phase_state.stamp_transition_timestamps(
+        new_state, to_phase=target, now_iso=new_state["updated_at"]
+    )
 
     _write_state_atomic(new_state)
     after_hash = compute_state_hash(STATE_PATH)

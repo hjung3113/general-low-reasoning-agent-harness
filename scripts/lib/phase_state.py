@@ -139,6 +139,48 @@ def strip_v2_only_fields(state: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def stamp_transition_timestamps(
+    state: Mapping[str, Any],
+    *,
+    to_phase: str,
+    now_iso: str,
+) -> dict[str, Any]:
+    """Return a copy of *state* with §3.6 timestamp fields stamped per
+    *to_phase* (review-fix P1-2 — the validator extensions in
+    `transition.validate_transition_with_state` reject
+    `plan_finalized_at_missing` / `execute_attempt_started_at_missing`,
+    so the producer side MUST also stamp them or the forward path
+    bricks).
+
+    Stamping rules (anchored on design §1.1 + §3.6):
+
+      - `to_phase == "plan"`: stamp `plan_finalized_at = now_iso`. The
+        boundary is "entering plan finalizes plan body" — every fresh
+        entry into plan resets the floor for `(plan → execute)`'s
+        stale-approval check. (Re-entry from execute/done via
+        `--reset-approval` also passes through here.)
+      - `to_phase == "execute"`: stamp
+        `execute_attempt_started_at = now_iso`. Every entry counts as a
+        new execute attempt; combined with the existing approval-reset
+        in `_do_phase_set` this means `(execute → done)` correctly
+        requires a fresh post-execute-entry approval.
+      - other phases: no stamp.
+
+    *now_iso* MUST be in canonical `YYYY-MM-DDTHH:MM:SS[.fff]Z` form
+    (the same producer used elsewhere — `timestamps.now_iso_nanos`).
+    The validator's `_iso_lt` accepts both seconds- and fractional-
+    precision shapes; the producer is free to pick either.
+
+    Pure function: no I/O, no mutation of the input mapping.
+    """
+    out = dict(state)
+    if to_phase == "plan":
+        out["plan_finalized_at"] = now_iso
+    elif to_phase == "execute":
+        out["execute_attempt_started_at"] = now_iso
+    return out
+
+
 __all__ = [
     "EXECUTION_MODES",
     "LEGACY_AUTOMATION_TO_EXECUTION",
@@ -146,4 +188,5 @@ __all__ = [
     "coerce_legacy_execution_mode",
     "apply_v2_defaults",
     "strip_v2_only_fields",
+    "stamp_transition_timestamps",
 ]

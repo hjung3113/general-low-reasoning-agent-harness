@@ -22,6 +22,7 @@ Per ADR-001 transition table (see docs/adr/2026-05-16-hardening-bundle.md):
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 
@@ -193,16 +194,44 @@ class StaleApprovalError(SystemExit):
 
 
 def _iso_lt(a: Optional[str], b: Optional[str]) -> bool:
-    """Return True iff `a < b` as ISO-8601 strings.
+    """Return True iff `a < b` chronologically.
 
-    ISO-8601 lexical order matches chronological order for the canonical
-    `YYYY-MM-DDTHH:MM:SS[.fff]Z` shape we write everywhere (audit/state
-    timestamps). Returns False if either side is None — callers handle
-    missing-field cases explicitly before calling this.
+    Review-fix P2-2: prior implementation compared the raw strings
+    lexicographically. That ASSUMED uniform precision — but our
+    producers mix seconds-precision and fractional-precision ISO-Z
+    timestamps. Counter-example: `"2026-05-17T12:00:00.999Z"`
+    lexically sorts AFTER `"2026-05-17T12:00:01Z"` because `.` (0x2E)
+    sorts before `Z` (0x5A), but the `9`s after the `.` flip the order
+    in the lex string compared to the chronological order — concretely,
+    `'2026-05-17T12:00:00.999Z' > '2026-05-17T12:00:01Z'` is False
+    lexically yet chronologically the fractional one is EARLIER, which
+    happens to round-trip correctly here, but `2026-05-17T12:00:01.000Z`
+    vs `2026-05-17T12:00:01Z` DOES misorder lexically. To eliminate the
+    foot-gun entirely we parse both sides via `datetime.fromisoformat`
+    and compare as `datetime`.
+
+    Inputs MUST be UTC-`Z` strings; we reject anything else with a
+    `ValueError` so future producer drift (e.g. an unstamped `+00:00`)
+    surfaces immediately rather than silently mis-comparing.
+
+    Returns False if either side is None — callers handle missing-field
+    cases explicitly before calling this.
     """
     if a is None or b is None:
         return False
-    return a < b
+    return _parse_iso_z(a) < _parse_iso_z(b)
+
+
+def _parse_iso_z(s: str) -> datetime:
+    """Parse a canonical UTC-Z ISO-8601 string. Raises ValueError on
+    anything that does not end in `Z` so producer drift fails loudly."""
+    if not isinstance(s, str) or not s.endswith("Z"):
+        raise ValueError(
+            f"timestamp {s!r} is not a canonical UTC-Z ISO-8601 string "
+            f"(must end with 'Z'); see design §1.1 timestamps producer "
+            f"contract"
+        )
+    return datetime.fromisoformat(s[:-1] + "+00:00")
 
 
 def validate_transition_with_state(

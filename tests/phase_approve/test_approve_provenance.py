@@ -138,8 +138,14 @@ def _make_args(**overrides):
 
 
 def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
-         gitconfig_email="alice@example.com", **arg_overrides):
-    """Invoke run_approve with the test-controlled environment."""
+         gitconfig_email="alice@example.com", env_vars=None,
+         skip_anchor_preflight=True, repo_root=None, **arg_overrides):
+    """Invoke run_approve with the test-controlled environment.
+
+    Defaults to `skip_anchor_preflight=True` because in-memory tests do
+    NOT mint a real ~/.harness audit-tip anchor; the §12.1 trust chain
+    is verified in the dedicated `test_anchor_*` block below.
+    """
     args = _make_args(**arg_overrides)
     return phase_approve.run_approve(
         args,
@@ -151,7 +157,9 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
         stdin_isatty=stdin_isatty,
         consumer_tty=consumer_tty,
         gitconfig_email_lookup=lambda: gitconfig_email,
-        env_vars={},  # no HARNESS_BY_TRUST etc.
+        env_vars={} if env_vars is None else env_vars,
+        repo_root=repo_root,
+        skip_anchor_preflight=skip_anchor_preflight,
     )
 
 
@@ -246,6 +254,7 @@ def test_harness_by_trust_env_does_not_influence_approve(env):
             "HARNESS_BY_TRUST": "alice@example.com",
             "HARNESS_HUMAN": "alice@example.com",
         },
+        skip_anchor_preflight=True,
     )
     # gitconfig empty + env IGNORED ⇒ exit 6 gitconfig_email_unset (NOT
     # silently approved via env).
@@ -487,6 +496,157 @@ def test_lock_held_during_run_approve(env, monkeypatch):
 # ---------------------------------------------------------------------------
 # 10. Idempotency: already approved → defined no-op behavior
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 11. §12.1 anchor trust chain — review-fix P1-1
+#
+# The default `skip_anchor_preflight=False` path MUST chain through the
+# out-of-repo audit-tip anchor before trusting `state_trust.preflight`'s
+# `anchor_verified=True` flag. Prior to this commit the bare-except in
+# `run_approve` silently swallowed an AttributeError from a typo'd call
+# and hardcoded `anchor_verified=True`, defeating S01-E.
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_preflight_unwired_when_repo_root_none(env):
+    """Default `skip_anchor_preflight=False` + `repo_root=None` must
+    fail closed with exit 6, NOT silently proceed with
+    `anchor_verified=True`."""
+    _mint_valid_nonce(env["nonce_dir"])
+    rc = _run(env, skip_anchor_preflight=False, repo_root=None)
+    assert rc.exit_code == 6
+    assert rc.sub_reason == "anchor_preflight_unwired"
+
+
+def test_anchor_missing_rejected(env, monkeypatch, tmp_path):
+    """`repo_root` provided + anchor file absent → AnchorMissingError →
+    exit 6 sub_reason='anchor_missing'. The §12.1 trust chain must NOT
+    proceed without the anchor."""
+    from lib import audit_anchor
+
+    # Redirect ~/.harness/audit-tip/ to a tmp dir so no anchor exists.
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(
+        audit_anchor._secret_key, "home_dir", lambda: fake_home
+    )
+    _mint_valid_nonce(env["nonce_dir"])
+    rc = _run(env, skip_anchor_preflight=False, repo_root=env["tmp_path"])
+    assert rc.exit_code == 6
+    assert rc.sub_reason == "anchor_missing"
+
+
+def test_anchor_mismatch_rejected(env, monkeypatch, tmp_path):
+    """Anchor file present but verification fails (we forge a stale
+    anchor whose `install_record_sha256` does not match live install
+    record). Caller must NOT proceed."""
+    from lib import audit_anchor, secret_key
+
+    fake_home = tmp_path / "fake-home"
+    fake_home.mkdir()
+    monkeypatch.setattr(audit_anchor._secret_key, "home_dir", lambda: fake_home)
+    monkeypatch.setattr(secret_key, "home_dir", lambda: fake_home)
+    audit_anchor.reset_seen_for_testing()
+
+    # Mint a fresh secret key into the fake home.
+    secret_key.ensure_secret_key()
+
+    # Write an anchor whose install_record_sha256 is bogus.
+    audit_anchor.write_anchor(
+        env["tmp_path"],
+        harness_version="v0.7.0",
+        install_id="00000000-0000-0000-0000-000000000000",
+        install_record_sha256="ff" * 32,  # will never match live record
+        audit_tip_entry_hash="0" * 64,
+        audit_tip_seq_global=0,
+    )
+
+    _mint_valid_nonce(env["nonce_dir"])
+    rc = _run(env, skip_anchor_preflight=False, repo_root=env["tmp_path"])
+    assert rc.exit_code == 6
+    # Any of the mismatch sub_reasons is acceptable; we lock in the
+    # `install_record_mutated_post_install` discriminator since that's
+    # what the forged input drives.
+    assert rc.sub_reason in (
+        "install_record_mutated_post_install",
+        "audit_tail_diverged_from_anchor",
+        "anchor_signature_invalid",
+    )
+
+
+def test_env_vars_byte_identical_to_empty_env(env, capsys):
+    """`HARNESS_BY_TRUST` / `HARNESS_HUMAN` MUST not influence any code
+    path — byte-identical result and stderr between empty env and a
+    hostile env. Strengthens the env-isolation pin (replaces the dead
+    `_ = env_vars` read with a real regression test)."""
+    _mint_valid_nonce(env["nonce_dir"])
+    rc_clean = _run(env, env_vars={})
+    out_clean = capsys.readouterr()
+
+    # Reset state so the second invocation re-runs the same path.
+    state_path = env["scratch"] / "phase-state.json"
+    s = json.loads(state_path.read_text())
+    s["approved"] = False
+    s["approved_by"] = None
+    s["approved_at"] = None
+    lock = phase_lock.acquire_primary(env["scratch"], timeout_s=2.0)
+    try:
+        before = json.loads(state_path.read_text())
+        req = phase_txn.TxnRequest(
+            action="phase.set",
+            before_state=before,
+            after_state=s,
+            audit_entry_draft={"verb": "phase.set", "by": "reset", "args": {}},
+        )
+        phase_txn.commit_transaction(
+            env["scratch"], lock=lock, request=req, audit_path=env["audit_path"]
+        )
+    finally:
+        phase_lock.release_primary(lock)
+    _mint_valid_nonce(env["nonce_dir"])
+
+    rc_hostile = _run(
+        env,
+        env_vars={
+            "HARNESS_BY_TRUST": "evil@example.com",
+            "HARNESS_HUMAN": "evil@example.com",
+            "HARNESS_USER": "evil@example.com",
+        },
+    )
+    out_hostile = capsys.readouterr()
+
+    assert rc_clean.exit_code == rc_hostile.exit_code == 0
+    assert rc_clean.resolved_email == rc_hostile.resolved_email == "alice@example.com"
+    assert rc_clean.by_source == rc_hostile.by_source == "gitconfig_auto"
+    # Stderr must be identical (empty in both runs).
+    assert out_clean.err == out_hostile.err
+
+
+# ---------------------------------------------------------------------------
+# 12. xfail-strict integration pin — review-fix P2-1
+# Wiring of `cmd_phase_approve` → `phase_approve.run_approve` is S07-prep
+# scope; the pin will fail-as-pass today and flip the moment the legacy
+# `_do_phase_approve` short-circuit is replaced.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    reason="blocked on S07-prep CLI argparse wiring of cmd_phase_approve → run_approve",
+    strict=True,
+)
+def test_live_cli_routes_through_run_approve():
+    """The live CLI dispatcher `cmd_phase_approve` MUST eventually
+    delegate to `phase_approve.run_approve`. Today it still calls the
+    legacy `_do_phase_approve` shim; this xfail-strict pin will surface
+    the moment the wiring lands so we can drop the marker (or fail
+    loudly if the wiring drifts past us)."""
+    import inspect
+
+    from lib import phase_cli
+
+    src = inspect.getsource(phase_cli.cmd_phase_approve)
+    assert "phase_approve.run_approve" in src or "run_approve(" in src
 
 
 def test_second_approve_already_approved_is_idempotent_noop(env):

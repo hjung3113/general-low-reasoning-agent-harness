@@ -26,6 +26,7 @@ Public surface
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import json
 import os
@@ -78,8 +79,6 @@ def _gen_id() -> str:
     # 5 bytes → 40 bits → 8 base32 chars (no padding); collision-safe at
     # nonce volumes (~/min).
     raw = secrets.token_bytes(5)
-    import base64
-
     return base64.b32encode(raw).decode("ascii").rstrip("=").lower()
 
 
