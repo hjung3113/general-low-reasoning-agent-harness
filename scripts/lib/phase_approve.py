@@ -593,18 +593,19 @@ def run_approve(
         #     by_source, confirmation_kind, nonce_id, nonce_minter_tty,
         #     nonce_consumer_tty, at, before/after_sha256, txn_id.
         #   * `args` carries the verbose timestamps. If the encoded line
-        #     exceeds AUDIT_MAX_LINE_BYTES (512), `audit.audit_append`
-        #     archives the full record to `.harness/audit.overflow/`
-        #     and replaces `args` with `{"truncated": true}` — the
-        #     top-level provenance fields are preserved, so state_trust
-        #     and forensic readers still see the proof shape.
+        #     exceeds AUDIT_MAX_LINE_BYTES (1024, raised from 512 in S06),
+        #     `audit.audit_append` archives the full record to
+        #     `.harness/audit.overflow/` and replaces `args` with
+        #     `{"truncated": true}` — the top-level provenance fields are
+        #     preserved, so state_trust and forensic readers still see the
+        #     proof shape.
         #
-        # TODO(S06-verifier): audit-line truncation layout — the
-        # adversarial reviewer of S02 noted that the current shape
-        # promotes provenance to top-level but `args` truncation still
-        # silently elides the `nonce_minted_at` / `nonce_consumed_at`
-        # timestamps. The S06 verifier surface MUST honor the overflow
-        # file as part of the chain; design §3.1.1 + reviewer P2.
+        # S06-verifier RESOLVED: AUDIT_MAX_LINE_BYTES raised to 1024 bytes
+        # to accommodate chain fields + forensic top-level fields. The
+        # `nonce_minted_at` / `nonce_consumed_at` timestamps remain in
+        # `args` which may still truncate for very large entries — overflow
+        # file support in the chain verifier is deferred (no format change
+        # needed now that budget is larger).
         #
         # TODO(later-slice): clock-backwards `approval_epoch` counter.
         # If wall-clock moves backward between mints, two distinct

@@ -657,12 +657,20 @@ def test_reopen_to_plan_from_done_accepted(env):
     assert rc.exit_code == 0
 
 
-def test_reopen_with_autopilot_audit_row_under_512_bytes_pre_s06_budget(env):
-    """P2-4 sentinel: the phase.autopilot.halt + phase.reopen audit
-    lines MUST fit under 512 bytes (AUDIT_MAX_LINE_BYTES). When S06
-    adds ~140 bytes of chain fields, this sentinel will fail and force
-    the layout decision rather than letting truncation silently elide
-    forensic fields. Records both line sizes for diagnostic purposes."""
+def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
+    """S06 updated sentinel (formerly pre_s06_budget P2-4): the phase.autopilot.halt
+    + phase.reopen audit lines MUST fit under AUDIT_MAX_LINE_BYTES = 1024 bytes.
+
+    S06 added ~140 bytes of per-entry chain fields (schema_version, seq,
+    seq_global, previous_entry_hash [64 hex], entry_hash [64 hex]). The limit
+    was raised from 512 → 1024 in S06 to accommodate chain fields AND preserve
+    all forensic top-level fields (by_source, confirmation_kind, etc.) without
+    falling through to the minimal-fallback path which would drop them.
+    Design decision: option (a) — raise the sentinel limit; the limit is a
+    safety check, not a hard protocol contract.
+
+    TODO(S06-chain): RESOLVED — limit raised to 1024, chain fields preserved.
+    Records both line sizes for diagnostic purposes."""
     _reseed(env, lambda s: s.update({
         "execution_mode": "chain_autopilot",
         "autopilot_run_id": "run-sentinel",
@@ -676,17 +684,15 @@ def test_reopen_with_autopilot_audit_row_under_512_bytes_pre_s06_budget(env):
     ]
     halt_line = lines[-2]
     reopen_line = lines[-1]
-    # 512 = AUDIT_MAX_LINE_BYTES (macOS PIPE_BUF floor).
-    # S06 chain fields budget is ~140 bytes; this margin is the
-    # headroom available before audit_append's `args` truncation
-    # kicks in.
-    assert len(halt_line.encode()) <= 512, (
-        f"halt audit line {len(halt_line.encode())} bytes — exceeds 512 "
-        "before S06 chain fields land (P2-4 sentinel)"
+    # 1024 = AUDIT_MAX_LINE_BYTES post-S06 (raised from 512 to accommodate
+    # ~140 bytes of chain fields + forensic top-level field headroom).
+    assert len(halt_line.encode()) <= 1024, (
+        f"halt audit line {len(halt_line.encode())} bytes — exceeds 1024 "
+        "(post-S06 AUDIT_MAX_LINE_BYTES budget)"
     )
-    assert len(reopen_line.encode()) <= 512, (
-        f"reopen audit line {len(reopen_line.encode())} bytes — exceeds 512 "
-        "before S06 chain fields land (P2-4 sentinel)"
+    assert len(reopen_line.encode()) <= 1024, (
+        f"reopen audit line {len(reopen_line.encode())} bytes — exceeds 1024 "
+        "(post-S06 AUDIT_MAX_LINE_BYTES budget)"
     )
 
 

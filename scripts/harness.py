@@ -518,6 +518,28 @@ def run(argv: list[str] | None = None) -> int:
         help="Print the lockfile payload and exit 0 without removing.",
     )
 
+    # harness verify --audit [--fixture <dir>] (design §12.7, §12.9, S06)
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify audit log chain integrity (§2.2, §12.7).",
+    )
+    verify_parser.add_argument(
+        "--audit",
+        action="store_true",
+        required=True,
+        help="Verify the audit log chain.",
+    )
+    verify_parser.add_argument(
+        "--fixture",
+        dest="verify_fixture",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Override source to verify from <DIR>/audit.log + rotation files. "
+            "Anchor checks are skipped (§12.9)."
+        ),
+    )
+
     # Audit-tip anchor admin verbs (design doc §12.1, S00.7-anchor).
     anchor_parser = subparsers.add_parser(
         "anchor",
@@ -693,6 +715,9 @@ def run(argv: list[str] | None = None) -> int:
         if args.session_command == "unlock":
             return cmd_session_unlock(args)
         raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
+    if args.command == "verify":
+        from lib.audit_verify_cli import cmd_verify_audit
+        return cmd_verify_audit(args, root)
     if args.command == "anchor":
         from lib.anchor_cli import cmd_anchor_repair
         if args.anchor_command == "repair":

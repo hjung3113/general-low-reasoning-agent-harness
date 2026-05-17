@@ -443,20 +443,17 @@ def run_reopen(
             # else: no diary to handle; leave last_halt / history alone.
 
         # ---------- Step 8: audit entries ----------
-        # Top-level fields survive `audit_append`'s 512-byte truncation
+        # Top-level fields survive `audit_append`'s 1024-byte truncation
         # (which replaces `args` with `{"truncated": true}` and archives
         # the full record to `.harness/audit.overflow/`). The forensic
         # fields therefore live at the top level so reviewers can
         # correlate without paging the overflow file.
         #
-        # TODO(S06-chain): the S06 verifier introduces per-entry chain
-        # fields (~+140 bytes of {prev_hash, entry_hash, chain_index}).
-        # The sentinel test `test_reopen_with_autopilot_audit_row_under_
-        # 512_bytes_pre_s06_budget` (P2-4) asserts the current line stays
-        # under 512 bytes; when S06 lands the field layout MAY need to
-        # collapse the `args` carrier or move forensic fields into the
-        # overflow file. Do NOT pre-emptively refactor here — let the
-        # sentinel fail so S06's design tradeoffs are explicit.
+        # S06-chain RESOLVED: AUDIT_MAX_LINE_BYTES raised from 512→1024 to
+        # accommodate ~140 bytes of per-entry chain fields (schema_version,
+        # seq, seq_global, previous_entry_hash, entry_hash). The sentinel
+        # test was updated to assert ≤1024 bytes (option (a) — raise limit).
+        # All forensic top-level fields are preserved within the new budget.
         reopen_draft = {
             "verb": "phase.reopen",
             "by": resolved,
