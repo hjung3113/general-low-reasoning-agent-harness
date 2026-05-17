@@ -574,9 +574,14 @@ def run(argv: list[str] | None = None) -> int:
     )
     ap_start.add_argument(
         "--accept-degraded-windows-containment",
+        "--accept-degraded",
         dest="accept_degraded_windows_containment",
         action="store_true",
-        help="Bypass Windows containment exit 11 (§3.5 Round-3 escape hatch).",
+        help=(
+            "Accept Windows degraded network containment posture (§5.2). "
+            "Bypasses Windows containment exit 11 (§3.5 Round-3 escape hatch). "
+            "--accept-degraded is a shorter alias."
+        ),
     )
     ap_start.add_argument(
         "--by",

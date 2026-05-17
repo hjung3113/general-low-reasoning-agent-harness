@@ -28,15 +28,23 @@ Hard isolation limitation
 Hard isolation requires PATH-prepend install so that ``curl`` etc. route
 through this shim. This slice ships the shim logic + audit verb only.
 Install scaffolding (PATH-prepend, Windows PowerShell shim) is deferred to
-S10d / ``harness install --autopilot-guards``.
+``harness install --autopilot-guards`` (future scope).
 
 Exit codes (§3.4):
   - 4: scope_violation (sub_reason: autopilot_network_deny)
   - 6: audit_write_failed (both primary and fallback audit writes failed)
 
-TODO (S10d): ship PATH-prepend installer ``harness install --autopilot-guards``.
-TODO (S10d): Windows PowerShell shim.
-TODO (S10d): network_guard_posture audit field on phase.autopilot.start.
+Posture values (§5.2 line 916):
+  - ``posix_audit_guard``         — POSIX (linux/darwin) audit shim is in place.
+  - ``windows_audit_guard_degraded`` — Windows: PowerShell shim + .cmd wrappers
+                                       are best-effort (not hard isolation).
+  - ``network_allowed``           — containment irrelevant (allow_network=True).
+
+S10d ships:
+  - ``detect_network_guard_posture`` function (this module).
+  - ``scripts/lib/autopilot_guard.ps1`` + ``scripts/lib/autopilot_guard_wrappers/``
+    (static files; PATH-prepend installer deferred).
+  - ``network_guard_posture`` field stamped on ``verb=phase.autopilot.start`` audit entries.
 
 Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §5.2
 """
@@ -333,10 +341,46 @@ if __name__ == "__main__":
     sys.exit(shim_main(sys.argv[1:]))
 
 
+# ---------------------------------------------------------------------------
+# Posture detection (§5.2 line 916 — S10d)
+# ---------------------------------------------------------------------------
+
+
+def detect_network_guard_posture(
+    *,
+    allow_network: bool,
+    accept_degraded_windows: bool = False,
+) -> str:
+    """Return the network guard posture string for ``verb=phase.autopilot.start``.
+
+    Return values (§5.2 line 916):
+      - ``'network_allowed'``              — allow_network=True; containment irrelevant.
+      - ``'posix_audit_guard'``            — POSIX (linux/darwin); PATH-prepend shim active.
+      - ``'windows_audit_guard_degraded'`` — Windows; PowerShell shim + .cmd wrappers are
+                                             best-effort (bypassable by absolute paths /
+                                             language runtimes). Not hard isolation.
+
+    WSL note: ``sys.platform`` returns ``'linux'`` inside WSL, so WSL is treated as
+    POSIX (same isolation guarantee as the Bash shim).
+
+    Args:
+        allow_network: Mirrors the ``allow_network`` flag passed to ``run_start``.
+            True → ``'network_allowed'`` regardless of platform.
+        accept_degraded_windows: Not used in posture computation (does not change the
+            posture value; only changes whether run_start blocks at step 4).
+    """
+    if allow_network:
+        return "network_allowed"
+    if sys.platform.startswith("win"):
+        return "windows_audit_guard_degraded"
+    return "posix_audit_guard"
+
+
 __all__ = [
     "DENY_LIST_SIMPLE",
     "DENY_LIST_GIT",
     "NetworkDenyError",
+    "detect_network_guard_posture",
     "is_denied",
     "emit_deny_audit",
     "shim_main",

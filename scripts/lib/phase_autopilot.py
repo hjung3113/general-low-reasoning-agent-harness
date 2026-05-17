@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
 from . import approval_nonce as _approval_nonce
+from . import autopilot_guard as _autopilot_guard
 from . import ci_provenance as _ci_provenance
 from . import cli_budgets as _cli_budgets
 from . import phase_lock as _phase_lock
@@ -715,6 +716,14 @@ def run_start(
     # Audit entry (§3.5 + §3.5.1 fields).
     now_iso = _phase_preflight.now_iso_z()
 
+    # §5.2 (S10d): detect network guard posture for audit trail.
+    # Computed after authorization succeeds; stamped as a top-level audit field
+    # so reviewers can see the effective posture (audit-only; not in state schema).
+    network_guard_posture = _autopilot_guard.detect_network_guard_posture(
+        allow_network=allow_network,
+        accept_degraded_windows=accept_degraded_windows_containment,
+    )
+
     # §3.5 / §1.1 integration (S10a step 2):
     # Stamp autopilot_started_at_iso as the wall-clock anchor for wall_seconds
     # budget enforcement. REPLACE semantics: each new run_start resets the anchor.
@@ -727,6 +736,7 @@ def run_start(
         "budgets": resolved_budgets,
         "allow_network": allow_network,
         "allow_network_by_source": allow_network_by_source,
+        "network_guard_posture": network_guard_posture,
         "by": by,
         "by_source": by_source,
         "args": {

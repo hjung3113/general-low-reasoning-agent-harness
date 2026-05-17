@@ -1087,6 +1087,34 @@
       "owner": "profile:react-web",
       "profile": "react-web",
       "adapter": "opencode"
+    },
+    {
+      "path": "scripts/lib/autopilot_guard.ps1",
+      "source": "scripts/lib/autopilot_guard.ps1",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "Windows degraded network guard — PowerShell profile hook (§5.2 S10d). Best-effort; not hard isolation. PATH-prepend installer deferred."
+    },
+    {
+      "path": "scripts/lib/autopilot_guard_wrappers/curl.cmd",
+      "source": "scripts/lib/autopilot_guard_wrappers/curl.cmd",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "Windows degraded network guard — curl deny shim wrapper (§5.2 S10d). PATH-prepend installer deferred."
+    },
+    {
+      "path": "scripts/lib/autopilot_guard_wrappers/gh.cmd",
+      "source": "scripts/lib/autopilot_guard_wrappers/gh.cmd",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "Windows degraded network guard — gh deny shim wrapper (§5.2 S10d). PATH-prepend installer deferred."
+    },
+    {
+      "path": "scripts/lib/autopilot_guard_wrappers/git.cmd",
+      "source": "scripts/lib/autopilot_guard_wrappers/git.cmd",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "Windows degraded network guard — git network-subcommand deny shim wrapper (§5.2 S10d). PATH-prepend installer deferred."
     }
   ],
   "removed_in_version": [
