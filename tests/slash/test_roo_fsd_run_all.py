@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.slash.conftest import REPO_ROOT
+
 COMMAND_FILE = REPO_ROOT / ".roo" / "commands" / "fsd-run-all.md"
 OLD_COMMAND_FILE = REPO_ROOT / ".roo" / "commands" / "fsd-chain-phase.md"
 
