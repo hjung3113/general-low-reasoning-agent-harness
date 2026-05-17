@@ -62,12 +62,16 @@ REMEDIATION_NEEDS_RESET = "needs_reset"
 REMEDIATION_UNDEFINED = "undefined"
 
 _REMEDIATION_TEXT: dict[str, str] = {
-    REMEDIATION_NEEDS_APPROVAL: "Run 'harness phase approve' first.",
+    REMEDIATION_NEEDS_APPROVAL: (
+        "Fix: run 'harness phase approve' first, then retry 'harness phase set <target>'."
+    ),
     REMEDIATION_NEEDS_RESET: (
-        "Pass --reset-approval to clear prior approval and proceed."
+        "Fix: pass --reset-approval to clear prior approval and proceed, "
+        "e.g. 'harness phase set <target> --reset-approval'."
     ),
     REMEDIATION_UNDEFINED: (
-        "Transition is undefined; choose discuss/plan/execute/done as the next step."
+        "Fix: run 'harness phase set discuss|plan|execute|done' "
+        "(see ADR-001 transition table for valid moves)."
     ),
 }
 

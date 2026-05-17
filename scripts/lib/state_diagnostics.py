@@ -190,6 +190,13 @@ def _emit_and_exit(path: Path, summary: str, *, hint: str | None = None) -> None
         hint = _remediation_hint(path)
     line = f"error: {summary}; {hint}"
     print(line, file=sys.stderr)
+    # §3.9 Fix: line standard (S16) — every non-zero exit emits Fix:.
+    if not hint.startswith("Fix:"):
+        print(
+            f"Fix: repair or restore {path.name} "
+            "(e.g. 'harness migrate state --forward' or restore from .harness/backups/).",
+            file=sys.stderr,
+        )
     raise SystemExit(EXIT_UNPARSEABLE_JSON)
 
 

@@ -63,7 +63,8 @@ SCRATCH_DIR = Path(".scratch")
 LOCKFILE_TEMPLATE = (
     "error: active session detected at .harness/session.lock; "
     "finish the session ('harness phase set done' or 'harness phase approve'), "
-    "or run 'harness session unlock' after confirming no other harness process is running"
+    "or run 'harness session unlock' after confirming no other harness process is running. "
+    "Fix: run 'harness session unlock' (or 'harness session unlock --force' if the lock is stale)"
 )
 
 ALLOWED_STDIN_FIELDS = {
@@ -632,7 +633,8 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
     if pid is None:
         print(
             "error: lockfile has no pid; staleness cannot be determined. "
-            "Pass --force to remove.",
+            "Pass --force to remove. "
+            "Fix: run 'harness session unlock --force' to forcibly remove the stale lock.",
             file=sys.stderr,
         )
         return EXIT_STALE_UNCERTAIN
@@ -641,7 +643,8 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
         pid_int = int(pid)
     except (TypeError, ValueError):
         print(
-            f"error: lockfile pid={pid!r} is not an integer; pass --force to remove.",
+            f"error: lockfile pid={pid!r} is not an integer; pass --force to remove. "
+            "Fix: run 'harness session unlock --force' to forcibly remove the stale lock.",
             file=sys.stderr,
         )
         return EXIT_STALE_UNCERTAIN

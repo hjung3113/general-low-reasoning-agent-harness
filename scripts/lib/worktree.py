@@ -44,7 +44,9 @@ def _format_scope_violation(denied: list[str]) -> str:
         "  - Move the change out of the commit, OR\n"
         "  - Add the path/glob to .scratch/phase-state.json `allowed_paths`, OR\n"
         "  - Remove a matching entry from `blocked_paths`.\n"
-        "See docs/protocol-spec.md#scope-enforcement."
+        "See docs/protocol-spec.md#scope-enforcement.\n"
+        "Fix: add the violating path to state.allowed_paths or remove the change "
+        "('harness phase set plan --reset-approval' to reopen, then edit allowed_paths)."
     )
 
 

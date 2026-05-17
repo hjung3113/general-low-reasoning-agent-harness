@@ -682,6 +682,36 @@ def run_start(
                 sub_reason="git_repo_required",
                 message=msg,
             )
+        # Step 6b: Dirty tree check (chain mode only, §7.5 / §3.4 exit 16).
+        # Design §3.4: exit 16 `chain_start_dirty_tree` — chain mode rejected
+        # dirty working tree (Round-4 §7.5; Round-7 BLOCK fix Coherence E-34).
+        try:
+            import subprocess as _subprocess
+            _r = _subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                cwd=str(repo_path),
+                timeout=5.0,
+            )
+            if _r.returncode == 0 and _r.stdout.strip():
+                msg = (
+                    "phase autopilot start refused: chain mode requires a clean "
+                    f"working tree but uncommitted changes detected at {repo_path}. "
+                    "Fix: run `git stash` or commit your changes, then retry "
+                    "`harness phase autopilot start --mode chain`."
+                )
+                print(f"error: {msg}", file=sys.stderr)
+                return AutopilotResult(
+                    exit_code=16,
+                    sub_reason="chain_start_dirty_tree",
+                    message=msg,
+                )
+        except (OSError, _subprocess.TimeoutExpired, _subprocess.SubprocessError):
+            # If git status fails (e.g. git not installed), skip the dirty check.
+            # This mirrors the "git absent → no clean-tree check" row of the
+            # §7.5 behavior matrix (design §7 line 1047).
+            pass
 
     # Step 7: Load state and check for active autopilot (§3.5.2).
     state_path = scratch / _phase_txn.STATE_NAME

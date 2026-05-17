@@ -265,9 +265,35 @@ def cmd_next(args) -> int:
         text, exit_code = _sn.format_next_shell(result)
         if text:
             sys.stdout.write(text)
+        # §3.9 Fix: line standard (S16) — emit Fix: to stderr on non-zero exits.
+        if exit_code == 17:
+            print(
+                "Fix: run 'harness phase approve' (or the suggested command) "
+                "from a real terminal to unblock the next step.",
+                file=sys.stderr,
+            )
+        elif exit_code == 18:
+            print(
+                "Fix: run 'harness phase autopilot stop --reason \"<text>\"' "
+                "to return to manual mode, then run 'harness next' again.",
+                file=sys.stderr,
+            )
         return exit_code
     else:
         sys.stdout.write(_sn.format_next_human(result))
+        # §3.9 Fix: line standard (S16) — emit Fix: to stderr on non-zero exits.
+        if result.exit_code == 17:
+            print(
+                "Fix: run 'harness phase approve' (or the suggested command) "
+                "from a real terminal to unblock the next step.",
+                file=sys.stderr,
+            )
+        elif result.exit_code == 18:
+            print(
+                "Fix: run 'harness phase autopilot stop --reason \"<text>\"' "
+                "to return to manual mode, then run 'harness next' again.",
+                file=sys.stderr,
+            )
         return result.exit_code
 
 
