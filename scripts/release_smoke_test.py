@@ -1524,6 +1524,14 @@ def main() -> int:
             _write_evidence(result, Path(args.evidence_dir))
         return 0 if result.passed else 1
 
+    # ── §7.1 release matrix runner (--release + optional --evidence-dir) ───
+    # When --release is given WITHOUT --expected-version, iterate the full
+    # CASE_REGISTRY (new CI matrix path per §7.1 + §12.10).  When
+    # --expected-version is also given, fall through to the legacy
+    # harness-release-check path below.
+    if args.release and args.expected_version is None:
+        return _run_release_matrix(args)
+
     root = Path(__file__).resolve().parents[1]
     command_env = os.environ.copy()
     version_args: list[str] = []
@@ -1569,6 +1577,165 @@ def main() -> int:
     finally:
         if not args.keep_temp:
             shutil.rmtree(matrix_root)
+    return 0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# §7.1 release matrix runner — iterates CASE_REGISTRY + writes evidence
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: Cases that are platform-restricted (skip on non-matching platform).
+#: Format: case_name → set of sys.platform prefixes that RUN the case.
+#: Cases absent from this map run on all platforms.
+_PLATFORM_RESTRICTED: dict[str, set[str]] = {
+    "net-deny-curl-posix": {"linux", "darwin"},
+    "deny-listed-verb-via-shim": {"linux", "darwin"},
+    "windows-exit-11": {"win"},
+}
+
+#: §12.10 case order per spec (determines iteration order for --release).
+_RELEASE_CASE_ORDER = [
+    "run-phase",
+    "run-phase-empty-arg",
+    "run-phase-multi-arg-fail",
+    "run-phase-missing-positional-negative",
+    "run-all",
+    "run-all-empty-roadmap",
+    "net-deny-curl-posix",
+    "halt-handoff-flow",
+    "env-only-spoof-rejected",
+    "phase-autopilot-stop",
+    "deny-listed-verb-via-shim",
+    "manifest-init-idempotency",
+    "windows-exit-11",
+]
+
+
+def _is_case_skipped_on_platform(case_name: str) -> bool:
+    """Return True if the case should be skipped on the current platform."""
+    restriction = _PLATFORM_RESTRICTED.get(case_name)
+    if restriction is None:
+        return False
+    return not any(sys.platform.startswith(prefix) for prefix in restriction)
+
+
+def _write_case_evidence(result: "CaseResult", evidence_base: Path) -> None:
+    """Write per-case evidence to evidence_base/<case_name>/ per §9.2.
+
+    Files written:
+      result.json  — CaseResult fields serialized
+      stdout.txt   — from artifacts["stdout.txt"] if present
+      stderr.txt   — from artifacts["stderr.txt"] if present
+      audit.log    — from artifacts["audit.log"] / phase-state.json etc.
+    """
+    case_dir = evidence_base / result.case_name
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    # result.json
+    result_data = {
+        "case_name": result.case_name,
+        "exit_code": result.exit_code,
+        "expected_exit_code": result.expected_exit_code,
+        "passed": result.passed,
+        "assertions": [
+            {"name": n, "ok": ok, "message": msg}
+            for n, ok, msg in result.assertions
+        ],
+    }
+    (case_dir / "result.json").write_text(
+        json.dumps(result_data, indent=2), encoding="utf-8"
+    )
+
+    # Write named artifact files
+    for artifact_name, contents in result.artifacts.items():
+        artifact_path = case_dir / artifact_name
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(str(contents), encoding="utf-8")
+
+
+def _run_release_matrix(args) -> int:
+    """Iterate all CASE_REGISTRY cases per §12.10 order, write evidence per §9.2.
+
+    Returns 0 if all cases passed (skipped cases count as passed),
+    1 if any case failed.
+
+    Per §12.13, cases with explicit platform markers are skipped on
+    non-matching platforms (skip counts as passed, not failed).
+    """
+    import traceback as _traceback
+
+    evidence_base: Optional[Path] = None
+    if args.evidence_dir is not None:
+        evidence_base = Path(args.evidence_dir)
+        evidence_base.mkdir(parents=True, exist_ok=True)
+
+    # Build ordered case list: spec order first, then any registry extras.
+    ordered_names: list[str] = []
+    seen: set[str] = set()
+    for name in _RELEASE_CASE_ORDER:
+        if name in CASE_REGISTRY:
+            ordered_names.append(name)
+            seen.add(name)
+    for name in sorted(CASE_REGISTRY):
+        if name not in seen and not name.startswith("_test_"):
+            ordered_names.append(name)
+
+    n_passed = 0
+    n_failed = 0
+    n_skipped = 0
+    failed_cases: list[str] = []
+
+    for case_name in ordered_names:
+        fn = CASE_REGISTRY[case_name]
+
+        # Platform skip
+        if _is_case_skipped_on_platform(case_name):
+            n_skipped += 1
+            print(f"SKIP {case_name} (platform={sys.platform})")
+            # Write minimal evidence for the skip
+            if evidence_base is not None:
+                skip_result = CaseResult(
+                    case_name=case_name,
+                    exit_code=0,
+                    expected_exit_code=0,
+                    passed=True,
+                    assertions=[("platform-skip", True, f"skipped on {sys.platform}")],
+                    artifacts={},
+                )
+                _write_case_evidence(skip_result, evidence_base)
+            continue
+
+        # Run case
+        try:
+            result = fn(args)
+        except Exception as exc:
+            # Treat crashes as failures
+            result = CaseResult(
+                case_name=case_name,
+                exit_code=1,
+                expected_exit_code=0,
+                passed=False,
+                assertions=[("crash", False, str(exc))],
+                artifacts={"traceback.txt": _traceback.format_exc()},
+            )
+
+        print(result.summary())
+
+        if evidence_base is not None:
+            _write_case_evidence(result, evidence_base)
+
+        if result.passed:
+            n_passed += 1
+        else:
+            n_failed += 1
+            failed_cases.append(case_name)
+
+    summary_line = f"{n_passed} passed, {n_failed} failed, {n_skipped} skipped"
+    print(f"\nRelease smoke summary: {summary_line}")
+
+    if n_failed > 0:
+        print(f"FAILED cases: {', '.join(failed_cases)}", file=sys.stderr)
+        return 1
     return 0
 
 

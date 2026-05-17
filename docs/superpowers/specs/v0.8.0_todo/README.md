@@ -1,5 +1,7 @@
 # v0.8.0 — UX Polish
 
+> **S13 release smoke (landed in v0.7 develop):** Run `python scripts/release_smoke_test.py --release --evidence-dir <dir>` to execute the full §12.10 case catalogue and write per-case evidence to `<dir>/<case_name>/{result.json,stdout.txt,stderr.txt,...}`. The exit code is 0 if all cases pass, 1 on any failure. Per §7.1, `.github/workflows/release.yml` expands to 7 release-gate rows × OS/Python/shell matrix (ubuntu 3.11/3.12 bash, macos 3.11/3.12 zsh, windows 3.11/3.12 pwsh) plus 3 nice-to-have rows and 1 degraded-tolerant row (windows cmd — runs but does not block release per §12.13). Each CI row uploads its evidence dir as an artifact even on failure.
+
 **Status**: planned. Starts after v0.7 dogfood produces concrete friction data.
 
 **Trigger**: ~1 sprint of real v0.7 use OR clear pain after first install. The kind of work that fixes "어 이거 명령 뭐였지?" / "지금 어디지?" / "왜 막혔지?".

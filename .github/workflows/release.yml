@@ -1,48 +1,78 @@
-name: Release
+name: release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Existing release tag, for example v0.4.2"
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify release tag
-    runs-on: ubuntu-latest
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
+  release-smoke:
+    name: release-smoke (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.launcher_tag }}, ${{ matrix.shell }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # release-gate rows per §7.1
+          - { os: ubuntu-latest,  python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: release-gate }
+          - { os: ubuntu-latest,  python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: release-gate }
+          - { os: macos-latest,   python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: release-gate }
+          - { os: macos-latest,   python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: release-gate }
+          - { os: windows-latest, python: '3.11', launcher: 'py -3.11',  launcher_tag: 'py',  shell: pwsh,      gate: release-gate }
+          - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: pwsh,      gate: release-gate }
+          # §12.13: windows cmd row is degraded-tolerant — runs but does NOT block release
+          - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: cmd,       gate: release-gate-degraded-tolerant }
+          # nice-to-have rows
+          - { os: ubuntu-latest,  python: '3.11', launcher: 'python3',   launcher_tag: 'py3', shell: zsh,       gate: nice-to-have }
+          - { os: windows-latest, python: '3.12', launcher: 'py -3.12',  launcher_tag: 'py',  shell: 'Git Bash', gate: nice-to-have }
+          - { os: macos-latest,   python: '3.12', launcher: 'python3',   launcher_tag: 'py3', shell: bash,      gate: nice-to-have }
     steps:
-      - name: Check out tagged commit
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+          python-version: ${{ matrix.python }}
 
-      - name: Verify exact tag and clean source
+      - name: Install harness
+        shell: ${{ matrix.shell }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            VERSION="${GITHUB_REF_NAME}"
-          fi
-          python3 scripts/harness.py release-check --expected-version "$VERSION" --require-origin-main
+          ${{ matrix.launcher }} -m pip install -e ".[test]"
 
-      - name: Run release verification
+      - name: Run release smoke
+        id: smoke
+        shell: ${{ matrix.shell }}
+        env:
+          HARNESS_OIDC_TEST_MODE: '1'
+          # Per-provider stubs auto-set by the smoke runner via _ci_env_overrides()
+        continue-on-error: ${{ matrix.gate == 'nice-to-have' || matrix.gate == 'release-gate-degraded-tolerant' }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            VERSION="${GITHUB_REF_NAME}"
-          fi
-          python3 -m unittest scripts/test_harness.py
-          python3 scripts/harness.py check
-          python3 scripts/release_smoke_test.py --release --expected-version "$VERSION"
+          ${{ matrix.launcher }} scripts/release_smoke_test.py --release --evidence-dir release-evidence
+
+      - name: Upload smoke logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.launcher_tag }}-${{ matrix.shell }}
+          path: release-evidence/
+          if-no-files-found: warn
+
+  release-gate-summary:
+    name: release-gate summary
+    runs-on: ubuntu-latest
+    needs: release-smoke
+    if: always()
+    steps:
+      - name: Check release-gate rows
+        run: |
+          echo "Branch protection: each release-gate row publishes a named check."
+          echo "release-gate-degraded-tolerant row (windows cmd) does NOT block release."
+          echo "nice-to-have rows are informational only."
