@@ -530,6 +530,157 @@ def run(argv: list[str] | None = None) -> int:
     p_approve.add_argument("--at", default=None)
     p_approve.add_argument("--stdin-json", action="store_true")
 
+    # ----- phase autopilot verbs (design §3.5) -----
+    p_autopilot = phase_sub.add_parser(
+        "autopilot",
+        help="Autopilot lifecycle: start | stop (design §3.5).",
+    )
+    autopilot_sub = p_autopilot.add_subparsers(dest="autopilot_command", required=True)
+
+    ap_start = autopilot_sub.add_parser(
+        "start",
+        help="Start an autopilot run (§3.5). Requires TTY human proof or CI predicate.",
+    )
+    ap_start.add_argument(
+        "--phase",
+        dest="phase_slug",
+        required=True,
+        metavar="SLUG",
+        help="Phase slug to run (must match a directory under .planning/phases/).",
+    )
+    ap_start.add_argument(
+        "--mode",
+        choices=["phase", "chain"],
+        default="phase",
+        help="Autopilot mode: 'phase' (single-phase) or 'chain' (multi-phase). Default: phase.",
+    )
+    ap_start.add_argument(
+        "--budget",
+        dest="budget",
+        action="append",
+        metavar="KEY=VALUE",
+        help=(
+            "Budget override (repeatable). "
+            "E.g. --budget shell_invocations=100 --budget wall_seconds=300. "
+            "Integer values only. Defaults from §4.3: shell_invocations=50, "
+            "file_mutation_ops=100, wall_seconds=300."
+        ),
+    )
+    ap_start.add_argument(
+        "--allow-network",
+        dest="allow_network",
+        action="store_true",
+        help="Allow network access (audited; see §3.5 allow_network_by_source).",
+    )
+    ap_start.add_argument(
+        "--accept-degraded-windows-containment",
+        dest="accept_degraded_windows_containment",
+        action="store_true",
+        help="Bypass Windows containment exit 11 (§3.5 Round-3 escape hatch).",
+    )
+    ap_start.add_argument(
+        "--by",
+        dest="by",
+        default=None,
+        metavar="EMAIL",
+        help="Authorizing human email (falls back to git config user.email).",
+    )
+    ap_start.add_argument(
+        "--nonce-id",
+        dest="nonce_id",
+        default=None,
+        metavar="TTY_PATH",
+        help="TTY path for nonce (e.g. /dev/ttys002); required on TTY path.",
+    )
+    ap_start.add_argument(
+        "--nonce-dir",
+        dest="nonce_dir",
+        default=None,
+        metavar="DIR",
+        help="Directory containing approval nonce files.",
+    )
+
+    ap_stop = autopilot_sub.add_parser(
+        "stop",
+        help="Stop an active autopilot run and return to manual mode (§3.5). Idempotent.",
+    )
+    ap_stop.add_argument(
+        "--reason",
+        dest="reason",
+        default="",
+        metavar="TEXT",
+        help="Human-readable reason for stopping (audited).",
+    )
+
+    # ----- phase next-pending (design §3.5, Round-4) -----
+    phase_sub.add_parser(
+        "next-pending",
+        help="Print next non-done roadmap phase slug (pure read, §3.5).",
+    )
+
+    # ----- top-level fsd-run-phase / fsd-run-all (design §3.5) -----
+    fsd_phase_parser = subparsers.add_parser(
+        "fsd-run-phase",
+        help=(
+            "Adapter-safe wrapper: validate arg, call next-pending if needed, "
+            "then start autopilot with mode=phase (§3.5)."
+        ),
+    )
+    fsd_phase_parser.add_argument(
+        "slug",
+        nargs="?",
+        default=None,
+        metavar="SLUG",
+        help=(
+            "Optional phase slug. If omitted, next-pending selects the slug. "
+            "Multi-token arguments are rejected with exit 2."
+        ),
+    )
+    fsd_phase_parser.add_argument("--by", dest="by", default=None, metavar="EMAIL")
+    fsd_phase_parser.add_argument(
+        "--nonce-id", dest="nonce_id", default=None, metavar="TTY_PATH"
+    )
+    fsd_phase_parser.add_argument(
+        "--nonce-dir", dest="nonce_dir", default=None, metavar="DIR"
+    )
+    fsd_phase_parser.add_argument(
+        "--budget", dest="budget", action="append", metavar="KEY=VALUE"
+    )
+    fsd_phase_parser.add_argument(
+        "--allow-network", dest="allow_network", action="store_true"
+    )
+    fsd_phase_parser.add_argument(
+        "--accept-degraded-windows-containment",
+        dest="accept_degraded_windows_containment",
+        action="store_true",
+    )
+
+    fsd_all_parser = subparsers.add_parser(
+        "fsd-run-all",
+        help=(
+            "Adapter-safe wrapper: next-pending then autopilot start with "
+            "mode=chain (§3.5)."
+        ),
+    )
+    fsd_all_parser.add_argument("--by", dest="by", default=None, metavar="EMAIL")
+    fsd_all_parser.add_argument(
+        "--nonce-id", dest="nonce_id", default=None, metavar="TTY_PATH"
+    )
+    fsd_all_parser.add_argument(
+        "--nonce-dir", dest="nonce_dir", default=None, metavar="DIR"
+    )
+    fsd_all_parser.add_argument(
+        "--budget", dest="budget", action="append", metavar="KEY=VALUE"
+    )
+    fsd_all_parser.add_argument(
+        "--allow-network", dest="allow_network", action="store_true"
+    )
+    fsd_all_parser.add_argument(
+        "--accept-degraded-windows-containment",
+        dest="accept_degraded_windows_containment",
+        action="store_true",
+    )
+
     # ----- session operational verbs (ADR-003a verb 3, T0-3) -----
     session_parser = subparsers.add_parser(
         "session",
@@ -734,11 +885,32 @@ def run(argv: list[str] | None = None) -> int:
         raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
     if args.command == "phase":
         from lib.phase_cli import cmd_phase_set, cmd_phase_approve
+        from lib.phase_autopilot_cli import (
+            cmd_phase_autopilot_start,
+            cmd_phase_autopilot_stop,
+            cmd_phase_next_pending,
+        )
         if args.phase_command == "set":
             return cmd_phase_set(args)
         if args.phase_command == "approve":
             return cmd_phase_approve(args)
+        if args.phase_command == "autopilot":
+            if args.autopilot_command == "start":
+                return cmd_phase_autopilot_start(args)
+            if args.autopilot_command == "stop":
+                return cmd_phase_autopilot_stop(args)
+            raise AssertionError(
+                f"Unhandled autopilot subcommand: {args.autopilot_command}"
+            )
+        if args.phase_command == "next-pending":
+            return cmd_phase_next_pending(args)
         raise AssertionError(f"Unhandled phase subcommand: {args.phase_command}")
+    if args.command == "fsd-run-phase":
+        from lib.phase_autopilot_cli import cmd_fsd_run_phase
+        return cmd_fsd_run_phase(args)
+    if args.command == "fsd-run-all":
+        from lib.phase_autopilot_cli import cmd_fsd_run_all
+        return cmd_fsd_run_all(args)
     if args.command == "session":
         from lib.phase_cli import cmd_session_unlock
         if args.session_command == "unlock":
