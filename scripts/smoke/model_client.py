@@ -25,6 +25,20 @@ DEFAULT_MAX_TOKENS = 4000
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
+# C3 — transport retry policy.
+MAX_TRANSPORT_ATTEMPTS = 3
+BACKOFF_SECONDS = (1.0, 2.0, 4.0)
+RETRYABLE_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+
+
+class HttpTransportError(RuntimeError):
+    """Raised when retryable HTTP transport (429/5xx) exhausts the retry budget.
+
+    Distinct from the bare RuntimeError raised for non-retryable HTTP errors
+    so the runner can attribute it as a transport-level trial failure rather
+    than aborting the suite.
+    """
+
 
 @dataclass
 class HaikuClient:
@@ -67,13 +81,30 @@ class HaikuClient:
             method="POST",
         )
         t0 = time.monotonic()
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(
-                f"HaikuClient: HTTP {exc.code} from Anthropic API: {exc.read()[:500]!r}"
-            ) from exc
+        last_exc: Exception | None = None
+        payload = None
+        for attempt in range(MAX_TRANSPORT_ATTEMPTS):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                code = exc.code
+                if code in RETRYABLE_HTTP_CODES and attempt < MAX_TRANSPORT_ATTEMPTS - 1:
+                    last_exc = exc
+                    time.sleep(BACKOFF_SECONDS[attempt])
+                    continue
+                if code in RETRYABLE_HTTP_CODES:
+                    raise HttpTransportError(
+                        f"HaikuClient: HTTP {code} after {MAX_TRANSPORT_ATTEMPTS} attempts"
+                    ) from exc
+                raise RuntimeError(
+                    f"HaikuClient: HTTP {code} from Anthropic API: {exc.read()[:500]!r}"
+                ) from exc
+        if payload is None:
+            raise HttpTransportError(
+                f"HaikuClient: transport exhausted ({last_exc!r})"
+            )
         wall = time.monotonic() - t0
         text_parts = []
         for block in payload.get("content", []):

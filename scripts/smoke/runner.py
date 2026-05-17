@@ -60,6 +60,8 @@ class TrialRecord:
     # C2 honesty: monotonic wall clock above is what the budget enforces;
     # api_wall_seconds preserves the client-reported value (informational).
     api_wall_seconds: float = 0.0
+    # C3 — transport-level trial failures (after HaikuClient retry budget).
+    transport_error: bool = False
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, indent=2) + "\n"
@@ -170,7 +172,44 @@ def _single_attempt(
     prepare_scratch_dir(fixture, dest)
     prompt = _render_prompt(fixture)
     t0 = time.monotonic()
-    response = model_client.respond(prompt)
+    try:
+        response = model_client.respond(prompt)
+    except Exception as exc:
+        # C3 — HaikuClient raises HttpTransportError after exhausting the
+        # 429/5xx retry budget. Record as trial-level fail; do not abort suite.
+        try:
+            from .model_client import HttpTransportError
+        except Exception:  # pragma: no cover
+            HttpTransportError = ()
+        if HttpTransportError and isinstance(exc, HttpTransportError):
+            wall = time.monotonic() - t0
+            record = TrialRecord(
+                fixture_id=fixture["fixture_id"],
+                trial_index=trial_index,
+                model=PINNED_MODEL,
+                prompt=prompt,
+                response="",
+                judgment={
+                    "passed": False,
+                    "reason": f"transport error: {exc}",
+                    "retry_recommended": False,
+                },
+                retry_count=0,
+                wall_clock_seconds=wall,
+                input_tokens=0,
+                output_tokens=0,
+                budget_caps_hit=[],
+                commands_executed=[],
+                passed=False,
+                api_wall_seconds=0.0,
+                transport_error=True,
+            )
+            return (
+                JudgeResult(False, f"transport error: {exc}", retry_recommended=False),
+                record,
+                dest,
+            )
+        raise
     # C2 — honest wall clock: budget uses ONLY the real monotonic delta.
     # The client-reported time is preserved as informational `api_wall_seconds`.
     wall = time.monotonic() - t0
