@@ -662,6 +662,46 @@ class ParseRejectedLinesTests(unittest.TestCase):
         self.assertIn("shenanigans foo bar", rejected)
 
 
+class EvidenceDirModeTests(unittest.TestCase):
+    """SecM3 — evidence dir created mode 0o700."""
+
+    def test_evidence_dir_mode_0700(self) -> None:
+        fixture = _load(FX01)
+        tmp = Path(tempfile.mkdtemp(prefix="evmode."))
+        client = FakeClient(scripted_responses=["harness phase set plan"])
+        run_trial(fixture, 81, client, tmp / "scratch", tmp / "evidence")
+        flow_dir = tmp / "evidence" / "discuss-to-plan"
+        mode = flow_dir.stat().st_mode & 0o777
+        self.assertEqual(mode, 0o700, f"got mode {oct(mode)}")
+
+
+class HttpErrorRedactionTests(unittest.TestCase):
+    """SecM3 — HTTP error body must scrub `sk-...` patterns before RuntimeError."""
+
+    def test_http_error_body_redacts_api_key_pattern(self) -> None:
+        from unittest import mock
+        import urllib.error
+        from io import BytesIO
+
+        os.environ["ANTHROPIC_API_KEY"] = "sk-real-secret-key"
+        from scripts.smoke import model_client as mc
+
+        leaky_body = b'{"error": "auth failed: tried sk-leaked-secret-abc123 in header"}'
+
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.HTTPError(
+                req.full_url, 401, "unauth", {}, BytesIO(leaky_body)
+            )
+
+        client = mc.HaikuClient()
+        with mock.patch.object(mc.urllib.request, "urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(RuntimeError) as cm:
+                client.respond("x")
+        msg = str(cm.exception)
+        self.assertNotIn("sk-leaked-secret", msg)
+        self.assertIn("REDACTED", msg.upper())
+
+
 class PrepareScratchSymlinkGuardTests(unittest.TestCase):
     """SecM2 — runner refuses to rmtree a dest that's a symlink or escapes root."""
 
