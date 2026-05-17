@@ -46,7 +46,13 @@ TRANSITION_TABLE: dict[tuple[Optional[str], str], dict[str, bool]] = {
 }
 
 
-__all__ = ["TRANSITION_TABLE", "InvalidTransition", "validate_transition"]
+__all__ = [
+    "TRANSITION_TABLE",
+    "InvalidTransition",
+    "StaleApprovalError",
+    "validate_transition",
+    "validate_transition_with_state",
+]
 
 
 # Remediation taxonomy per ADR-003a Artifact 1 verb 1 error template.
@@ -99,6 +105,177 @@ class InvalidTransition(SystemExit):
 
     def __str__(self) -> str:  # noqa: D401
         return self.format_message()
+
+
+# ---------------------------------------------------------------------------
+# S03 — design §3.6 ADR-001 transition validator extension
+# ---------------------------------------------------------------------------
+
+
+class StaleApprovalError(SystemExit):
+    """§3.6 fault class — approval is stale relative to the phase
+    timeline, or required §3.6 fields are missing.
+
+    Subclasses `SystemExit` with `.code == 2` so it slots into the same
+    ADR-001 transition-rejection exit family. Carries a `sub_reason`
+    bucket for smoke / forensic taxonomy:
+
+      * approval_predates_plan_finalized_at
+      * approval_predates_execute_attempt
+      * plan_finalized_at_missing
+      * execute_attempt_started_at_missing
+      * verification_missing
+      * allowed_paths_missing
+
+    `format_message()` returns the user-visible string with a `Fix:`
+    remediation line per §3.9.
+    """
+
+    _FIX_BY_SUB = {
+        "approval_predates_plan_finalized_at": (
+            "Fix: run 'harness phase approve' after the latest plan "
+            "edit (approval must post-date plan_finalized_at)"
+        ),
+        "approval_predates_execute_attempt": (
+            "Fix: run 'harness phase approve' to re-approve before "
+            "marking done (approval_at must post-date "
+            "execute_attempt_started_at)"
+        ),
+        "plan_finalized_at_missing": (
+            "Fix: re-enter plan via 'harness phase set plan' so "
+            "plan_finalized_at gets stamped on exit"
+        ),
+        "execute_attempt_started_at_missing": (
+            "Fix: re-enter execute via 'harness phase set execute' "
+            "(this stamps execute_attempt_started_at) after a fresh "
+            "'harness phase approve'"
+        ),
+        "verification_missing": (
+            "Fix: populate state.verification (non-empty list of "
+            "verification commands) before entering execute"
+        ),
+        "allowed_paths_missing": (
+            "Fix: populate state.allowed_paths (non-empty list of "
+            "path globs) before entering execute"
+        ),
+    }
+
+    def __init__(
+        self,
+        target: str,
+        current: Optional[str],
+        sub_reason: str,
+        *,
+        detail: str = "",
+    ) -> None:
+        super().__init__(2)
+        self.target = target
+        self.current = current
+        self.sub_reason = sub_reason
+        self.detail = detail
+        self.fix = self._FIX_BY_SUB.get(
+            sub_reason,
+            "Fix: see design §3.6 / ADR-001 transition table",
+        )
+
+    def format_message(self) -> str:
+        base = (
+            f"error: cannot set phase={self.target} from "
+            f"phase={self.current} (see ADR-001 §3.6 stale-approval "
+            f"check): {self.sub_reason}"
+        )
+        if self.detail:
+            base = f"{base} ({self.detail})"
+        return f"{base}. {self.fix}"
+
+    def __str__(self) -> str:  # noqa: D401
+        return self.format_message()
+
+
+def _iso_lt(a: Optional[str], b: Optional[str]) -> bool:
+    """Return True iff `a < b` as ISO-8601 strings.
+
+    ISO-8601 lexical order matches chronological order for the canonical
+    `YYYY-MM-DDTHH:MM:SS[.fff]Z` shape we write everywhere (audit/state
+    timestamps). Returns False if either side is None — callers handle
+    missing-field cases explicitly before calling this.
+    """
+    if a is None or b is None:
+        return False
+    return a < b
+
+
+def validate_transition_with_state(
+    state: dict,
+    to_phase: str,
+    *,
+    reset_approval: bool,
+) -> None:
+    """Extended §3.6 validator. Same exit code (2) and same `Fix:`
+    contract as `validate_transition`, but takes the full state dict
+    so it can check stale-approval invariants:
+
+      - (plan → execute): approved=True AND approved_at >=
+        plan_finalized_at AND verification non-empty AND allowed_paths
+        non-empty.
+      - (execute → done): approved=True AND approved_at >=
+        execute_attempt_started_at.
+
+    Backward / lateral transitions still flow through the legacy table.
+    Non-manual modes get the same floor here; the autopilot-context
+    checks (§3.6 first bullet) land in S07 and layer on top.
+    """
+    from_phase = state.get("phase")
+    approved = bool(state.get("approved"))
+
+    # First run the legacy table — catches undefined pairs and the
+    # `approved=False` reject for forward transitions. The legacy
+    # checks are a strict subset of §3.6's requirements.
+    validate_transition(
+        from_phase, to_phase, approved=approved, reset_approval=reset_approval
+    )
+
+    # §3.6 extensions for the two forward edges that gate code work.
+    if (from_phase, to_phase) == ("plan", "execute"):
+        verification = state.get("verification") or []
+        allowed_paths = state.get("allowed_paths") or []
+        if not verification:
+            raise StaleApprovalError(to_phase, from_phase, "verification_missing")
+        if not allowed_paths:
+            raise StaleApprovalError(to_phase, from_phase, "allowed_paths_missing")
+        plan_finalized_at = state.get("plan_finalized_at")
+        if plan_finalized_at is None:
+            raise StaleApprovalError(
+                to_phase, from_phase, "plan_finalized_at_missing"
+            )
+        approved_at = state.get("approved_at")
+        if approved_at is None or _iso_lt(approved_at, plan_finalized_at):
+            raise StaleApprovalError(
+                to_phase,
+                from_phase,
+                "approval_predates_plan_finalized_at",
+                detail=f"approved_at={approved_at!r} < plan_finalized_at={plan_finalized_at!r}",
+            )
+        return
+
+    if (from_phase, to_phase) == ("execute", "done"):
+        execute_attempt_started_at = state.get("execute_attempt_started_at")
+        if execute_attempt_started_at is None:
+            raise StaleApprovalError(
+                to_phase, from_phase, "execute_attempt_started_at_missing"
+            )
+        approved_at = state.get("approved_at")
+        if approved_at is None or _iso_lt(approved_at, execute_attempt_started_at):
+            raise StaleApprovalError(
+                to_phase,
+                from_phase,
+                "approval_predates_execute_attempt",
+                detail=(
+                    f"approved_at={approved_at!r} < "
+                    f"execute_attempt_started_at={execute_attempt_started_at!r}"
+                ),
+            )
+        return
 
 
 def validate_transition(
