@@ -10,7 +10,7 @@ Apply `.roo/rules-orchestrator/rules.md` and `.roo/rules/phase-gate.md` first.
 
 Use `/done` to close a completed phase:
 
-1. Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+1. Run `harness check`. If it prints `warning:` lines naming specific files, treat those files as minimum required reads before trusting the projection. If exit is non-zero, the binary is missing, output is malformed, or it reports an unsupported contract version, fall back to the legacy durable planning read order.
 2. Re-read the live gate and active checkpoint.
 3. Confirm verification evidence exists in the phase verification file or final summary.
 4. Summarize completed work, changed paths, verification, residual risks, and follow-ups.
@@ -24,7 +24,7 @@ Preflight checklist:
 - [ ] No new implementation scope is being added.
 - [ ] Any `harness check --worktree` run in `phase=done` is treated as post-completion audit only.
 
-Run `harness check --worktree` before marking done.
+Run `harness check --worktree` **before** `harness phase set done` (while phase=execute is still active; this exercises the pre-commit scope-enforcement contract, exit 4 on violation).
 
 Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
 

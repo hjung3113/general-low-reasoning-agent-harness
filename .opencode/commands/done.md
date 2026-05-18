@@ -4,7 +4,7 @@ Use this command to close a completed phase.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.
 
-Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Run `harness check`. If it prints `warning:` lines naming specific files, treat those files as minimum required reads before trusting the projection. If exit is non-zero, the binary is missing, output is malformed, or it reports an unsupported contract version, fall back to the legacy durable planning read order.
 
 Preflight checklist:
 
@@ -18,7 +18,7 @@ Preflight checklist:
 3. Summarize completed work, changed paths, verification, residual risks, and follow-ups.
 4. Update durable planning docs only when the phase completion criteria are actually met.
 
-Run `harness check --worktree` before marking done.
+Run `harness check --worktree` **before** `harness phase set done` (while phase=execute is still active; this exercises the pre-commit scope-enforcement contract, exit 4 on violation).
 
 Do not start new implementation work from `done`. New work begins from `discuss` or `plan`.
 

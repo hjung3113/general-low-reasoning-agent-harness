@@ -10,6 +10,13 @@ Apply `.roo/rules-orchestrator/rules.md` and `.roo/rules/phase-gate.md` first.
 
 Use `/phase-plan` for phase planning only:
 
+Preflight checklist:
+
+- [ ] The current work is in `discuss` or `plan`.
+- [ ] Status projection is trusted, or fallback planning memory has been read before `.scratch/phase-state.json`.
+- [ ] The requested scope is clear enough to define allowed paths and verification.
+- [ ] Any unresolved product or safety question is listed instead of silently defaulted.
+
 1. Start from recorded phase discuss output or explicitly unresolved open questions.
 2. Produce or update the phase plan with `plan_id`, allowed paths, acceptance criteria, verification, and review gates.
 3. Request or record execute approval.

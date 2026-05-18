@@ -15,3 +15,4 @@ After start, follow the phase lifecycle in order:
 4. Run the phase verification commands.
 5. Run `harness phase set done`.
 6. On any non-zero exit, run `harness status`, surface `Halt diary` and `Next action`, then stop.
+7. After every CLI call within the phase, run `harness next --json` and read `requires_human`. If `true`, surface `command` to the user with the prefix "please run this in your terminal:"; do NOT execute it. Stop the phase run.
