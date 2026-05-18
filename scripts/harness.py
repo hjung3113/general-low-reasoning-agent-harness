@@ -351,6 +351,34 @@ def run_delegated_command(command: list[str], cwd: Path) -> int:
     return 0
 
 
+class _HintingArgumentParser(argparse.ArgumentParser):
+    """argparse parser that prints a 'did you mean ...?' hint to stderr
+    on 'invalid choice' errors.
+
+    Preserves the original error message text and exit code 2 entirely —
+    the hint is emitted BEFORE delegating to super().error(). Subparsers
+    inherit this class automatically via argparse's parser_class default.
+    """
+
+    def error(self, message):  # type: ignore[override]
+        try:
+            import re as _re
+            import difflib as _difflib
+            m = _re.search(r"invalid choice: ['\"]([^'\"]+)['\"] \(choose from (.+)\)", message)
+            if m:
+                bad = m.group(1)
+                choices = _re.findall(r"['\"]([^'\"]+)['\"]", m.group(2))
+                close = _difflib.get_close_matches(bad, choices, n=2, cutoff=0.6)
+                if close:
+                    self._print_message(
+                        f"hint: did you mean: {', '.join(close)}?\n",
+                        sys.stderr,
+                    )
+        except (BrokenPipeError, OSError):
+            pass
+        super().error(message)
+
+
 def main() -> int:
     """Entry point alias for `run()` — used by harness_cli.py console script."""
     return run()
@@ -383,7 +411,7 @@ def run(argv: list[str] | None = None) -> int:
     except ImportError:
         pass  # cli_deprecated not available in this installation (older target)
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _HintingArgumentParser(description=__doc__)
     parser.add_argument(
         "--version",
         dest="release_version",
