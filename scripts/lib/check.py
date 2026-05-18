@@ -112,7 +112,7 @@ def check_drift(root: Path, *, stderr=None) -> None:
             return  # G1-A first-write suppression on fresh repo
         print(
             "warning: audit log missing — drift detection disabled. "
-            "Run 'harness phase set ...' to re-establish baseline.",
+            "Run 'harness phase set <phase>' to re-establish baseline.",
             file=stderr,
         )
         return

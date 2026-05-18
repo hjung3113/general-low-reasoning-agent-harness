@@ -441,7 +441,7 @@ def wall_seconds_check_and_maybe_halt(
     print(
         f"ERROR: budget exhausted (capability={cap}, remaining={diary.remaining_at_halt}). "
         f"Exit 9 sub_reason=budget_exhausted:{cap}.\n"
-        "Fix: inspect 'harness phase status' for last_halt diary; "
+        "Fix: inspect 'harness status' for last_halt diary; "
         "then 'harness phase autopilot stop --reason \"<text>\"' to return to manual.",
         file=sys.stderr,
     )

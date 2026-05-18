@@ -177,7 +177,7 @@ def cmd_anchor_repair(args, repo_root: Path) -> int:
     except AuditTailParseError as exc:
         sys.stderr.write(
             f"audit_partial_write: {exc}\n"
-            "Fix: run `harness verify --audit --repair-tail` (lands S06) to "
+            "Fix: run `harness verify --audit --repair-tail` to "
             "truncate to the last verifiable entry, then retry anchor repair.\n"
         )
         return 14
