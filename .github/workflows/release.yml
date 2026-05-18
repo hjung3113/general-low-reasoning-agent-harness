@@ -69,6 +69,21 @@ jobs:
           path: release-evidence/
           if-no-files-found: warn
 
+  powershell-deny-fuzz:
+    name: PS deny-shim fuzz (${{ matrix.ps_label }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ps_label: 'PS-5.1', shell: powershell }
+          - { ps_label: 'pwsh-7', shell: pwsh }
+    steps:
+      - uses: actions/checkout@v4
+      - name: PS deny-shim fuzz (${{ matrix.ps_label }})
+        shell: ${{ matrix.shell }}
+        run: ./scripts/tests/test_autopilot_guard_deny.ps1
+
   release-gate-summary:
     name: release-gate summary
     runs-on: ubuntu-latest
