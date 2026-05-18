@@ -171,7 +171,7 @@ class TestVerifyReleaseTag(unittest.TestCase):
         from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
         err = UpgradeTrustError("tag_not_found")
         self.assertEqual(err.exit_code, EXIT_RELEASE_TRUST_INVALID)
-        self.assertEqual(EXIT_RELEASE_TRUST_INVALID, 17)
+        self.assertEqual(EXIT_RELEASE_TRUST_INVALID, 15)  # §3.4: 15 is free; 17 is human_action_required
 
 
 @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen unavailable")

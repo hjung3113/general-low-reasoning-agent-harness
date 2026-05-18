@@ -213,10 +213,10 @@ class TestBuildReleaseManifestV2Trust(unittest.TestCase):
 
         self.assertEqual(ctx.exception.sub_reason, "trust_downgrade_refused")
 
-    # ── Test 4: no env, no target manifest → SystemExit(17) ──────────────────
+    # ── Test 4: no env, no target manifest → SystemExit(15) ──────────────────
 
     def test_no_env_no_bypass_raises_system_exit_17(self) -> None:
-        """Without HARNESS_ALLOW_UNSIGNED_DEV, tag_signature_invalid causes SystemExit(17)."""
+        """Without HARNESS_ALLOW_UNSIGNED_DEV, tag_signature_invalid causes SystemExit(15)."""
 
         def _fake_verify(repo_root, tag):
             raise UpgradeTrustError("tag_signature_invalid", "no signature")
@@ -391,7 +391,7 @@ class TestReleaseTrustAuditVerbs(unittest.TestCase):
         self.assertIn("release.trust.bypassed", verbs,
                       f"Expected release.trust.bypassed in audit; got verbs={verbs}")
 
-    def test_refused_emits_audit_row_on_exit17(self) -> None:
+    def test_refused_emits_audit_row_on_exit15(self) -> None:
         """release.trust.refused is emitted when bypass denied (no HARNESS_ALLOW_UNSIGNED_DEV)."""
         env_without_bypass = {
             k: v for k, v in os.environ.items()
@@ -451,7 +451,7 @@ class TestBypassTTYConfirm(unittest.TestCase):
         )
 
     def test_non_tty_stdin_refused(self) -> None:
-        """Non-TTY stdin + bypass + existing manifest → SystemExit(17)."""
+        """Non-TTY stdin + bypass + existing manifest → SystemExit(15)."""
         fake_stdin = MagicMock()
         fake_stdin.isatty.return_value = False
         with patch("sys.stdin", fake_stdin):
@@ -471,7 +471,7 @@ class TestBypassTTYConfirm(unittest.TestCase):
         self.assertEqual(manifest["trust_origin"], "dev_unsigned")
 
     def test_tty_n_answer_refused(self) -> None:
-        """TTY + 'n' answer → SystemExit(17)."""
+        """TTY + 'n' answer → SystemExit(15)."""
         fake_stdin = MagicMock()
         fake_stdin.isatty.return_value = True
         with (

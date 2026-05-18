@@ -309,7 +309,7 @@ KNOWN_VERBS: frozenset = frozenset([
     # Release trust verbs (§6, Group δ fix-pass)
     "release.trust.verified",   # SSH-signed tag verified successfully
     "release.trust.bypassed",   # HARNESS_ALLOW_UNSIGNED_DEV=1 bypass taken
-    "release.trust.refused",    # exit-17 refusal (downgrade / missing trust / corrupted manifest)
+    "release.trust.refused",    # exit-15 refusal (downgrade / missing trust / corrupted manifest)
 ])
 
 

@@ -699,8 +699,9 @@ Skill/rule text already references these but no CLI consumes them. Removal path:
 | 12 | git repo required for autopilot/chain operations (NEW Round-4 — no-git mode §7.5) |
 | 13 | deprecated flag (`--chain` / `--auto`) halted with replacement command |
 | 14 | Crash recovery undecidable; human action required (NEW Round-4 — §3.8). Also reused for `audit_partial_write` (Round-7) — sub-reason field disambiguates. |
+| 15 | `release_trust_invalid` (§6) — `tag_signature_invalid`, `trust_downgrade_refused`, `target_manifest_corrupted`, `allowed_signers_outside_repo` (Cycle-1 fix: moved from 17 which is reserved for human_action_required). |
 | 16 | `chain_start_dirty_tree` — chain mode rejected dirty working tree (Round-4 §7.5; **Round-7 BLOCK fix Coherence E-34** — now canonical). |
-| 17 | human action required; no shell-safe `harness next --shell` output |
+| 17 | human action required; no shell-safe `harness next --shell` output (kept — distinct from release-trust exit 15). |
 | 18 | `no_action_during_autopilot` — `harness next` printed advisory while autopilot active; not an error (Round-7 BLOCK fix Coherence P1-6). |
 
 ---
