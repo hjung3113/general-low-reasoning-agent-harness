@@ -419,8 +419,11 @@ def _audit_tail_partial_write(audit_path: Path) -> bool:
     if not lines:
         return False
     try:
-        json.loads(lines[-1])
+        parsed = json.loads(lines[-1])
     except json.JSONDecodeError:
+        return True
+    # §12.5 #2: also require the three mandatory fields; missing any → partial.
+    if not {"entry_hash", "txn_id", "after_sha256"}.issubset(parsed):
         return True
     return False
 

@@ -272,16 +272,24 @@ def acquire_primary(
     *,
     timeout_s: float = 10.0,
     audit_path: Optional[Union[str, "os.PathLike[str]"]] = None,
+    max_recovery_wait_s: Optional[float] = None,
 ) -> LockHandle:
     """STEP A/B/C/D loop per design §3.7.
 
     Raises `LockTimeoutError` on timeout; `LockHeldError` on "ambiguous"
     (requires `harness lock recover --force`). Returns a `LockHandle` on
     successful acquisition.
+
+    `max_recovery_wait_s`: cap for how long STEP A will wait on the recovery
+    mutex. Defaults to ``min(timeout_s, 30.0)`` when None.
     """
     scratch = Path(scratch)
     primary = scratch / PRIMARY_NAME
     recovery = scratch / RECOVERY_NAME
+
+    _effective_max_recovery_wait_s: float = (
+        min(timeout_s, MAX_RECOVERY_WAIT_S) if max_recovery_wait_s is None else max_recovery_wait_s
+    )
 
     deadline = time.monotonic() + timeout_s
     recovery_seen = 0.0
@@ -290,9 +298,9 @@ def acquire_primary(
     while True:
         # STEP A — recovery-mutex check MUST precede every O_EXCL attempt.
         if recovery.exists():
-            if recovery_seen > MAX_RECOVERY_WAIT_S:
+            if recovery_seen > _effective_max_recovery_wait_s:
                 raise LockTimeoutError(
-                    f"recovery mutex held longer than {MAX_RECOVERY_WAIT_S}s at {recovery}"
+                    f"recovery mutex held longer than {_effective_max_recovery_wait_s}s at {recovery}"
                 )
             if time.monotonic() >= deadline:
                 raise LockTimeoutError(f"timeout waiting for recovery mutex at {recovery}")

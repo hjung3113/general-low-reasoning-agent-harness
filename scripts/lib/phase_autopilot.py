@@ -57,6 +57,7 @@ from . import audit as _audit
 from . import autopilot_guard as _autopilot_guard
 from . import ci_provenance as _ci_provenance
 from . import cli_budgets as _cli_budgets
+from . import durable_fs as _durable_fs
 from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
@@ -288,6 +289,19 @@ def _run_crash_recovery(
             )
     except _phase_txn.TxnLockMissingError:
         raise  # propagate — callers handle this at the lock-contract-check step
+    except _durable_fs.DurableFsError as exc:
+        # §12.5#5: replace_with_retry exhaustion — journal+tmp preserved on disk;
+        # surface as exit 3 state_replace_blocked so the caller can retry safely.
+        msg = (
+            f"crash recovery: durable-fs replace exhausted ({exc}); "
+            "Fix: free AV/filesystem locks and retry."
+        )
+        print(f"error: {msg}", file=sys.stderr)
+        return AutopilotResult(
+            exit_code=_exitcodes.EXIT_SESSION_LOCKED,  # 3, §12.5#5
+            sub_reason="state_replace_blocked",
+            message=msg,
+        )
     except Exception as exc:
         msg = (
             f"crash recovery raised unexpected error ({exc}); "
