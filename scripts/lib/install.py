@@ -191,42 +191,61 @@ def _stamp_install_trust_origin(
                     f"ERROR: SSH tag verification failed for {tag!r} ({_te.sub_reason}). "
                     f"Set HARNESS_ALLOW_UNSIGNED_DEV=1 to bypass (dev installs only).\n"
                 )
-                raise SystemExit(EXIT_RELEASE_TRUST_INVALID)
+                # B-5 (Cycle-2): preserve original exception context on the SystemExit.
+                raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from _te
 
     # Patch the trust fields into the freshly-written install state record.
+    # B-4 (Cycle-2): strict — re-raise on failure so install fails loudly rather
+    # than silently leaving a manifest with no trust stamping.  Silent bypass is
+    # unacceptable for internal-share-stable.
     install_state_path = target / INSTALL_STATE
-    try:
-        state: dict = read_install_state(target)
-        state["trust_origin"] = trust_origin
-        if release_tag is not None:
-            state["release_tag"] = release_tag
-        if release_commit is not None:
-            state["release_commit"] = release_commit
-        # Re-compute chain hash to include the new trust fields.
-        files_dict: dict = state.get("files", {})
-        chain_manifest: dict = {
-            "release_commit": state.get("release_commit"),
-            "release_tag": state.get("release_tag"),
-            "schema_version": state.get("schema_version", 2),
-            "harness_version": state.get("harness_version", harness_version),
-            "files": {
-                p: {
-                    "installed_sha256": v.get("installed_sha256", ""),
-                    "current_sha256": v.get("current_sha256", ""),
-                }
-                for p, v in files_dict.items()
-                if isinstance(v, dict) and "installed_sha256" in v
-            },
-            "removed_in_version": [],
-            "trust_origin": trust_origin,
-        }
-        state["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
-        write_json(install_state_path, state)
-    except Exception as _e:
-        # Best-effort: if patching fails, warn but do not abort the install.
-        sys.stderr.write(
-            f"WARNING: could not stamp trust_origin on install state: {_e}\n"
-        )
+    state: dict = read_install_state(target)
+    state["trust_origin"] = trust_origin
+    if release_tag is not None:
+        state["release_tag"] = release_tag
+    if release_commit is not None:
+        state["release_commit"] = release_commit
+    # Re-compute chain hash to include the new trust fields.
+    files_dict: dict = state.get("files", {})
+    chain_manifest: dict = {
+        "release_commit": state.get("release_commit"),
+        "release_tag": state.get("release_tag"),
+        "schema_version": state.get("schema_version", 2),
+        "harness_version": state.get("harness_version", harness_version),
+        "files": {
+            p: {
+                "installed_sha256": v.get("installed_sha256", ""),
+                "current_sha256": v.get("current_sha256", ""),
+            }
+            for p, v in files_dict.items()
+            if isinstance(v, dict) and "installed_sha256" in v
+        },
+        "removed_in_version": [],
+        "trust_origin": trust_origin,
+    }
+    state["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
+    write_json(install_state_path, state)
+
+    # B-4 (Cycle-2): emit release.trust.bypassed audit row when trust_origin=dev_unsigned
+    # at install time (symmetric with upgrade path — forensic visibility).
+    if trust_origin == "dev_unsigned":
+        try:
+            import datetime as _dt
+            from lib.audit import audit_append as _aa
+            _audit_path = target / ".harness" / "audit.log"
+            _aa(
+                {
+                    "verb": "release.trust.bypassed",
+                    "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "args": {
+                        "bypass_source": "install_path",
+                        "reason": "tag_not_found" if not release_tag else "tag_signature_invalid",
+                    },
+                },
+                audit_path=_audit_path,
+            )
+        except Exception:
+            pass  # audit failure is non-fatal
 
 
 def write_copy(source: Path, destination: Path) -> None:

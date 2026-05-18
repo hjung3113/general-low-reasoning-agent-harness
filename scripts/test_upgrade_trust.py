@@ -493,5 +493,106 @@ class TestBypassTTYConfirm(unittest.TestCase):
         self.assertEqual(manifest["trust_origin"], "dev_unsigned")
 
 
+class TestTamperDetectedViaChainHash(unittest.TestCase):
+    """B-3 (Cycle-2): round-trip tamper integration test.
+
+    Verifies that B-1 + B-2 together close the trust-field deletion bypass:
+    - Chain hash covers trust_origin (B-1).
+    - Chain hash is ALWAYS verified when present, regardless of trust fields (B-2).
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._target = Path(self._tmp.name) / "target"
+        self._target.mkdir()
+        (self._target / ".harness").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _write_install_state(self, data: dict) -> None:
+        from lib.state import INSTALL_STATE
+        p = self._target / INSTALL_STATE
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+
+    def _make_stamped_manifest(self, trust_origin: str = "signed_tag") -> dict:
+        """Build and stamp a minimal installed manifest with chain hash covering trust fields."""
+        from lib.manifest_reconciler import compute_manifest_hash_chain
+        files = {
+            "scripts/harness.py": {
+                "installed_sha256": "aabbcc" * 10 + "aabb",
+                "current_sha256": "aabbcc" * 10 + "aabb",
+            }
+        }
+        chain_manifest: dict = {
+            "schema_version": 2,
+            "harness_version": "0.7.0",
+            "trust_origin": trust_origin,
+            "release_tag": "v0.7.0" if trust_origin == "signed_tag" else None,
+            "release_commit": "deadbeef" * 8 if trust_origin == "signed_tag" else None,
+            "files": files,
+            "removed_in_version": [],
+        }
+        chain_hash = compute_manifest_hash_chain(chain_manifest)
+        manifest = dict(chain_manifest)
+        manifest["installed_files_chain_hash"] = chain_hash
+        return manifest
+
+    def test_valid_manifest_read_succeeds(self) -> None:
+        """Round-trip: stamp a manifest with trust fields, read back, assert no error."""
+        import lib.upgrade as _upg
+        manifest = self._make_stamped_manifest(trust_origin="signed_tag")
+        self._write_install_state(manifest)
+        result = _upg._read_target_trust_origin(self._target)
+        self.assertEqual(result, "signed_tag")
+
+    def test_tamper_trust_origin_detected(self) -> None:
+        """B-1+B-2: flipping trust_origin in the manifest raises target_manifest_corrupted."""
+        import importlib
+        import lib.upgrade as _upg
+        importlib.reload(_upg)
+        manifest = self._make_stamped_manifest(trust_origin="signed_tag")
+        # Tamper: flip trust_origin to dev_unsigned without re-stamping the chain hash.
+        manifest["trust_origin"] = "dev_unsigned"
+        self._write_install_state(manifest)
+        with self.assertRaises(UpgradeTrustError) as ctx:
+            _upg._read_target_trust_origin(self._target)
+        self.assertEqual(ctx.exception.sub_reason, "target_manifest_corrupted",
+                         msg="Tampered trust_origin must be detected via chain hash")
+
+    def test_delete_trust_origin_still_rejected(self) -> None:
+        """B-2: deleting trust_origin no longer bypasses chain verification."""
+        import importlib
+        import lib.upgrade as _upg
+        importlib.reload(_upg)
+        manifest = self._make_stamped_manifest(trust_origin="signed_tag")
+        # Tamper: delete trust fields — old B3-Fix-1 would skip chain verification here.
+        del manifest["trust_origin"]
+        del manifest["release_tag"]
+        del manifest["release_commit"]
+        self._write_install_state(manifest)
+        with self.assertRaises(UpgradeTrustError) as ctx:
+            _upg._read_target_trust_origin(self._target)
+        self.assertEqual(ctx.exception.sub_reason, "target_manifest_corrupted",
+                         msg="Deleted trust fields must still be rejected via chain hash")
+
+    def test_absent_chain_hash_old_manifest_accepted(self) -> None:
+        """Backward compat: old v1 manifest without chain hash is accepted (returns trust_origin)."""
+        import importlib
+        import lib.upgrade as _upg
+        importlib.reload(_upg)
+        # Old manifest: has trust_origin but no chain hash.
+        old_manifest = {
+            "schema_version": 1,
+            "harness_version": "0.6.0",
+            "trust_origin": "signed_tag",
+        }
+        self._write_install_state(old_manifest)
+        result = _upg._read_target_trust_origin(self._target)
+        self.assertEqual(result, "signed_tag",
+                         msg="Old v1 manifests without chain hash must be accepted")
+
+
 if __name__ == "__main__":
     unittest.main()

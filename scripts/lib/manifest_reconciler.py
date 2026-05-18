@@ -21,11 +21,15 @@ any divergence is treated as a user edit rather than a safe harness upgrade).
 
 Hash chain:
   ``compute_manifest_hash_chain`` produces a sha256 over the canonicalized
-  content of the manifest (schema_version, harness_version, sorted file
-  entries, sorted removed_in_version list). Stored as top-level
-  ``installed_files_chain_hash`` and checked on read to detect tampering of
-  the installed_sha256 / current_sha256 fields.  The hash covers only those
-  two fields per entry (not policy/owner/sha256); field named accordingly.
+  content of the manifest (schema_version, harness_version, trust_origin,
+  release_tag, release_commit, sorted file entries, sorted removed_in_version
+  list). Stored as top-level ``installed_files_chain_hash`` and checked on
+  read to detect tampering of the installed_sha256 / current_sha256 / trust
+  fields.  The hash covers only those two SHA fields per entry (not
+  policy/owner/sha256); field named accordingly.
+
+  B-1 (Cycle-2): trust_origin, release_tag, release_commit added to the
+  canonical input so trust-field tampering is chain-hash-detected.
 """
 from __future__ import annotations
 
@@ -265,17 +269,23 @@ def reconcile_install(
 def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     """Compute a deterministic chain hash for the manifest (§6 manifest hash chain).
 
-    The chain covers:
+    The chain covers (B-1, Cycle-2: trust fields added):
     - schema_version (int)
     - harness_version (str)
+    - trust_origin (str, "" when absent)
+    - release_tag (str, "" when absent)
+    - release_commit (str, "" when absent)
     - sorted file entries by path: for each entry, path + sorted(entry items)
     - sorted removed_in_version entries by path
 
     Returns a 64-char lowercase sha256 hex string. Stored as top-level
-    ``installed_files_chain_hash`` (renamed from manifest_chain_hash to be
-    honest about coverage: the hash covers only the fields present in the
-    manifest dict passed in — callers in upgrade.py pass installed_sha256 +
-    current_sha256 only, not the full file entry).
+    ``installed_files_chain_hash``.
+
+    B-1 (Cycle-2): trust_origin, release_tag, release_commit are now included
+    in the canonical input so that tampering with any of these trust fields is
+    detected by chain hash mismatch.  Any pre-Cycle-2 stored chain hash will
+    mismatch on first re-stamp — operators must re-install or re-upgrade.
+    This is acceptable for internal-share-stable targets.
 
     Stability guarantee: independent of dict insertion order (sorts all keys).
     """
@@ -283,11 +293,18 @@ def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     harness_version = manifest.get("harness_version", "")
     files: dict[str, Any] = manifest.get("files", {})
     removed: list[Any] = manifest.get("removed_in_version", [])
+    # B-1 trust fields — default to "" so absent == "" in canonical form.
+    trust_origin = manifest.get("trust_origin") or ""
+    release_tag = manifest.get("release_tag") or ""
+    release_commit = manifest.get("release_commit") or ""
 
     # Canonical representation: stable across insertion order
     chain_parts: list[str] = [
         f"schema_version={schema_version}",
         f"harness_version={harness_version}",
+        f"trust_origin={trust_origin}",
+        f"release_tag={release_tag}",
+        f"release_commit={release_commit}",
     ]
 
     for file_path in sorted(files.keys()):

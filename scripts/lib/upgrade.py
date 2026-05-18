@@ -125,10 +125,10 @@ def _read_target_trust_origin(target: Path) -> str | None:
     sub_reason="target_manifest_corrupted").  A corrupted install-state.json
     must NOT silently mask a prior signed_tag install and allow a downgrade.
 
-    B3-Fix-1: When installed_files_chain_hash is present and trust fields
-    (trust_origin, release_tag, release_commit) are present, verify the chain
-    hash to detect tampering. Old v1 records without the hash field are accepted
-    without chain verification (backward compatibility).
+    B3-Fix-1 / B-2 (Cycle-2): When installed_files_chain_hash is present,
+    ALWAYS verify the chain hash — regardless of whether trust fields are present.
+    Deleting trust fields no longer bypasses chain verification.
+    Old v1 records without the hash field are accepted without chain verification.
     """
     from lib.state import INSTALL_STATE as _IS  # avoid circular at module level
     from lib.release_trust import UpgradeTrustError as _UTE  # local import — avoid circular
@@ -156,20 +156,15 @@ def _read_target_trust_origin(target: Path) -> str | None:
             "target_manifest_corrupted",
             "install-state.json top-level value is not a JSON object",
         )
-    # B3-Fix-1: Verify chain hash when present to detect tampering with trust fields.
-    # Only verify when ALL trust provenance fields are present — old records written
-    # before this fix have trust_origin stamped AFTER the chain hash was computed
-    # (without trust fields), so their chain hash won't match the new format.
-    # We detect new-format records by the presence of release_tag AND release_commit
-    # alongside trust_origin (these are only stamped by _stamp_installed_manifest_v2
-    # and _stamp_install_trust_origin which ALSO include trust fields in the hash).
+    # B-2 (Cycle-2): ALWAYS verify chain hash when installed_files_chain_hash is
+    # present — regardless of whether trust fields are present.  The old guard
+    # (has_trust_provenance) let an attacker delete trust fields to bypass chain
+    # verification and disable the downgrade guard (trust_origin→None → bypass).
+    #
+    # Trust-field presence is now irrelevant for the chain-verification trigger.
+    # If the chain hash is present but mismatches → corrupted/tampered → exit 15.
     stored_chain_hash = data.get("installed_files_chain_hash")
-    has_trust_provenance = (
-        data.get("trust_origin") is not None
-        and "release_tag" in data
-        and "release_commit" in data
-    )
-    if stored_chain_hash and has_trust_provenance:
+    if stored_chain_hash:
         installed_files: dict = data.get("files", {})
         recomputed_chain_manifest: dict = {
             "release_commit": data.get("release_commit"),
