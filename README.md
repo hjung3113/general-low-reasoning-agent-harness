@@ -29,7 +29,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.7.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -66,14 +66,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.7.0 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.7.1 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.7.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -171,13 +171,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.7.0
+python3 scripts/harness.py release-check --expected-version v0.7.1
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.7.0 -m "Release v0.7.0"
-git push origin v0.7.0
+git tag -s v0.7.1 -m "Release v0.7.1"
+git push origin v0.7.1
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -198,8 +198,8 @@ git push origin v0.7.0
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.7.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.7.0
+python3 scripts/upgrade_harness.py --version v0.7.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.7.1
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -211,21 +211,18 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.7.0 Highlights**:
-- HMAC-signed approval nonces (`harness approve-nonce mint`)
-- Release-trust verification scaffold (`release-check`, allowed-signers stub, `--allow-unsigned-dev` flag) — **see Known Limitations**
-- Windows safe_open (CreateFileW + reparse refusal)
-- Exit-code spec alignment (0–15)
-- Audit-verb registry expansion (CI/OIDC, migration, session verbs)
-- Windows import-portability fix (atomic_io / audit / phase_lock fcntl gating)
+**v0.7.1 Hotfix** (2026-05-18) — pre-release adversarial-review remediation:
+- **P0** — `phase_lock.py` / `audit_chain.py` raise actionable `SystemExit` on missing `psutil`/`rfc8785` instead of bare `ModuleNotFoundError`. Source-checkout users now see the exact `pip install -e .` command.
+- **P1** — `.github/workflows/release.yml` `release-gate-summary` now explicitly fails when `needs.release-smoke.result != 'success'`. Previously the summary could stay green on smoke failure/cancel, defeating branch protection.
+- No surface or schema changes. Drop-in replacement for the previous release. Full review at [.scratch/reports/pr-2-adversarial-review.md](.scratch/reports/pr-2-adversarial-review.md); narrative history and prior-release highlights live in [CHANGELOG.md](CHANGELOG.md).
 
-**v0.7.0 Known Limitations** — to be fully addressed in **v0.8.0**:
-- Release tag `v0.7.0` is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until v0.8.0.
-- Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in v0.8.0.
-- Approval-nonce TTY-isolation accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev`. A same-TTY agent can pass a fake distinct value. Server-side TTY binding lands in v0.8.0.
-- Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified for v0.7.0.
+**Known Limitations** — to be fully addressed in the next minor release:
+- The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.
+- Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in the next minor release.
+- Approval-nonce TTY-isolation accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev`. A same-TTY agent can pass a fake distinct value. Server-side TTY binding lands in the next minor release.
+- Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified at this release.
 
-If you need a hardened trust root or strict TTY isolation today, treat v0.7.0 as **internal-share-stable on POSIX, beta on Windows**, and wait for v0.8.0.
+If you need a hardened trust root or strict TTY isolation today, treat this release as **internal-share-stable on POSIX, beta on Windows**, and wait for the next minor release.
 
 ---
 

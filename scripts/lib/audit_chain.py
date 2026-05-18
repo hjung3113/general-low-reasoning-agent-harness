@@ -22,7 +22,19 @@ import json
 from pathlib import Path
 from typing import Iterator, Mapping, Optional
 
-import rfc8785
+try:
+    import rfc8785
+except ImportError as _rfc8785_exc:  # pragma: no cover - environment-dependent
+    # v0.7.1 P0 fix: see phase_lock.py for rationale.
+    raise SystemExit(
+        "harness: missing runtime dependency 'rfc8785' "
+        f"({_rfc8785_exc.__class__.__name__}: {_rfc8785_exc}).\n"
+        "Install harness runtime dependencies before invoking phase/audit commands:\n"
+        "    python3 -m pip install -e .\n"
+        "  (or, minimal:  python3 -m pip install psutil rfc8785)\n"
+        "Source-checkout users: pyproject.toml lists runtime deps; the source\n"
+        "harness is not dependency-free. See README §Install."
+    ) from _rfc8785_exc
 
 
 # ---------------------------------------------------------------------------

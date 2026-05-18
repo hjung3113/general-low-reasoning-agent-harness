@@ -95,6 +95,18 @@ jobs:
         run: |
           echo "powershell-deny-fuzz job FAILED — release gate blocked."
           exit 1
+      # v0.7.1 P1 fix: previously this summary job ran with `if: always()` and
+      # only checked powershell-deny-fuzz, so release-smoke failures (or
+      # cancellation) could leave the summary green even when the matrix
+      # blocked. Branch protection using the summary as the single gate would
+      # then pass on a broken release. Explicitly fail the summary on any
+      # non-success release-smoke result.
+      - name: Fail if release-smoke did not succeed
+        if: ${{ needs.release-smoke.result != 'success' }}
+        run: |
+          echo "release-smoke job did not succeed: ${{ needs.release-smoke.result }}"
+          echo "release-gate row failures block release; degraded-tolerant + nice-to-have rows use continue-on-error in the matrix."
+          exit 1
       - name: Check release-gate rows
         run: |
           echo "Branch protection: each release-gate row publishes a named check."

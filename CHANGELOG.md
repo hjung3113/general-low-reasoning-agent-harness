@@ -6,7 +6,48 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-(Nothing accumulated yet — next release: v0.7.1 / v0.8.0.)
+(Nothing accumulated yet — next release: v0.8.0.)
+
+## v0.7.1 — 2026-05-18 (hotfix)
+
+Pre-release adversarial-review remediation. Two findings from
+`.scratch/reports/pr-2-adversarial-review.md` (independent reviewer round
+that produced the PR-2 review, distinct from the 3-Opus persona round
+folded into v0.7.0) were left unaddressed at v0.7.0 tag. This hotfix
+closes both with no surface or schema changes — drop-in replacement.
+
+### Fixed
+
+- **P0 — Source-checkout fails with bare `ModuleNotFoundError: psutil`.**
+  README §빠른 설치 documents direct `python3 scripts/harness.py ...`
+  execution, but `scripts/lib/phase_lock.py` (reached on the very first
+  phase command) imports `psutil` unconditionally and crashes with a raw
+  Python traceback when the user has not yet run `pip install -e .`.
+  Same hazard for `rfc8785` via `scripts/lib/audit_chain.py`.
+  Both imports are now wrapped in `try/except ImportError → SystemExit`
+  with an actionable message naming the exact install command.
+  The runtime dependency declaration in `pyproject.toml` is unchanged;
+  callers that already `pip install -e .` see no behavior change.
+- **P1 — `release-gate-summary` job can stay green when release-smoke
+  fails.** `.github/workflows/release.yml` summary previously had
+  `if: always()` and only inspected `powershell-deny-fuzz.result`, so a
+  release-smoke `failure`/`cancelled`/`skipped` would leave the summary
+  green. With the summary used as the single release branch-protection
+  gate, that was a real release leak. Added an explicit step that fails
+  the summary on `needs.release-smoke.result != 'success'`. The
+  matrix-row `continue-on-error` for `nice-to-have` and
+  `release-gate-degraded-tolerant` rows is unchanged, so degraded rows
+  still do not block.
+
+### Not changed
+
+- v0.7.0 "Carried over" deferrals remain v0.8.0 scope:
+  audit-chain GENESIS fallback, `consumer_tty` server-binding,
+  audit-rotation Windows atomicity, native Windows pre-commit-scope hook,
+  SSH-signed release tags (`allowed-signers` is still a placeholder; the
+  PR-2 review flagged this third item as P1 but it was already an
+  intentional v0.7.0 deferral per the v0.7.0 "Carried over" section —
+  not re-litigated in this hotfix).
 
 ## v0.7.0 — 2026-05-18
 

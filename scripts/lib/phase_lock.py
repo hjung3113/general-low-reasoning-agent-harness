@@ -52,7 +52,24 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Union
 
-import psutil
+try:
+    import psutil
+except ImportError as _psutil_exc:  # pragma: no cover - environment-dependent
+    # v0.7.1 P0 fix: README documents direct source-checkout execution
+    # (`python3 scripts/harness.py ...`). pyproject.toml declares psutil as a
+    # runtime dependency but source users hit a raw ModuleNotFoundError on the
+    # very first phase command if they skip `pip install -e .`. Surface a
+    # clean, actionable error naming the install command instead.
+    _msg = (
+        "harness: missing runtime dependency 'psutil' "
+        f"({_psutil_exc.__class__.__name__}: {_psutil_exc}).\n"
+        "Install harness runtime dependencies before invoking phase commands:\n"
+        "    python3 -m pip install -e .\n"
+        "  (or, minimal:  python3 -m pip install psutil rfc8785)\n"
+        "Source-checkout users: pyproject.toml lists runtime deps; the source\n"
+        "harness is not dependency-free. See README §Install."
+    )
+    raise SystemExit(_msg) from _psutil_exc
 
 from . import durable_fs as _durable_fs
 from . import audit as _audit
