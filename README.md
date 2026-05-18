@@ -35,7 +35,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.7.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -72,14 +72,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.7.1 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.7.2 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.7.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -177,13 +177,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.7.1
+python3 scripts/harness.py release-check --expected-version v0.7.2
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.7.1 -m "Release v0.7.1"
-git push origin v0.7.1
+git tag -s v0.7.2 -m "Release v0.7.2"
+git push origin v0.7.2
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -204,8 +204,8 @@ git push origin v0.7.1
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.7.1 --dry-run
-python3 scripts/upgrade_harness.py --version v0.7.1
+python3 scripts/upgrade_harness.py --version v0.7.2 --dry-run
+python3 scripts/upgrade_harness.py --version v0.7.2
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -217,10 +217,24 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.7.1 Hotfix** (2026-05-18) — pre-release adversarial-review remediation:
-- **P0** — `phase_lock.py` / `audit_chain.py` raise actionable `SystemExit` on missing `psutil`/`rfc8785` instead of bare `ModuleNotFoundError`. Source-checkout users now see the exact `pip install -e .` command.
-- **P1** — `.github/workflows/release.yml` `release-gate-summary` now explicitly fails when `needs.release-smoke.result != 'success'`. Previously the summary could stay green on smoke failure/cancel, defeating branch protection.
-- No surface or schema changes. Drop-in replacement for the previous release. Full review at [.scratch/reports/pr-2-adversarial-review.md](.scratch/reports/pr-2-adversarial-review.md); narrative history and prior-release highlights live in [CHANGELOG.md](CHANGELOG.md).
+**v0.7.2 UX Sweep** (2026-05-19) — 부작용 0 UX 개선 9 group:
+- **Group A** sweep — 유령 verb `phase status` → `status`, 내부 슬라이스 명칭 `(lands Sxx)` 제거, `...` 리터럴 placeholder 정리
+- **Group B** `check.py` 21곳 + `worktree.py` 2곳에 `Fix:` 라인 추가 (실재 verb만 — `phase set --stdin-json`, `--reset-approval`, `upgrade --target`). scope-violation 블록 dedup
+- **Group C** fleet-wide canned reopen reason 리터럴 `"fix and re-approve"` → `<describe why you are reopening>` placeholder (audit trail 오염 차단)
+- **Group D** install 첫 경험 — `init` 성공 1줄 출력, "Refusing to overwrite" 메시지 멀티라인 + 안내, profile prompt에 `(generic is recommended for first install)` 힌트
+- **Group E** docs — README ADR 케이싱 + 표기 컨벤션 박스, USER_MANUAL dead anchor + §19.11 "자주 혼동하는 케이스" 7 Q&A
+- **Group F** adapter prompt — "when available" 모호 표현 → exit-code 결정적 wording, Roo phase-discuss/plan preflight, done.md ordering, fsd-run-phase requires_human 가드, .roo/commands/README table 보완
+- **Group G** argparse "did you mean" hint — typo시 close-match 안내 (top-level + subverb 자동 상속)
+- **Group H** human-only output — `Next action` 라인 항상 emit, halt age 4-tier 단위 (s/m/h/d), `next --json` help 통일
+- **Group I** target-local wrapper help — `check_harness.py` / `doctor_harness.py` description + epilog
+
+JSON output shape, schema, exit code, security boundary, install semantics 모두 불변. 매 group마다 별도 Opus 적대적 리뷰 수행, 다음 CRIT 사전 차단:
+- 이전 릴리스 P0 재발 위험 verb 5개 (`--updated-at`, `--updated-by`, `--automation-mode`, `--profile` 단수, `--prune-retired`, `--add-packs`) — argparse 실재 확인 후 모두 거부
+- `state repair --to <phase>` (잘못된 verb) → `phase reopen --to plan`로 교체
+- D2 `--adopt-existing` 추천 (2차 SystemExit 유발) → 단순 안내로 교체
+- H4 `state_cli` architecture mismatch (PlanningProjection vs raw state dict) → v0.8.0로 이전
+
+자세한 변경 spec: `docs/superpowers/specs/v0.7.2_todo/2026-05-18-ux-quick-wins.md`. 적대적 리뷰 발견 사항은 각 commit message에 기록.
 
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.

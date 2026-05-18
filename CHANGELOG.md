@@ -8,6 +8,71 @@ All notable changes to this harness.
 
 (Nothing accumulated yet — next release: v0.8.0.)
 
+## v0.7.2 — 2026-05-19 (UX sweep)
+
+부작용 0 UX 개선 9 group. JSON output shape, schema, exit code, security
+boundary, install semantics 불변. 9 commit, 매 group 별도 Opus 적대적 리뷰
+수행 후 진행.
+
+### UX improvements (per group)
+
+- **A — phantom verb / internal-name sweep** — Fix-line이 추천하던 미등록
+  verb `harness phase status` → `harness status` 통일. 내부 슬라이스 명칭
+  `(lands Sxx)` 메시지에서 제거. `...` 리터럴 placeholder → `<phase>`.
+- **B — `check.py` Fix-line 보강 (21곳)** — 모든 missing-field /
+  install-drift / scope-gate 거부 메시지에 actionable Fix 안내 추가. 모든
+  추천 verb는 argparse 실재 등록분만 (`phase set --stdin-json`,
+  `--reset-approval`, `upgrade --target` 등). v0.7.1 P0 재발 차단을 위해
+  적대적 리뷰가 5개 미존재 flag (`--updated-at` 등) 사전 차단.
+  `worktree.py` scope-violation 블록 dedup — 중복된 `Remediation:` +
+  trailing `Fix:` 라인 단일 `Fix (pick one):`로 통합.
+- **C — reopen reason placeholder** — Fleet-wide 캔드 reason
+  `"fix and re-approve"` → `<describe why you are reopening>`. 단일 상수
+  `REOPEN_REASON_PLACEHOLDER`를 `transition.py`에 정의, `status_next.py`가
+  import. 4 사이트 모두 적용 (transition.py:172/346, status_next.py:180/321).
+- **D — install 첫 경험** — `init` 성공 시 출력 0줄이던 것을 1줄 추가
+  ("installed harness vX.Y.Z → <target> (N planned writes). Next: ..."),
+  "Refusing to overwrite" 메시지 멀티라인 정리 + 안내. profile prompt에
+  `(generic is recommended for first install)` 힌트. 적대적 리뷰가
+  `--adopt-existing` 추천 (2차 SystemExit 유발 위험) 사전 차단.
+- **E — docs** — README §4 tree `ADR/` → `adr/` (실제 디렉터리 케이스),
+  README §2에 표기 컨벤션 박스 추가, USER_MANUAL §913 dead anchor
+  `§3.5.2` → `§7.2`, USER_MANUAL §19.11 "자주 혼동하는 케이스" 7 Q&A 신설.
+  적대적 리뷰가 잘못된 verb 추천 (`upgrade --add-packs` 미존재 → `--packs`
+  + replace semantics 명시; `state repair --to <phase>` 미존재 →
+  `phase reopen --to plan`) 사전 catch.
+- **F — adapter prompt** — `.roo/commands/`, `.opencode/commands/` 6
+  파일에서 "when available" 모호 표현을 exit-code 기반 결정적 wording으로
+  교체. Roo phase-discuss/phase-plan에 OpenCode와 동일한 preflight
+  checklist 추가 (verbatim). done.md 양쪽 `check --worktree` ordering
+  명확화 (phase=execute 단계에서 실행). fsd-run-phase.md 양쪽에
+  `requires_human` 가드 추가 (fsd-run-all과 symmetric). `.roo/commands/README.md`
+  table에 `/fsd-run-all` / `/fsd-status` 행 추가. fsd-status.md는
+  byte-exact pin test 있어 v0.8.0로 이전.
+- **G — argparse "did you mean"** — typo 시 `difflib.get_close_matches`로
+  근접 verb 1-2개 stderr hint emit. top-level verb + subverb + flag-choice
+  자동 상속 (argparse parent class 기본값). 기존 메시지 텍스트/exit code
+  2 100% 보존. 적대적 리뷰가 원안의 9 nested subparser `parser_class=`
+  명시 추가 모두 redundant임을 catch (자동 상속).
+- **H — human-only output** — `format_status_human`에서 `Next action`
+  라인 항상 emit (None일 때 `(none — <reason>)` 표시). halt age 4-tier
+  단위 변환 (s/m/h/d). `next --json` help wording 통일. JSON output
+  shape 모든 항목 불변 (필드 추가/제거 X). H4 `state_cli` 힌트는
+  PlanningProjection vs raw state dict mismatch로 v0.8.0 이전.
+- **I — target-local wrapper help** — `check_harness.py`,
+  `doctor_harness.py` argparse description + epilog 보강 (1-2줄 설명 +
+  예시 + 관련 verb cross-ref).
+
+### Not changed
+
+- JSON output shape (필드 추가/제거/이름변경 X)
+- schema, state_schema_version
+- 모든 exit code 의미 (`Fix:` 라인 텍스트만 추가)
+- approval/security boundary (TTY gate, nonce, audit chain)
+- manifest hash 메커니즘 (Group F adapter 파일 변경은 manifest entry에
+  sha256 없음 — release.py에 manifest 재baseline 단계 없으므로 안전)
+- v0.7.0/v0.7.1 "Carried over" 모두 v0.8.0 scope 유지
+
 ## v0.7.1 — 2026-05-18 (hotfix)
 
 Pre-release adversarial-review remediation. Two findings from
