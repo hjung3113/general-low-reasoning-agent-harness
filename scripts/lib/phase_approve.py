@@ -44,6 +44,7 @@ from typing import Callable, Mapping, Optional
 
 from . import approval_nonce as _approval_nonce
 from . import audit_anchor as _audit_anchor  # kept for tests that monkeypatch
+from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
@@ -99,6 +100,10 @@ _FIX_NONCE_SAME_TTY = (
     "Fix: mint the nonce from a different terminal "
     "(same-TTY mint+consume is rejected as agent-impersonation defense)"
 )
+_FIX_NONCE_SIG_INVALID = (
+    "Fix: nonce file appears tampered or was signed with a different "
+    "secret.key; re-mint via `harness approve-nonce mint --audience phase.approve`"
+)
 _FIX_AUTOPILOT = (
     "Fix: run `harness phase autopilot stop --reason \"<text>\"` "
     "first, then re-approve"
@@ -140,6 +145,22 @@ _FIX_OVERRIDE_IDENTITY_CHARS = (
     "Fix: --override-identity must not contain NUL / newlines / "
     "control chars / Unicode bidi controls"
 )
+
+
+# ---------------------------------------------------------------------------
+# TTY kind label helper (§3 Fix 3 audit redaction)
+# ---------------------------------------------------------------------------
+
+def _tty_kind(tty_path: str) -> str:
+    """Return the kind label for a TTY path string.
+
+    Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real``.
+    """
+    if tty_path.startswith("win:"):
+        return "win-synthetic"
+    if tty_path.startswith("posix:"):
+        return "posix-fallback"
+    return "posix-real"
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +664,18 @@ def run_approve(
             consumer_tty=consumer_tty,
         )
         if consume.outcome != "consumed":
+            if consume.outcome == "signature_invalid":
+                print(
+                    f"error: nonce_signature_invalid — nonce file tampered or wrong secret.key. "
+                    f"{_FIX_NONCE_SIG_INVALID}",
+                    file=sys.stderr,
+                )
+                return ApproveResult(
+                    exit_code=_exitcodes.EXIT_NONCE_SIGNATURE_INVALID,
+                    sub_reason="signature_invalid",
+                    resolved_email=resolved,
+                    by_source=by_source,
+                )
             mapping = {
                 "missing": ("human_proof_missing", _FIX_NONCE_MISSING),
                 "expired": ("human_proof_nonce_expired", _FIX_NONCE_EXPIRED),
@@ -685,8 +718,8 @@ def run_approve(
 
         # Audit entry shape:
         #   * Top-level (survives audit_append truncation): verb, by,
-        #     by_source, confirmation_kind, nonce_id, nonce_minter_tty,
-        #     nonce_consumer_tty, at, before/after_sha256, txn_id.
+        #     by_source, confirmation_kind, nonce_id, nonce_minter_tty_kind,
+        #     nonce_consumer_tty_kind, at, before/after_sha256, txn_id.
         #   * `args` carries the verbose timestamps. If the encoded line
         #     exceeds AUDIT_MAX_LINE_BYTES (1024, raised from 512 in S06),
         #     `audit.audit_append` archives the full record to
@@ -739,8 +772,8 @@ def run_approve(
             "by_source": by_source,
             "confirmation_kind": confirmation_kind,
             "nonce_id": nonce.nonce_id,
-            "nonce_minter_tty": nonce.minter_tty,
-            "nonce_consumer_tty": consumer_tty,
+            "nonce_minter_tty_kind": _tty_kind(nonce.minter_tty),
+            "nonce_consumer_tty_kind": _tty_kind(consumer_tty),
             "args": {
                 "nonce_minted_at": nonce_minted_at_iso,
                 "nonce_consumed_at": nonce_consumed_at,

@@ -15,11 +15,14 @@ Public surface
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import sys
 from io import IOBase
 from pathlib import Path
 from typing import IO, Optional
+
+_AUDIENCE_RE = re.compile(r"[a-z][a-z0-9._]{0,63}")
 
 from . import approval_nonce as _approval_nonce
 from . import audit as _audit
@@ -78,14 +81,40 @@ def run_mint(
     # ------------------------------------------------------------------
     # 1. TTY guard
     # ------------------------------------------------------------------
-    force_tty = os.environ.get("HARNESS_TEST_FORCE_TTY") == "1"
-    is_tty = force_tty or (sys.stdin is not None and sys.stdin.isatty())
+    force_tty_requested = os.environ.get("HARNESS_TEST_FORCE_TTY") == "1"
+    dev_build = os.environ.get("HARNESS_DEV_BUILD") == "1"
+    if force_tty_requested and not dev_build:
+        stderr.write(
+            "warning: HARNESS_TEST_FORCE_TTY ignored without HARNESS_DEV_BUILD=1\n"
+        )
+        force_tty_requested = False  # treat as if env var was absent
+    is_tty = force_tty_requested or (sys.stdin is not None and sys.stdin.isatty())
     if not is_tty:
         stderr.write("error: approve-nonce mint requires an interactive TTY\n")
         return 2
 
     # ------------------------------------------------------------------
-    # 2. Resolve nonce directory
+    # 2. Re-validate TTL (defense-in-depth; argparse already checks but
+    #    run_mint may be called directly with arbitrary Namespace objects).
+    # ------------------------------------------------------------------
+    if not (1 <= args.ttl <= 3600):
+        stderr.write(
+            f"error: --ttl must be between 1 and 3600 (got {args.ttl})\n"
+        )
+        return 2
+
+    # ------------------------------------------------------------------
+    # 2b. Validate audience format (Fix 5)
+    # ------------------------------------------------------------------
+    if not _AUDIENCE_RE.fullmatch(args.audience):
+        stderr.write(
+            f"error: --audience must match [a-z][a-z0-9._]{{0,63}} "
+            f"(got {args.audience!r})\n"
+        )
+        return 2
+
+    # ------------------------------------------------------------------
+    # 3. Resolve nonce directory
     # ------------------------------------------------------------------
     if nonce_dir is None:
         env_dir = os.environ.get("HARNESS_NONCE_DIR")
@@ -95,12 +124,12 @@ def run_mint(
             nonce_dir = _approval_nonce.default_nonce_dir()
 
     # ------------------------------------------------------------------
-    # 3. Resolve TTY identity
+    # 4. Resolve TTY identity
     # ------------------------------------------------------------------
     minter_tty, minter_tty_kind = _resolve_minter_tty()
 
     # ------------------------------------------------------------------
-    # 4. Mint nonce
+    # 5. Mint nonce
     # ------------------------------------------------------------------
     try:
         nonce = _approval_nonce.mint(
@@ -114,7 +143,7 @@ def run_mint(
         return 1
 
     # ------------------------------------------------------------------
-    # 5. Emit audit row (do NOT log raw minter_tty — only the kind label)
+    # 6. Emit audit row (do NOT log raw minter_tty — only the kind label)
     # ------------------------------------------------------------------
     try:
         # Resolve audit path relative to CWD (same convention as other verbs).
@@ -134,7 +163,7 @@ def run_mint(
         pass
 
     # ------------------------------------------------------------------
-    # 6. Print machine-parseable result
+    # 7. Print machine-parseable result
     # ------------------------------------------------------------------
     ttl_remaining = int(nonce.expires_at - nonce.minted_at)
     stdout.write(

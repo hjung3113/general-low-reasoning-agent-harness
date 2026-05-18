@@ -57,6 +57,7 @@ from . import audit as _audit
 from . import autopilot_guard as _autopilot_guard
 from . import ci_provenance as _ci_provenance
 from . import cli_budgets as _cli_budgets
+from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
@@ -621,6 +622,17 @@ def run_start(
             "audience_mismatch": "human_proof_audience_mismatch",
         }
         if consume_result.outcome != "consumed":
+            if consume_result.outcome == "signature_invalid":
+                msg = (
+                    "phase autopilot start refused: "
+                    "nonce_signature_invalid — nonce file tampered or wrong secret.key"
+                )
+                print(f"error: {msg}", file=sys.stderr)
+                return AutopilotResult(
+                    exit_code=_exitcodes.EXIT_NONCE_SIGNATURE_INVALID,
+                    sub_reason="signature_invalid",
+                    message=msg,
+                )
             sub = _OUTCOME_TO_SUB.get(consume_result.outcome, "human_proof_missing")
             msg = (
                 f"phase autopilot start refused: nonce consume failed "

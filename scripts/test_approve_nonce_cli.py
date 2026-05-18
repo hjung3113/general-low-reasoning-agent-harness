@@ -19,6 +19,10 @@ from lib import approve_nonce_cli
 from lib import approval_nonce
 
 
+# Env that enables HARNESS_TEST_FORCE_TTY (requires both vars per Fix 2).
+_FORCE_TTY_ENV = {"HARNESS_TEST_FORCE_TTY": "1", "HARNESS_DEV_BUILD": "1"}
+
+
 def _make_args(audience: str = "phase.approve", ttl: int = 120) -> argparse.Namespace:
     return argparse.Namespace(audience=audience, ttl=ttl)
 
@@ -36,7 +40,7 @@ class TestRunMintHappyPath(unittest.TestCase):
     def test_exit_0_and_stdout(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}):
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve", ttl=120),
                 nonce_dir=self.nonce_dir,
@@ -51,7 +55,7 @@ class TestRunMintHappyPath(unittest.TestCase):
 
     def test_nonce_file_exists_with_correct_audience(self) -> None:
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}):
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.autopilot.start", ttl=60),
                 nonce_dir=self.nonce_dir,
@@ -76,7 +80,7 @@ class TestRunMintHappyPath(unittest.TestCase):
             captured.append(dict(entry))
             return 0
 
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}), \
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -108,7 +112,8 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
     def test_non_tty_exit_2(self) -> None:
         stderr = io.StringIO()
         # HARNESS_TEST_FORCE_TTY is absent/0 and stdin.isatty() returns False.
-        env_patch = {k: v for k, v in os.environ.items() if k != "HARNESS_TEST_FORCE_TTY"}
+        env_patch = {k: v for k, v in os.environ.items()
+                     if k not in ("HARNESS_TEST_FORCE_TTY", "HARNESS_DEV_BUILD")}
         with mock.patch.dict(os.environ, env_patch, clear=True), \
              mock.patch.object(sys.stdin, "isatty", return_value=False):
             rc = approve_nonce_cli.run_mint(
@@ -120,9 +125,10 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("interactive TTY", stderr.getvalue())
 
-    def test_force_tty_env_allows_pass(self) -> None:
+    def test_force_tty_env_allows_pass_when_dev_build(self) -> None:
+        """HARNESS_TEST_FORCE_TTY=1 + HARNESS_DEV_BUILD=1 bypasses TTY gate."""
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}), \
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
              mock.patch.object(sys.stdin, "isatty", return_value=False):
             rc = approve_nonce_cli.run_mint(
                 _make_args(),
@@ -130,7 +136,26 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
                 stdout=stdout,
                 stderr=io.StringIO(),
             )
-        self.assertEqual(rc, 0, msg="HARNESS_TEST_FORCE_TTY=1 should bypass TTY gate")
+        self.assertEqual(rc, 0, msg="HARNESS_TEST_FORCE_TTY=1 + HARNESS_DEV_BUILD=1 should bypass TTY gate")
+
+    def test_force_tty_without_dev_build_refused_with_warning(self) -> None:
+        """HARNESS_TEST_FORCE_TTY=1 alone (no HARNESS_DEV_BUILD) must refuse with exit 2 and print warning."""
+        stderr = io.StringIO()
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("HARNESS_TEST_FORCE_TTY", "HARNESS_DEV_BUILD")}
+        env["HARNESS_TEST_FORCE_TTY"] = "1"
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch.object(sys.stdin, "isatty", return_value=False):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(),
+                nonce_dir=self.nonce_dir,
+                stdout=io.StringIO(),
+                stderr=stderr,
+            )
+        self.assertEqual(rc, 2, msg=f"Expected exit 2 without HARNESS_DEV_BUILD, got {rc}")
+        err = stderr.getvalue()
+        self.assertIn("HARNESS_TEST_FORCE_TTY ignored without HARNESS_DEV_BUILD=1", err,
+                      msg=f"Expected warning in stderr, got: {err!r}")
 
 
 class TestRunMintInvalidTtl(unittest.TestCase):
@@ -146,7 +171,7 @@ class TestRunMintInvalidTtl(unittest.TestCase):
     def _run_harness_mint(self, ttl: int) -> int:
         """Invoke harness.run() with approve-nonce mint and given TTL."""
         import harness
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1",
+        with mock.patch.dict(os.environ, {**_FORCE_TTY_ENV,
                                           "HARNESS_NONCE_DIR": str(Path(self._tmp.name) / "n")}):
             try:
                 rc = harness.run(["approve-nonce", "mint",
@@ -175,6 +200,89 @@ class TestRunMintInvalidTtl(unittest.TestCase):
     def test_ttl_3600_accepted(self) -> None:
         rc = self._run_harness_mint(3600)
         self.assertEqual(rc, 0, msg=f"Expected exit 0 for ttl=3600, got {rc}")
+
+
+class TestRunMintTtlDirectValidation(unittest.TestCase):
+    """Fix 4: run_mint self-validates TTL even when called directly (bypasses argparse)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.nonce_dir = Path(self._tmp.name) / "nonces"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_ttl_zero_direct_call_exit_2(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(ttl=0),
+                nonce_dir=self.nonce_dir,
+                stdout=io.StringIO(),
+                stderr=stderr,
+            )
+        self.assertEqual(rc, 2, msg=f"Expected exit 2 for ttl=0 direct call, got {rc}")
+        self.assertIn("--ttl", stderr.getvalue())
+
+    def test_ttl_too_large_direct_call_exit_2(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(ttl=10**9),
+                nonce_dir=self.nonce_dir,
+                stdout=io.StringIO(),
+                stderr=stderr,
+            )
+        self.assertEqual(rc, 2, msg=f"Expected exit 2 for ttl=10**9 direct call, got {rc}")
+        self.assertIn("--ttl", stderr.getvalue())
+
+
+class TestRunMintAudienceValidation(unittest.TestCase):
+    """Fix 5: audience must match [a-z][a-z0-9._]{0,63}."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.nonce_dir = Path(self._tmp.name) / "nonces"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _mint(self, audience: str) -> tuple[int, str]:
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(audience=audience),
+                nonce_dir=self.nonce_dir,
+                stdout=io.StringIO(),
+                stderr=stderr,
+            )
+        return rc, stderr.getvalue()
+
+    def test_valid_audience_accepted(self) -> None:
+        rc, _ = self._mint("phase.approve")
+        self.assertEqual(rc, 0)
+
+    def test_audience_uppercase_rejected(self) -> None:
+        rc, err = self._mint("Phase.Approve")
+        self.assertEqual(rc, 2)
+        self.assertIn("--audience", err)
+
+    def test_audience_starts_with_digit_rejected(self) -> None:
+        rc, err = self._mint("1phase")
+        self.assertEqual(rc, 2)
+        self.assertIn("--audience", err)
+
+    def test_audience_too_long_rejected(self) -> None:
+        # 65-char audience (1 + 64 additional) exceeds [0,63] for the suffix part.
+        long_aud = "a" + "b" * 64
+        rc, err = self._mint(long_aud)
+        self.assertEqual(rc, 2)
+        self.assertIn("--audience", err)
+
+    def test_audience_special_chars_rejected(self) -> None:
+        rc, err = self._mint("phase approve")
+        self.assertEqual(rc, 2)
+        self.assertIn("--audience", err)
 
 
 class TestWindowsSyntheticTtyBranch(unittest.TestCase):
@@ -207,7 +315,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
             return 0
 
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}), \
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
@@ -223,7 +331,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
 
     def test_win_tty_path_starts_with_win(self) -> None:
         """The tty path stored in the nonce file should start with 'win:' on nt."""
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}), \
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -258,7 +366,7 @@ class TestAuditRowContent(unittest.TestCase):
             captured.append(dict(entry))
             return 0
 
-        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1"}), \
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -272,6 +380,55 @@ class TestAuditRowContent(unittest.TestCase):
         self.assertEqual(len(nonce_files), 1)
         body = json.loads(nonce_files[0].read_text(encoding="utf-8"))
         self.assertEqual(captured[0]["nonce_id"], body["nonce_id"])
+
+
+class TestMintConsumeRoundTrip(unittest.TestCase):
+    """Fix 6: end-to-end round-trip test pinning cross-module contract."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.nonce_dir = Path(self._tmp.name) / "nonces"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_mint_then_consume_different_tty(self) -> None:
+        """Mint a nonce via run_mint, then consume it with a different consumer_tty."""
+        # Use a shared secret key so both sides agree.
+        import secrets as _secrets
+        key = _secrets.token_bytes(32)
+
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+             mock.patch.object(approve_nonce_cli, "_resolve_minter_tty",
+                               return_value=("posix:/dev/pts/99", "posix-real")), \
+             mock.patch.object(approval_nonce, "_load_or_create_secret_key", return_value=key):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(audience="phase.approve", ttl=120),
+                nonce_dir=self.nonce_dir,
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+        self.assertEqual(rc, 0, msg="mint should succeed")
+
+        # Extract nonce_id from stdout.
+        out = stdout.getvalue()
+        nonce_id_part = [p for p in out.split() if p.startswith("nonce_id=")]
+        self.assertEqual(len(nonce_id_part), 1, msg=f"Unexpected stdout: {out!r}")
+        minted_nonce_id = nonce_id_part[0].split("=", 1)[1]
+
+        # Consume with a different consumer_tty.
+        result = approval_nonce.consume_newest_valid(
+            self.nonce_dir,
+            audience="phase.approve",
+            consumer_tty="/dev/pts/42",
+            secret_key=key,
+        )
+        self.assertEqual(result.outcome, "consumed",
+                         msg=f"Expected consumed, got {result.outcome!r}")
+        self.assertIsNotNone(result.nonce)
+        self.assertEqual(result.nonce.nonce_id, minted_nonce_id,
+                         msg="Consumed nonce_id must match minted nonce_id")
 
 
 if __name__ == "__main__":

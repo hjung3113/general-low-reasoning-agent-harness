@@ -20,6 +20,10 @@ EXIT_UNPARSEABLE_JSON = 5
 EXIT_WRONG_PHASE_FOR_VERB = 6
 EXIT_STALE_UNCERTAIN = 7
 EXIT_TIMESTAMP_OUT_OF_RANGE = 8
+# §12.1: exit 6 is taken by EXIT_WRONG_PHASE_FOR_VERB; next free integer = 9.
+# Budget-exhausted also uses 9 operationally (phase_txn.BudgetExhausted) — these
+# are distinct sub_reasons so callers disambiguate via sub_reason field.
+EXIT_NONCE_SIGNATURE_INVALID = 9
 
 
 __all__ = [
@@ -32,4 +36,5 @@ __all__ = [
     "EXIT_WRONG_PHASE_FOR_VERB",
     "EXIT_STALE_UNCERTAIN",
     "EXIT_TIMESTAMP_OUT_OF_RANGE",
+    "EXIT_NONCE_SIGNATURE_INVALID",
 ]

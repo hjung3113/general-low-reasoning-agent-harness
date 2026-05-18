@@ -17,17 +17,22 @@ Public surface
                                        minted_at, expires_at)
     ConsumeResult          -- dataclass(outcome, nonce|None)
                               outcome ∈ {"consumed", "missing", "expired",
-                                         "same_tty", "audience_mismatch"}
-    mint(nonce_dir, *, audience, minter_tty, ttl_seconds) -> Nonce
-    consume_newest_valid(nonce_dir, *, audience, consumer_tty)
-                                       -> ConsumeResult
+                                         "same_tty", "audience_mismatch",
+                                         "signature_invalid"}
+    mint(nonce_dir, *, audience, minter_tty, ttl_seconds,
+         secret_key) -> Nonce
+    consume_newest_valid(nonce_dir, *, audience, consumer_tty,
+                         secret_key) -> ConsumeResult
     default_nonce_dir() -> Path
+    default_secret_key_path() -> Path
 """
 
 from __future__ import annotations
 
 import base64
 import dataclasses
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -47,7 +52,7 @@ class Nonce:
 
 @dataclasses.dataclass(frozen=True)
 class ConsumeResult:
-    outcome: str  # "consumed" | "missing" | "expired" | "same_tty" | "audience_mismatch"
+    outcome: str  # "consumed" | "missing" | "expired" | "same_tty" | "audience_mismatch" | "signature_invalid"
     nonce: Optional[Nonce] = None
 
 
@@ -57,7 +62,11 @@ _OUTCOMES = (
     "expired",
     "same_tty",
     "audience_mismatch",
+    "signature_invalid",
 )
+
+# Sentinel returned by _load_one to indicate HMAC failure (distinct from None = parse error).
+_SIG_INVALID = object()
 
 
 def default_nonce_dir() -> Path:
@@ -72,6 +81,62 @@ def default_nonce_dir() -> Path:
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         return Path(base) / "Harness" / "approval-nonces"
     return Path.home() / ".harness" / "approval-nonces"
+
+
+def default_secret_key_path() -> Path:
+    """Resolve the canonical OS-specific secret key path.
+
+    POSIX: ``~/.harness/secret.key``
+    Windows: ``%LOCALAPPDATA%/Harness/secret.key``
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return Path(base) / "Harness" / "secret.key"
+    return Path.home() / ".harness" / "secret.key"
+
+
+def _load_or_create_secret_key(secret_path: Path) -> bytes:
+    """Return the 32-byte HMAC key from *secret_path*, creating it if absent.
+
+    Uses O_WRONLY|O_CREAT|O_EXCL for atomic create (race-safe).  File
+    permissions 0600 set on POSIX (best-effort).
+    """
+    # Fast path: key file already exists.
+    try:
+        data = secret_path.read_bytes()
+        if len(data) == 32:
+            return data
+        # Corrupt file — fall through to recreate.
+    except FileNotFoundError:
+        pass
+
+    # Create parent directory if needed.
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+
+    key = secrets.token_bytes(32)
+    try:
+        fd = os.open(str(secret_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, key)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        # Another process created the file between our read and create — read it.
+        data = secret_path.read_bytes()
+        if len(data) == 32:
+            return data
+        # Still corrupt — return what we generated (best-effort).
+        return key
+
+    # Best-effort chmod on POSIX (handles umask edge cases).
+    if os.name == "posix":
+        try:
+            os.chmod(str(secret_path), 0o600)
+        except OSError:
+            pass
+
+    return key
 
 
 def _gen_id() -> str:
@@ -104,18 +169,32 @@ def _ensure_windows_tty_path(tty_path: str) -> str:
     return tty_path
 
 
+def _compute_sig(body_without_sig: dict, key: bytes) -> str:
+    """Return HMAC-SHA256 hex digest over JSON-canonical *body_without_sig*."""
+    payload = json.dumps(body_without_sig, sort_keys=True).encode("utf-8")
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+
 def mint(
     nonce_dir: Path,
     *,
     audience: str,
     minter_tty: str,
     ttl_seconds: int = 120,
+    secret_key: Optional[bytes] = None,
 ) -> Nonce:
-    """Write a single-use nonce file. Returns the in-memory Nonce."""
+    """Write a single-use nonce file. Returns the in-memory Nonce.
+
+    The file is HMAC-SHA256 signed (§12.1).  *secret_key* is the raw 32-byte
+    key; if None the key is loaded/created from ``default_secret_key_path()``.
+    """
     # §3.1.1 defense-in-depth: on Windows os.ttyname is unavailable and callers
     # pass minter_tty="" — replace with a unique per-process session identifier
     # so cross-TTY guard does not collapse to no-op when both sides use "".
     minter_tty = _ensure_windows_tty_path(minter_tty)
+
+    if secret_key is None:
+        secret_key = _load_or_create_secret_key(default_secret_key_path())
 
     nonce_dir = Path(nonce_dir)
     nonce_dir.mkdir(parents=True, exist_ok=True)
@@ -136,6 +215,11 @@ def mint(
         "minted_at": minted_at,
         "expires_at": expires_at,
     }
+    # §12.1: HMAC-SHA256 sign the body (sort_keys=True for canonical form).
+    sig = _compute_sig(body, secret_key)
+    body["sig_version"] = 1
+    body["signature"] = sig
+
     path = nonce_dir / f"{nonce_id}.json"
     # O_EXCL guards against rare ID collision.
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -153,13 +237,20 @@ def mint(
     )
 
 
-def _load_one(path: Path) -> Optional[Nonce]:
+def _load_one(path: Path, secret_key: Optional[bytes] = None):
+    """Parse a nonce file.
+
+    Returns:
+        Nonce      — valid and signature OK (or no key provided)
+        _SIG_INVALID — parsed OK but HMAC check failed
+        None       — parse error (malformed file)
+    """
     try:
         body = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     try:
-        return Nonce(
+        nonce = Nonce(
             nonce_id=str(body["nonce_id"]),
             audience=str(body["audience"]),
             minter_tty=str(body["minter_tty"]),
@@ -169,31 +260,67 @@ def _load_one(path: Path) -> Optional[Nonce]:
     except (KeyError, TypeError, ValueError):
         return None
 
+    # §12.1: verify HMAC-SHA256 if a key is provided.
+    if secret_key is not None:
+        stored_sig = body.get("signature")
+        if stored_sig is None:
+            # Unsigned nonce — reject as signature_invalid.
+            return _SIG_INVALID
+        # Recompute over body minus {signature, sig_version}.
+        body_to_verify = {
+            k: v for k, v in body.items() if k not in ("signature", "sig_version")
+        }
+        expected_sig = _compute_sig(body_to_verify, secret_key)
+        if not hmac.compare_digest(stored_sig, expected_sig):
+            return _SIG_INVALID
+
+    return nonce
+
 
 def consume_newest_valid(
     nonce_dir: Path,
     *,
     audience: str,
     consumer_tty: str,
+    secret_key: Optional[bytes] = None,
 ) -> ConsumeResult:
     """Find the newest nonce for *audience*, validate freshness and TTY
     distinctness, delete the file, return the consumed Nonce.
 
     Outcome priority (when there ARE candidates for *audience*):
-      same_tty > expired > consumed
+      signature_invalid > same_tty > expired > consumed
     If no candidate at all (no files OR only wrong-audience files):
       → ``missing``.
+
+    *secret_key* is the raw 32-byte HMAC key; if None the key is loaded
+    from ``default_secret_key_path()``.  Pass ``secret_key=b""`` to skip
+    signature verification (test-only escape hatch — not recommended).
     """
+    if secret_key is None:
+        secret_key = _load_or_create_secret_key(default_secret_key_path())
+
     nonce_dir = Path(nonce_dir)
     if not nonce_dir.exists():
         return ConsumeResult(outcome="missing")
 
     now = time.time()
-    candidates: list[tuple[float, Path, Nonce]] = []
+    candidates: list[tuple[float, Path, object]] = []
     for p in nonce_dir.glob("*.json"):
-        n = _load_one(p)
-        if n is None:
+        result = _load_one(p, secret_key=secret_key)
+        if result is None:
             continue
+        if result is _SIG_INVALID:
+            # We still need the audience to filter; peek without sig check.
+            try:
+                body = json.loads(p.read_text(encoding="utf-8"))
+                if str(body.get("audience", "")) != audience:
+                    continue
+                minted_at = float(body.get("minted_at", 0))
+            except Exception:
+                continue
+            candidates.append((minted_at, p, _SIG_INVALID))
+            continue
+        n: Nonce = result  # type: ignore[assignment]
         if n.audience != audience:
             continue
         candidates.append((n.minted_at, p, n))
@@ -205,7 +332,26 @@ def consume_newest_valid(
     candidates.sort(key=lambda t: t[0], reverse=True)
 
     # Inspect the newest candidate's failure modes deterministically.
-    _, path, n = candidates[0]
+    # Priority: signature_invalid > same_tty > expired > consumed.
+    _, path, n_or_sentinel = candidates[0]
+
+    if n_or_sentinel is _SIG_INVALID:
+        # Build a minimal Nonce-like stub for the result; we only have
+        # what we can parse from the file (audience at least).
+        try:
+            body = json.loads(path.read_text(encoding="utf-8"))
+            stub = Nonce(
+                nonce_id=str(body.get("nonce_id", "")),
+                audience=str(body.get("audience", audience)),
+                minter_tty=str(body.get("minter_tty", "")),
+                minted_at=float(body.get("minted_at", 0)),
+                expires_at=float(body.get("expires_at", 0)),
+            )
+        except Exception:
+            stub = None
+        return ConsumeResult(outcome="signature_invalid", nonce=stub)
+
+    n: Nonce = n_or_sentinel  # type: ignore[assignment]
     if n.minter_tty == consumer_tty:
         return ConsumeResult(outcome="same_tty", nonce=n)
     if n.expires_at < now:
@@ -226,4 +372,6 @@ __all__ = [
     "mint",
     "consume_newest_valid",
     "default_nonce_dir",
+    "default_secret_key_path",
+    "_load_or_create_secret_key",
 ]
