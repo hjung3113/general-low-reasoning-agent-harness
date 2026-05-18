@@ -129,9 +129,14 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
     # misleading "no public key" error.  Space-separated single-quoted key=value
     # pairs per GIT_CONFIG_PARAMETERS spec.
     env = _clean_env()
+    # D-1 (Cycle-2): escape any apostrophes in the path so paths containing
+    # a single quote (e.g. user home dirs with apostrophes) don't break the
+    # GIT_CONFIG_PARAMETERS shell-quoting.  Replace ' with '\'' (end-quote,
+    # literal apostrophe, re-open-quote).
+    _safe_signers = str(allowed_signers).replace("'", "'\\''")
     env["GIT_CONFIG_PARAMETERS"] = (
         f"'gpg.format=ssh' "
-        f"'gpg.ssh.allowedSignersFile={allowed_signers}'"
+        f"'gpg.ssh.allowedSignersFile={_safe_signers}'"
     )
     verify = _run(["git", "verify-tag", tag], cwd=repo_root, env=env)
     if verify.returncode != 0:
