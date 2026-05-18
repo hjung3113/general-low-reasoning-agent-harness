@@ -124,10 +124,14 @@ def _read_target_trust_origin(target: Path) -> str | None:
     unparseable / missing keys" (raises UpgradeTrustError with
     sub_reason="target_manifest_corrupted").  A corrupted install-state.json
     must NOT silently mask a prior signed_tag install and allow a downgrade.
+
+    B3-Fix-1: When installed_files_chain_hash is present and trust fields
+    (trust_origin, release_tag, release_commit) are present, verify the chain
+    hash to detect tampering. Old v1 records without the hash field are accepted
+    without chain verification (backward compatibility).
     """
     from lib.state import INSTALL_STATE as _IS  # avoid circular at module level
     from lib.release_trust import UpgradeTrustError as _UTE  # local import — avoid circular
-    from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID as _EXIT17
     p = target / _IS
     if not p.exists():
         return None
@@ -152,6 +156,44 @@ def _read_target_trust_origin(target: Path) -> str | None:
             "target_manifest_corrupted",
             "install-state.json top-level value is not a JSON object",
         )
+    # B3-Fix-1: Verify chain hash when present to detect tampering with trust fields.
+    # Only verify when ALL trust provenance fields are present — old records written
+    # before this fix have trust_origin stamped AFTER the chain hash was computed
+    # (without trust fields), so their chain hash won't match the new format.
+    # We detect new-format records by the presence of release_tag AND release_commit
+    # alongside trust_origin (these are only stamped by _stamp_installed_manifest_v2
+    # and _stamp_install_trust_origin which ALSO include trust fields in the hash).
+    stored_chain_hash = data.get("installed_files_chain_hash")
+    has_trust_provenance = (
+        data.get("trust_origin") is not None
+        and "release_tag" in data
+        and "release_commit" in data
+    )
+    if stored_chain_hash and has_trust_provenance:
+        installed_files: dict = data.get("files", {})
+        recomputed_chain_manifest: dict = {
+            "release_commit": data.get("release_commit"),
+            "release_tag": data.get("release_tag"),
+            "schema_version": data.get("schema_version", 2),
+            "harness_version": data.get("harness_version", ""),
+            "files": {
+                p_str: {
+                    "installed_sha256": v.get("installed_sha256", ""),
+                    "current_sha256": v.get("current_sha256", ""),
+                }
+                for p_str, v in installed_files.items()
+                if isinstance(v, dict) and "installed_sha256" in v
+            },
+            "removed_in_version": [],
+            "trust_origin": data.get("trust_origin"),
+        }
+        expected_hash = compute_manifest_hash_chain(recomputed_chain_manifest)
+        if expected_hash != stored_chain_hash:
+            raise _UTE(
+                "target_manifest_corrupted",
+                f"install-state.json chain hash mismatch — possible tampering. "
+                f"Expected {expected_hash!r}, stored {stored_chain_hash!r}",
+            )
     # trust_origin may legitimately be absent (old v1 records) — that's fine.
     return data.get("trust_origin")
 
@@ -243,12 +285,15 @@ def _build_release_manifest_v2(
                 sub_reason="trust_downgrade_refused",
                 target_path=str(target) if target else None,
             )
-            raise UpgradeTrustError(
+            _te_downgrade = UpgradeTrustError(
                 "trust_downgrade_refused",
                 "target manifest already has trust_origin=signed_tag; "
                 "refusing downgrade to dev_unsigned. "
                 "Unset HARNESS_ALLOW_UNSIGNED_DEV or use a signed release tag.",
             )
+            # B3-Fix-2: emit SystemExit with the constant exit code, not a bare
+            # UpgradeTrustError that may propagate silently.
+            raise SystemExit(_te_downgrade.exit_code) from _te_downgrade
 
     if is_dev_version:
         # Dev checkout: working-tree path without tag verification.
@@ -433,8 +478,19 @@ def _stamp_installed_manifest_v2(
         print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
         print("====================================================================", file=_sys.stderr)
 
+    # B3-Fix-1: persist trust provenance fields so subsequent upgrades can
+    # read back trust_origin and enforce downgrade protection, and so chain
+    # hash covers these fields (tampering is chain-hash-detected).
+    for key in ("trust_origin", "release_tag", "release_commit"):
+        if key in release_manifest:
+            installed[key] = release_manifest[key]
+
     # Compute and stamp installed_files_chain_hash
+    # B3-Fix-1: include trust_origin, release_tag, release_commit in canonical
+    # input so tampering with any of these fields is chain-hash-detected.
     chain_manifest: dict[str, object] = {
+        "release_commit": installed.get("release_commit"),
+        "release_tag": installed.get("release_tag"),
         "schema_version": 2,
         "harness_version": harness_version,
         "files": {
@@ -443,6 +499,7 @@ def _stamp_installed_manifest_v2(
             if isinstance(v, dict) and "installed_sha256" in v
         },
         "removed_in_version": [],
+        "trust_origin": installed.get("trust_origin"),
     }
     installed["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
 
@@ -628,12 +685,24 @@ def upgrade(
     # current_sha256, and installed_files_chain_hash onto the installed dict.
     # Backward compat: if prior manifest schema_version < 2, prior_manifest
     # is treated as None (no upgrade history) — reconcile_install handles this.
-    release_manifest_v2 = _build_release_manifest_v2(
-        root=root,
-        entries=entries,
-        harness_version=harness_version,
-        target=target,
-    )
+    try:
+        release_manifest_v2 = _build_release_manifest_v2(
+            root=root,
+            entries=entries,
+            harness_version=harness_version,
+            target=target,
+        )
+    except UpgradeTrustError as _ute:
+        # B3-Fix-2: bare UpgradeTrustError (e.g. target_manifest_corrupted from
+        # _read_target_trust_origin) must become SystemExit, not an unhandled
+        # exception that produces a confusing traceback.
+        _emit_trust_audit(
+            "release.trust.refused",
+            target=target,
+            sub_reason=_ute.sub_reason,
+            detail=str(_ute),
+        )
+        raise SystemExit(_ute.exit_code) from _ute
     prior_installed_path = target / INSTALL_STATE
     prior_manifest_v2 = None
     if prior_installed_path.exists():

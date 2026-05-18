@@ -9,10 +9,33 @@
 # Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md §5.2
 
 if ($env:HARNESS_AUTOPILOT_NETWORK -eq "deny") {
+    function _Harness_ResolveAuditPath {
+        # B3-Fix-4: resolve audit path robustly so $PROFILE wiring works.
+        # Under $PROFILE, (Get-Location) may be $HOME, not the project root.
+        if ($env:HARNESS_PROJECT_ROOT) {
+            return Join-Path $env:HARNESS_PROJECT_ROOT ".harness/audit.log"
+        }
+        # Walk up from the script's own location to find a .harness/ ancestor.
+        $dir = $PSScriptRoot
+        while ($dir -and (Test-Path $dir)) {
+            $candidate = Join-Path $dir ".harness"
+            if (Test-Path $candidate) {
+                return Join-Path $candidate "audit.log"
+            }
+            $parent = Split-Path $dir -Parent
+            if ($parent -eq $dir) { break }
+            $dir = $parent
+        }
+        return $null  # caller must warn-and-skip logging (but still deny)
+    }
+
     function _Harness_Deny([string]$cmd, [string[]]$args) {
         $cmdLine = "$cmd " + ($args -join ' ')
         if ($cmdLine.Length -gt 512) { $cmdLine = $cmdLine.Substring(0, 512) }
-        $auditPath = Join-Path (Get-Location) ".harness/audit.log"
+        $auditPath = _Harness_ResolveAuditPath
+        if ($null -eq $auditPath) {
+            [System.Console]::Error.WriteLine("WARNING: audit.log unreachable; deny still enforced")
+        }
         # Best-effort audit append — PS 5.1 compatible.
         # [System.Text.UTF8Encoding]($false) = UTF-8 without BOM, works on PS 5.1+.
         # [DateTime]::UtcNow = UTC timestamp, works on PS 5.1+ (no PS 7.1-only flags).
@@ -24,16 +47,17 @@ if ($env:HARNESS_AUTOPILOT_NETWORK -eq "deny") {
             at = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
             network_guard_posture = "windows_audit_guard_degraded"
         } | ConvertTo-Json -Compress
-        # P2-A4: ensure .harness/ directory exists before AppendAllText so
-        # audit row is never silently lost on a fresh clone where .harness/
-        # has not yet been created by the harness installer.
-        $dir = Split-Path $auditPath
-        if (-not (Test-Path $dir)) {
-            try { New-Item -ItemType Directory -Force -Path $dir | Out-Null } catch {}
+        # P2-A4 / B3-Fix-4: guard against null auditPath (unresolvable project root).
+        # Security policy (deny) is enforced regardless of audit availability.
+        if ($null -ne $auditPath) {
+            $dir = Split-Path $auditPath
+            if (-not (Test-Path $dir)) {
+                try { New-Item -ItemType Directory -Force -Path $dir | Out-Null } catch {}
+            }
+            try {
+                [System.IO.File]::AppendAllText($auditPath, $entry + "`n", (New-Object System.Text.UTF8Encoding($false)))
+            } catch {}
         }
-        try {
-            [System.IO.File]::AppendAllText($auditPath, $entry + "`n", (New-Object System.Text.UTF8Encoding($false)))
-        } catch {}
         Write-Error "refused: $cmd (autopilot deny-list; windows degraded posture)"
         exit 4
     }

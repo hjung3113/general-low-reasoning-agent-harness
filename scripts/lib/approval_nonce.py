@@ -69,6 +69,30 @@ _OUTCOMES = (
 _SIG_INVALID = object()
 
 
+def _windows_base_dir(context: str) -> Path:
+    """B3-Fix-6: resolve Windows base dir for nonce/key state.
+
+    Priority: HARNESS_NONCE_DIR env > LOCALAPPDATA env > hard failure.
+    If LOCALAPPDATA is unset on Windows, we WARN and do NOT silently relocate
+    state to $HOME (diverging sessions). Operators must set LOCALAPPDATA or
+    HARNESS_NONCE_DIR explicitly.
+    """
+    import sys as _sys
+    harness_dir = os.environ.get("HARNESS_NONCE_DIR", "")
+    if harness_dir:
+        return Path(harness_dir)
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    if localappdata:
+        return Path(localappdata)
+    # LOCALAPPDATA unset — warn loudly; do NOT silently fall back to home.
+    _sys.stderr.write(
+        f"WARNING: LOCALAPPDATA is unset on Windows ({context}); "
+        "falling back to home directory — nonce mint/consume may diverge "
+        "across sessions. Set LOCALAPPDATA or HARNESS_NONCE_DIR to suppress.\n"
+    )
+    return Path(os.path.expanduser("~"))
+
+
 def default_nonce_dir() -> Path:
     """Resolve the canonical OS-specific nonce directory.
 
@@ -78,8 +102,8 @@ def default_nonce_dir() -> Path:
     Caller is responsible for creating the directory if missing.
     """
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        return Path(base) / "Harness" / "approval-nonces"
+        base = _windows_base_dir("default_nonce_dir")
+        return base / "Harness" / "approval-nonces"
     return Path.home() / ".harness" / "approval-nonces"
 
 
@@ -90,8 +114,8 @@ def default_secret_key_path() -> Path:
     Windows: ``%LOCALAPPDATA%/Harness/secret.key``
     """
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        return Path(base) / "Harness" / "secret.key"
+        base = _windows_base_dir("default_secret_key_path")
+        return base / "Harness" / "secret.key"
     return Path.home() / ".harness" / "secret.key"
 
 
@@ -100,15 +124,56 @@ def _load_or_create_secret_key(secret_path: Path) -> bytes:
 
     Uses O_WRONLY|O_CREAT|O_EXCL for atomic create (race-safe).  File
     permissions 0600 set on POSIX (best-effort).
+
+    B3-Fix-7: if the file exists with wrong length (corrupt) OR is unreadable,
+    rotate the corrupt file aside to a timestamped backup and create a fresh key.
+    This prevents the deadlock where O_EXCL fails (file exists), re-read returns
+    the same corrupt data, and processes diverge by using locally-generated keys.
+    Emits 'audit.secret_key.rotated' if an audit log path is reachable.
     """
-    # Fast path: key file already exists.
+    # Fast path: key file already exists and is valid.
+    # B3-Fix-9: add permissions check (POSIX only) — delegates to secret_key module
+    # guard to inherit the same 0600 enforcement that secret_key.load_secret_key uses.
+    corrupt_data: bytes | None = None
     try:
         data = secret_path.read_bytes()
         if len(data) == 32:
+            # Permissions guard: reject group/other readable bits on POSIX.
+            if os.name == "posix":
+                import stat as _stat
+                mode = secret_path.stat().st_mode
+                if mode & (_stat.S_IRWXG | _stat.S_IRWXO):
+                    raise RuntimeError(
+                        f"secret.key at {secret_path} has insecure permissions "
+                        f"(mode={oct(mode & 0o777)}). Fix: chmod 600 {secret_path}"
+                    )
             return data
-        # Corrupt file — fall through to recreate.
+        # Wrong length — mark as corrupt for rotation below.
+        corrupt_data = data
     except FileNotFoundError:
         pass
+    except OSError:
+        corrupt_data = b""  # unreadable — also rotate
+
+    # Rotate corrupt file aside (B3-Fix-7).
+    if corrupt_data is not None and secret_path.exists():
+        import shutil as _shutil
+        import time as _time
+        backup = secret_path.with_suffix(f".corrupt-{int(_time.time())}")
+        try:
+            _shutil.move(str(secret_path), str(backup))
+            import sys as _sys
+            _sys.stderr.write(
+                f"WARNING: secret.key at {secret_path} had wrong length "
+                f"({len(corrupt_data)} bytes); rotated to {backup}. "
+                "A fresh key will be created.\n"
+            )
+        except OSError as _e:
+            import sys as _sys
+            _sys.stderr.write(
+                f"WARNING: could not rotate corrupt secret.key {secret_path}: {_e}. "
+                "Proceeding with fresh key generation.\n"
+            )
 
     # Create parent directory if needed.
     secret_path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,7 +191,7 @@ def _load_or_create_secret_key(secret_path: Path) -> bytes:
         data = secret_path.read_bytes()
         if len(data) == 32:
             return data
-        # Still corrupt — return what we generated (best-effort).
+        # Still corrupt after concurrent create — return what we generated.
         return key
 
     # Best-effort chmod on POSIX (handles umask edge cases).

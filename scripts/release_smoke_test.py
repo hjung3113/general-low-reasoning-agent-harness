@@ -1843,7 +1843,7 @@ def case_oidc_jti_replay(args) -> "CaseResult":
       - Fresh fixture repo with OIDC test-mode claims including a `jti` field.
     Steps:
       1. Run `harness fsd-run-phase 01-foo` with OIDC claims including jti=<uuid>.
-         → First call: jti is recorded in .harness/oidc_jti_seen.json; exit 0.
+         → First call: jti marker created in .harness/jti-seen/<jti>.consumed; exit 0.
       2. Run `harness fsd-run-phase 01-foo` again with the SAME jti.
          → Replay detected; exit 6 sub_reason=ci_oidc_jti_replay.
     Assert:
@@ -1877,13 +1877,15 @@ def case_oidc_jti_replay(args) -> "CaseResult":
             f"first_exit={first_exit}; stderr: {proc1.stderr[:300]!r}",
         ))
 
-        # JTI seen file should exist after first call
-        jti_seen = repo / ".harness" / "oidc_jti_seen.json"
-        jti_seen_exists = jti_seen.exists()
+        # B2-Fix-2: JTI store switched to per-marker files under .harness/jti-seen/.
+        # Check that the marker file was created (not the old JSON store).
+        safe_jti = test_jti.replace("/", "_").replace("\\", "_").replace(":", "_")
+        jti_marker = repo / ".harness" / "jti-seen" / f"{safe_jti}.consumed"
+        jti_seen_exists = jti_marker.exists()
         assertions.append((
             ".harness/oidc_jti_seen.json created after first call",
             jti_seen_exists,
-            f"path: {jti_seen}",
+            f"path: {jti_marker}",
         ))
 
         # Second call with SAME jti: should be rejected (exit 6)

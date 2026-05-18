@@ -199,9 +199,11 @@ class TestBuildReleaseManifestV2Trust(unittest.TestCase):
         def _fake_verify(repo_root, tag):
             raise UpgradeTrustError("tag_signature_invalid", "no signature")
 
+        # B3-Fix-2: trust_downgrade_refused now raises SystemExit(EXIT_RELEASE_TRUST_INVALID)
+        # rather than a bare UpgradeTrustError, so the caller gets a clean exit code.
         with (
             patch("lib.release_trust.verify_release_tag", side_effect=_fake_verify),
-            self.assertRaises(UpgradeTrustError) as ctx,
+            self.assertRaises(SystemExit) as ctx,
         ):
             _call_build(
                 entries=[],
@@ -211,7 +213,7 @@ class TestBuildReleaseManifestV2Trust(unittest.TestCase):
                 env={"HARNESS_ALLOW_UNSIGNED_DEV": "1"},
             )
 
-        self.assertEqual(ctx.exception.sub_reason, "trust_downgrade_refused")
+        self.assertEqual(ctx.exception.code, EXIT_RELEASE_TRUST_INVALID)
 
     # ── Test 4: no env, no target manifest → SystemExit(15) ──────────────────
 

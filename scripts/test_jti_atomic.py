@@ -27,10 +27,19 @@ def _worker_check_jti(
     jti: str,
     harness_dir: str,
     audit_path: str,
+    scripts_dir: str,
     result_queue: "multiprocessing.Queue[str]",
 ) -> None:
-    """Worker: call _check_and_record_jti and push 'ok' or 'replay' to queue."""
-    result = _check_and_record_jti(
+    """Worker: call _check_and_record_jti and push 'ok' or 'replay' to queue.
+
+    scripts_dir is passed explicitly because multiprocessing.spawn does not
+    inherit the parent's sys.path modifications.
+    """
+    import sys as _sys
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+    from lib import phase_autopilot as _pa
+    result = _pa._check_and_record_jti(
         jti,
         harness_dir=Path(harness_dir),
         audit_path=Path(audit_path),
@@ -43,6 +52,8 @@ def _worker_check_jti(
 
 class TestJtiAtomicConcurrency(unittest.TestCase):
 
+    _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+
     def _run_two_concurrent(
         self, jti: str, harness_dir: Path, audit_path: Path
     ) -> tuple[str, str]:
@@ -51,11 +62,11 @@ class TestJtiAtomicConcurrency(unittest.TestCase):
         q: multiprocessing.Queue = ctx.Queue()
         p1 = ctx.Process(
             target=_worker_check_jti,
-            args=(jti, str(harness_dir), str(audit_path), q),
+            args=(jti, str(harness_dir), str(audit_path), self._SCRIPTS_DIR, q),
         )
         p2 = ctx.Process(
             target=_worker_check_jti,
-            args=(jti, str(harness_dir), str(audit_path), q),
+            args=(jti, str(harness_dir), str(audit_path), self._SCRIPTS_DIR, q),
         )
         p1.start()
         p2.start()
@@ -91,11 +102,11 @@ class TestJtiAtomicConcurrency(unittest.TestCase):
             q: multiprocessing.Queue = ctx.Queue()
             p1 = ctx.Process(
                 target=_worker_check_jti,
-                args=("jti-alpha", str(harness_dir), str(audit_path), q),
+                args=("jti-alpha", str(harness_dir), str(audit_path), self._SCRIPTS_DIR, q),
             )
             p2 = ctx.Process(
                 target=_worker_check_jti,
-                args=("jti-beta", str(harness_dir), str(audit_path), q),
+                args=("jti-beta", str(harness_dir), str(audit_path), self._SCRIPTS_DIR, q),
             )
             p1.start()
             p2.start()

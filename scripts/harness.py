@@ -440,6 +440,16 @@ def run(argv: list[str] | None = None) -> int:
     upgrade_parser.add_argument("--adapters", default=None, help="Adapter scope for upgrade. Defaults to installed adapters.")
     upgrade_parser.add_argument("--profiles", default=None, help="Profile scope for upgrade. Defaults to installed profiles.")
     upgrade_parser.add_argument("--packs", default=None, help="Pack scope for upgrade. Defaults to installed packs.")
+    upgrade_parser.add_argument(
+        "--allow-unsigned-dev",
+        action="store_true",
+        default=False,
+        help=(
+            "Accept an unsigned release tag (equivalent to HARNESS_ALLOW_UNSIGNED_DEV=1). "
+            "For development installs only. Emits release.trust.bypassed audit row with "
+            "bypass_source=cli_flag. Refused if the target already has trust_origin=signed_tag."
+        ),
+    )
 
     check_parser = subparsers.add_parser("check", help="Validate harness structure and policy.")
     check_parser.add_argument("--target", type=Path, default=None)
@@ -923,6 +933,28 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "upgrade":
         raw_upgrade_profiles = parse_optional_scope(args.profiles)
+        # B3-Fix-10: --allow-unsigned-dev CLI flag sets HARNESS_ALLOW_UNSIGNED_DEV=1
+        # so the trust logic in _build_release_manifest_v2 picks it up. Also emit
+        # an audit row distinguishing cli_flag vs env_var bypass_source.
+        if getattr(args, "allow_unsigned_dev", False):
+            import os as _os
+            if not _os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV"):
+                _os.environ["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"
+                # Emit bypass_source=cli_flag audit row (best-effort).
+                try:
+                    from lib.audit import audit_append as _aa
+                    import datetime as _dt
+                    _audit_path = args.target / ".harness" / "audit.log"
+                    _aa(
+                        {
+                            "verb": "release.trust.bypassed",
+                            "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "args": {"bypass_source": "cli_flag"},
+                        },
+                        audit_path=_audit_path,
+                    )
+                except Exception:
+                    pass
         return upgrade(
             root=command_root,
             target=args.target,

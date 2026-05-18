@@ -73,9 +73,13 @@ function Invoke-DenyCase {
 
     # Build the inline script block for the child process.
     # We use single-quoted heredoc to avoid escaping issues.
+    # B3-Fix-4: set HARNESS_PROJECT_ROOT so _Harness_ResolveAuditPath finds the
+    # correct audit.log even when $PSScriptRoot is the guard script's parent dir
+    # (scripts/lib/) which has no .harness/ ancestor in this test temp tree.
     $inlineScript = @"
 Set-Location '$CaseDir'
 `$env:HARNESS_AUTOPILOT_NETWORK = 'deny'
+`$env:HARNESS_PROJECT_ROOT = '$CaseDir'
 . '$GuardScript'
 $ShimCall
 "@

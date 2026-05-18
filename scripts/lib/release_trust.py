@@ -39,13 +39,14 @@ class UpgradeTrustError(Exception):
         Machine-readable reason code, one of:
           - tag_not_found           : no such tag in the repo
           - tag_signature_invalid   : git verify-tag returned non-zero
+          - tag_moved_during_verify : tag SHA changed between pre/post rev-list (B3-Fix-8)
           - path_missing_in_signed_tree : file absent from the signed commit tree
           - trust_downgrade_refused : target already trusts signed_tag; refusing dev
           - target_manifest_corrupted : install-state.json present but unparseable
           - allowed_signers_outside_repo : allowed-signers path escapes repo root
           - bypass_requires_tty_confirm : bypass requested on non-TTY stdin
     exit_code : int
-        Always EXIT_RELEASE_TRUST_INVALID (17).
+        Always EXIT_RELEASE_TRUST_INVALID (15 per §3.4 Cycle-1 fix).
     """
 
     def __init__(self, sub_reason: str, detail: str = "",
@@ -122,10 +123,14 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
         )
 
     # Step 2: verify SSH signature.
-    # Inject gpg.ssh.allowedSignersFile via GIT_CONFIG_PARAMETERS so we do not
-    # mutate any user or system gitconfig.
+    # B3-Fix-5: inject BOTH gpg.format=ssh AND gpg.ssh.allowedSignersFile via
+    # GIT_CONFIG_PARAMETERS so that user or system gitconfig with gpg.format=openpgp
+    # (the default on Git for Windows) does not cause verify-tag to fail with a
+    # misleading "no public key" error.  Space-separated single-quoted key=value
+    # pairs per GIT_CONFIG_PARAMETERS spec.
     env = _clean_env()
     env["GIT_CONFIG_PARAMETERS"] = (
+        f"'gpg.format=ssh' "
         f"'gpg.ssh.allowedSignersFile={allowed_signers}'"
     )
     verify = _run(["git", "verify-tag", tag], cwd=repo_root, env=env)
@@ -135,11 +140,28 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
             (verify.stderr or verify.stdout or "").strip(),
         )
 
-    # Step 3: resolve to commit SHA (already ran above; re-use output).
-    commit_sha = check.stdout.strip()
-    if not commit_sha:
+    # Step 3: B3-Fix-8 — re-run rev-list AFTER verify-tag to close the TOCTOU
+    # window where the tag could move between the initial rev-list and verify.
+    # Assert SHA equality; any mismatch means the tag moved during verification.
+    pre_verify_sha = check.stdout.strip()
+    if not pre_verify_sha:
         raise UpgradeTrustError("tag_signature_invalid", "could not resolve tag to commit SHA")
-    return commit_sha
+
+    post_verify = _run(["git", "rev-list", "-n", "1", tag], cwd=repo_root)
+    if post_verify.returncode != 0:
+        raise UpgradeTrustError(
+            "tag_moved_during_verify",
+            f"git rev-list -n 1 {tag!r} failed after verify-tag succeeded",
+        )
+    post_verify_sha = post_verify.stdout.strip()
+    if pre_verify_sha != post_verify_sha:
+        raise UpgradeTrustError(
+            "tag_moved_during_verify",
+            f"tag {tag!r} resolved to different SHA before and after verify-tag: "
+            f"{pre_verify_sha!r} → {post_verify_sha!r}. Possible race or tag mutation.",
+        )
+
+    return post_verify_sha
 
 
 def file_sha256_at_commit(repo_root: Path, commit_sha: str, path: str) -> str:
