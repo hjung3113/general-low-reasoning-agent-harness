@@ -134,9 +134,9 @@ _FIX_APPROVER_NOT_IN_INSTALL_RECORD = (
     "may authorize autopilot; re-run `harness install` to update approvers"
 )
 _FIX_HUMAN_PROOF = (
-    "Fix: run `harness approve-nonce mint` in your TTY before calling "
-    "`phase autopilot start`; the nonce must be minted from a DIFFERENT "
-    "TTY than the one running the command (design §3.1.1)"
+    "Fix: run `harness approve-nonce mint --audience phase.autopilot.start` "
+    "in your TTY before calling `phase autopilot start`; the nonce must be "
+    "minted from a DIFFERENT TTY than the one running the command (design §3.1.1)"
 )
 _FIX_ALLOW_NETWORK_SOURCE = (
     "Fix: `--allow-network` is only permitted when the same CI predicate "

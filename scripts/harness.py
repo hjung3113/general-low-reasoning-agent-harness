@@ -783,6 +783,33 @@ def run(argv: list[str] | None = None) -> int:
         help="Acting user email (recorded in audit row; defaults to gitconfig).",
     )
 
+    # Approval-nonce admin verbs (design §3.1.1).
+    approve_nonce_parser = subparsers.add_parser(
+        "approve-nonce",
+        help="Out-of-project human-presence nonce admin verbs (TTY-only, design §3.1.1).",
+    )
+    an_sub = approve_nonce_parser.add_subparsers(dest="approve_nonce_command", required=True)
+    an_mint = an_sub.add_parser(
+        "mint",
+        help="Mint a single-use human-presence nonce for a specific audience.",
+    )
+    an_mint.add_argument(
+        "--audience",
+        required=True,
+        metavar="AUDIENCE",
+        help=(
+            "Nonce audience claim. Use 'phase.approve' for `harness phase approve` "
+            "or 'phase.autopilot.start' for `harness phase autopilot start`."
+        ),
+    )
+    an_mint.add_argument(
+        "--ttl",
+        type=int,
+        default=120,
+        metavar="SECONDS",
+        help="Nonce lifetime in seconds (1..3600, default: 120).",
+    )
+
     # Audit-tip anchor admin verbs (design doc §12.1, S00.7-anchor).
     anchor_parser = subparsers.add_parser(
         "anchor",
@@ -1020,6 +1047,13 @@ def run(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         from lib.audit_verify_cli import cmd_verify_audit
         return cmd_verify_audit(args, root)
+    if args.command == "approve-nonce":
+        from lib.approve_nonce_cli import run_mint
+        if args.approve_nonce_command == "mint":
+            if not (1 <= args.ttl <= 3600):
+                parser.error(f"--ttl must be between 1 and 3600; got {args.ttl}")
+            return run_mint(args, stdout=sys.stdout, stderr=sys.stderr)
+        raise AssertionError(f"Unhandled approve-nonce subcommand: {args.approve_nonce_command}")
     if args.command == "anchor":
         from lib.anchor_cli import cmd_anchor_repair
         if args.anchor_command == "repair":

@@ -294,6 +294,7 @@ KNOWN_VERBS: frozenset = frozenset([
     "autopilot.fence.deny",
     "autopilot.network.deny",
     # CLI / session verbs
+    "approve_nonce.mint",
     "cli.deprecated_flag",
     "session.unlock",
     "lock.recovered",

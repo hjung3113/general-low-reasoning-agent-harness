@@ -87,11 +87,13 @@ _FIX_APPROVER_MEMBERSHIP = (
     "`--override-identity --reason <text>`"
 )
 _FIX_NONCE_MISSING = (
-    "Fix: in a separate terminal run `harness approve-nonce mint`, "
+    "Fix: in a separate terminal run "
+    "`harness approve-nonce mint --audience phase.approve`, "
     "then re-run `harness phase approve`"
 )
 _FIX_NONCE_EXPIRED = (
-    "Fix: nonces expire after 120s; re-mint via `harness approve-nonce mint`"
+    "Fix: nonces expire after 120s; re-mint via "
+    "`harness approve-nonce mint --audience phase.approve`"
 )
 _FIX_NONCE_SAME_TTY = (
     "Fix: mint the nonce from a different terminal "
