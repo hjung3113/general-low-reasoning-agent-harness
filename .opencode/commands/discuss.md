@@ -4,7 +4,7 @@ Use this command for `phase=discuss` work only.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.
 
-Run `harness check`. If it prints `warning:` lines naming specific files, treat those files as minimum required reads before trusting the projection. If exit is non-zero, the binary is missing, output is malformed, or it reports an unsupported contract version, fall back to the legacy durable planning read order.
+Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 Preflight checklist:
 
@@ -34,11 +34,10 @@ Forbidden work:
 - changing the live gate to `execute`
 - using stack-specific profile commands before that profile is confirmed
 
-Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+Advance the lifecycle only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do NOT run low-level phase/approval commands from this adapter:
 
 ```text
-harness phase set plan
-harness phase approve
+harness run
 ```
 
 Output checklist:

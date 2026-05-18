@@ -13,6 +13,7 @@ appropriate ``scripts.lib`` module and adding a single import line here.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -267,7 +268,7 @@ __all__ = [
     "REQUIRED_TARGET_PHRASES", "CONTAMINATION_PATTERNS",
     "run", "run_delegated_command",
     # status-next
-    "cmd_status", "cmd_next",
+    "cmd_status", "cmd_next", "cmd_run", "cmd_check_machine",
 ]
 
 
@@ -384,6 +385,19 @@ def main() -> int:
     return run()
 
 
+def _normal_help() -> str:
+    return (
+        "usage: harness [next|run|check]\n\n"
+        "Normal workflow:\n"
+        "  harness        Show this guide.\n"
+        "  harness next   Show the next safe action.\n"
+        "  harness run    Run the next safe workflow step; stops for approval.\n"
+        "  harness check  Validate the harness and project workflow state.\n\n"
+        "Advanced/debug commands are hidden from the normal path. "
+        "Set HARNESS_ADVANCED=1 to show the full command surface.\n"
+    )
+
+
 def run(argv: list[str] | None = None) -> int:
     global HARNESS_VERSION
 
@@ -391,6 +405,11 @@ def run(argv: list[str] | None = None) -> int:
     # --chain / --auto are detected anywhere in argv; halt with exit 13 +
     # structured hint + audit entry verb=cli.deprecated_flag.
     _check_argv = argv if argv is not None else sys.argv[1:]
+    if os.environ.get("HARNESS_ADVANCED") != "1" and (
+        not _check_argv or _check_argv in (["-h"], ["--help"])
+    ):
+        sys.stdout.write(_normal_help())
+        return 0
     try:
         from lib.cli_deprecated import check_deprecated_flags, print_and_exit
         _dep_err = check_deprecated_flags(
@@ -914,6 +933,12 @@ def run(argv: list[str] | None = None) -> int:
         help="Output machine-readable JSON: {requires_human, agent_safe, command, reason}.",
     )
 
+    # ----- harness run (v0.8 normal path) -----
+    subparsers.add_parser(
+        "run",
+        help="Run the next safe workflow step; stops for human approval.",
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -992,6 +1017,20 @@ def run(argv: list[str] | None = None) -> int:
             command.extend(["--base", args.base])
         if args.worktree:
             command.append("--worktree")
+        if os.environ.get("HARNESS_MACHINE") == "1":
+            result = subprocess.run(command, cwd=root, text=True, capture_output=True)
+            warnings = []
+            for stream in (result.stderr, result.stdout):
+                for line in stream.splitlines():
+                    if line.strip():
+                        warnings.append(line.strip())
+            from lib.status_next_cli import cmd_check_machine, _read_current_state_for_machine
+            state = _read_current_state_for_machine(Path.cwd())
+            return cmd_check_machine(
+                result.returncode,
+                phase=state.get("phase", "unknown"),
+                warnings=warnings if result.returncode else [],
+            )
         return run_delegated_command(command, root)
     if args.command == "doctor":
         command = [sys.executable, str(root / "scripts/doctor_harness.py"), "--format", args.format]
@@ -1114,6 +1153,9 @@ def run(argv: list[str] | None = None) -> int:
     if args.command == "next":
         from lib.status_next_cli import cmd_next
         return cmd_next(args)
+    if args.command == "run":
+        from lib.status_next_cli import cmd_run
+        return cmd_run(args)
     raise AssertionError(f"Unhandled command: {args.command}")
 
 

@@ -924,6 +924,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/release_trust.py",
+      "source": "scripts/lib/release_trust.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/managed_block.py",
       "source": "scripts/lib/managed_block.py",
       "policy": "harness-owned"

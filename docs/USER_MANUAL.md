@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.7.2)
+# 하네스 사용자 설명서 (v0.8.0)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -51,6 +51,24 @@ Core protocol은 client-neutral, stack-neutral입니다. Roo와 OpenCode는 adap
 
 ## 2. 첫 세션 시작하기
 
+### 2.0 매일 쓰는 명령 4개
+
+설치된 target repository에서 보통 사용자는 아래 네 개만 알면 됩니다:
+
+```bash
+harness
+harness next
+harness run
+harness check
+```
+
+- `harness`: 짧은 사용 가이드를 보여줍니다.
+- `harness next`: 지금 해도 되는 다음 행동을 보여줍니다.
+- `harness run`: 안전한 workflow 전환만 실행합니다. 사람 승인이 필요하면 승인 안내를 출력하고 멈춥니다.
+- `harness check`: 하네스 구조와 현재 workflow gate를 검증합니다.
+
+저수준 `phase`, nonce, audit, state repair, autopilot 명령은 advanced/debug/CI용입니다. 일반 prompt와 adapter prompt는 이를 정상 경로로 요구하지 않습니다.
+
 ### 2.1 설치 옵션 요약
 
 설치 시 선택한 profile과 database 축이 어떤 skill pack과 adapter가 설치될지 결정합니다:
@@ -64,13 +82,11 @@ target repository 안에서:
 
 ```bash
 python3 scripts/harness.py check
-python3 scripts/harness.py doctor
-python3 scripts/harness.py state show
+python3 scripts/harness.py next
 ```
 
 - `check`: 구조 오류, missing verification, managed block 누락, 단계 경로 drift를 감지합니다.
-- `doctor`: workflow 품질 신호(누락된 required reads, 설치 manifest 불일치)를 warning으로 보고합니다.
-- `state show`: 현재 phase 상태와 active checkpoint를 projection으로 표시합니다.
+- `next`: 현재 phase 상태를 바탕으로 다음 안전 행동을 알려줍니다.
 
 ### 2.3 Planning State 탐색
 
@@ -137,12 +153,15 @@ active phase docs는 다음 순서로 해석합니다:
 5. `.planning/phases/<phase>/*-CHECKPOINTS.md`
 6. `.planning/phases/<phase>/*-VERIFICATION.md`
 
-### 3.2 단계 전환 명령
+### 3.2 단계 전환
+
+일상 흐름은 `harness next`로 확인하고 `harness run`으로 진행합니다. 계획이 준비되면 `harness run`은 스스로 승인하지 않고 사람 승인 안내를 출력한 뒤 멈춥니다.
+
+Advanced/debug/CI에서만 저수준 lifecycle 명령을 직접 씁니다:
 
 ```bash
 python3 scripts/harness.py phase set discuss
 python3 scripts/harness.py phase set plan
-python3 scripts/harness.py phase set plan --by alice@company.com
 python3 scripts/harness.py phase approve        # 현재 phase에 approved=true 스탬프 (다음 phase는 phase set으로 이동)
 python3 scripts/harness.py phase reopen --to plan --reason "scope 추가"
 ```
@@ -167,9 +186,9 @@ Do not enter execute until I explicitly approve.
 
 **execute**:
 ```text
-Enter execute only after I have run `harness phase approve`.
+Enter execute only after I explicitly approve the plan and `harness check` reports the execute gate is valid.
 Modify only the files listed in allowed_paths.
-Run `harness check --worktree` before finishing.
+Run `harness check` before finishing.
 ```
 
 **done**:
@@ -524,7 +543,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 12
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.7.2` | Release tag 버전 검증 |
+| `release-check --expected-version v0.8.0` | Release tag 버전 검증 |
 
 ### 8.6 FSD (Fast Slash-command Dispatch)
 
@@ -724,8 +743,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.7.2 -m "Release v0.7.2"
-git push origin v0.7.2
+git tag -s v0.8.0 -m "Release v0.8.0"
+git push origin v0.8.0
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -735,7 +754,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.7.2
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.0
 ```
 
 ### 11.5 Trust-Downgrade Refusal
@@ -796,7 +815,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.7.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.8.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -948,8 +967,8 @@ python3 /path/to/project/scripts/harness.py check
 ### 16.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.7.2 --dry-run
-python3 scripts/upgrade_harness.py --version v0.7.2
+python3 scripts/upgrade_harness.py --version v0.8.0 --dry-run
+python3 scripts/upgrade_harness.py --version v0.8.0
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -961,14 +980,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.7.2 \
+  --version v0.8.0 \
   --dry-run
 ```
 
 ### 16.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.7.2 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.0 --dry-run
 ```
 
 ### 16.5 오래된 수동 설치 adopt
@@ -1107,7 +1126,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.7.2
+   git verify-tag v0.8.0
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)

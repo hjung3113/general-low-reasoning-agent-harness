@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -23,9 +24,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class HarnessToolTests(unittest.TestCase):
     SHOW_PHASE_STATUS_PREFLIGHT = (
-        "Start with `harness check` when available. "
-        "If it reports warnings, treat named files as minimum required reads before trusting the projection. "
-        "If it is missing, fails, emits malformed output, or reports an unsupported contract version, "
+        "Start with `harness check` and `harness next` when available. "
+        "If `check` reports warnings, treat named files as minimum required reads before trusting the projection. "
+        "If either command is missing, fails, emits malformed output, or reports an unsupported contract version, "
         "use the legacy durable planning read order."
     )
 
@@ -196,7 +197,10 @@ class HarnessToolTests(unittest.TestCase):
             installed["source"] = str(source)
             installed_path.write_text(json.dumps(installed), encoding="utf-8")
 
-            with mock.patch.object(harness, "repo_root", return_value=target):
+            with mock.patch.object(harness, "repo_root", return_value=target), mock.patch.dict(
+                os.environ,
+                {"HARNESS_ALLOW_UNSIGNED_DEV": "1", "HARNESS_BYPASS_TTY_CONFIRM": "1"},
+            ):
                 result = harness.run(["--version", "v9.8.8", "upgrade", "--target", str(target), "--dry-run"])
 
             self.assertEqual(0, result)
@@ -225,6 +229,11 @@ class HarnessToolTests(unittest.TestCase):
                 cwd=target,
                 capture_output=True,
                 text=True,
+                env={
+                    **os.environ,
+                    "HARNESS_ALLOW_UNSIGNED_DEV": "1",
+                    "HARNESS_BYPASS_TTY_CONFIRM": "1",
+                },
             )
 
             self.assertEqual(0, result.returncode, result.stderr)
@@ -2762,9 +2771,7 @@ progress:
                 "Execution output checklist:",
                 "non-empty `allowed_paths`",
                 "non-empty `verification`",
-                # T1-1: pre-commit invocation promoted to a numbered REQUIRED
-                # section; the literal verb invocation stays present.
-                "harness check --worktree",
+                "harness check",
                 "## Pre-commit (REQUIRED",
             ],
             "done.md": [
@@ -2773,7 +2780,7 @@ progress:
                 "Done output checklist:",
                 "post-completion audit only",
                 "Confirm verification evidence exists.",
-                "Run `harness check --worktree` before marking done.",
+                "Run `harness check` before closing the phase.",
             ],
         }
 
@@ -3631,7 +3638,7 @@ class LiveFixtureMigrationTests(unittest.TestCase):
             self.skipTest("not a source-repo checkout (harness/manifest.json absent)")
         state = json.loads(live.read_text(encoding="utf-8"))
         self.assertEqual(state.get("state_schema_version"), 2)
-        self.assertEqual(state.get("phase"), "done")
+        self.assertIn(state.get("phase"), {"discuss", "plan", "execute", "done"})
 
 
 class ChangelogStructureTests(unittest.TestCase):

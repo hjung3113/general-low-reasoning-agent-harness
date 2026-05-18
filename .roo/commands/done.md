@@ -22,18 +22,17 @@ Preflight checklist:
 - [ ] The phase implementation work is already finished.
 - [ ] Verification evidence exists in the phase verification file or final summary.
 - [ ] No new implementation scope is being added.
-- [ ] Any `harness check --worktree` run in `phase=done` is treated as post-completion audit only.
+- [ ] Any `harness check` run in `phase=done` is treated as post-completion audit only.
 
-Run `harness check --worktree` **before** `harness phase set done` (while phase=execute is still active; this exercises the pre-commit scope-enforcement contract, exit 4 on violation).
+Run `harness check` before closing the phase.
 
-Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+Advance the lifecycle through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text
-harness phase set done
-harness phase set discuss --reset-approval
+harness run
 ```
 
-`harness phase approve` in `phase=done` is a no-op error (exit 6 / `EXIT_WRONG_PHASE_FOR_VERB`, G2-C). Do NOT re-issue it.
+Do not re-issue approval in `phase=done`.
 
 Done output checklist:
 

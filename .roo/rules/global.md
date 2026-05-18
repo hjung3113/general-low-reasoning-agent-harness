@@ -1,7 +1,7 @@
 # Global Rules
 
 - Roo is an adapter. Shared project truth lives in `AGENTS.md`, `.planning/**`, and `.scratch/phase-state.json`.
-- Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+- Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 - Check `.roo/rules/phase-gate.md` before implementation workflows; no editable implementation work starts unless the status projection has `projected_execute_gate_valid=true`, no blocking warnings, and canonical files confirm approval provenance, acceptance criteria, durable pointers, allowed paths, and verification.
 - Use the generic profile until repository evidence or explicit user input confirms a stack-specific profile.
 - Do not mention, run, scaffold, or recommend commands from inactive profiles.

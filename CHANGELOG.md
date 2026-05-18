@@ -6,7 +6,21 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-(Nothing accumulated yet — next release: v0.8.0.)
+(Nothing accumulated yet.)
+
+### Breaking
+
+- No unreleased breaking changes. Prior ledger entries for `phase=done`,
+  `state_schema_version`, and `migrate state --resume` are recorded in released
+  sections below.
+
+## v0.8.0 — 2026-05-19 (minimal workflow)
+
+- Reduced the normal user CLI surface to `harness`, `harness next`, `harness run`, and `harness check`.
+- Added `HARNESS_MACHINE=1` JSON output for adapter-facing `next`, `run`, and `check`.
+- Changed normal `harness next` output to avoid low-level phase/approval commands.
+- Added `harness run` as the safe workflow stepper; it can enter planning but stops for human approval before implementation.
+- Updated README, user manual, Roo/OpenCode prompts, and added UML workflow diagrams.
 
 ## v0.7.2 — 2026-05-19 (UX sweep)
 

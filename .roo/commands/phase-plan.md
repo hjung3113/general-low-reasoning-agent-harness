@@ -25,9 +25,8 @@ Preflight checklist:
 
 For one-pass automation, use `/fsd-run-phase <phase>` or another phase-gated workflow command; canonical automation rules live in `workflow-phase-gate`.
 
-Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+Advance the lifecycle only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do not self-approve:
 
 ```text
-harness phase approve
-harness phase set execute
+harness run
 ```

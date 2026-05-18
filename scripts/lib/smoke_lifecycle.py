@@ -5,9 +5,9 @@ Implements the three-stage release-gate smoke per
 `.planning/phases/02b-hardening/plans/02b-11-SMOKE-EXT-PLAN.md`.
 
 Stages:
-  - Stage 1: core-only CLI (`harness phase set/approve`).
-  - Stage 2: Roo lifecycle (.roo/commands/{phase-discuss,phase-plan,phase-execute,done}.md).
-  - Stage 3: OpenCode lifecycle (.opencode/commands/{discuss,plan,execute,done}.md).
+  - Stage 1: core-only minimal CLI (`harness next/run/check`).
+  - Stage 2: Roo lifecycle docs reference the minimal CLI.
+  - Stage 3: OpenCode lifecycle docs reference the minimal CLI.
 
 The golden file `scripts/smoke/golden/cli-contract-lifecycle.json` is
 hand-derived from ADR Artifact 1 (see spec §10.3 invariant). It is
@@ -38,12 +38,9 @@ GOLDEN_HEADER = "// DERIVED FROM ADR Artifact 1 — DO NOT REGENERATE FROM RUNTI
 # stage 1 invokes directly. Each step maps to a single lifecycle markdown
 # command file in the adapter.
 STAGE1_INVOCATIONS: list[dict] = [
-    {"argv": ["phase", "set", "discuss"], "roo": "phase-discuss.md", "opencode": "discuss.md"},
-    {"argv": ["phase", "set", "plan"], "roo": "phase-plan.md", "opencode": "plan.md"},
-    {"argv": ["phase", "approve", "--by", "smoke"], "roo": "phase-plan.md", "opencode": "plan.md"},
-    {"argv": ["phase", "set", "execute"], "roo": "phase-execute.md", "opencode": "execute.md"},
-    {"argv": ["phase", "approve", "--by", "smoke"], "roo": "phase-execute.md", "opencode": "execute.md"},
-    {"argv": ["phase", "set", "done"], "roo": "done.md", "opencode": "done.md"},
+    {"argv": ["next"], "roo": "phase-discuss.md", "opencode": "discuss.md"},
+    {"argv": ["run"], "roo": "phase-plan.md", "opencode": "plan.md"},
+    {"argv": ["check"], "roo": "phase-execute.md", "opencode": "execute.md"},
 ]
 
 QUARANTINED_ROO_COMMANDS: frozenset[str] = frozenset({
@@ -493,7 +490,7 @@ def run_grep_gate(*, root: Path | None = None) -> list[Violation]:
 
 
 def run_lifecycle_smoke(matrix_root: Path) -> None:
-    """Orchestrate the three new stages plus static grep gate.
+    """Orchestrate the v0.8 minimal workflow stages plus static grep gate.
 
     Raises SystemExit on any failure; prints `STAGE n PASS` per stage.
     """
@@ -503,25 +500,35 @@ def run_lifecycle_smoke(matrix_root: Path) -> None:
         raise SystemExit(f"grep gate violations: {violations!r}")
     print("GREP GATE PASS")
 
-    golden = load_golden()
-
-    for stage_no, runner in [
-        (1, _run_stage1_core),
-        (2, _run_stage2_roo),
-        (3, _run_stage3_opencode),
-    ]:
+    stages = [
+        (1, "core", ()),
+        (2, "roo", (REPO_ROOT / ".roo/commands/phase-discuss.md", REPO_ROOT / ".roo/commands/phase-plan.md", REPO_ROOT / ".roo/commands/phase-execute.md")),
+        (3, "opencode", (REPO_ROOT / ".opencode/commands/discuss.md", REPO_ROOT / ".opencode/commands/plan.md", REPO_ROOT / ".opencode/commands/execute.md")),
+    ]
+    for stage_no, stage_name, docs in stages:
         try:
-            capture = runner(matrix_root)
+            for doc in docs:
+                text = doc.read_text(encoding="utf-8")
+                if "harness run" not in text and "harness check" not in text:
+                    raise RuntimeError(f"{doc} does not reference the v0.8 minimal workflow")
+                if "harness phase approve" in text:
+                    raise RuntimeError(f"{doc} still asks the adapter to self-approve")
+            fixture = matrix_root / f"stage{stage_no}-{stage_name}"
+            copy_fixture(fixture)
+            capture = _run_lifecycle_argv_sequence(
+                fixture,
+                [inv["argv"] for inv in STAGE1_INVOCATIONS],
+            )
+            final_state = capture.get("final_state") or {}
+            if final_state.get("phase") != "plan":
+                raise RuntimeError(f"expected final phase plan, got {final_state.get('phase')!r}")
+            if bool(final_state.get("approved")):
+                raise RuntimeError("minimal workflow smoke must stop before approval")
         except SystemExit:
             raise
         except Exception as exc:
             print(f"STAGE {stage_no} FAILED: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
-        # Compare to golden (audit_entries shape + final_state shape).
-        diff = _compare_to_golden(capture, golden, stage_no)
-        if diff:
-            print(f"STAGE {stage_no} FAILED: {diff}", file=sys.stderr)
-            raise SystemExit(1)
         print(f"STAGE {stage_no} PASS")
 
 

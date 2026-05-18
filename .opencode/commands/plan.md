@@ -4,7 +4,7 @@ Use this command for `phase=plan` work only.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.
 
-Run `harness check`. If it prints `warning:` lines naming specific files, treat those files as minimum required reads before trusting the projection. If exit is non-zero, the binary is missing, output is malformed, or it reports an unsupported contract version, fall back to the legacy durable planning read order.
+Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 Preflight checklist:
 
@@ -18,20 +18,19 @@ Preflight checklist:
 3. Write or update the phase plan, allowed path candidates, verification candidates, and review checks.
 4. Request execute approval instead of self-approving.
 
-Do not advance the gate to `phase=execute` unless explicit approval provenance exists. Run `harness phase approve` (which stamps `approved_by` from `git config user.email` and `approved_at` to nanosecond precision per ADR-003a Verb 2), then `harness phase set execute`. The CLI refuses the transition unless these prerequisites are present in the live state:
+Do not advance the gate to implementation unless explicit approval provenance exists. Use `harness run`; it stops for human approval and does not let the adapter self-approve. The gate remains blocked unless these prerequisites are present in the live state:
 
 - `plan_id`
 - non-empty `allowed_paths`
 - non-empty `verification`
 - durable `state_path`, `plan_path`, and `checkpoint_path`
 
-`approved_by` / `approved_at` are written by `harness phase approve`; do NOT hand-write them.
+`approved_by` / `approved_at` are written by the approval path; do NOT hand-write them.
 
-Advance the lifecycle via the CLI; do NOT direct-edit `.scratch/phase-state.json`:
+Advance the lifecycle only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do NOT run low-level phase/approval commands from this adapter:
 
 ```text
-harness phase approve
-harness phase set execute
+harness run
 ```
 
 Plan output checklist:

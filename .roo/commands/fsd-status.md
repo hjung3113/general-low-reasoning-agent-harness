@@ -6,10 +6,10 @@ mode: ask
 
 Run exactly:
 
-`harness status`
+`harness check`
 
 Then run:
 
-`harness next --json`
+`HARNESS_MACHINE=1 harness next`
 
-If `.requires_human == true` in the JSON output, surface the value of `.command` to the user with the prefix "please run this in your terminal:" — do not execute it. Otherwise execute `.command` only if it is read-only (`.agent_safe == true`); else surface and stop.
+If `.requires_user_approval == true`, surface `.next_user_prompt` to the user and stop. If `.next_command` is non-null, surface it; do not execute mutating lifecycle commands from this status command.

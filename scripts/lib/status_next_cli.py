@@ -13,6 +13,8 @@ Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,85 @@ from typing import Optional
 SCRATCH_ROOT = Path(".scratch")
 AUDIT_PATH = Path(".harness") / "audit.log"
 STATE_NAME = "phase-state.json"
+
+
+def _machine_mode() -> bool:
+    return os.environ.get("HARNESS_MACHINE") == "1"
+
+
+def _machine_payload(
+    *,
+    status: str,
+    phase: str,
+    may_edit: bool,
+    boundary: str,
+    requires_user_approval: bool,
+    next_command: Optional[str],
+    next_user_prompt: Optional[str],
+    warnings: Optional[list[str]] = None,
+) -> str:
+    payload = {
+        "status": status,
+        "phase": phase,
+        "may_edit": may_edit,
+        "boundary": boundary,
+        "requires_user_approval": requires_user_approval,
+        "next_command": next_command,
+        "next_user_prompt": next_user_prompt,
+        "warnings": warnings or [],
+    }
+    return json.dumps(payload, sort_keys=True, indent=2) + "\n"
+
+
+def _boundary_for_state(state: dict) -> str:
+    phase = state.get("phase", "discuss")
+    if phase == "execute" and bool(state.get("approved")):
+        return "execute-approved"
+    if phase in ("plan", "execute"):
+        return "approval-required"
+    return "plan-before-edit"
+
+
+def _may_edit(state: dict) -> bool:
+    phase = state.get("phase", "discuss")
+    approved = bool(state.get("approved"))
+    if phase != "execute" or not approved:
+        return False
+    approved_at = state.get("approved_at")
+    baseline = state.get("execute_attempt_started_at")
+    return bool(approved_at and baseline and approved_at >= baseline)
+
+
+def _approval_prompt(state: dict) -> str:
+    plan_id = state.get("plan_id") or "current-plan"
+    return (
+        f"Review the plan, then approve it from a real terminal "
+        f"for plan {plan_id} before any application code edits."
+    )
+
+
+def _format_machine_next(state: dict) -> str:
+    phase = state.get("phase", "discuss")
+    requires_approval = phase in ("plan", "execute") and not _may_edit(state)
+    return _machine_payload(
+        status="ok",
+        phase=phase,
+        may_edit=_may_edit(state),
+        boundary=_boundary_for_state(state),
+        requires_user_approval=requires_approval,
+        next_command=None if requires_approval else "harness run",
+        next_user_prompt=_approval_prompt(state) if requires_approval else None,
+    )
+
+
+def _read_current_state_for_machine(cwd: Path) -> dict:
+    state_path = cwd / SCRATCH_ROOT / STATE_NAME
+    if not state_path.exists():
+        return {"phase": "discuss", "execution_mode": "manual"}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"phase": "unknown", "execution_mode": "manual"}
 
 
 def _walk_up_for_repo_root(start: Path) -> Path:
@@ -258,6 +339,20 @@ def cmd_next(args) -> int:
     use_shell = getattr(args, "shell", False)
     use_json = getattr(args, "json", False)
 
+    if _machine_mode():
+        sys.stdout.write(_format_machine_next(state))
+        return 0
+
+    if os.environ.get("HARNESS_ADVANCED") != "1" and not use_json and not use_shell:
+        phase = state.get("phase", "discuss")
+        if phase in ("plan", "execute") and not _may_edit(state):
+            sys.stdout.write(_approval_prompt(state) + "\n")
+        elif phase == "done":
+            sys.stdout.write("No action: workflow complete.\n")
+        else:
+            sys.stdout.write("harness run\n")
+        return 0
+
     if use_json:
         sys.stdout.write(_sn.format_next_json(result))
         return result.exit_code
@@ -297,7 +392,120 @@ def cmd_next(args) -> int:
         return result.exit_code
 
 
+def cmd_run(args) -> int:
+    """Handle the v0.8 high-level ``harness run`` command.
+
+    The normal path advances only agent-safe workflow transitions. It does not
+    perform human approval; when approval is needed it emits a high-level prompt
+    and stops.
+    """
+    try:
+        cwd = _cwd_repo_root()
+    except FileNotFoundError as exc:
+        if _machine_mode():
+            sys.stdout.write(
+                _machine_payload(
+                    status="error",
+                    phase="unknown",
+                    may_edit=False,
+                    boundary="read-only",
+                    requires_user_approval=False,
+                    next_command="harness check",
+                    next_user_prompt=None,
+                    warnings=[str(exc)],
+                )
+            )
+            return 6
+        print(
+            f"error: harness run refused: {exc}\n"
+            "Fix: run from inside a harness-managed repository.",
+            file=sys.stderr,
+        )
+        return 6
+
+    state = _read_current_state_for_machine(cwd)
+    phase = state.get("phase", "discuss")
+
+    if phase == "discuss":
+        harness_py = str(Path(__file__).resolve().parents[1] / "harness.py")
+        commands = [
+            [sys.executable, harness_py, "phase", "set", "discuss"],
+            [sys.executable, harness_py, "phase", "set", "plan"],
+        ]
+        result = None
+        for command in commands:
+            result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+            if result.returncode:
+                break
+        if result is not None and result.returncode:
+            if _machine_mode():
+                sys.stdout.write(
+                    _machine_payload(
+                        status="error",
+                        phase=phase,
+                        may_edit=False,
+                        boundary="plan-before-edit",
+                        requires_user_approval=False,
+                        next_command="harness check",
+                        next_user_prompt=None,
+                        warnings=[(result.stderr or result.stdout).strip()],
+                    )
+                )
+                return result.returncode
+            print(
+                "harness run could not advance the workflow. "
+                "Run `harness check` and `harness next` for the current safe action.",
+                file=sys.stderr,
+            )
+            return result.returncode
+        state = _read_current_state_for_machine(cwd)
+        if _machine_mode():
+            sys.stdout.write(_format_machine_next(state))
+        else:
+            sys.stdout.write(
+                "Moved to plan. Review the plan, then approve it from a real terminal before edits.\n"
+            )
+        return 0
+
+    if phase in ("plan", "execute") and not _may_edit(state):
+        if _machine_mode():
+            sys.stdout.write(_format_machine_next(state))
+        else:
+            sys.stdout.write(_approval_prompt(state) + "\n")
+        return 0
+
+    if _machine_mode():
+        sys.stdout.write(_format_machine_next(state))
+    else:
+        sys.stdout.write("No safe workflow transition is needed right now.\n")
+    return 0
+
+
+def cmd_check_machine(
+    exit_code: int,
+    *,
+    phase: str = "unknown",
+    warnings: Optional[list[str]] = None,
+) -> int:
+    status = "ok" if exit_code == 0 else "error"
+    sys.stdout.write(
+            _machine_payload(
+                status=status,
+                phase=phase,
+            may_edit=False,
+            boundary="read-only",
+            requires_user_approval=False,
+            next_command="harness next",
+            next_user_prompt=None,
+            warnings=warnings or [],
+        )
+    )
+    return exit_code
+
+
 __all__ = [
     "cmd_status",
     "cmd_next",
+    "cmd_run",
+    "cmd_check_machine",
 ]

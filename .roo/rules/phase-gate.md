@@ -1,10 +1,12 @@
 # Phase Gate Rule
 
-Use `.scratch/phase-state.schema.json` for external phase state. Durable phase memory lives under `.planning/`; the live gate file is only a pointer and approval gate. Start with `harness check` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. Implementation workflows must pass this gate before editable work starts.
+Use `.scratch/phase-state.schema.json` for external phase state. Durable phase memory lives under `.planning/`; the live gate file is only a pointer and approval gate. Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. Implementation workflows must pass this gate before editable work starts.
 
 ## Required Behavior
 
 - Default to `discuss` when no phase state is present.
+- Use only the normal user workflow by default: `harness`, `harness next`, `harness run`, and `harness check`.
+- Do not run low-level phase, approval, nonce, anchor, state repair, or autopilot commands from Roo rules unless the user explicitly asks for advanced/debug/CI handling.
 - Treat `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, and the active `.planning/phases/*/*-CHECKPOINTS.md` as the canonical restart source of truth behind the status projection; `.scratch/phase-state.json` is only the live gate pointer.
 - During existing-repository adoption or `project init`, treat missing, placeholder-only, or stale `.planning/codebase/**` and active `.planning/phases/**` files as an incomplete gate that must return to `plan` for hydration.
 - Treat `discuss` as read-only discovery.

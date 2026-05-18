@@ -2,7 +2,7 @@
 
 These commands are the user-facing entry points for the Roo adapter.
 
-Run `harness check`. If it prints `warning:` lines naming specific files, treat those files as minimum required reads before trusting the projection. If exit is non-zero, the binary is missing, output is malformed, or it reports an unsupported contract version, fall back to the legacy durable planning read order.
+Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 ## Fresh Target First Actions
 
@@ -28,7 +28,7 @@ Before planning hydration finishes, keep the visible command set small:
 | `/phase-execute` | `orchestrator` | Verify an approved execute gate and hand off implementation to the owning mode; the orchestrator does not implement inline. |
 | `/fsd-run-phase` | `orchestrator` | Recommended one-command phase entry; runs one phase under `execution_mode=phase_autopilot` through the canonical phase gate and subtask handoffs. |
 | `/fsd-run-all` | `orchestrator` | Chain roadmap phases under chain_autopilot until next-pending is empty; halts on ADR-001 reject, approve exit 8, audit-chain break, or budget exhaustion. |
-| `/fsd-status` | `ask` | Read-only: print harness status then harness next --json; conditional auto-execute per file body. |
+| `/fsd-status` | `ask` | Read-only: run harness check then machine-mode harness next; surface the next action without mutating lifecycle state. |
 
 Slash commands stay thin. Use `.roo/rules-orchestrator/rules.md` for exclusive routing and tie breakers; use the workflow skill or owning mode for the actual sequence.
 
