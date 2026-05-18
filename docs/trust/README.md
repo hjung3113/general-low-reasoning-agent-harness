@@ -32,8 +32,8 @@ in-person) before trusting a new install.  This is normal TOFU.
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519   # or path to your key
 git config gpg.format ssh
-git tag -s v0.7.0 -m "Release v0.7.0"
-git push origin v0.7.0
+git tag -s v0.7.2 -m "Release v0.7.2"
+git push origin v0.7.2
 ```
 
 Requires Git ≥ 2.34.  Git for Windows bundles a compatible `ssh-keygen`.
@@ -41,7 +41,7 @@ Requires Git ≥ 2.34.  Git for Windows bundles a compatible `ssh-keygen`.
 ## Verifying a tag (consumer)
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.7.0
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.7.2
 ```
 
 The harness upgrade command runs this automatically before computing any

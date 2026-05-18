@@ -910,7 +910,7 @@ Failure → exit 10 (audit chain failure).
 | 14 | `EXIT_AUDIT_PARTIAL_WRITE` | Crash recovery undecidable (manual action required) |
 | 15 | `EXIT_RELEASE_TRUST_INVALID` | Signed tag verification 실패 또는 trust downgrade refused |
 | 17 | (`next --shell`) | `requires_human` — human approval/nonce 필요 (autopilot 진입 차단) |
-| 18 | (`next --shell`) | autopilot active — 재진입 금지 (`§3.5.2`) |
+| 18 | (`next --shell`) | autopilot active — 재진입 금지 (`§7.2`) |
 
 **중요**: `sub_reason` 필드를 검토하여 정확한 원인 파악. 같은 exit code가 여러 상황에서 사용됩니다.
 
@@ -1189,6 +1189,33 @@ python3 scripts/harness.py state show
 - `py -3 --version` 확인
 - `python3`이 없으면 `python` 또는 `py -3` 사용
 - `scripts/codex-cloud-setup.sh`는 Linux/macOS 전용 — Windows에서는 `harness.py` 직접 사용
+
+### 19.11 자주 혼동하는 케이스 (Common Confusions)
+
+**Q. Approval 했는데 왜 execute로 못 들어가나요?**
+A. `phase approve`만으로는 부족 — approve-nonce(human presence proof)가 필요합니다. `harness phase approve` 후 `harness approve-nonce mint --audience phase.approve` 실행 후 execute 전환이 가능합니다. (§7.3)
+
+**Q. Skill pack을 설치 후에 추가하려면?**
+A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
+```bash
+python3 scripts/upgrade_harness.py --target <target> --packs workflow-core,workflow-debugging,workflow-tdd
+```
+`--packs`는 "추가"가 아닌 "전체 교체"이므로 기존 packs를 포함시켜야 합니다. (§6, §8.5)
+
+**Q. Phase를 한 단계 뒤로 돌릴 수 있나요?**
+A. `harness phase reopen --to plan`. 현재 phase에서 plan으로 되돌리며 approval 초기화. audit log에 기록되니 실수가 아니면 새 plan을 다시 세우는 편이 안전합니다. (§7.4)
+
+**Q. `requires_human` (exit 17)이 뜨는데 무엇을 해야 하나요?**
+A. autopilot 중 human approval/nonce가 필요한 시점에 도달했다는 신호. TTY에서 `harness approve-nonce mint --audience phase.approve` 실행 후 autopilot 재시작. (§14, §7.3)
+
+**Q. Source repo와 installed target을 헷갈립니다.**
+A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skills/**`는 install이 만들어낸 target artifact. Source repo에 `.agents/skills/`가 없는 것이 정상. (§4 ownership 규칙)
+
+**Q. Roo와 OpenCode adapter를 동시에 깔면 둘 중 무엇이 우선인가요?**
+A. Adapter는 entry-point에 불과하며 phase gate state는 공유. 두 adapter 모두 같은 `.scratch/phase-state.json`을 본다. 충돌 시 마지막 mutation이 audit log에 기록됨. (§5)
+
+**Q. Autopilot이 시작 안 됩니다 — "no human presence proof"?**
+A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§7.2, §15)
 
 ---
 

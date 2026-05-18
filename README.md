@@ -25,6 +25,12 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ## 2. 빠른 설치
 
+> **표기 컨벤션 (이 문서 전반)**
+> - `/path/to/project` — target repository의 absolute path (사용자가 치환)
+> - `$tmp` — `mktemp -d`로 만든 임시 디렉터리 (harness source clone 위치)
+> - `v0.7.x` — 현재 release tag placeholder (실제 명령에서는 구체 버전으로 치환)
+> - `python3` — Windows에서는 `py -3` 또는 `python`으로 대체
+
 원격 source를 직접 열지 않고 한 번에 설치:
 
 ```bash
@@ -122,7 +128,7 @@ docs/                      문서
   superpowers/specs/       설계 사양 문서
   phase-gate-harness.md    phase gate 개념 + ROADMAP/STATE 구조
   protocol-spec.md         core protocol 레퍼런스
-  ADR/                     Architecture Decision Records
+  adr/                     Architecture Decision Records
 
 .planning/                 하네스 자체 planning state (dogfooding)
 .scratch/                  하네스 자체 live gate
