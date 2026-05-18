@@ -316,95 +316,101 @@ def _run_crash_recovery(
     return None
 
 
+def _jti_seen_dir(harness_dir: Path) -> Path:
+    """Return the per-jti marker directory (env-configurable via HARNESS_JTI_DIR)."""
+    env_override = os.environ.get("HARNESS_JTI_DIR", "")
+    if env_override:
+        return Path(env_override)
+    return harness_dir / "jti-seen"
+
+
+def _cleanup_stale_jti_markers(jti_dir: Path, max_age_days: int = 30) -> None:
+    """Remove per-jti marker files older than `max_age_days` days (best-effort)."""
+    try:
+        cutoff = time.time() - max_age_days * 86400
+        for marker in jti_dir.iterdir():
+            try:
+                if marker.stat().st_mtime < cutoff:
+                    marker.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except OSError:
+        pass  # directory missing or unreadable — ignore
+
+
 def _check_and_record_jti(
     jti: str,
     *,
     harness_dir: Path,
     audit_path: Path,
 ) -> Optional[_ci_provenance.CiOidcJtiReplayed]:
-    """§12.4 JTI replay defense: check jti against seen file; record if new.
+    """§12.4 JTI replay defense: check jti against seen markers; record if new.
+
+    B2-Fix-2 (Cycle-1): Per-jti marker-file approach replaces the shared JSON
+    store to eliminate the read-modify-write race. Each JTI gets its own marker
+    file; os.open(O_CREAT|O_EXCL) is atomic on POSIX and Windows (both NTFS and
+    ReFS guarantee exclusive create). Concurrent processes cannot both win the
+    O_EXCL race for the same JTI.
 
     If jti was already consumed, returns CiOidcJtiReplayed (caller raises).
-    If jti is new, records it to .harness/oidc_jti_seen.json and returns None.
-
-    Storage: .harness/oidc_jti_seen.json → {"seen": [<jti>, ...]} (append-only).
+    If jti is new, creates marker file and returns None.
+    NEVER fail-open: any unhandled exception propagates to the caller.
     """
-    jti_seen_path = harness_dir / "oidc_jti_seen.json"
+    jti_dir = _jti_seen_dir(harness_dir)
     try:
-        try:
-            data = json.loads(jti_seen_path.read_text(encoding="utf-8"))
-            seen: list = data.get("seen", [])
-        except FileNotFoundError:
-            # Fresh install — no prior JTIs recorded yet.
-            seen = []
-        except json.JSONDecodeError:
-            # Corrupted-but-existent file: distinguish from "missing".
-            # Rotate the corrupt file aside with a timestamped backup so
-            # replay-protection history is not silently destroyed; audit the
-            # rotation event so the operator can investigate.
-            sys.stderr.write(
-                f"WARNING: JTI replay-protection store {jti_seen_path} is corrupted. "
-                f"Rotating to {jti_seen_path}.corrupted.{int(time.time())} and starting fresh.\n"
-            )
-            backup = jti_seen_path.with_suffix(
-                f".corrupted.{int(time.time())}"
-            )
-            try:
-                jti_seen_path.rename(backup)
-            except OSError:
-                pass  # best-effort; proceed with empty history
-            try:
-                _audit.audit_append(
-                    {
-                        "verb": "ci.oidc.jti.store_rotated",
-                        "args": {"backup": str(backup)},
-                    },
-                    audit_path=audit_path,
-                )
-            except Exception:
-                pass  # audit failure must not block the rotation
-            seen = []
+        jti_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # Cannot create marker directory — fail closed (NEVER fail-open).
+        raise RuntimeError(
+            f"JTI replay-protection dir {jti_dir} is unavailable: {exc}. "
+            "Set HARNESS_JTI_DIR to a writable path."
+        ) from exc
 
-        if jti in seen:
-            # Audit the replay attempt before returning
-            try:
-                _audit.audit_append(
-                    {
-                        "verb": "ci.oidc.jti.replay",
-                        "args": {"jti": jti, "sub_reason": "ci_oidc_jti_replay"},
-                    },
-                    audit_path=audit_path,
-                )
-            except Exception:
-                pass  # audit failure must not mask the security rejection
-            return _ci_provenance.CiOidcJtiReplayed(
-                f"jti {jti!r} was already consumed; OIDC token replay rejected (§12.4)"
-            )
+    # Periodic cleanup of stale markers (best-effort, background of new mint).
+    _cleanup_stale_jti_markers(jti_dir)
 
-        # Record the jti as consumed
-        seen.append(jti)
-        harness_dir.mkdir(parents=True, exist_ok=True)
-        jti_seen_path.write_text(
-            json.dumps({"seen": seen}, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
-        # Audit the first-use recording
+    # Sanitize jti for use as a filename: replace chars unsafe on all platforms.
+    safe_jti = jti.replace("/", "_").replace("\\", "_").replace(":", "_")
+    if not safe_jti:
+        safe_jti = "empty"
+    marker = jti_dir / f"{safe_jti}.consumed"
+
+    try:
+        fd = os.open(str(marker), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+    except FileExistsError:
+        # Marker already exists → replay detected.
         try:
             _audit.audit_append(
                 {
-                    "verb": "ci.oidc.jti.consumed",
-                    "args": {"jti": jti},
+                    "verb": "ci.oidc.jti.replay",
+                    "args": {"jti": jti, "sub_reason": "ci_oidc_jti_replay"},
                 },
                 audit_path=audit_path,
             )
         except Exception:
-            pass  # audit failure must not block the happy path
-        return None
+            pass  # audit failure must not mask the security rejection
+        return _ci_provenance.CiOidcJtiReplayed(
+            f"jti {jti!r} was already consumed; OIDC token replay rejected (§12.4)"
+        )
+    except OSError as exc:
+        # Other OS error creating the marker — fail closed.
+        raise RuntimeError(
+            f"JTI replay-protection: cannot create marker {marker}: {exc}"
+        ) from exc
+
+    # Marker created successfully — record consumption in audit.
+    try:
+        _audit.audit_append(
+            {
+                "verb": "ci.oidc.jti.consumed",
+                "args": {"jti": jti},
+            },
+            audit_path=audit_path,
+        )
     except Exception:
-        # JTI store unavailable — fail-open rather than blocking all CI runs.
-        # This is an acceptable degradation: the per-run audit trail + chain
-        # hash still provides tamper evidence. A future slice can harden this.
-        return None
+        pass  # audit failure must not block the happy path
+    return None
 
 
 def run_start(

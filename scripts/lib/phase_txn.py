@@ -48,6 +48,23 @@ JOURNAL_NAME = "phase-state.json.journal"
 TMP_NAME = "phase-state.json.tmp"
 STATE_NAME = "phase-state.json"
 
+# Verbs that are always emitted via commit_transaction and therefore always carry
+# {entry_hash, txn_id, after_sha256}.  Non-txn verbs (ci.oidc.jti.consumed,
+# lock.recovered, approve_nonce.mint, etc.) tail the audit log too but do NOT
+# carry those three fields — _audit_tail_partial_write must not flag them.
+_TXN_VERBS: frozenset[str] = frozenset([
+    "phase.approve",
+    "phase.reopen",
+    "phase.autopilot.start",
+    "phase.autopilot.start_hash_finalized",
+    "phase.autopilot.start.recover_pending",
+    "phase.autopilot.stop",
+    "phase.autopilot.halt",
+    "phase.autopilot.halt.budget",
+    "phase.budget.halt",
+    "halt_diary.clear",
+])
+
 
 class TxnError(OSError):
     """Base class for phase_txn failures. Callers map to exit 14
@@ -411,7 +428,13 @@ def _audit_tail_partial_write(audit_path: Path) -> bool:
     JSON-parse — the §12.5 #2 row-12 predicate. The per-entry hash-chain
     check (S06) is intentionally NOT performed here; chain verification
     is a S06 responsibility and would mis-flag every entry written
-    before S06 lands."""
+    before S06 lands.
+
+    B2-Fix-1 (Cycle-1): The three mandatory fields {entry_hash, txn_id,
+    after_sha256} are ONLY required for entries whose verb is in _TXN_VERBS.
+    Non-txn verbs (e.g. ci.oidc.jti.consumed, lock.recovered) legitimately
+    tail the audit log without those fields — flagging them as partial writes
+    is a false positive that blocks normal harness start."""
     if not audit_path.exists():
         return False
     text = audit_path.read_text(encoding="utf-8")
@@ -422,9 +445,13 @@ def _audit_tail_partial_write(audit_path: Path) -> bool:
         parsed = json.loads(lines[-1])
     except json.JSONDecodeError:
         return True
-    # §12.5 #2: also require the three mandatory fields; missing any → partial.
-    if not {"entry_hash", "txn_id", "after_sha256"}.issubset(parsed):
-        return True
+    # §12.5 #2: require the three mandatory fields only when the verb is a
+    # transaction verb (i.e. went through commit_transaction).
+    verb = parsed.get("verb", "")
+    if verb in _TXN_VERBS:
+        required = {"entry_hash", "txn_id", "after_sha256"}
+        if not required.issubset(parsed):
+            return True
     return False
 
 
