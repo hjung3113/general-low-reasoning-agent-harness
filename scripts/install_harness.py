@@ -103,7 +103,7 @@ def parse_pack_selection(raw: str, pack_options: list[str]) -> list[str]:
 
 
 def prompt_profile() -> str:
-    return prompt_choice("Profile", list(PROFILE_OPTIONS), default="generic")
+    return prompt_choice("Profile (generic is recommended for first install)", list(PROFILE_OPTIONS), default="generic")
 
 
 def prompt_db(profile: str) -> str:

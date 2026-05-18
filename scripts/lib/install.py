@@ -101,7 +101,11 @@ def install(
         if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
     ]
     if existing:
-        raise SystemExit("Refusing to overwrite existing files during init: " + ", ".join(existing))
+        raise SystemExit(
+            "Refusing to overwrite existing files during init:\n  "
+            + "\n  ".join(existing)
+            + "\nHint: pick an empty target directory, or remove these files first."
+        )
 
     if dry_run:
         print("init dry-run")
@@ -136,6 +140,8 @@ def install(
         target=target,
         harness_version=harness_version,
     )
+
+    print(f"installed harness v{harness_version} → {target} ({len(destinations)} planned writes). Next: cd {target} && python3 scripts/harness.py check")
 
 
 def _stamp_install_trust_origin(
