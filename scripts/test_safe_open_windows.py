@@ -6,13 +6,18 @@ ctypes / os.lstat so no real Win32 calls are made.
 
 Test cases:
   1. Happy path: normal file, no reparse point → succeeds (returns fd int).
-  2. Reparse point set → FenceWindowsReparsePointRefused.
+  2. Reparse point set → FenceWindowsReparsePointRefused (exit_code=4, not 11).
   3. Path escapes sandbox via GetFinalPathNameByHandle resolved-path → FenceAnchorEscape.
   4. CreateFileW returns INVALID_HANDLE_VALUE → FenceWindowsUnsupported.
   5. ctypes.windll unavailable → FenceWindowsUnsupported.
   6. '..' in path → FenceAnchorEscape.
   7. Absolute path argument → ValueError.
   8. msvcrt absent falls back to returning handle int directly.
+  9. Case-insensitive containment: C:\\Sandbox\\file.txt inside C:\\sandbox → passes.
+  10. ADS marker in component (':') → FenceInvalidPathComponent.
+  11. Win32 reserved chars ('<>"|?*') → FenceInvalidPathComponent.
+  12. \\\\?\\UNC\\ prefix is normalised before containment check.
+  13. Volume-GUID path form → FenceAnchorEscape.
 """
 from __future__ import annotations
 
@@ -39,6 +44,7 @@ from safe_open import (
     FenceAnchorEscape,
     FenceWindowsReparsePointRefused,
     FenceWindowsUnsupported,
+    FenceInvalidPathComponent,
 )
 
 # ---------------------------------------------------------------------------
@@ -175,7 +181,9 @@ class TestWindowsOpenReparsePoint(unittest.TestCase):
             with self.assertRaises(FenceWindowsReparsePointRefused) as ctx:
                 _windows_open(REL_PATH, "r", anchor=ANCHOR)
 
-        self.assertEqual(ctx.exception.exit_code, 11)
+        # exit_code=4 per spec §12.2 line 1254 (path_reparse_refused)
+        self.assertEqual(ctx.exception.exit_code, 4)
+        self.assertEqual(ctx.exception.sub_reason, "path_reparse_refused")
         # CloseHandle must still be called (finally block)
         kernel32.CloseHandle.assert_called_once_with(FAKE_HANDLE)
 
@@ -299,6 +307,143 @@ class TestWindowsOpenNoMsvcrtFallback(unittest.TestCase):
 
         # Without msvcrt, the raw HANDLE int is returned
         self.assertEqual(fd, FAKE_HANDLE)
+
+
+# ---------------------------------------------------------------------------
+# 9. Case-insensitive containment: anchor C:\sandbox, resolved C:\Sandbox\file.txt
+# ---------------------------------------------------------------------------
+
+class TestWindowsOpenCaseInsensitiveContainment(unittest.TestCase):
+    """9. Containment check is case-insensitive (Windows fs semantics)."""
+
+    def test_case_insensitive_containment_passes(self):
+        # Resolved path has different casing than anchor — should still pass.
+        kernel32 = _make_kernel32(
+            create_file_return=FAKE_HANDLE,
+            get_final_path_return_val=r"C:\Sandbox\file.txt",  # capital S
+        )
+        ctypes_mod = _make_ctypes_module(kernel32)
+        msvcrt_mod = mock.MagicMock(name="msvcrt")
+        msvcrt_mod.open_osfhandle.return_value = 77
+
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True), \
+             mock.patch("builtins.__import__", side_effect=_import_side_effect(
+                 {"ctypes": ctypes_mod, "ctypes.wintypes": ctypes_mod.wintypes,
+                  "msvcrt": msvcrt_mod}
+             )), \
+             mock.patch("os.lstat", return_value=_lstat_no_reparse()), \
+             mock.patch.object(Path, "resolve", return_value=Path(ANCHOR)):
+
+            # anchor is C:\sandbox (lowercase); resolved is C:\Sandbox (mixed) — must pass
+            fd = _windows_open(REL_PATH, "r", anchor=r"C:\sandbox")
+
+        self.assertEqual(fd, 77)
+
+
+# ---------------------------------------------------------------------------
+# 10-11. ADS marker and Win32 reserved chars → FenceInvalidPathComponent
+# ---------------------------------------------------------------------------
+
+class TestWindowsOpenADSRejected(unittest.TestCase):
+    """10. ADS marker ':' in path component → FenceInvalidPathComponent."""
+
+    def test_ads_in_filename_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent) as ctx:
+                _windows_open("foo.txt:hidden", "r", anchor=ANCHOR)
+        self.assertEqual(ctx.exception.exit_code, 11)
+
+    def test_ads_in_subdir_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent):
+                _windows_open(r"sub:stream\file.txt", "r", anchor=ANCHOR)
+
+
+class TestWindowsOpenReservedCharsRejected(unittest.TestCase):
+    """11. Win32 reserved chars in path component → FenceInvalidPathComponent."""
+
+    def test_angle_brackets_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent):
+                _windows_open("foo<bar>.txt", "r", anchor=ANCHOR)
+
+    def test_pipe_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent):
+                _windows_open('foo"bar.txt', "r", anchor=ANCHOR)
+
+    def test_wildcard_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent):
+                _windows_open("foo*.txt", "r", anchor=ANCHOR)
+
+    def test_question_mark_refused(self):
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True):
+            with self.assertRaises(FenceInvalidPathComponent):
+                _windows_open("foo?.txt", "r", anchor=ANCHOR)
+
+
+# ---------------------------------------------------------------------------
+# 12. \\?\UNC\ prefix normalisation
+# ---------------------------------------------------------------------------
+
+class TestWindowsOpenUNCPrefixNormalisation(unittest.TestCase):
+    """12. \\\\?\\UNC\\ resolved prefix is stripped to \\\\server\\share\\ for containment."""
+
+    def test_unc_prefix_stripped_and_contained(self):
+        # Anchor is \\server\share\sandbox; resolved is \\?\UNC\server\share\sandbox\file.txt
+        unc_anchor = r"\\server\share\sandbox"
+        unc_resolved = r"\\?\UNC\server\share\sandbox\file.txt"
+
+        kernel32 = _make_kernel32(
+            create_file_return=FAKE_HANDLE,
+            get_final_path_return_val=unc_resolved,
+        )
+        ctypes_mod = _make_ctypes_module(kernel32)
+        msvcrt_mod = mock.MagicMock(name="msvcrt")
+        msvcrt_mod.open_osfhandle.return_value = 88
+
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True), \
+             mock.patch("builtins.__import__", side_effect=_import_side_effect(
+                 {"ctypes": ctypes_mod, "ctypes.wintypes": ctypes_mod.wintypes,
+                  "msvcrt": msvcrt_mod}
+             )), \
+             mock.patch("os.lstat", return_value=_lstat_no_reparse()), \
+             mock.patch.object(Path, "resolve", return_value=Path(unc_anchor)):
+
+            fd = _windows_open(REL_PATH, "r", anchor=unc_anchor)
+
+        self.assertEqual(fd, 88)
+
+
+# ---------------------------------------------------------------------------
+# 13. Volume-GUID path form → FenceAnchorEscape
+# ---------------------------------------------------------------------------
+
+class TestWindowsOpenVolumeGUIDRejected(unittest.TestCase):
+    """13. \\\\?\\Volume{...}\\ resolved path → FenceAnchorEscape."""
+
+    def test_volume_guid_refused(self):
+        vol_resolved = r"\\?\Volume{12345678-0000-0000-0000-000000000000}\sandbox\file.txt"
+        kernel32 = _make_kernel32(
+            create_file_return=FAKE_HANDLE,
+            get_final_path_return_val=vol_resolved,
+        )
+        ctypes_mod = _make_ctypes_module(kernel32)
+        msvcrt_mod = mock.MagicMock(name="msvcrt")
+
+        with mock.patch.object(_safe_open_mod, "_IS_WINDOWS", True), \
+             mock.patch("builtins.__import__", side_effect=_import_side_effect(
+                 {"ctypes": ctypes_mod, "ctypes.wintypes": ctypes_mod.wintypes,
+                  "msvcrt": msvcrt_mod}
+             )), \
+             mock.patch("os.lstat", return_value=_lstat_no_reparse()), \
+             mock.patch.object(Path, "resolve", return_value=Path(ANCHOR)):
+
+            with self.assertRaises(FenceAnchorEscape):
+                _windows_open(REL_PATH, "r", anchor=ANCHOR)
+
+        kernel32.CloseHandle.assert_called_once_with(FAKE_HANDLE)
 
 
 # ---------------------------------------------------------------------------

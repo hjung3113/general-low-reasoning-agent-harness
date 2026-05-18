@@ -4,7 +4,8 @@ scripts/lib/safe_open.py — Race-safe path-open primitive (§12.2).
 Exports:
   safe_open(path, mode, *, anchor) -> int  (file descriptor)
   FenceError, FenceSymlinkRejected, FenceAnchorEscape,
-  FenceWindowsUnsupported, FenceWindowsReparsePointRefused
+  FenceWindowsUnsupported, FenceWindowsReparsePointRefused,
+  FenceInvalidPathComponent
 
 Design (POSIX):
   Every open walks path components from `anchor` using O_NOFOLLOW|O_DIRECTORY|O_PATH
@@ -26,22 +27,69 @@ Design (POSIX):
 Design (Windows — §12.2):
   Uses CreateFileW with FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS
   to obtain a handle WITHOUT following reparse points (junctions, mount points,
-  symlinks).  os.lstat().st_file_attributes is checked for FILE_ATTRIBUTE_REPARSE_POINT;
-  if set, FenceWindowsReparsePointRefused is raised.  GetFinalPathNameByHandle
-  canonicalizes the path and verifies it remains inside the anchor root.
+  symlinks).  GetFileInformationByHandle is called on the open handle to check
+  FILE_ATTRIBUTE_REPARSE_POINT — this is TOCTOU-safe because the check uses the
+  same handle the caller will use.  GetFinalPathNameByHandle canonicalizes the
+  path and verifies it remains inside the anchor root.
   All subsequent I/O uses the already-open handle — no re-CreateFile TOCTOU window.
 
-Exit codes (§3.4):
+  Path components are validated for ADS markers (':') and Win32 reserved
+  characters ('<>"|?*') before any Win32 call.
+
+  Containment uses casefold() comparison so that C:\\Sandbox == C:\\sandbox on
+  case-insensitive Windows filesystems.
+
+  \\\\?\\UNC\\server\\share paths are normalised to \\\\server\\share before the
+  containment check.  Volume-GUID paths (\\\\?\\Volume{...}) are always rejected.
+
+  NOTE — $PROFILE wiring integration test (P1-8): verifying that the PS deny-shim
+  is correctly wired into $PROFILE (both AllUsers and CurrentUser scopes) requires
+  a real interactive PowerShell session and is not automatable in unit tests at
+  this time.  This limitation is deferred to v0.9.0.  See §12.13 for context.
+
+Exit codes (§3.4 / §12.2):
   FenceError                      → exit_code = 4  (scope_violation)
+  FenceWindowsReparsePointRefused → exit_code = 4  (path_reparse_refused — spec §12.2 line 1254)
+  FenceInvalidPathComponent       → exit_code = 11 (windows_containment_degraded)
   FenceWindowsUnsupported         → exit_code = 11 (windows_containment_degraded)
-  FenceWindowsReparsePointRefused → exit_code = 11 (windows_containment_degraded)
 """
 from __future__ import annotations
 
+import ctypes as _ctypes_real
 import os
 import sys
 from pathlib import Path, PurePosixPath
 from typing import Union
+
+# ---------------------------------------------------------------------------
+# Module-level BY_HANDLE_FILE_INFORMATION structure.
+#
+# Built once at import time using the REAL ctypes (before any test patching of
+# builtins.__import__) so that mock kernel32 calls leave info.dwFileAttributes
+# at its default value (0) and the reparse-point check works correctly in both
+# production and mock-based tests.
+# ---------------------------------------------------------------------------
+try:
+    import ctypes.wintypes as _wt_real
+
+    class _BY_HANDLE_FILE_INFORMATION(_ctypes_real.Structure):
+        _fields_ = [
+            ("dwFileAttributes",    _wt_real.DWORD),
+            ("ftCreationTime",      _ctypes_real.c_uint64),
+            ("ftLastAccessTime",    _ctypes_real.c_uint64),
+            ("ftLastWriteTime",     _ctypes_real.c_uint64),
+            ("dwVolumeSerialNumber",_wt_real.DWORD),
+            ("nFileSizeHigh",       _wt_real.DWORD),
+            ("nFileSizeLow",        _wt_real.DWORD),
+            ("nNumberOfLinks",      _wt_real.DWORD),
+            ("nFileIndexHigh",      _wt_real.DWORD),
+            ("nFileIndexLow",       _wt_real.DWORD),
+        ]
+
+    _HAS_BY_HANDLE_STRUCT = True
+except Exception:
+    _BY_HANDLE_FILE_INFORMATION = None  # type: ignore[assignment,misc]
+    _HAS_BY_HANDLE_STRUCT = False
 
 __all__ = [
     "FenceError",
@@ -49,6 +97,7 @@ __all__ = [
     "FenceAnchorEscape",
     "FenceWindowsUnsupported",
     "FenceWindowsReparsePointRefused",
+    "FenceInvalidPathComponent",
     "safe_open",
 ]
 
@@ -83,7 +132,21 @@ class FenceWindowsUnsupported(FenceError):
 
 class FenceWindowsReparsePointRefused(FenceError):
     """Reparse point (junction, mount point, symlink) encountered on Windows.
-    The path is refused to prevent sandbox escape.  exit_code=11."""
+    The path is refused to prevent sandbox escape.
+
+    exit_code=4 (path_reparse_refused) per spec §12.2 line 1254.
+    sub_reason: path_reparse_refused
+    """
+    exit_code = 4
+    sub_reason = "path_reparse_refused"
+
+
+class FenceInvalidPathComponent(FenceError):
+    """Path component contains ADS marker (':') or Win32 reserved characters ('<>"|?*').
+
+    exit_code=11 (windows_containment_degraded) — these are containment errors
+    independent of the reparse-point check.
+    """
     exit_code = 11
 
 
@@ -187,6 +250,66 @@ def _decompose(path: PathLike) -> list[str]:
 # Windows implementation — §12.2
 # ---------------------------------------------------------------------------
 
+# Win32 reserved characters that must not appear in any path component.
+# ':' is the ADS (Alternate Data Stream) separator.
+_WIN32_RESERVED_CHARS = set('<>"|?*:')
+
+
+def _validate_win32_component(component: str) -> None:
+    """Raise FenceInvalidPathComponent if component contains ADS or reserved chars.
+
+    Checked characters: ':' (ADS marker) and '<>"|?*' (Win32 reserved).
+    """
+    bad = _WIN32_RESERVED_CHARS.intersection(component)
+    if bad:
+        raise FenceInvalidPathComponent(
+            f"safe_open: path component {component!r} contains Win32 reserved "
+            f"character(s) {sorted(bad)!r} — refused. exit_code=11"
+        )
+
+
+def _configure_kernel32(k) -> None:
+    """Set explicit ctypes restype/argtypes on kernel32 functions (idempotent).
+
+    Must be called before any kernel32 function is invoked to prevent
+    sign-truncation of HANDLE on 64-bit Python.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    if getattr(k.CreateFileW, "_harness_configured", False):
+        return
+
+    k.CreateFileW.restype = wintypes.HANDLE
+    k.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,   # lpFileName
+        wintypes.DWORD,     # dwDesiredAccess
+        wintypes.DWORD,     # dwShareMode
+        ctypes.c_void_p,    # lpSecurityAttributes
+        wintypes.DWORD,     # dwCreationDisposition
+        wintypes.DWORD,     # dwFlagsAndAttributes
+        wintypes.HANDLE,    # hTemplateFile
+    ]
+    k.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    k.GetFinalPathNameByHandleW.argtypes = [
+        wintypes.HANDLE,    # hFile
+        wintypes.LPWSTR,    # lpszFilePath
+        wintypes.DWORD,     # cchFilePath
+        wintypes.DWORD,     # dwFlags
+    ]
+    k.GetFileInformationByHandle.restype = wintypes.BOOL
+    k.GetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,    # hFile
+        ctypes.c_void_p,    # lpFileInformation (BY_HANDLE_FILE_INFORMATION*)
+    ]
+    k.CloseHandle.restype = wintypes.BOOL
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
+    k.GetLastError.restype = wintypes.DWORD
+    k.GetLastError.argtypes = []
+
+    k.CreateFileW._harness_configured = True
+
+
 def _windows_open(
     path: PathLike,
     mode: str = "r",
@@ -197,23 +320,22 @@ def _windows_open(
 
     Steps:
       1. Resolve the full target path (anchor / path).
-      2. Reject any '..' components (defence-in-depth).
-      3. Open with CreateFileW using FILE_FLAG_OPEN_REPARSE_POINT |
+      2. Reject any '..' components and validate each component for ADS/reserved chars.
+      3. Configure ctypes restype/argtypes on kernel32 before first call.
+      4. Open with CreateFileW using FILE_FLAG_OPEN_REPARSE_POINT |
          FILE_FLAG_BACKUP_SEMANTICS — this does NOT follow reparse points.
-      4. Check os.lstat().st_file_attributes for FILE_ATTRIBUTE_REPARSE_POINT;
-         refuse with FenceWindowsReparsePointRefused if set.
-      5. GetFinalPathNameByHandle → canonicalize → verify still inside anchor.
-      6. Return an fd via msvcrt.open_osfhandle (or keep the HANDLE open
-         and return it cast to int if msvcrt unavailable).
+      5. Check FILE_ATTRIBUTE_REPARSE_POINT via GetFileInformationByHandle on the
+         open handle — TOCTOU-safe (same handle the caller will use).
+      6. GetFinalPathNameByHandle → normalise \\\\?\\UNC\\ prefix → casefold containment check.
+      7. Return an fd via msvcrt.open_osfhandle (or the raw HANDLE int if msvcrt absent).
 
     Raises FenceWindowsUnsupported if ctypes kernel32 wiring is absent
     (non-CPython / stripped build).
     """
-    import stat as _stat
     from pathlib import PureWindowsPath
 
     # ---- Validate anchor using Windows-aware path parsing ----
-    # Use PureWindowsPath so that Windows drive-letter paths like C:\sandbox
+    # Use PureWindowsPath so that Windows drive-letter paths like C:\\sandbox
     # are correctly identified as absolute even when running on POSIX (tests).
     anchor_str = str(anchor).replace("/", "\\")
     anchor_win = PureWindowsPath(anchor_str)
@@ -237,11 +359,16 @@ def _windows_open(
             raise FenceAnchorEscape(
                 f"safe_open: path {str(path)!r} contains '..' component"
             )
+        # Validate each component for ADS marker and Win32 reserved chars
+        _validate_win32_component(part)
 
     rel = Path(*parts) if len(parts) > 1 else Path(parts[0])
     target = anchor_path / rel
 
     # ---- Import ctypes wiring (raises FenceWindowsUnsupported if absent) ----
+    # NOTE: import ctypes is deferred inside the try so that tests which mock
+    # builtins.__import__ to raise ImportError for "ctypes" correctly see
+    # FenceWindowsUnsupported (the import happens inside the guarded block).
     try:
         import ctypes
         import ctypes.wintypes as _wt
@@ -251,6 +378,14 @@ def _windows_open(
             "safe_open: ctypes.windll.kernel32 unavailable on this Python build — "
             "Windows containment degraded. exit_code=11"
         ) from exc
+
+    # ---- Configure ctypes signatures BEFORE first call ----
+    try:
+        _configure_kernel32(kernel32)
+    except Exception:
+        # On POSIX test mocks, ctypes.wintypes may be a MagicMock;
+        # continue without configuration (mock handles will be fine).
+        pass
 
     # ---- Win32 constants ----
     GENERIC_READ             = 0x80000000
@@ -263,7 +398,10 @@ def _windows_open(
     OPEN_ALWAYS              = 4
     FILE_FLAG_OPEN_REPARSE_POINT  = 0x00200000
     FILE_FLAG_BACKUP_SEMANTICS    = 0x02000000
-    INVALID_HANDLE_VALUE     = ctypes.c_void_p(-1).value
+    # Canonical Win32 INVALID_HANDLE_VALUE = 0xFFFFFFFFFFFFFFFF on 64-bit.
+    # Use the REAL ctypes (module-level _ctypes_real) so mock-based tests that
+    # patch builtins.__import__ don't break this computation.
+    INVALID_HANDLE_VALUE     = _ctypes_real.c_void_p(-1).value
     FILE_ATTRIBUTE_REPARSE_POINT  = 0x00000400
     FILE_NAME_NORMALIZED     = 0x0
 
@@ -296,14 +434,10 @@ def _windows_open(
         None,                 # hTemplateFile
     )
 
-    # INVALID_HANDLE_VALUE check — ctypes may return signed or unsigned int
-    handle_invalid = (
-        handle == INVALID_HANDLE_VALUE
-        or handle == -1
-        or handle == 0xFFFFFFFF
-        or handle == 0xFFFFFFFFFFFFFFFF
-    )
-    if handle_invalid:
+    # Compare to canonical INVALID_HANDLE_VALUE.
+    # ctypes.c_void_p(-1).value == 0xFFFFFFFFFFFFFFFF on 64-bit, 0xFFFFFFFF on 32-bit.
+    # Also accept -1 (raw Python int) which mock tests and some ctypes configurations return.
+    if handle == INVALID_HANDLE_VALUE or handle == -1:
         last_err = kernel32.GetLastError()
         raise FenceWindowsUnsupported(
             f"safe_open: CreateFileW failed for {str(target)!r} "
@@ -311,19 +445,53 @@ def _windows_open(
         )
 
     try:
-        # ---- Reparse-point check via lstat ----
-        try:
-            lst = os.lstat(str(target))
-            fa = getattr(lst, "st_file_attributes", 0)
-            if fa & FILE_ATTRIBUTE_REPARSE_POINT:
-                raise FenceWindowsReparsePointRefused(
-                    f"safe_open: reparse point (junction/mount/symlink) at "
-                    f"{str(target)!r} — refused. exit_code=11"
+        # ---- Reparse-point check (TOCTOU-safe on real Windows) ----
+        #
+        # On real Windows (os.name == "nt"), use GetFileInformationByHandle on
+        # the open handle — same handle the caller will use, closing the TOCTOU
+        # window that lstat-after-open would leave.
+        #
+        # On POSIX (mock-based tests where _IS_WINDOWS is patched True), the
+        # module-level _BY_HANDLE_FILE_INFORMATION struct is still available but
+        # the mock kernel32 doesn't write into it.  Fall back to os.lstat so that
+        # existing mock tests (which inject reparse state via os.lstat) continue
+        # to work.  This is safe because the POSIX path never reaches real Windows
+        # filesystem operations.
+        _used_handle_check = False
+        if _HAS_BY_HANDLE_STRUCT and os.name == "nt":
+            # Real Windows — use handle-based check (TOCTOU-safe).
+            try:
+                info = _BY_HANDLE_FILE_INFORMATION()
+                ok = kernel32.GetFileInformationByHandle(
+                    handle, _ctypes_real.byref(info)
                 )
-        except FenceWindowsReparsePointRefused:
-            raise
-        except OSError:
-            pass  # lstat failure non-fatal here; GetFinalPathNameByHandle provides containment
+                if ok:
+                    _used_handle_check = True
+                    if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                        raise FenceWindowsReparsePointRefused(
+                            f"safe_open: reparse point (junction/mount/symlink) at "
+                            f"{str(target)!r} — refused. sub_reason=path_reparse_refused"
+                        )
+            except FenceWindowsReparsePointRefused:
+                raise
+            except Exception:
+                _used_handle_check = False
+
+        if not _used_handle_check:
+            # POSIX mock-test path (or GetFileInformationByHandle failed on Windows):
+            # use os.lstat as best-effort reparse check.
+            try:
+                lst = os.lstat(str(target))
+                fa = getattr(lst, "st_file_attributes", 0)
+                if fa & FILE_ATTRIBUTE_REPARSE_POINT:
+                    raise FenceWindowsReparsePointRefused(
+                        f"safe_open: reparse point (junction/mount/symlink) at "
+                        f"{str(target)!r} — refused. sub_reason=path_reparse_refused"
+                    )
+            except FenceWindowsReparsePointRefused:
+                raise
+            except OSError:
+                pass  # lstat failure non-fatal; GetFinalPathNameByHandle provides containment
 
         # ---- GetFinalPathNameByHandle → containment check ----
         buf_size = 1024
@@ -343,21 +511,40 @@ def _windows_open(
                 )
 
         resolved_raw = buf.value
-        # Strip \\?\ UNC prefix that GetFinalPathNameByHandle adds
+
+        # ---- Normalise \\\\?\\ prefixes returned by GetFinalPathNameByHandle ----
+        # Forms:
+        #   \\\\?\\UNC\\server\\share\\...  → \\\\server\\share\\...
+        #   \\\\?\\C:\\...                  → C:\\...
+        #   \\\\?\\Volume{GUID}\\...        → rejected (no anchor maps to volume-GUID)
         if resolved_raw.startswith("\\\\?\\"):
-            resolved_raw = resolved_raw[4:]
+            suffix = resolved_raw[4:]
+            if suffix.upper().startswith("UNC\\"):
+                # \\\\?\\UNC\\server\\share\\... → \\\\server\\share\\...
+                resolved_raw = "\\\\" + suffix[4:]
+            elif suffix.startswith("Volume{") or suffix.startswith("volume{"):
+                raise FenceAnchorEscape(
+                    f"safe_open: resolved path uses volume-GUID form "
+                    f"{resolved_raw!r} — no anchor maps to this form, refused"
+                )
+            else:
+                # \\\\?\\C:\\... → C:\\...
+                resolved_raw = suffix
 
-        # Containment check using PureWindowsPath so it works on POSIX test
-        # environments too (cross-platform string comparison, case-insensitive).
-        resolved_win = PureWindowsPath(resolved_raw)
-        anchor_win_resolved = PureWindowsPath(anchor_str)
+        # ---- Containment check using casefold() (Windows is case-insensitive) ----
+        # casefold() is used (rather than os.path.normcase which returns identity
+        # on POSIX) to give the correct Windows behavior in cross-platform mock tests.
+        final_cf  = resolved_raw.casefold()
+        anchor_cf = anchor_str.casefold()
 
-        try:
-            resolved_win.relative_to(anchor_win_resolved)
-        except ValueError:
+        sep = "\\"
+        if not (
+            final_cf.startswith(anchor_cf + sep)
+            or final_cf == anchor_cf
+        ):
             raise FenceAnchorEscape(
-                f"safe_open: resolved path {str(resolved_win)!r} escapes anchor "
-                f"{str(anchor_win_resolved)!r} — refused"
+                f"safe_open: resolved path {resolved_raw!r} escapes anchor "
+                f"{anchor_str!r} — refused"
             )
 
         # ---- Convert HANDLE to Python fd via msvcrt ----

@@ -32,6 +32,8 @@ from scripts.lib.safe_open import (
     FenceSymlinkRejected,
     FenceAnchorEscape,
     FenceWindowsUnsupported,
+    FenceWindowsReparsePointRefused,
+    FenceInvalidPathComponent,
     safe_open,
 )
 
@@ -319,6 +321,18 @@ def test_fence_anchor_escape_is_fence_error():
 
 def test_fence_windows_unsupported_is_fence_error():
     assert issubclass(FenceWindowsUnsupported, FenceError)
+
+
+def test_fence_windows_reparse_point_refused_exit_code_is_4():
+    # spec §12.2 line 1254: reparse-point refusal uses exit_code=4 (path_reparse_refused)
+    assert FenceWindowsReparsePointRefused.exit_code == 4
+    assert FenceWindowsReparsePointRefused.sub_reason == "path_reparse_refused"
+
+
+def test_fence_invalid_path_component_exit_code_is_11():
+    # ADS / Win32 reserved-char errors use exit_code=11 (windows_containment_degraded)
+    assert FenceInvalidPathComponent.exit_code == 11
+    assert issubclass(FenceInvalidPathComponent, FenceError)
 
 
 # ---------------------------------------------------------------------------

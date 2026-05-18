@@ -24,6 +24,11 @@ EXIT_TIMESTAMP_OUT_OF_RANGE = 8
 # Budget-exhausted also uses 9 operationally (phase_txn.BudgetExhausted) — these
 # are distinct sub_reasons so callers disambiguate via sub_reason field.
 EXIT_NONCE_SIGNATURE_INVALID = 9
+# §12.2: reparse-point refusal uses the same exit code as scope_violation (4)
+# per spec §12.2 line 1254.  FenceWindowsUnsupported stays at 11.
+EXIT_PATH_REPARSE_REFUSED = 4  # path_reparse_refused — reparse point on Windows path
+# §12.2: ADS / Win32 reserved-char components — containment error, not reparse
+EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded
 
 
 __all__ = [
@@ -37,4 +42,6 @@ __all__ = [
     "EXIT_STALE_UNCERTAIN",
     "EXIT_TIMESTAMP_OUT_OF_RANGE",
     "EXIT_NONCE_SIGNATURE_INVALID",
+    "EXIT_PATH_REPARSE_REFUSED",
+    "EXIT_WINDOWS_CONTAINMENT_DEGRADED",
 ]
