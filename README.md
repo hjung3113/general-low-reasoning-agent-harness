@@ -15,7 +15,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.8.0의 일상 CLI 표면은 네 개입니다:
+v0.8.1의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -27,6 +27,8 @@ harness check
 `harness`는 짧은 가이드를 보여줍니다. `harness next`는 다음 안전 행동을 설명하고, `harness run`은 자동으로 해도 안전한 workflow 단계만 진행하다가 사람 승인이 필요하면 멈춥니다. `harness check`는 현재 하네스/계획 상태를 검증합니다.
 
 `phase`, nonce, audit anchor, state repair, autopilot 같은 저수준 명령은 advanced/debug/CI 표면입니다. 보통 사용자와 어댑터는 이를 직접 실행하지 않습니다.
+
+유즈케이스별 한글 안내는 [docs/use-cases/README.md](docs/use-cases/README.md)에서 시작하세요. UML 흐름은 [docs/minimal-workflow-sequence.md](docs/minimal-workflow-sequence.md), 상태 머신은 [docs/minimal-workflow-state-machine.md](docs/minimal-workflow-state-machine.md)에 있습니다.
 
 핵심 가치:
 - 저추론 에이전트가 합의 없이 바로 코딩하는 문제를 `discuss → plan → execute → done` phase gate로 차단
@@ -48,7 +50,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -86,14 +88,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.0 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -191,13 +193,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.8.0
+python3 scripts/harness.py release-check --expected-version v0.8.1
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.0 -m "Release v0.8.0"
-git push origin v0.8.0
+git tag -s v0.8.1 -m "Release v0.8.1"
+git push origin v0.8.1
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -218,8 +220,8 @@ git push origin v0.8.0
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.8.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.0
+python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.8.1
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -231,7 +233,7 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.8.0 Minimal Workflow** — normal path를 `harness`, `harness next`, `harness run`, `harness check`로 축소했습니다. 저수준 phase/approval/nonce/audit/autopilot 명령은 advanced/debug/CI 표면으로 이동했고, 어댑터는 `HARNESS_MACHINE=1 harness next|run|check` JSON 계약을 사용합니다.
+**v0.8.1 한글 유즈케이스 문서 Hotfix** — 유즈케이스별 한글 문서를 `docs/use-cases/`로 분리하고, 최소 워크플로 UML 문서 2개를 한글로 정리했습니다.
 
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.

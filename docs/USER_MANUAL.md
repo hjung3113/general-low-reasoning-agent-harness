@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.8.0)
+# 하네스 사용자 설명서 (v0.8.1)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -68,6 +68,14 @@ harness check
 - `harness check`: 하네스 구조와 현재 workflow gate를 검증합니다.
 
 저수준 `phase`, nonce, audit, state repair, autopilot 명령은 advanced/debug/CI용입니다. 일반 prompt와 adapter prompt는 이를 정상 경로로 요구하지 않습니다.
+
+유즈케이스별 빠른 안내:
+
+- [처음 설치하고 시작하기](use-cases/first-install.md)
+- [매일 쓰는 기본 작업 흐름](use-cases/daily-workflow.md)
+- [Roo/OpenCode 어댑터로 작업하기](use-cases/adapter-agent-workflow.md)
+- [계획 승인 후 구현하기](use-cases/approval-and-execute.md)
+- [문제가 생겼을 때 점검하기](use-cases/troubleshooting.md)
 
 ### 2.1 설치 옵션 요약
 
@@ -543,7 +551,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 12
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.8.0` | Release tag 버전 검증 |
+| `release-check --expected-version v0.8.1` | Release tag 버전 검증 |
 
 ### 8.6 FSD (Fast Slash-command Dispatch)
 
@@ -743,8 +751,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.0 -m "Release v0.8.0"
-git push origin v0.8.0
+git tag -s v0.8.1 -m "Release v0.8.1"
+git push origin v0.8.1
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -754,7 +762,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.0
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.1
 ```
 
 ### 11.5 Trust-Downgrade Refusal
@@ -815,7 +823,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.8.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -967,8 +975,8 @@ python3 /path/to/project/scripts/harness.py check
 ### 16.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.8.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.0
+python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run
+python3 scripts/upgrade_harness.py --version v0.8.1
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -980,14 +988,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.8.0 \
+  --version v0.8.1 \
   --dry-run
 ```
 
 ### 16.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.0 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.1 --dry-run
 ```
 
 ### 16.5 오래된 수동 설치 adopt
@@ -1126,7 +1134,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.8.0
+   git verify-tag v0.8.1
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)

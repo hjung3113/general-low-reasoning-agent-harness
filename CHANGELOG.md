@@ -14,6 +14,14 @@ All notable changes to this harness.
   `state_schema_version`, and `migrate state --resume` are recorded in released
   sections below.
 
+## v0.8.1 — 2026-05-19 (한글 유즈케이스 문서 hotfix)
+
+- `docs/use-cases/` 아래에 한글 유즈케이스 문서를 추가했습니다:
+  첫 설치, 매일 쓰는 기본 흐름, Roo/OpenCode 어댑터 흐름, 승인 후 구현, 문제 해결.
+- v0.8 UML 워크플로 문서 2개를 한글로 바꿨습니다:
+  `docs/minimal-workflow-sequence.md` and `docs/minimal-workflow-state-machine.md`.
+- README와 사용자 설명서에 유즈케이스 문서 링크를 추가했습니다.
+
 ## v0.8.0 — 2026-05-19 (minimal workflow)
 
 - Reduced the normal user CLI surface to `harness`, `harness next`, `harness run`, and `harness check`.
