@@ -345,6 +345,29 @@ Windows 사용자에게 적용할 명령은 PowerShell 기준으로 써줘.
 
 `scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다. Windows에서는 core 명령(`scripts/harness.py init/check/doctor`)만 사용합니다.
 
+## v0.8.0 Hardening (02d)
+
+### Approve-nonce admin verb
+
+`harness approve-nonce mint --audience <phase.approve|phase.autopilot.start> [--ttl 120]` — TTY-only admin verb minting a single-use HMAC-signed nonce for human-presence-proven phase approval (§3.1.1). Non-TTY invocation refused to prevent automated self-approval spoofing.
+
+### Release trust (v0.8.0+)
+
+SSH-signed release tags verified via `docs/trust/allowed-signers`. `harness upgrade` refuses signed→unsigned trust downgrade. Dev bypass: `HARNESS_ALLOW_UNSIGNED_DEV=1` env var or `--allow-unsigned-dev` flag for first-time non-tagged dev installs. See `docs/trust/README.md` for signer setup and key rotation.
+
+### Windows safe_open
+
+Production writes use CreateFileW with handle-bound reparse-point refusal (§12.2) and case-fold containment. Git for Windows ≥2.34 required for SSH-signed-tag verification.
+
+### Changelog: v0.8.0
+
+- HMAC-signed approval nonces (TTY-only mint via `harness approve-nonce mint`).
+- SSH-signed release-tag trust root (`docs/trust/allowed-signers`).
+- Windows safe_open: CreateFileW + reparse-point refusal + case-fold containment.
+- PowerShell deny-shim CI fuzz (`autopilot_guard.ps1` gated by `release-gate-summary`).
+- Audit-verb registry expansion (`approve_nonce.mint`, `release.trust.{verified,bypassed,refused}`, `audit.secret_key.rotated`).
+- Exit-code spec alignment (nonce-sig→6, release-trust→15).
+
 ### Source repository checks
 
 Harness source 수정 후 commit 전:
