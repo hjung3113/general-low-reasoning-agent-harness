@@ -71,3 +71,16 @@ To retire a signing key, remove its line from `allowed-signers` and add the
 replacement key.  Tags signed with the retired key will no longer verify.
 Document the rotation in a comment in `allowed-signers` with the date and
 reason.
+
+## Key revocation (v0.8.0 limitation)
+
+Revocation today: remove the line from `docs/trust/allowed-signers` and
+re-broadcast the updated file out-of-band to all consumers.
+
+**Limitation**: previously-signed tags continue to verify locally until every
+consumer's checkout has the updated `allowed-signers`. If a maintainer key is
+leaked, their signed tags will appear valid to consumers still running old
+checkouts until propagation completes.
+
+**Planned for v0.9.0**: explicit `revoked_keys` file consulted alongside
+`allowed-signers` for immediate revocation without waiting for propagation.

@@ -199,7 +199,7 @@ The harness writes single-use nonces to a directory OUTSIDE any project root (Ro
 Flow:
 
 ```
-$ harness approve-nonce mint
+$ harness approve-nonce mint --audience phase.approve
 nonce minted for phase.approve; expires in 120s
 $ harness phase approve
 [harness] ok - phase approved by alice@x
@@ -1375,8 +1375,13 @@ Audit verb registry (every `verb=...` emitted into `audit.log`):
 | `migrate.state_v2` | State schema migrated to v2 | S00.7 |
 | `ci.oidc.jti.consumed` | CI OIDC JTI token consumed | S08 |
 | `ci.oidc.jti.replay` | CI OIDC JTI replay attempt detected | S08 |
+| `ci.oidc.jti.store_rotated` | JTI store corrupted and rotated | S06 (Group δ) |
 | `fsd-run-all` | fsd-run-all slash command executed | S12 |
 | `fsd-run-phase` | fsd-run-phase slash command executed | S12 |
+| `approve_nonce.mint` | Approval nonce minted by operator | S00.5 (Group α) |
+| `release.trust.verified` | SSH-signed release tag verified successfully | S15 (Group δ) |
+| `release.trust.bypassed` | Unsigned release accepted via HARNESS_ALLOW_UNSIGNED_DEV | S15 (Group δ) |
+| `release.trust.refused` | Release rejected (downgrade/missing trust/corrupted manifest) | S15 (Group δ) |
 
 **Cycle-1 amendment (P5-P2-1):** The following verbs were emitted by code but absent from this table prior to cycle-1 review: `halt_diary.clear`, `phase.autopilot.start_hash_finalized`, `phase.autopilot.start.refused`, `phase.autopilot.start.recover_pending`, `phase.set.noop`, `session.unlock`, `lock.recovered`. A machine-readable `KNOWN_VERBS` frozenset is maintained in `scripts/lib/audit.py`; `HARNESS_STRICT_VERB_REGISTRY=1` enables rejection of unknown verbs at append time.
 

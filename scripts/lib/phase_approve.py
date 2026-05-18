@@ -223,6 +223,8 @@ def _sanitize_string(s: str) -> str:
 
     The caller passes the normalized form to _has_forbidden_chars and to
     the audit entry.  Spec: §3.1.1 + cycle-1 review P3-P2-1.
+    Length cap (1024 chars) applies POST-NFKC normalization; characters that
+    expand under NFKC (e.g. '½' -> '1⁄2') can cause near-cap input to balloon past it.
     """
     import unicodedata
     return unicodedata.normalize("NFKC", s)
