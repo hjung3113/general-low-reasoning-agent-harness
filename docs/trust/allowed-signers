@@ -1,0 +1,7 @@
+# REPLACE: maintainer SSH pubkey before v0.8.0 tag
+# Format: <principal> namespaces="git" <ssh-public-key>
+# Example:
+#   release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
+#
+# Add one line per authorized signer (release engineer).
+# Verify fingerprint out-of-band (Slack/email/in-person) before adding.

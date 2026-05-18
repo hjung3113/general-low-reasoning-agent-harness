@@ -29,6 +29,11 @@ EXIT_NONCE_SIGNATURE_INVALID = 9
 EXIT_PATH_REPARSE_REFUSED = 4  # path_reparse_refused — reparse point on Windows path
 # §12.2: ADS / Win32 reserved-char components — containment error, not reparse
 EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded
+# §6 release-trust: SSH-signed tag verification failure.
+# 9 is EXIT_NONCE_SIGNATURE_INVALID; 11 is Windows containment; codes 10, 12-16
+# are reserved for §3.8 anchor-related codes.  17 is next free integer for
+# release-trust (cross-checked against all usages above).
+EXIT_RELEASE_TRUST_INVALID = 17  # tag_signature_invalid, trust_downgrade_refused, etc.
 
 
 __all__ = [
@@ -44,4 +49,5 @@ __all__ = [
     "EXIT_NONCE_SIGNATURE_INVALID",
     "EXIT_PATH_REPARSE_REFUSED",
     "EXIT_WINDOWS_CONTAINMENT_DEGRADED",
+    "EXIT_RELEASE_TRUST_INVALID",
 ]

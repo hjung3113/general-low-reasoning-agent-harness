@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import sys
-import warnings
 from pathlib import Path
 from typing import Iterable
 
@@ -59,6 +59,8 @@ from lib.version import (
     source_provenance,
 )
 # S12 — manifest v2 reconciler (§6)
+from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
+from lib.release_trust import UpgradeTrustError, file_sha256_at_commit, verify_release_tag
 from lib.manifest_reconciler import (
     ReconcileDecision,
     compute_manifest_hash_chain,
@@ -115,51 +117,133 @@ def install_state_migration_report(before: dict, after: dict) -> list[str]:
     return lines
 
 
+def _read_target_trust_origin(target: Path) -> str | None:
+    """Return trust_origin from the target's existing installed manifest, or None."""
+    from lib.state import INSTALL_STATE as _IS  # avoid circular at module level
+    p = target / _IS
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data.get("trust_origin") if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 def _build_release_manifest_v2(
     *,
     root: Path,
     entries: list,
     harness_version: str,
+    target: Path | None = None,
 ) -> dict:
     """Build a release_manifest dict in installed-manifest v2 format for the reconciler.
 
-    For each entry compute ``installed_sha256`` from the source file in *root*.
-    ``current_sha256`` mirrors ``installed_sha256`` (the release is the new truth).
-    Backward compat: if a source file is missing (e.g. conditional content), skip it.
+    SSH-signed-tag trust root (§6, Group δ):
+    ─────────────────────────────────────────
+    For release builds (harness_version is a clean MAJOR.MINOR.PATCH string):
+      1. Trust-downgrade guard: if the *target*'s existing manifest already has
+         ``trust_origin: signed_tag`` and the new build would produce
+         ``trust_origin: dev_unsigned``, raise UpgradeTrustError immediately.
+      2. Attempt ``verify_release_tag(root, "v<version>")``.
+         On success: bind all reads to the verified commit SHA via
+         ``file_sha256_at_commit`` — the working tree is never consulted.
+         Emit ``trust_origin: "signed_tag"`` in the manifest.
+      3. On UpgradeTrustError("tag_signature_invalid"):
+         - Check env var ``HARNESS_ALLOW_UNSIGNED_DEV=1``.
+         - If set AND target has no signed_tag trust yet: fall through to
+           working-tree reads with ``trust_origin: "dev_unsigned"`` + stderr WARNING.
+         - Otherwise: raise SystemExit(EXIT_RELEASE_TRUST_INVALID).
 
-    # TODO(§6 trust root, deferred to S14+): release-bundled manifest with
-    # signed installed_sha256 is not yet implemented.  Currently the "release
-    # manifest" is computed from the local repo source tree, which means an
-    # attacker who controls the repo can defeat the 3-way reconciler by
-    # modifying both source and target files.  The reconciler still provides
-    # value for *accidental* drift detection but NOT for tamper resistance.
-    # Production trust requires the released tarball to ship a signed manifest
-    # validated against a pinned public key before reconcile.
+    For dev builds (``0.0.0-dev+…`` pattern): skip verification, emit
+    ``trust_origin: "dev_unsigned"`` immediately (working-tree path).
     """
-    warnings.warn(
-        "SECURITY(§6 trust root, deferred): _build_release_manifest_v2 computes "
-        "installed_sha256 from local repo source tree, not a signed release tarball. "
-        "Tamper resistance is NOT enforced. See upgrade.py TODO for S14+ remediation.",
-        stacklevel=2,
+    import re as _re
+
+    tag: str | None = None
+    commit_sha: str | None = None
+    trust_origin: str
+    is_dev_version = (
+        harness_version.startswith("0.0.0-dev+")
+        or harness_version == "0.0.0-dev+unknown"
+        or harness_version.endswith(".dev0")
     )
+
+    allow_unsigned = os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV", "") == "1"
+
+    # ── Early trust-downgrade guard ─────────────────────────────────────────
+    # If the target's existing manifest is already signed_tag and the new build
+    # would be dev_unsigned, refuse immediately — before any file access.
+    existing_trust_origin = _read_target_trust_origin(target) if target is not None else None
+    if is_dev_version or allow_unsigned:
+        # Might end up as dev_unsigned; check downgrade now.
+        if existing_trust_origin == "signed_tag":
+            raise UpgradeTrustError(
+                "trust_downgrade_refused",
+                "target manifest already has trust_origin=signed_tag; "
+                "refusing downgrade to dev_unsigned. "
+                "Unset HARNESS_ALLOW_UNSIGNED_DEV or use a signed release tag.",
+            )
+
+    if is_dev_version:
+        # Dev checkout: working-tree path without tag verification.
+        trust_origin = "dev_unsigned"
+    else:
+        # Release build: attempt SSH-signed-tag verification.
+        tag = "v" + harness_version
+        try:
+            commit_sha = verify_release_tag(root, tag)
+            trust_origin = "signed_tag"
+        except UpgradeTrustError as _te:
+            # tag_not_found counts as tag_signature_invalid for bypass purposes.
+            if _te.sub_reason in ("tag_signature_invalid", "tag_not_found"):
+                if allow_unsigned and existing_trust_origin != "signed_tag":
+                    sys.stderr.write(
+                        f"WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — skipping SSH tag "
+                        f"verification for {tag!r} ({_te.sub_reason}). "
+                        f"trust_origin will be dev_unsigned.\n"
+                    )
+                    trust_origin = "dev_unsigned"
+                    commit_sha = None
+                else:
+                    raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from _te
+            else:
+                # trust_downgrade_refused or unknown — propagate directly.
+                raise
+
+    # ── Compute file hashes ─────────────────────────────────────────────────
     files: dict[str, object] = {}
     for entry in entries:
         if entry.policy == "exclude":
             continue
-        try:
-            src = source_path(root, entry)
-            sha = file_hash(src)
-        except (FileNotFoundError, SystemExit):
-            continue
+        if trust_origin == "signed_tag" and commit_sha is not None:
+            # Bind read to the verified commit SHA — working tree is NOT consulted.
+            try:
+                sha = file_sha256_at_commit(root, commit_sha, str(entry.path))
+            except UpgradeTrustError:
+                # File absent from signed tree — skip (conditional content).
+                continue
+        else:
+            # dev_unsigned path: fall back to working-tree read.
+            try:
+                src = source_path(root, entry)
+                sha = file_hash(src)
+            except (FileNotFoundError, SystemExit):
+                continue
+
         files[str(entry.path)] = {
             "installed_sha256": sha,
             "current_sha256": sha,
             "policy": entry.policy,
             "owner": entry.owner,
         }
+
     release_manifest: dict[str, object] = {
         "schema_version": 2,
         "harness_version": harness_version,
+        "trust_origin": trust_origin,
+        "release_tag": tag,
+        "release_commit": commit_sha,
         "files": files,
     }
     return release_manifest
@@ -419,6 +503,7 @@ def upgrade(
         root=root,
         entries=entries,
         harness_version=harness_version,
+        target=target,
     )
     prior_installed_path = target / INSTALL_STATE
     prior_manifest_v2 = None
