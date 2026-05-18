@@ -306,6 +306,10 @@ KNOWN_VERBS: frozenset = frozenset([
     # FSD dashboard verbs (slash-command wrappers)
     "fsd-run-all",
     "fsd-run-phase",
+    # Release trust verbs (§6, Group δ fix-pass)
+    "release.trust.verified",   # SSH-signed tag verified successfully
+    "release.trust.bypassed",   # HARNESS_ALLOW_UNSIGNED_DEV=1 bypass taken
+    "release.trust.refused",    # exit-17 refusal (downgrade / missing trust / corrupted manifest)
 ])
 
 

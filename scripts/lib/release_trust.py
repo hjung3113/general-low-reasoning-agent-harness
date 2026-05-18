@@ -41,22 +41,41 @@ class UpgradeTrustError(Exception):
           - tag_signature_invalid   : git verify-tag returned non-zero
           - path_missing_in_signed_tree : file absent from the signed commit tree
           - trust_downgrade_refused : target already trusts signed_tag; refusing dev
+          - target_manifest_corrupted : install-state.json present but unparseable
+          - allowed_signers_outside_repo : allowed-signers path escapes repo root
+          - bypass_requires_tty_confirm : bypass requested on non-TTY stdin
     exit_code : int
         Always EXIT_RELEASE_TRUST_INVALID (17).
     """
 
-    def __init__(self, sub_reason: str, detail: str = "") -> None:
+    def __init__(self, sub_reason: str, detail: str = "",
+                 exit_code: int = EXIT_RELEASE_TRUST_INVALID) -> None:
         self.sub_reason = sub_reason
-        self.exit_code = EXIT_RELEASE_TRUST_INVALID
+        self.exit_code = exit_code
         msg = f"release trust failure [{sub_reason}]"
         if detail:
             msg += f": {detail}"
         super().__init__(msg)
 
 
+def _clean_env() -> dict[str, str]:
+    """Return a clean copy of the current environment for git subprocess calls.
+
+    This helper centralises env preparation so callers can extend it
+    (e.g. inject GIT_CONFIG_PARAMETERS) without duplicating dict(os.environ).
+    """
+    return dict(os.environ)
+
+
 def _run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None,
          capture: bool = True) -> subprocess.CompletedProcess:
-    """Run a subprocess; return CompletedProcess regardless of exit code."""
+    """Run a subprocess with text=True; return CompletedProcess regardless of exit code.
+
+    NOTE: Do NOT use _run for git cat-file blob — it uses text=True which
+    will corrupt binary content and collapse CRLF→LF on stdout.  Use
+    file_sha256_at_commit (which calls subprocess.run directly with no text=True)
+    for content hashing.
+    """
     return subprocess.run(
         args,
         cwd=cwd,
@@ -85,7 +104,14 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
         If git verify-tag exits non-zero (unsigned, wrong key, tampered).
     """
     repo_root = repo_root.resolve()
-    allowed_signers = repo_root / ALLOWED_SIGNERS_PATH
+    allowed_signers = (repo_root / ALLOWED_SIGNERS_PATH).resolve()
+
+    # δ-P2-3: containment check — allowed_signers must be under repo_root.
+    if not allowed_signers.is_relative_to(repo_root):
+        raise UpgradeTrustError(
+            "allowed_signers_outside_repo",
+            f"allowed_signers path {allowed_signers} escapes repo root {repo_root}",
+        )
 
     # Step 1: check the tag exists at all.
     check = _run(["git", "rev-list", "-n", "1", tag], cwd=repo_root)
@@ -98,7 +124,7 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
     # Step 2: verify SSH signature.
     # Inject gpg.ssh.allowedSignersFile via GIT_CONFIG_PARAMETERS so we do not
     # mutate any user or system gitconfig.
-    env = dict(os.environ)
+    env = _clean_env()
     env["GIT_CONFIG_PARAMETERS"] = (
         f"'gpg.ssh.allowedSignersFile={allowed_signers}'"
     )
@@ -122,6 +148,12 @@ def file_sha256_at_commit(repo_root: Path, commit_sha: str, path: str) -> str:
     Binds the read to the verified commit SHA, not the tag name, eliminating
     the TOCTOU window between verify_release_tag and the actual content read.
 
+    Uses subprocess.run directly WITHOUT text=True so that:
+      (a) Binary blobs (null bytes, high bytes) are hashed correctly — text=True
+          would raise UnicodeDecodeError on non-UTF-8 bytes.
+      (b) CRLF sequences are preserved as-is — text=True collapses CRLF→LF on
+          stdout (universal newlines), producing a wrong sha256 for CRLF blobs.
+
     Raises
     ------
     UpgradeTrustError("path_missing_in_signed_tree")
@@ -129,11 +161,17 @@ def file_sha256_at_commit(repo_root: Path, commit_sha: str, path: str) -> str:
     """
     repo_root = repo_root.resolve()
     spec = f"{commit_sha}:{path}"
-    result = _run(["git", "cat-file", "blob", spec], cwd=repo_root)
+    result = subprocess.run(
+        ["git", "cat-file", "blob", spec],
+        cwd=str(repo_root),
+        capture_output=True,
+        env=_clean_env(),
+    )
     if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
         raise UpgradeTrustError(
             "path_missing_in_signed_tree",
-            f"{spec!r} not found in signed commit tree",
+            f"git cat-file failed for {spec}: {stderr}",
+            exit_code=EXIT_RELEASE_TRUST_INVALID,
         )
-    content = result.stdout.encode("utf-8", errors="surrogateescape")
-    return hashlib.sha256(content).hexdigest()
+    return hashlib.sha256(result.stdout).hexdigest()

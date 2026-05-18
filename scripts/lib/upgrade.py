@@ -118,16 +118,70 @@ def install_state_migration_report(before: dict, after: dict) -> list[str]:
 
 
 def _read_target_trust_origin(target: Path) -> str | None:
-    """Return trust_origin from the target's existing installed manifest, or None."""
+    """Return trust_origin from the target's existing installed manifest, or None.
+
+    δ-P1-1: distinguishes "file absent" (returns None) from "file present but
+    unparseable / missing keys" (raises UpgradeTrustError with
+    sub_reason="target_manifest_corrupted").  A corrupted install-state.json
+    must NOT silently mask a prior signed_tag install and allow a downgrade.
+    """
     from lib.state import INSTALL_STATE as _IS  # avoid circular at module level
+    from lib.release_trust import UpgradeTrustError as _UTE  # local import — avoid circular
+    from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID as _EXIT17
     p = target / _IS
     if not p.exists():
         return None
+    # File is present — parse it.  Any failure here is suspicious (corruption /
+    # tampering) and must be reported rather than silently swallowed.
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data.get("trust_origin") if isinstance(data, dict) else None
+        text = p.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _UTE(
+            "target_manifest_corrupted",
+            f"install-state.json unreadable: {exc}",
+        ) from exc
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise _UTE(
+            "target_manifest_corrupted",
+            f"install-state.json is not valid JSON: {exc}",
+        ) from exc
+    if not isinstance(data, dict):
+        raise _UTE(
+            "target_manifest_corrupted",
+            "install-state.json top-level value is not a JSON object",
+        )
+    # trust_origin may legitimately be absent (old v1 records) — that's fine.
+    return data.get("trust_origin")
+
+
+def _emit_trust_audit(
+    verb: str,
+    *,
+    target: Path | None,
+    **kwargs: object,
+) -> None:
+    """Emit a release.trust.* audit row to the target's audit log.
+
+    Uses the existing audit_append pattern.  If target is None or the audit
+    subsystem is unavailable, silently skips (audit is best-effort for trust
+    events — the error path already exits 17).
+    """
+    import datetime as _dt
+    try:
+        from lib.audit import audit_append as _audit_append
+    except ImportError:
+        return
+    if target is None:
+        return
+    audit_path = target / ".harness" / "audit.log"
+    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry: dict = {"verb": verb, "at": now, "args": dict(kwargs)}
+    try:
+        _audit_append(entry, audit_path=audit_path)
     except Exception:
-        return None
+        pass  # audit is best-effort; never let it abort the upgrade
 
 
 def _build_release_manifest_v2(
@@ -149,17 +203,20 @@ def _build_release_manifest_v2(
          On success: bind all reads to the verified commit SHA via
          ``file_sha256_at_commit`` — the working tree is never consulted.
          Emit ``trust_origin: "signed_tag"`` in the manifest.
+         Emit ``release.trust.verified`` audit row.
       3. On UpgradeTrustError("tag_signature_invalid"):
          - Check env var ``HARNESS_ALLOW_UNSIGNED_DEV=1``.
-         - If set AND target has no signed_tag trust yet: fall through to
-           working-tree reads with ``trust_origin: "dev_unsigned"`` + stderr WARNING.
-         - Otherwise: raise SystemExit(EXIT_RELEASE_TRUST_INVALID).
+         - If set AND target has no signed_tag trust yet:
+             - If a target manifest exists (any trust_origin): require y/N TTY
+               confirmation unless HARNESS_BYPASS_TTY_CONFIRM=1.
+             - Fall through to working-tree reads with ``trust_origin:
+               "dev_unsigned"`` + stderr WARNING.
+             - Emit ``release.trust.bypassed`` audit row.
+         - Otherwise: emit ``release.trust.refused`` + raise SystemExit(17).
 
     For dev builds (``0.0.0-dev+…`` pattern): skip verification, emit
     ``trust_origin: "dev_unsigned"`` immediately (working-tree path).
     """
-    import re as _re
-
     tag: str | None = None
     commit_sha: str | None = None
     trust_origin: str
@@ -174,10 +231,18 @@ def _build_release_manifest_v2(
     # ── Early trust-downgrade guard ─────────────────────────────────────────
     # If the target's existing manifest is already signed_tag and the new build
     # would be dev_unsigned, refuse immediately — before any file access.
+    # δ-P1-1: _read_target_trust_origin now raises UpgradeTrustError on
+    # corruption rather than silently returning None.
     existing_trust_origin = _read_target_trust_origin(target) if target is not None else None
     if is_dev_version or allow_unsigned:
         # Might end up as dev_unsigned; check downgrade now.
         if existing_trust_origin == "signed_tag":
+            _emit_trust_audit(
+                "release.trust.refused",
+                target=target,
+                sub_reason="trust_downgrade_refused",
+                target_path=str(target) if target else None,
+            )
             raise UpgradeTrustError(
                 "trust_downgrade_refused",
                 "target manifest already has trust_origin=signed_tag; "
@@ -194,10 +259,60 @@ def _build_release_manifest_v2(
         try:
             commit_sha = verify_release_tag(root, tag)
             trust_origin = "signed_tag"
+            # δ-P1-2: emit release.trust.verified on success.
+            _emit_trust_audit(
+                "release.trust.verified",
+                target=target,
+                release_tag=tag,
+                release_commit=commit_sha,
+                target_path=str(target) if target else None,
+            )
         except UpgradeTrustError as _te:
             # tag_not_found counts as tag_signature_invalid for bypass purposes.
             if _te.sub_reason in ("tag_signature_invalid", "tag_not_found"):
                 if allow_unsigned and existing_trust_origin != "signed_tag":
+                    # δ-P1-4: TTY confirmation when a target manifest already exists.
+                    # This ensures the operator is aware they are bypassing trust.
+                    target_manifest_exists = existing_trust_origin is not None
+                    bypass_tty_confirm = (
+                        os.environ.get("HARNESS_BYPASS_TTY_CONFIRM", "") == "1"
+                    )
+                    if target_manifest_exists and not bypass_tty_confirm:
+                        import sys as _sys_tty
+                        if not _sys_tty.stdin.isatty():
+                            _emit_trust_audit(
+                                "release.trust.refused",
+                                target=target,
+                                sub_reason="bypass_requires_tty_confirm",
+                                target_path=str(target) if target else None,
+                            )
+                            raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from UpgradeTrustError(
+                                "bypass_requires_tty_confirm",
+                                "HARNESS_ALLOW_UNSIGNED_DEV bypass requested but stdin is "
+                                "not a TTY and HARNESS_BYPASS_TTY_CONFIRM is not set. "
+                                "Refuse for safety.",
+                            )
+                        _sys_tty.stderr.write(
+                            "Trust-root bypass requested. Continue? [y/N] "
+                        )
+                        _sys_tty.stderr.flush()
+                        try:
+                            answer = input()
+                        except EOFError:
+                            answer = ""
+                        import re as _re
+                        if not _re.match(r"^[Yy]$", answer.strip()):
+                            _emit_trust_audit(
+                                "release.trust.refused",
+                                target=target,
+                                sub_reason="bypass_requires_tty_confirm",
+                                target_path=str(target) if target else None,
+                            )
+                            raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from UpgradeTrustError(
+                                "bypass_requires_tty_confirm",
+                                "User declined TTY confirmation for HARNESS_ALLOW_UNSIGNED_DEV bypass.",
+                            )
+                    # Bypass accepted — warn and proceed.
                     sys.stderr.write(
                         f"WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — skipping SSH tag "
                         f"verification for {tag!r} ({_te.sub_reason}). "
@@ -205,10 +320,24 @@ def _build_release_manifest_v2(
                     )
                     trust_origin = "dev_unsigned"
                     commit_sha = None
+                    # δ-P1-2: emit release.trust.bypassed audit row.
+                    _emit_trust_audit(
+                        "release.trust.bypassed",
+                        target=target,
+                        reason=_te.sub_reason,
+                        target_path=str(target) if target else None,
+                    )
                 else:
+                    _emit_trust_audit(
+                        "release.trust.refused",
+                        target=target,
+                        sub_reason=_te.sub_reason,
+                        target_path=str(target) if target else None,
+                    )
                     raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from _te
             else:
                 # trust_downgrade_refused or unknown — propagate directly.
+                # Audit row already emitted above for trust_downgrade_refused.
                 raise
 
     # ── Compute file hashes ─────────────────────────────────────────────────

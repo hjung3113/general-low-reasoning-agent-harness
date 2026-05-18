@@ -69,6 +69,35 @@ def _setup_repo(tmp: Path, *, key_file: Path, principal: str = "release@harness"
     return repo, commit_sha
 
 
+def _setup_repo_with_binary(tmp: Path, *, key_file: Path, binary_content: bytes,
+                             filename: str = "binary.bin") -> tuple[Path, str]:
+    """Initialise a test git repo with a binary file; return (repo_root, commit_sha).
+
+    No signed tag needed — we only exercise file_sha256_at_commit directly.
+    """
+    repo = tmp / f"repo_binary_{filename.replace('.', '_')}"
+    repo.mkdir(exist_ok=True)
+
+    _git(["init", "-b", "main"], cwd=repo)
+    _git(["config", "user.email", "test@example.com"], cwd=repo)
+    _git(["config", "user.name", "Test"], cwd=repo)
+    _git(["config", "commit.gpgsign", "false"], cwd=repo)
+
+    # Disable CRLF translation globally for this repo so binary bytes are stored as-is.
+    _git(["config", "core.autocrlf", "false"], cwd=repo)
+
+    (repo / "docs" / "trust").mkdir(parents=True)
+    (repo / "docs" / "trust" / "allowed-signers").write_text("# placeholder\n")
+
+    # Write the binary file directly via Path.write_bytes to bypass any Python text encoding.
+    (repo / filename).write_bytes(binary_content)
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-m", "add binary file"], cwd=repo)
+    commit_sha = _git(["rev-parse", "HEAD"], cwd=repo)
+
+    return repo, commit_sha
+
+
 @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen unavailable")
 class TestVerifyReleaseTag(unittest.TestCase):
 
@@ -143,6 +172,74 @@ class TestVerifyReleaseTag(unittest.TestCase):
         err = UpgradeTrustError("tag_not_found")
         self.assertEqual(err.exit_code, EXIT_RELEASE_TRUST_INVALID)
         self.assertEqual(EXIT_RELEASE_TRUST_INVALID, 17)
+
+
+@unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen unavailable")
+class TestFileSha256BinaryAndCRLF(unittest.TestCase):
+    """δ-P0: verify file_sha256_at_commit is binary-safe and CRLF-preserving."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._tmp = Path(cls._tmpdir.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmpdir.cleanup()
+
+    def test_binary_blob_correct_sha256(self) -> None:
+        """file_sha256_at_commit returns the correct sha256 for binary content with null + high bytes."""
+        binary_content = b"\x00\x01\xff\xfe"
+        repo, commit_sha = _setup_repo_with_binary(
+            self._tmp, key_file=self._tmp / "nonexistent",
+            binary_content=binary_content, filename="blob.bin"
+        )
+        sha = file_sha256_at_commit(repo, commit_sha, "blob.bin")
+        expected = hashlib.sha256(binary_content).hexdigest()
+        self.assertEqual(sha, expected, (
+            "file_sha256_at_commit must hash raw bytes, not text-decoded content"
+        ))
+
+    def test_crlf_blob_sha256_not_collapsed(self) -> None:
+        """file_sha256_at_commit preserves CRLF — sha256 must match raw CRLF bytes."""
+        crlf_content = b"line1\r\nline2\r\n"
+        repo, commit_sha = _setup_repo_with_binary(
+            self._tmp, key_file=self._tmp / "nonexistent2",
+            binary_content=crlf_content, filename="crlf.txt"
+        )
+        sha = file_sha256_at_commit(repo, commit_sha, "crlf.txt")
+        expected_crlf = hashlib.sha256(crlf_content).hexdigest()
+        lf_only = hashlib.sha256(b"line1\nline2\n").hexdigest()
+        self.assertEqual(sha, expected_crlf, (
+            "file_sha256_at_commit must preserve CRLF bytes; "
+            f"got sha256={sha!r} but CRLF-expected={expected_crlf!r}, "
+            f"LF-collapsed={lf_only!r}"
+        ))
+        self.assertNotEqual(sha, lf_only, (
+            "sha256 must NOT match the LF-collapsed version"
+        ))
+
+    def test_allowed_signers_outside_repo_raises(self) -> None:
+        """verify_release_tag raises allowed_signers_outside_repo if path escapes repo_root."""
+        import tempfile as _tf
+        import types
+        from pathlib import Path as _P
+        from lib import release_trust as _rt
+
+        # Patch ALLOWED_SIGNERS_PATH to an absolute path outside the repo.
+        original = _rt.ALLOWED_SIGNERS_PATH
+        try:
+            # Use an absolute path that starts with /tmp (outside any repo sub-tree).
+            _rt.ALLOWED_SIGNERS_PATH = _P("/tmp/evil-allowed-signers")
+            with tempfile.TemporaryDirectory() as td:
+                repo = _P(td)
+                # Init a minimal git repo so rev-list doesn't fail for wrong reason.
+                subprocess.run(["git", "init", "-b", "main", str(repo)], capture_output=True, check=True)
+                with self.assertRaises(UpgradeTrustError) as ctx:
+                    _rt.verify_release_tag(repo, "v0.0.1")
+                self.assertEqual(ctx.exception.sub_reason, "allowed_signers_outside_repo")
+        finally:
+            _rt.ALLOWED_SIGNERS_PATH = original
 
 
 if __name__ == "__main__":
