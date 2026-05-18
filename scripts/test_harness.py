@@ -2678,22 +2678,14 @@ progress:
 
     def test_root_readme_documents_phase_commands(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
+        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
 
+        # Content that belongs in README (source-project focused)
         for phrase in (
-            "discuss -> plan -> execute -> done",
-            "지원 환경과 명령 표기",
             "사용 시나리오 빠른 선택",
-            "클라이언트별 커맨드 모델",
             "core-only 하네스",
-            "OpenCode 전용 하네스",
             "Roo + OpenCode 동시 지원",
-            "skill pack은 플러그인입니다",
             "source repository에는 `.agents/skills/**`가 없어도 정상입니다",
-            "OpenCode adapter는 의도적으로 phase primitive만 제공합니다",
-            "repository-evidence-research",
-            "skill-plugin-composition",
-            "verification-contract",
-            "integration-boundary",
             "tech-csharp",
             "tech-mssql",
             "workflow-etl",
@@ -2703,18 +2695,39 @@ progress:
         ):
             self.assertIn(phrase, readme)
 
+        # Content moved to USER_MANUAL (end-user focused)
+        for phrase in (
+            "discuss -> plan -> execute -> done",
+            "지원 환경과 명령 표기",
+            "클라이언트별 커맨드 모델",
+            "skill pack은 플러그인입니다",
+            "OpenCode adapter는 의도적으로 phase primitive만 제공합니다",
+            "repository-evidence-research",
+            "skill-plugin-composition",
+            "verification-contract",
+            "integration-boundary",
+        ):
+            self.assertIn(phrase, manual)
+
     def test_root_readme_documents_user_use_cases_prompts_and_platform_variants(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
+        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
 
+        # Content that belongs in README (install/source-project focused)
         for phrase in (
             "Windows PowerShell",
             "py -3 scripts/harness.py check",
-            "`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다",
             "새 프로젝트에 기본 가드레일만 넣기",
             "OpenCode만 쓰기",
             "버그 진단",
             "보안/권한/secret 변경",
             "하네스 업그레이드",
+        ):
+            self.assertIn(phrase, readme)
+
+        # Content moved to USER_MANUAL (end-user workflow focused)
+        for phrase in (
+            "`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다",
             "`/phase-discuss`",
             "`.opencode/commands/execute.md`",
             "OpenCode에서 버그 수정",
@@ -2722,7 +2735,7 @@ progress:
             "active phase docs는 다음 순서로 해석합니다",
             "workflow-debugging,workflow-tdd",
         ):
-            self.assertIn(phrase, readme)
+            self.assertIn(phrase, manual)
 
     def test_opencode_commands_document_core_adapter_contract(self) -> None:
         root = harness.repo_root()
@@ -2771,28 +2784,33 @@ progress:
 
     def test_readme_documents_unified_profiles_and_db_flag(self) -> None:
         readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
+        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
 
+        # Content that belongs in README (install/source-project focused)
         for phrase in (
-            "`.planning/**`은 canonical memory입니다",
-            "`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다",
             "python3 scripts/harness.py init --target /path/to/project --adapters none",
             "python3 scripts/harness.py init --target /path/to/project --adapters opencode",
             "python3 scripts/harness.py init --target /path/to/project --adapters both",
-            "python3 scripts/harness.py check --target /path/to/project --adapter opencode",
             "python3 scripts/harness.py check --worktree",
             "python3 scripts/release_smoke_test.py",
-            "push 전에 서브에이전트 적대적 리뷰를 해줘",
             "`dotnet-etl`",
             "`react-web`",
-            "`--db`",
-            "`--db mssql` 또는 `--db postgresql`",
             "workflow-tdd",
             "workflow-debugging",
             "workflow-code-review",
-            "workflow-skill-authoring",
             "workflow-security-review",
         ):
             self.assertIn(phrase, readme)
+
+        # Content moved to USER_MANUAL (end-user focused)
+        for phrase in (
+            "`.planning/**`은 canonical memory입니다",
+            "`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다",
+            "push 전에 서브에이전트 적대적 리뷰를 해줘",
+            "`--db mssql` 또는 `--db postgresql`",
+            "workflow-skill-authoring",
+        ):
+            self.assertIn(phrase, manual)
 
     def test_core_docs_are_client_neutral_and_document_done_audit_mode(self) -> None:
         root = harness.repo_root()
