@@ -911,7 +911,7 @@ def run(argv: list[str] | None = None) -> int:
     next_group.add_argument(
         "--json",
         action="store_true",
-        help="Structured output: {requires_human, agent_safe, command, reason}.",
+        help="Output machine-readable JSON: {requires_human, agent_safe, command, reason}.",
     )
 
     args = parser.parse_args(argv)

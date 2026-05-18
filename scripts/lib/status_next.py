@@ -402,8 +402,12 @@ def format_status_human(result: StatusResult) -> str:
         if age is not None:
             if age < 120:
                 halt_str += f", halted {age}s ago"
-            else:
+            elif age < 3600:
                 halt_str += f", halted {age // 60}m ago"
+            elif age < 86400:
+                halt_str += f", halted {age // 3600}h ago"
+            else:
+                halt_str += f", halted {age // 86400}d ago"
         lines.append(f"Halt diary      : {halt_str}")
         halt_reason = lh.get("halt_reason")
         if halt_reason:
@@ -414,9 +418,19 @@ def format_status_human(result: StatusResult) -> str:
     else:
         lines.append("Halt diary      : (none recent)")
 
-    # Next action line
+    # Next action line — always emitted (v0.7.2 H1).
+    # JSON path unchanged: format_status_json still serializes
+    # next_action verbatim (may be null).
     if result.next_action:
         lines.append(f"Next action     : {result.next_action}")
+    else:
+        if result.execution_mode != "manual":
+            reason = "autopilot active"
+        elif result.phase == "done":
+            reason = "phase complete"
+        else:
+            reason = "no action determined"
+        lines.append(f"Next action     : (none — {reason})")
 
     return "\n".join(lines) + "\n"
 
