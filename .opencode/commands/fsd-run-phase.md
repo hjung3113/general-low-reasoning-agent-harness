@@ -11,8 +11,8 @@ Do not pass `--allow-network`. Do not run shell snippets. Do not parse or forwar
 After start, follow the phase lifecycle in order:
 1. Run `harness status` and confirm `Execution mode: phase_autopilot`.
 2. Drive the selected phase via `.opencode/commands/{discuss,plan,execute,done}.md`.
-3. Before code execution, verify `harness status --json` reports `can_enter_execute=true` or stop and surface the `Fix:` line.
+3. Before code execution, run `harness check`, then `python3 scripts/show_phase_status.py`. Verify `projected_execute_gate_valid=true`, `next_steps.may_edit=true`, no blocking warnings, non-empty `allowed_paths`, and non-empty `verification`; otherwise surface `projected_execute_gate_reason`, `next_steps.read_next`, or warnings and stop.
 4. Run the phase verification commands.
 5. Run `harness phase set done`.
 6. On any non-zero exit, run `harness status`, surface `Halt diary` and `Next action`, then stop.
-7. After every CLI call within the phase, run `harness next --json` and read `requires_human`. If `true`, surface `command` to the user with the prefix "please run this in your terminal:"; do NOT execute it. Stop the phase run.
+7. After every CLI call within the phase, run `HARNESS_MACHINE=1 harness next` and read `requires_user_approval`. If `true`, surface `next_user_prompt` to the user; do NOT approve on their behalf. Stop the phase run.

@@ -15,7 +15,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.8.1의 일상 CLI 표면은 네 개입니다:
+v0.8.2의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -50,7 +50,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.8.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -88,14 +88,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.2 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.8.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -193,13 +193,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.8.1
+python3 scripts/harness.py release-check --expected-version v0.8.2
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.1 -m "Release v0.8.1"
-git push origin v0.8.1
+git tag -s v0.8.2 -m "Release v0.8.2"
+git push origin v0.8.2
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -220,8 +220,8 @@ git push origin v0.8.1
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.1
+python3 scripts/upgrade_harness.py --version v0.8.2 --dry-run
+python3 scripts/upgrade_harness.py --version v0.8.2
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -233,7 +233,9 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.8.1 한글 유즈케이스 문서 Hotfix** — 유즈케이스별 한글 문서를 `docs/use-cases/`로 분리하고, 최소 워크플로 UML 문서 2개를 한글로 정리했습니다.
+**v0.8.2 Workflow UX Hardening** — `show_phase_status.py`의 `next_steps`, 어댑터 상태 템플릿, 승인 경계 문서를 보강했습니다.
+
+**한글 유즈케이스 문서 Hotfix** — 유즈케이스별 한글 문서를 `docs/use-cases/`로 분리하고, 최소 워크플로 UML 문서 2개를 한글로 정리했습니다.
 
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.

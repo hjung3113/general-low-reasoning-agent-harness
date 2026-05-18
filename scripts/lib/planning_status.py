@@ -222,11 +222,21 @@ def projection_to_dict(projection: PlanningProjection) -> dict[str, object]:
         "warnings": [warning.__dict__ for warning in projection.warnings],
         "required_reads": projection.required_reads,
         "suggested_next_read": projection.suggested_next_read,
+        "next_steps": _next_steps(projection),
     }
 
 
 def projection_to_json(projection: PlanningProjection) -> str:
     return json.dumps(projection_to_dict(projection), sort_keys=True, separators=(",", ":"))
+
+
+def _next_steps(projection: PlanningProjection) -> dict[str, object]:
+    return {
+        "trusted": not any(warning.required_read for warning in projection.warnings),
+        "read_next": projection.suggested_next_read,
+        "may_edit": projection.projected_execute_gate_valid,
+        "must_verify": projection.verification,
+    }
 
 
 def _load_phase_state(path: Path) -> dict[str, object]:

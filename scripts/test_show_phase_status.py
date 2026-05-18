@@ -39,6 +39,15 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
             self.assertEqual([], payload["warnings"])
             self.assertIn(".planning/STATE.md", payload["required_reads"])
             self.assertIn(".scratch/phase-state.json", payload["required_reads"])
+            self.assertEqual(
+                {
+                    "trusted": True,
+                    "read_next": ".planning/STATE.md",
+                    "may_edit": True,
+                    "must_verify": ["python3 -m unittest scripts/test_show_phase_status.py"],
+                },
+                payload["next_steps"],
+            )
 
     def test_projection_reports_blocking_warning_for_checkpoint_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -55,6 +64,9 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
             self.assertIn(".planning/STATE.md", warning["paths"])
             self.assertIn(".scratch/phase-state.json", warning["paths"])
             self.assertFalse(payload["projected_execute_gate_valid"])
+            self.assertFalse(payload["next_steps"]["trusted"])
+            self.assertFalse(payload["next_steps"]["may_edit"])
+            self.assertEqual(".planning/STATE.md", payload["next_steps"]["read_next"])
 
     def test_projection_distinguishes_active_docs_from_historical_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

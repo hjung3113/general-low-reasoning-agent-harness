@@ -6,13 +6,18 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-(Nothing accumulated yet.)
-
 ### Breaking
 
 - No unreleased breaking changes. Prior ledger entries for `phase=done`,
   `state_schema_version`, and `migrate state --resume` are recorded in released
   sections below.
+
+## v0.8.2 — 2026-05-19 (workflow UX hardening)
+
+- Added compact `next_steps` guidance to `show_phase_status.py` JSON so low-reasoning agents can read trust, next read, edit permission, and verification obligations without inferring them from the full projection.
+- Updated adapter status and phase-run prompts to use the current `HARNESS_MACHINE=1 harness next` contract fields: `may_edit`, `requires_user_approval`, `next_command`, and `next_user_prompt`.
+- Clarified approval-boundary docs: humans approve after `harness run` surfaces the prompt; adapters must never self-approve.
+- Updated README/manual release examples from v0.8.1 to v0.8.2.
 
 ## v0.8.1 — 2026-05-19 (한글 유즈케이스 문서 hotfix)
 

@@ -2,9 +2,13 @@
 
 Project-local workflow skills live under `.agents/skills/` as composable plugins. Adapter-specific skills may live under adapter-owned folders such as `.roo/skills/`.
 
+## Running Referenced Scripts
+
+When a skill, command, mode, or rule names a script such as `python3 scripts/foo.py` or `bash scripts/bar.sh`, run the script and interpret stdout/stderr as the contract. Do not open the script source just to infer what it does. Inspect source only when execution fails and you need to debug it.
+
 ## Planning State
 
-Start with `python3 scripts/show_phase_status.py` when available. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
+Start with `python3 scripts/show_phase_status.py` when available. Run it and read its output; do not inspect the script source first. If it reports warnings, treat named files as minimum required reads before trusting the projection. If it is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order.
 
 If `.scratch/phase-state.json` is not `phase=execute` with `approved=true`, do not modify application code. Documentation, harness, adapter, profile, and skill-pack changes are allowed only when explicitly requested.
 

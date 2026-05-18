@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.8.1)
+# 하네스 사용자 설명서 (v0.8.2)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -98,7 +98,16 @@ python3 scripts/harness.py next
 
 ### 2.3 Planning State 탐색
 
-state show 출력으로 현재 위치를 확인한 뒤:
+일상 작업에서는 먼저 고수준 명령만 사용합니다:
+
+```bash
+harness check
+harness next
+```
+
+`harness check`가 출력 없이 0으로 끝나면 통과입니다. 더 깊은 디버깅이 필요할 때만 `state show`나 직접 파일 읽기를 사용합니다.
+
+고급 탐색이 필요하면:
 
 ```bash
 ls .planning/
@@ -106,8 +115,7 @@ cat .planning/ROADMAP.md
 cat .planning/STATE.md
 ```
 
-`state show`가 warning을 보고하면, 그 파일들을 최소한의 필수 읽기 목록으로 삼습니다.
-`state show`가 없거나 실패하면, 아래 legacy 읽기 순서를 따릅니다:
+`state show` 또는 `show_phase_status.py`가 warning을 보고하면, 그 파일들을 최소한의 필수 읽기 목록으로 삼습니다. 둘 다 없거나 실패하면, 아래 legacy 읽기 순서를 따릅니다:
 
 1. `.scratch/phase-state.json`
 2. `.planning/STATE.md`
@@ -130,6 +138,17 @@ Stop before changing application code.
 
 Roo를 설치했다면 `/phase-discuss planning-hydration --pass 0`으로 시작.
 OpenCode만 설치했다면 `.opencode/commands/discuss.md`를 사용.
+
+일상 구현 작업을 맡길 때:
+
+```text
+Run harness check first.
+Then run HARNESS_MACHINE=1 harness next and read the JSON.
+Only edit files when may_edit is true.
+If requires_user_approval is true, show next_user_prompt to the user and stop.
+Do not self-approve or run low-level approval, nonce, anchor, repair, or phase commands.
+After edits, run the verification commands named by the current phase and report results.
+```
 
 ---
 
@@ -551,7 +570,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 12
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.8.1` | Release tag 버전 검증 |
+| `release-check --expected-version v0.8.2` | Release tag 버전 검증 |
 
 ### 8.6 FSD (Fast Slash-command Dispatch)
 
@@ -751,8 +770,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.1 -m "Release v0.8.1"
-git push origin v0.8.1
+git tag -s v0.8.2 -m "Release v0.8.2"
+git push origin v0.8.2
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -762,7 +781,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.1
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.2
 ```
 
 ### 11.5 Trust-Downgrade Refusal
@@ -823,7 +842,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.8.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -975,8 +994,8 @@ python3 /path/to/project/scripts/harness.py check
 ### 16.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.8.1 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.1
+python3 scripts/upgrade_harness.py --version v0.8.2 --dry-run
+python3 scripts/upgrade_harness.py --version v0.8.2
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -988,14 +1007,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.8.1 \
+  --version v0.8.2 \
   --dry-run
 ```
 
 ### 16.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.1 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.2 --dry-run
 ```
 
 ### 16.5 오래된 수동 설치 adopt
@@ -1134,7 +1153,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.8.1
+   git verify-tag v0.8.2
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
