@@ -248,7 +248,7 @@ def check(
     entries = all_entries
     missing = [str(entry.source) for entry in entries if entry.policy != "exclude" and not source_path(root, entry).exists()]
     if missing:
-        raise SystemExit(f"Manifest sources missing: {', '.join(missing)}")
+        raise SystemExit(f"Manifest sources missing: {', '.join(missing)}. Fix: run `harness upgrade --target <target>` (or restore missing source files in the harness checkout)")
 
     check_clean_skeleton(root)
     if (root / ".roomodes").exists():
@@ -319,7 +319,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
     validate_installed_scope_names(installed)
     profile_sync_errs = _check_roomodes_profile_sync(target, installed)
     if profile_sync_errs:
-        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs))
+        raise SystemExit("Profile-mode sync errors: " + "; ".join(profile_sync_errs) + ". Fix: run `harness upgrade --target <target> --profiles <profile>` to re-sync .roomodes with the installed profile set")
     missing = []
     for path_text in installed.get("files", {}):
         from lib.adoption import is_optional_project_owned_path
@@ -338,7 +338,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         if isinstance(info, dict) and info.get("policy") == "managed-append":
             validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
     if missing:
-        raise SystemExit("Installed target is missing files: " + ", ".join(missing))
+        raise SystemExit("Installed target is missing files: " + ", ".join(missing) + ". Fix: run `harness upgrade --target <target>`")
     if expected_entries is not None:
         expected_by_path = {str(entry.path): entry for entry in expected_entries if entry.policy != "exclude"}
         policy_mismatches = []
@@ -354,7 +354,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
                 if destination.exists():
                     validate_installed_managed_append(destination=destination, path_text=path_text, info=info)
         if policy_mismatches:
-            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches))
+            raise SystemExit("Installed policy mismatch: " + "; ".join(policy_mismatches) + ". Fix: run `harness upgrade --target <target>` to realign installed policy with the current manifest")
         expected_paths = {
             str(entry.path) for entry in expected_entries if entry.policy not in {"exclude", "project-owned"}
         }
@@ -362,7 +362,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             path_text for path_text in sorted(expected_paths) if not (target / normalize_path(path_text)).exists()
         ]
         if missing_current:
-            raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current))
+            raise SystemExit("Current harness files missing from target: " + ", ".join(missing_current) + ". Fix: run `harness upgrade --target <target>`")
         retired = [
             path_text
             for path_text, info in sorted(installed.get("files", {}).items())
@@ -371,7 +371,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             and info.get("policy") != "project-owned"
         ]
         if retired:
-            raise SystemExit("Retired harness files remain installed: " + ", ".join(retired))
+            raise SystemExit("Retired harness files remain installed: " + ", ".join(retired) + ". Fix: run `harness upgrade --target <target> --force` to overwrite, or delete the listed files manually")
     missing_phrases = []
     for relative, phrases in REQUIRED_TARGET_PHRASES.items():
         path = target / relative
@@ -383,7 +383,7 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
             if phrase not in text:
                 missing_phrases.append(f"{relative}: {phrase}")
     if missing_phrases:
-        raise SystemExit("Required guardrail phrases missing: " + "; ".join(missing_phrases))
+        raise SystemExit("Required guardrail phrases missing: " + "; ".join(missing_phrases) + ". Fix: run `harness upgrade --target <target>` to restore guardrail phrases in AGENTS.md / .roomodes")
     for relative in (
         ".roomodes",
         ".scratch/phase-state.schema.json",
@@ -447,7 +447,7 @@ def check_clean_skeleton(root: Path) -> None:
             if any(pattern.search(text) for pattern in CONTAMINATION_PATTERNS):
                 offenders.append(str(path.relative_to(root)))
     if offenders:
-        raise SystemExit("Clean skeleton contamination detected: " + ", ".join(offenders))
+        raise SystemExit("Clean skeleton contamination detected: " + ", ".join(offenders) + ". Fix: revert or remove project-specific content from the listed paths under harness/skeleton/clean/ (skeleton must stay generic)")
 
 
 def check_json(path: Path) -> None:
@@ -466,12 +466,12 @@ def check_phase_state_semantics(path: Path) -> None:
         )
     for key in ("updated_at",):
         if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
-            raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp.")
+            raise SystemExit(f"{path} {key} must be an ISO-8601 UTC timestamp. Fix: re-run `harness phase set <phase> --stdin-json` with a corrected {key} (e.g. \"2026-05-18T12:34:56Z\") in the JSON payload")
     if not isinstance(state.get("updated_by"), str) or not state.get("updated_by"):
-        raise SystemExit(f"{path} updated_by is required.")
+        raise SystemExit(f"{path} updated_by is required. Fix: re-run `harness phase set <phase> --stdin-json` with \"updated_by\": \"<agent-or-user-id>\" in the JSON payload")
     automation_mode = state.get("automation_mode")
     if automation_mode not in {"manual", "auto", "chain"}:
-        raise SystemExit(f"{path} automation_mode must be manual, auto, or chain.")
+        raise SystemExit(f"{path} automation_mode must be manual, auto, or chain. Fix: re-run `harness phase set <phase> --stdin-json` with \"automation_mode\": \"manual\" (or \"auto\"/\"chain\") in the JSON payload")
     # S01-A.2: execution_mode is the v0.7 canonical replacement for the
     # legacy automation_mode alias (design §1.1). It is optional on
     # legacy state_schema_version=2 records that pre-date the S01 slice;
@@ -488,9 +488,9 @@ def check_phase_state_semantics(path: Path) -> None:
             )
     auto_selected = state.get("auto_selected")
     if not isinstance(auto_selected, list):
-        raise SystemExit(f"{path} auto_selected must be an array.")
+        raise SystemExit(f"{path} auto_selected must be an array. Fix: re-run `harness phase set <phase> --stdin-json` with \"auto_selected\": [] (empty list is valid for automation_mode=manual)")
     if automation_mode in {"auto", "chain"} and not auto_selected:
-        raise SystemExit(f"{path} auto_selected must record choices when automation_mode={automation_mode}.")
+        raise SystemExit(f"{path} auto_selected must record choices when automation_mode={automation_mode}. Fix: switch to automation_mode=manual via `harness phase set <phase> --stdin-json`, or re-run the autopilot decision so harness records auto_selected entries")
     required = {
         "choice": str,
         "selected_value": str,
@@ -503,17 +503,17 @@ def check_phase_state_semantics(path: Path) -> None:
     }
     for index, item in enumerate(auto_selected):
         if not isinstance(item, dict):
-            raise SystemExit(f"{path} auto_selected[{index}] must be an object.")
+            raise SystemExit(f"{path} auto_selected[{index}] must be an object. Fix: replace the entry at index {index} via `harness phase set <phase> --stdin-json` — each item must be a JSON object with choice, selected_value, reason, evidence_path, risk_level, reversible, inside_allowed_paths, stop_conditions_checked")
         for key, expected_type in required.items():
             if key not in item or not isinstance(item[key], expected_type):
-                raise SystemExit(f"{path} auto_selected[{index}].{key} is required.")
+                raise SystemExit(f"{path} auto_selected[{index}].{key} is required. Fix: add the missing {key} to auto_selected[{index}] via `harness phase set <phase> --stdin-json`")
         if item["risk_level"] not in {"low", "medium", "high"}:
-            raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high.")
+            raise SystemExit(f"{path} auto_selected[{index}].risk_level must be low, medium, or high. Fix: set auto_selected[{index}].risk_level to one of low|medium|high via `harness phase set <phase> --stdin-json`")
         if not item["stop_conditions_checked"]:
-            raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty.")
+            raise SystemExit(f"{path} auto_selected[{index}].stop_conditions_checked must be non-empty. Fix: add at least one stop-condition string to auto_selected[{index}].stop_conditions_checked via `harness phase set <phase> --stdin-json`")
     phase = state.get("phase")
     if phase not in {"discuss", "plan", "execute", "done"}:
-        raise SystemExit(f"{path} phase must be discuss, plan, execute, or done.")
+        raise SystemExit(f"{path} phase must be discuss, plan, execute, or done. Fix: run `harness phase set discuss` (or plan/execute/done) to reset to a valid phase value")
     # SM5: `approved`, when present, MUST be a bool. Reject string truthy
     # values like "yes"/"true" across all phases. (Note: isinstance(x, bool)
     # is the only correct test in Python; bool is a subclass of int so the
@@ -524,7 +524,7 @@ def check_phase_state_semantics(path: Path) -> None:
             f"{type(state['approved']).__name__}={state['approved']!r}."
         )
     if phase == "discuss" and state.get("approved") is not False:
-        raise SystemExit(f"{path} discuss phase requires approved=false.")
+        raise SystemExit(f"{path} discuss phase requires approved=false. Fix: run `harness phase set discuss --reset-approval`")
     if phase == "plan":
         required_plan = (
             "plan_id",
@@ -686,7 +686,7 @@ def check_phase_reference_drift(root: Path) -> None:
             if phrase in text:
                 offenders.append(f"{path.relative_to(root)}: {phrase}")
     if offenders:
-        raise SystemExit("Stale phase reference detected: " + "; ".join(offenders))
+        raise SystemExit("Stale phase reference detected: " + "; ".join(offenders) + ". Fix: search-and-replace the listed phrases in the named files, or rephrase the stale text")
 
 
 def check_phase_state_paths(root: Path) -> None:
@@ -698,4 +698,4 @@ def check_phase_state_paths(root: Path) -> None:
         if isinstance(value, str) and value and not (root / normalize_path(value)).exists():
             missing.append(f"{key}={value}")
     if missing:
-        raise SystemExit("Phase-state paths are missing: " + ", ".join(missing))
+        raise SystemExit("Phase-state paths are missing: " + ", ".join(missing) + ". Fix: create the listed file(s), or update phase-state.json's state_path/plan_path/checkpoint_path via `harness phase set <phase> --stdin-json`")

@@ -40,13 +40,12 @@ def _format_scope_violation(denied: list[str]) -> str:
         "harness: scope violation (exit 4)\n"
         "Files outside allowed_paths:\n"
         + "\n".join(f"  {p}" for p in denied)
-        + "\nRemediation:\n"
+        + "\nFix: pick one of the following:\n"
         "  - Move the change out of the commit, OR\n"
-        "  - Add the path/glob to .scratch/phase-state.json `allowed_paths`, OR\n"
+        "  - Add the path/glob to .scratch/phase-state.json `allowed_paths` "
+        "(run `harness phase set plan --reset-approval` first to reopen for editing), OR\n"
         "  - Remove a matching entry from `blocked_paths`.\n"
         "See docs/protocol-spec.md#scope-enforcement.\n"
-        "Fix: add the violating path to state.allowed_paths or remove the change "
-        "('harness phase set plan --reset-approval' to reopen, then edit allowed_paths)."
     )
 
 
@@ -241,7 +240,9 @@ def check_changed_paths(target: Path, base: str) -> None:
     _run_glob_collision_scan(target, state)
     if not changed_path_gate_allows_state(state):
         raise SystemExit(
-            "Changed-path check requires phase=execute with approved=true or phase=done with approved=false"
+            "Changed-path check requires phase=execute with approved=true or phase=done with approved=false. "
+            "Fix: this check is meaningful only during phase=execute (approved=true) or phase=done. "
+            "Run `harness phase set execute` after approval, or omit `--base`"
         )
     changed = git_changed_paths(target, base)
     denied = [
@@ -260,7 +261,9 @@ def check_worktree_paths(target: Path) -> None:
     _run_glob_collision_scan(target, state)
     if not changed_path_gate_allows_state(state):
         raise SystemExit(
-            "Worktree changed-path check requires phase=execute with approved=true or phase=done with approved=false"
+            "Worktree changed-path check requires phase=execute with approved=true or phase=done with approved=false. "
+            "Fix: this check is meaningful only during phase=execute (approved=true) or phase=done. "
+            "Run `harness phase set execute` after approval, or omit `--worktree`"
         )
     changed = sorted(set(git_worktree_paths(target)))
     denied = [
