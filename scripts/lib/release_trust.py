@@ -26,7 +26,7 @@ from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
 
 # Trust root: one line per authorized signer.
 # Format (OpenSSH allowed_signers): <principal> namespaces="git" <pubkey>
-# Release engineers fill this file before v0.8.0 tag; implementation consumes it.
+# Release engineers fill this file before v0.7.0 tag; implementation consumes it.
 ALLOWED_SIGNERS_PATH = Path("docs/trust/allowed-signers")
 
 
