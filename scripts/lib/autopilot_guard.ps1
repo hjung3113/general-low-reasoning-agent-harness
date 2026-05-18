@@ -12,8 +12,20 @@ if ($env:HARNESS_AUTOPILOT_NETWORK -eq "deny") {
     function _Harness_ResolveAuditPath {
         # B3-Fix-4: resolve audit path robustly so $PROFILE wiring works.
         # Under $PROFILE, (Get-Location) may be $HOME, not the project root.
+        #
+        # C-3 (Cycle-2): HARNESS_PROJECT_ROOT is a SECURITY-RELEVANT env var.
+        # An attacker who controls it can redirect audit logging to an arbitrary
+        # path.  Validate that the resolved path contains a .harness/ directory
+        # before trusting it; otherwise fall through to the walk-up heuristic.
         if ($env:HARNESS_PROJECT_ROOT) {
-            return Join-Path $env:HARNESS_PROJECT_ROOT ".harness/audit.log"
+            $candidate = Join-Path $env:HARNESS_PROJECT_ROOT ".harness"
+            if (Test-Path $candidate) {
+                return Join-Path $candidate "audit.log"
+            }
+            # HARNESS_PROJECT_ROOT set but does not contain .harness/ — distrust it.
+            [System.Console]::Error.WriteLine(
+                "WARNING: HARNESS_PROJECT_ROOT='$($env:HARNESS_PROJECT_ROOT)' does not contain a .harness/ directory; ignoring (C-3 security validation).")
+            # Fall through to walk-up below.
         }
         # Walk up from the script's own location to find a .harness/ ancestor.
         $dir = $PSScriptRoot

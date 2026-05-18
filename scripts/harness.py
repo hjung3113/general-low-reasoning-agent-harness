@@ -933,28 +933,17 @@ def run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "upgrade":
         raw_upgrade_profiles = parse_optional_scope(args.profiles)
-        # B3-Fix-10: --allow-unsigned-dev CLI flag sets HARNESS_ALLOW_UNSIGNED_DEV=1
-        # so the trust logic in _build_release_manifest_v2 picks it up. Also emit
-        # an audit row distinguishing cli_flag vs env_var bypass_source.
+        # C-2 (Cycle-2): --allow-unsigned-dev CLI flag sets HARNESS_ALLOW_UNSIGNED_DEV=1
+        # so the trust logic in _build_release_manifest_v2 picks it up.
+        # Also set HARNESS_ALLOW_UNSIGNED_DEV_SOURCE=cli_flag so the inner function
+        # can emit a single audit row with correct bypass_source (cli_flag vs env_var).
+        # The pre-call duplicate audit emission is removed — bypass is emitted once
+        # inside _build_release_manifest_v2.
         if getattr(args, "allow_unsigned_dev", False):
             import os as _os
             if not _os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV"):
                 _os.environ["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"
-                # Emit bypass_source=cli_flag audit row (best-effort).
-                try:
-                    from lib.audit import audit_append as _aa
-                    import datetime as _dt
-                    _audit_path = args.target / ".harness" / "audit.log"
-                    _aa(
-                        {
-                            "verb": "release.trust.bypassed",
-                            "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "args": {"bypass_source": "cli_flag"},
-                        },
-                        audit_path=_audit_path,
-                    )
-                except Exception:
-                    pass
+            _os.environ["HARNESS_ALLOW_UNSIGNED_DEV_SOURCE"] = "cli_flag"
         return upgrade(
             root=command_root,
             target=args.target,

@@ -136,6 +136,55 @@ class TestAuditTailPartialWrite(unittest.TestCase):
             audit = self._write_audit(tmpdir, json.dumps(entry) + "\n")
             self.assertTrue(_audit_tail_partial_write(audit))
 
+    # --- C-5: backward scan finds txn row hidden behind non-txn rows ----------
+
+    def test_partial_txn_followed_by_non_txn_is_partial(self) -> None:
+        """C-5: tail is [partial_txn_row, jti_consumed_row] → predicate returns True."""
+        partial_txn = {
+            "verb": "phase.approve",
+            "at": "2026-01-01T00:00:00Z",
+            # Missing entry_hash, txn_id, after_sha256 → partial
+        }
+        non_txn = {
+            "verb": "ci.oidc.jti.consumed",
+            "jti": "some-jti",
+            "at": "2026-01-01T00:00:01Z",
+        }
+        content = json.dumps(partial_txn) + "\n" + json.dumps(non_txn) + "\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit = self._write_audit(tmpdir, content)
+            self.assertTrue(_audit_tail_partial_write(audit),
+                            "Partial txn row hidden behind non-txn should be detected")
+
+    def test_full_txn_followed_by_non_txn_not_partial(self) -> None:
+        """C-5: tail is [full_txn_row, jti_consumed_row] → predicate returns False."""
+        full_txn = {
+            "verb": "phase.approve",
+            "entry_hash": "abc123",
+            "txn_id": "txn-001",
+            "after_sha256": "deadbeef",
+            "at": "2026-01-01T00:00:00Z",
+        }
+        non_txn = {
+            "verb": "ci.oidc.jti.consumed",
+            "jti": "some-jti",
+            "at": "2026-01-01T00:00:01Z",
+        }
+        content = json.dumps(full_txn) + "\n" + json.dumps(non_txn) + "\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit = self._write_audit(tmpdir, content)
+            self.assertFalse(_audit_tail_partial_write(audit),
+                             "Full txn row hidden behind non-txn should not be flagged")
+
+    def test_no_txn_rows_in_tail_not_partial(self) -> None:
+        """C-5: only non-txn rows in tail → no partial write."""
+        non_txn1 = {"verb": "ci.oidc.jti.consumed", "jti": "j1"}
+        non_txn2 = {"verb": "lock.recovered", "at": "2026-01-01T00:00:00Z"}
+        content = json.dumps(non_txn1) + "\n" + json.dumps(non_txn2) + "\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audit = self._write_audit(tmpdir, content)
+            self.assertFalse(_audit_tail_partial_write(audit))
+
     # --- malformed JSON → partial (existing behaviour preserved) -------------
 
     def test_malformed_json_is_partial(self) -> None:

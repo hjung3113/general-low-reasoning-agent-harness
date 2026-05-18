@@ -80,15 +80,12 @@ def run_mint(
     """
     # ------------------------------------------------------------------
     # 1. TTY guard
+    # C-1 (Cycle-2): HARNESS_TEST_FORCE_TTY and HARNESS_DEV_BUILD removed from
+    # production code path entirely.  Tests must monkeypatch sys.stdin.isatty
+    # directly (e.g. mock.patch.object(sys.stdin, "isatty", return_value=True)).
+    # The env vars no longer have any effect on the TTY decision.
     # ------------------------------------------------------------------
-    force_tty_requested = os.environ.get("HARNESS_TEST_FORCE_TTY") == "1"
-    dev_build = os.environ.get("HARNESS_DEV_BUILD") == "1"
-    if force_tty_requested and not dev_build:
-        stderr.write(
-            "warning: HARNESS_TEST_FORCE_TTY ignored without HARNESS_DEV_BUILD=1\n"
-        )
-        force_tty_requested = False  # treat as if env var was absent
-    is_tty = force_tty_requested or (sys.stdin is not None and sys.stdin.isatty())
+    is_tty = sys.stdin is not None and sys.stdin.isatty()
     if not is_tty:
         stderr.write("error: approve-nonce mint requires an interactive TTY\n")
         return 2

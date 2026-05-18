@@ -423,35 +423,55 @@ def _file_sha(path: Path) -> str:
     return _sha256(path.read_bytes()) if path.exists() else ""
 
 
-def _audit_tail_partial_write(audit_path: Path) -> bool:
-    """Return True if the last non-empty line of `audit_path` fails
-    JSON-parse — the §12.5 #2 row-12 predicate. The per-entry hash-chain
-    check (S06) is intentionally NOT performed here; chain verification
-    is a S06 responsibility and would mis-flag every entry written
-    before S06 lands.
+def _audit_tail_partial_write(audit_path: Path, *, tail_scan_rows: int = 100) -> bool:
+    """Return True if the most recent txn-verb line fails partial-write check.
+
+    C-5 (Cycle-2): scan backward from the tail to find the FIRST line whose
+    verb is in _TXN_VERBS.  This handles the case where a legit non-txn append
+    (e.g. ci.oidc.jti.consumed) was written AFTER a partial txn commit — the
+    old logic checked only lines[-1] and would miss the partial txn row.
+
+    If no txn verb is found within the last `tail_scan_rows` rows → return False
+    (no txn row to check; assume not-partial).
+
+    Malformed JSON in the very last line is still flagged immediately (the audit
+    oracle itself is untrustworthy regardless of verb).
 
     B2-Fix-1 (Cycle-1): The three mandatory fields {entry_hash, txn_id,
     after_sha256} are ONLY required for entries whose verb is in _TXN_VERBS.
-    Non-txn verbs (e.g. ci.oidc.jti.consumed, lock.recovered) legitimately
-    tail the audit log without those fields — flagging them as partial writes
-    is a false positive that blocks normal harness start."""
+    Non-txn verbs legitimately omit those fields.
+    """
     if not audit_path.exists():
         return False
     text = audit_path.read_text(encoding="utf-8")
     lines = [ln for ln in text.splitlines() if ln.strip()]
     if not lines:
         return False
+
+    # Fast-path: malformed JSON on the very last line is always partial.
     try:
-        parsed = json.loads(lines[-1])
+        json.loads(lines[-1])
     except json.JSONDecodeError:
         return True
-    # §12.5 #2: require the three mandatory fields only when the verb is a
-    # transaction verb (i.e. went through commit_transaction).
-    verb = parsed.get("verb", "")
-    if verb in _TXN_VERBS:
-        required = {"entry_hash", "txn_id", "after_sha256"}
-        if not required.issubset(parsed):
-            return True
+
+    # C-5: scan backward up to tail_scan_rows for the most recent txn verb.
+    scan_lines = lines[-tail_scan_rows:]
+    for ln in reversed(scan_lines):
+        try:
+            parsed = json.loads(ln)
+        except json.JSONDecodeError:
+            # Malformed intermediate line — already handled for the last line above.
+            continue
+        verb = parsed.get("verb", "")
+        if verb in _TXN_VERBS:
+            # Found the most recent txn row — check mandatory fields.
+            required = {"entry_hash", "txn_id", "after_sha256"}
+            if not required.issubset(parsed):
+                return True
+            # Txn row is well-formed; stop scanning.
+            return False
+
+    # No txn verb found in tail scan — no partial write to report.
     return False
 
 

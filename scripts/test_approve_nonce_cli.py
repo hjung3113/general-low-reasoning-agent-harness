@@ -19,8 +19,9 @@ from lib import approve_nonce_cli
 from lib import approval_nonce
 
 
-# Env that enables HARNESS_TEST_FORCE_TTY (requires both vars per Fix 2).
-_FORCE_TTY_ENV = {"HARNESS_TEST_FORCE_TTY": "1", "HARNESS_DEV_BUILD": "1"}
+# C-1 (Cycle-2): HARNESS_TEST_FORCE_TTY removed from production code.
+# Tests now monkeypatch sys.stdin.isatty directly.
+_MOCK_TTY = mock.patch.object(sys.stdin, "isatty", return_value=True)
 
 
 def _make_args(audience: str = "phase.approve", ttl: int = 120) -> argparse.Namespace:
@@ -40,7 +41,7 @@ class TestRunMintHappyPath(unittest.TestCase):
     def test_exit_0_and_stdout(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve", ttl=120),
                 nonce_dir=self.nonce_dir,
@@ -55,7 +56,7 @@ class TestRunMintHappyPath(unittest.TestCase):
 
     def test_nonce_file_exists_with_correct_audience(self) -> None:
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.autopilot.start", ttl=60),
                 nonce_dir=self.nonce_dir,
@@ -80,7 +81,7 @@ class TestRunMintHappyPath(unittest.TestCase):
             captured.append(dict(entry))
             return 0
 
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -110,12 +111,9 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_non_tty_exit_2(self) -> None:
+        """Non-TTY stdin is refused with exit 2 — C-1 (Cycle-2): env vars no longer bypass."""
         stderr = io.StringIO()
-        # HARNESS_TEST_FORCE_TTY is absent/0 and stdin.isatty() returns False.
-        env_patch = {k: v for k, v in os.environ.items()
-                     if k not in ("HARNESS_TEST_FORCE_TTY", "HARNESS_DEV_BUILD")}
-        with mock.patch.dict(os.environ, env_patch, clear=True), \
-             mock.patch.object(sys.stdin, "isatty", return_value=False):
+        with mock.patch.object(sys.stdin, "isatty", return_value=False):
             rc = approve_nonce_cli.run_mint(
                 _make_args(),
                 nonce_dir=self.nonce_dir,
@@ -125,26 +123,10 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("interactive TTY", stderr.getvalue())
 
-    def test_force_tty_env_allows_pass_when_dev_build(self) -> None:
-        """HARNESS_TEST_FORCE_TTY=1 + HARNESS_DEV_BUILD=1 bypasses TTY gate."""
-        stdout = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
-             mock.patch.object(sys.stdin, "isatty", return_value=False):
-            rc = approve_nonce_cli.run_mint(
-                _make_args(),
-                nonce_dir=self.nonce_dir,
-                stdout=stdout,
-                stderr=io.StringIO(),
-            )
-        self.assertEqual(rc, 0, msg="HARNESS_TEST_FORCE_TTY=1 + HARNESS_DEV_BUILD=1 should bypass TTY gate")
-
-    def test_force_tty_without_dev_build_refused_with_warning(self) -> None:
-        """HARNESS_TEST_FORCE_TTY=1 alone (no HARNESS_DEV_BUILD) must refuse with exit 2 and print warning."""
+    def test_harness_test_force_tty_env_no_longer_bypasses(self) -> None:
+        """C-1 (Cycle-2): HARNESS_TEST_FORCE_TTY env var no longer bypasses TTY gate."""
         stderr = io.StringIO()
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("HARNESS_TEST_FORCE_TTY", "HARNESS_DEV_BUILD")}
-        env["HARNESS_TEST_FORCE_TTY"] = "1"
-        with mock.patch.dict(os.environ, env, clear=True), \
+        with mock.patch.dict(os.environ, {"HARNESS_TEST_FORCE_TTY": "1", "HARNESS_DEV_BUILD": "1"}), \
              mock.patch.object(sys.stdin, "isatty", return_value=False):
             rc = approve_nonce_cli.run_mint(
                 _make_args(),
@@ -152,10 +134,20 @@ class TestRunMintNonTtyRefusal(unittest.TestCase):
                 stdout=io.StringIO(),
                 stderr=stderr,
             )
-        self.assertEqual(rc, 2, msg=f"Expected exit 2 without HARNESS_DEV_BUILD, got {rc}")
-        err = stderr.getvalue()
-        self.assertIn("HARNESS_TEST_FORCE_TTY ignored without HARNESS_DEV_BUILD=1", err,
-                      msg=f"Expected warning in stderr, got: {err!r}")
+        # With C-1, env vars have no effect — only sys.stdin.isatty() matters.
+        self.assertEqual(rc, 2, msg="HARNESS_TEST_FORCE_TTY env var must no longer bypass TTY gate")
+
+    def test_real_isatty_true_allows_pass(self) -> None:
+        """sys.stdin.isatty()=True allows the mint to proceed."""
+        stdout = io.StringIO()
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
+            rc = approve_nonce_cli.run_mint(
+                _make_args(),
+                nonce_dir=self.nonce_dir,
+                stdout=stdout,
+                stderr=io.StringIO(),
+            )
+        self.assertEqual(rc, 0, msg="isatty=True should allow mint to proceed")
 
 
 class TestRunMintInvalidTtl(unittest.TestCase):
@@ -171,8 +163,9 @@ class TestRunMintInvalidTtl(unittest.TestCase):
     def _run_harness_mint(self, ttl: int) -> int:
         """Invoke harness.run() with approve-nonce mint and given TTL."""
         import harness
-        with mock.patch.dict(os.environ, {**_FORCE_TTY_ENV,
-                                          "HARNESS_NONCE_DIR": str(Path(self._tmp.name) / "n")}):
+        # C-1 (Cycle-2): mock sys.stdin.isatty instead of HARNESS_TEST_FORCE_TTY.
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
+             mock.patch.dict(os.environ, {"HARNESS_NONCE_DIR": str(Path(self._tmp.name) / "n")}):
             try:
                 rc = harness.run(["approve-nonce", "mint",
                                   "--audience", "phase.approve",
@@ -214,7 +207,7 @@ class TestRunMintTtlDirectValidation(unittest.TestCase):
 
     def test_ttl_zero_direct_call_exit_2(self) -> None:
         stderr = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
                 _make_args(ttl=0),
                 nonce_dir=self.nonce_dir,
@@ -226,7 +219,7 @@ class TestRunMintTtlDirectValidation(unittest.TestCase):
 
     def test_ttl_too_large_direct_call_exit_2(self) -> None:
         stderr = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
                 _make_args(ttl=10**9),
                 nonce_dir=self.nonce_dir,
@@ -249,7 +242,7 @@ class TestRunMintAudienceValidation(unittest.TestCase):
 
     def _mint(self, audience: str) -> tuple[int, str]:
         stderr = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience=audience),
                 nonce_dir=self.nonce_dir,
@@ -315,7 +308,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
             return 0
 
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
@@ -331,7 +324,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
 
     def test_win_tty_path_starts_with_win(self) -> None:
         """The tty path stored in the nonce file should start with 'win:' on nt."""
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -366,7 +359,7 @@ class TestAuditRowContent(unittest.TestCase):
             captured.append(dict(entry))
             return 0
 
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
                 _make_args(audience="phase.approve"),
@@ -399,7 +392,7 @@ class TestMintConsumeRoundTrip(unittest.TestCase):
         key = _secrets.token_bytes(32)
 
         stdout = io.StringIO()
-        with mock.patch.dict(os.environ, _FORCE_TTY_ENV), \
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty",
                                return_value=("posix:/dev/pts/99", "posix-real")), \
              mock.patch.object(approval_nonce, "_load_or_create_secret_key", return_value=key):

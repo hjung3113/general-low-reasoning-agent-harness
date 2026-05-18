@@ -317,11 +317,38 @@ def _run_crash_recovery(
     return None
 
 
-def _jti_seen_dir(harness_dir: Path) -> Path:
-    """Return the per-jti marker directory (env-configurable via HARNESS_JTI_DIR)."""
+def _jti_seen_dir(
+    harness_dir: Path,
+    *,
+    audit_path: Optional[Path] = None,
+) -> Path:
+    """Return the per-jti marker directory (env-configurable via HARNESS_JTI_DIR).
+
+    C-4 (Cycle-2): if HARNESS_JTI_DIR is set, log a WARNING to stderr and emit
+    an audit row (ci.oidc.jti.dir_override) so the override is forensically
+    visible.  An attacker who uses this env var to collapse replay detection
+    leaves an audit trail.  Full build-mode gating is v0.9.0 deferred.
+    """
     env_override = os.environ.get("HARNESS_JTI_DIR", "")
     if env_override:
-        return Path(env_override)
+        override_path = Path(env_override)
+        sys.stderr.write(
+            f"WARNING: HARNESS_JTI_DIR is set to {env_override!r}. "
+            "This overrides the JTI replay-detection directory. "
+            "An audit row is emitted for forensic visibility (C-4, §12.4).\n"
+        )
+        if audit_path is not None:
+            try:
+                _audit.audit_append(
+                    {
+                        "verb": "ci.oidc.jti.dir_override",
+                        "jti_dir_override": env_override,
+                    },
+                    audit_path=audit_path,
+                )
+            except Exception:
+                pass  # audit failure must not block JTI logic
+        return override_path
     return harness_dir / "jti-seen"
 
 
@@ -357,7 +384,7 @@ def _check_and_record_jti(
     If jti is new, creates marker file and returns None.
     NEVER fail-open: any unhandled exception propagates to the caller.
     """
-    jti_dir = _jti_seen_dir(harness_dir)
+    jti_dir = _jti_seen_dir(harness_dir, audit_path=audit_path)
     try:
         jti_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

@@ -360,11 +360,19 @@ def _build_release_manifest_v2(
                     )
                     trust_origin = "dev_unsigned"
                     commit_sha = None
-                    # δ-P1-2: emit release.trust.bypassed audit row.
+                    # C-2 (Cycle-2): emit release.trust.bypassed ONCE here with bypass_source.
+                    # Determine source: cli_flag (set by harness.py when --allow-unsigned-dev
+                    # was passed) vs env_var (HARNESS_ALLOW_UNSIGNED_DEV set directly).
+                    _bypass_src = (
+                        "cli_flag"
+                        if os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV_SOURCE") == "cli_flag"
+                        else "env_var"
+                    )
                     _emit_trust_audit(
                         "release.trust.bypassed",
                         target=target,
                         reason=_te.sub_reason,
+                        bypass_source=_bypass_src,
                         target_path=str(target) if target else None,
                     )
                 else:
