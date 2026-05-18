@@ -37,11 +37,53 @@ issue a rotation check + write under the same lock.
 from __future__ import annotations
 
 import errno
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
+
+# Conditional locking primitives so the audit module (transitively imported by
+# nearly every CLI surface) is importable on Windows. POSIX uses fcntl.flock;
+# Windows uses msvcrt.locking byte-range locks.
+if os.name == "posix":
+    import fcntl as _fcntl  # type: ignore[import]
+    _msvcrt = None  # type: ignore[assignment]
+else:
+    _fcntl = None  # type: ignore[assignment]
+    try:
+        import msvcrt as _msvcrt  # type: ignore[import]
+    except ImportError:  # pragma: no cover
+        _msvcrt = None  # type: ignore[assignment]
+
+
+def _audit_lock(fd: int, *, mode: str) -> None:
+    """Acquire ('ex') or release ('un') an exclusive lock on ``fd``.
+
+    POSIX: fcntl.flock(LOCK_EX|LOCK_UN). Windows: msvcrt.locking on the
+    [0, 1) byte range as a coarse whole-file mutex. Best-effort on platforms
+    that lack both primitives.
+    """
+    if _fcntl is not None:
+        if mode == "ex":
+            _fcntl.flock(fd, _fcntl.LOCK_EX)
+        else:
+            _fcntl.flock(fd, _fcntl.LOCK_UN)
+        return
+    if _msvcrt is not None:
+        cur = os.lseek(fd, 0, os.SEEK_CUR)
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            if mode == "ex":
+                # LK_LOCK blocks (retries) until acquired; matches POSIX
+                # LOCK_EX (blocking) semantics used by audit append path.
+                _msvcrt.locking(fd, _msvcrt.LK_LOCK, 1)
+            else:
+                _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+        finally:
+            try:
+                os.lseek(fd, cur, os.SEEK_SET)
+            except OSError:
+                pass
 from typing import Optional
 
 
@@ -346,7 +388,7 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
 
     fd = _open_append_fd(audit_path)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _audit_lock(fd, mode="ex")
 
         # Rotation pre-check. Per C4: rename(s) MUST run while the flock
         # is held. POSIX rename is atomic and flock binds to the inode
@@ -375,9 +417,9 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
             # fd so any racing acquirer that beats us to the new file
             # serializes correctly.
             new_fd = _open_append_fd(audit_path)
-            fcntl.flock(new_fd, fcntl.LOCK_EX)
+            _audit_lock(new_fd, mode="ex")
             try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _audit_lock(fd, mode="un")
             except OSError:
                 pass
             try:
@@ -478,7 +520,7 @@ def audit_append(entry: dict, *, audit_path: Path) -> int:
         os.fsync(fd)
     finally:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _audit_lock(fd, mode="un")
         except OSError:
             pass
         try:

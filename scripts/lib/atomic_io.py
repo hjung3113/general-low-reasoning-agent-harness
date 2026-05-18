@@ -12,10 +12,23 @@ Exports (skeleton — bodies filled in subsequent commits per plan task order):
 from __future__ import annotations
 
 import errno
-import fcntl
 import os
 import tempfile
 from pathlib import Path
+
+# Conditional import of platform-specific locking primitives so this module is
+# importable on Windows. POSIX uses fcntl; Windows uses msvcrt for byte-range
+# locks on the audit-append codepath. atomic_write_text does not require any
+# locking (relies on the temp+rename atomicity contract).
+if os.name == "posix":
+    import fcntl as _fcntl  # type: ignore[import]
+    _msvcrt = None  # type: ignore[assignment]
+else:
+    _fcntl = None  # type: ignore[assignment]
+    try:
+        import msvcrt as _msvcrt  # type: ignore[import]
+    except ImportError:  # pragma: no cover — only on exotic non-POSIX/non-Win
+        _msvcrt = None  # type: ignore[assignment]
 
 
 class AuditLogRefusedError(OSError):
@@ -51,6 +64,10 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
     tmp = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
+        # newline="" disables platform translation. On Windows, text-mode
+        # writes would otherwise translate any embedded "\n" to "\r\n", which
+        # corrupts byte-identical audit/state hash invariants.
+        newline="",
         dir=str(parent),
         prefix=path.name + ".",
         suffix=".tmp",
@@ -81,7 +98,11 @@ def atomic_write_text(path: Path, content: str, *, mode: int = 0o644) -> None:
                 f"atomic_write_text: tempfile st_dev={tmp_dev} differs from "
                 f"parent st_dev={parent_dev} (cross-filesystem rename unsafe)"
             )
-        os.replace(tmp_name, path)
+        # Use durable_fs.replace_with_retry so Windows AV/indexer pins on the
+        # target file produce a bounded retry instead of an unrecovered
+        # PermissionError. On POSIX this delegates to a single os.replace.
+        from .durable_fs import replace_with_retry
+        replace_with_retry(tmp_name, path)
         # Fsync the parent directory so the rename itself is durable across
         # power loss (C2). Best-effort: some platforms (and some FS types)
         # reject directory fsync — swallow OSError in that case.
@@ -135,11 +156,13 @@ def _open_audit_log(path: Path) -> int:
                 f"atomic_append_log: refusing to follow symlink at {path}",
             ) from e
         raise
-    # Belt-and-suspenders for platforms where O_CLOEXEC is 0 (absent): set
-    # FD_CLOEXEC explicitly via fcntl so the test invariant holds portably.
-    if not o_cloexec:  # pragma: no cover — modern POSIX always defines it
-        flags = fcntl.fcntl(fd, fcntl.F_GETFD)
-        fcntl.fcntl(fd, fcntl.F_SETFD, flags | fcntl.FD_CLOEXEC)
+    # Belt-and-suspenders for POSIX platforms where O_CLOEXEC is 0 (absent):
+    # set FD_CLOEXEC explicitly via fcntl so the test invariant holds portably.
+    # On Windows there is no fcntl and inheritance is controlled differently;
+    # the audit-append path is not used in production Windows installs yet.
+    if not o_cloexec and _fcntl is not None:  # pragma: no cover
+        flags = _fcntl.fcntl(fd, _fcntl.F_GETFD)
+        _fcntl.fcntl(fd, _fcntl.F_SETFD, flags | _fcntl.FD_CLOEXEC)
     return fd
 
 
@@ -171,16 +194,46 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
         # M3: non-blocking acquisition. On contention, raise a typed sentinel
         # immediately so the caller can decide retry/backoff policy rather
         # than block this thread indefinitely.
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as e:
-            raise AuditLogContendedError(
-                e.errno or errno.EWOULDBLOCK,
-                f"atomic_append_log: lock contended on {path}",
-            ) from e
-        try:
+        if _fcntl is not None:
+            try:
+                _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except BlockingIOError as e:
+                raise AuditLogContendedError(
+                    e.errno or errno.EWOULDBLOCK,
+                    f"atomic_append_log: lock contended on {path}",
+                ) from e
+            try:
+                os.write(fd, encoded)
+            finally:
+                _fcntl.flock(fd, _fcntl.LOCK_UN)
+        elif _msvcrt is not None:
+            # Windows: byte-range lock via msvcrt.locking. LK_NBLCK = non-
+            # blocking; mirrors POSIX LOCK_NB semantics. Lock region of 1 byte
+            # at the current file position; on append-mode fd the position is
+            # at EOF, but msvcrt operates at fd-position which is 0 for a fresh
+            # append fd until first write. We seek to 0 first to lock the
+            # whole-file logical region [0, 1) as a coarse mutex.
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                _msvcrt.locking(fd, _msvcrt.LK_NBLCK, 1)
+            except OSError as e:
+                raise AuditLogContendedError(
+                    e.errno or errno.EWOULDBLOCK,
+                    f"atomic_append_log: lock contended on {path}",
+                ) from e
+            try:
+                # Seek back to EOF for append semantics; O_APPEND on Windows is
+                # not guaranteed to atomically reposition on every write, so do
+                # it explicitly.
+                os.lseek(fd, 0, os.SEEK_END)
+                os.write(fd, encoded)
+            finally:
+                try:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+        else:  # pragma: no cover — neither fcntl nor msvcrt
             os.write(fd, encoded)
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)

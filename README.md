@@ -29,7 +29,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.7.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -73,7 +73,7 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.7.0 {Repo git} "$tmp"
+git clone --depth 1 --branch v0.7.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -213,10 +213,19 @@ python3 scripts/uninstall_harness.py --interactive
 
 **v0.7.0 Highlights**:
 - HMAC-signed approval nonces (`harness approve-nonce mint`)
-- SSH-signed release-tag trust root + `--allow-unsigned-dev` flag
+- Release-trust verification scaffold (`release-check`, allowed-signers stub, `--allow-unsigned-dev` flag) — **see Known Limitations**
 - Windows safe_open (CreateFileW + reparse refusal)
 - Exit-code spec alignment (0–15)
 - Audit-verb registry expansion (CI/OIDC, migration, session verbs)
+- Windows import-portability fix (atomic_io / audit / phase_lock fcntl gating)
+
+**v0.7.0 Known Limitations** — to be fully addressed in **v0.8.0**:
+- Release tag `v0.7.0` is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until v0.8.0.
+- Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in v0.8.0.
+- Approval-nonce TTY-isolation accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev`. A same-TTY agent can pass a fake distinct value. Server-side TTY binding lands in v0.8.0.
+- Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified for v0.7.0.
+
+If you need a hardened trust root or strict TTY isolation today, treat v0.7.0 as **internal-share-stable on POSIX, beta on Windows**, and wait for v0.8.0.
 
 ---
 

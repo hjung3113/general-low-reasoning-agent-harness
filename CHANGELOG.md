@@ -6,6 +6,73 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
+(Nothing accumulated yet — next release: v0.7.1 / v0.8.0.)
+
+## v0.7.0 — 2026-05-18
+
+First "internal-share-stable" release. Summary:
+
+- **Phase-gate hardening rounds 02b / 02c / 02d** — 17 slices + 5-perspective
+  Opus adversarial-review panel; full audit-chain hash chain (S06), state
+  schema v2 (L1/L2), fnmatch path grammar (L3), forward-only migration (L12),
+  approval-nonce HMAC (B-series), out-of-repo audit-tip anchor (S03),
+  release-trust scaffold (R-series), Windows containment (W-series).
+- **HMAC-signed approval nonces** — `harness approve-nonce mint` /
+  `approve-nonce consume`, sidecar fcntl/msvcrt lock for create/rotate.
+- **Release-trust scaffold** — `release-check`, `docs/trust/allowed-signers`
+  stub, `--allow-unsigned-dev` flag. *Not yet activated on v0.7.0 tag itself —
+  see README §7 Known Limitations.*
+- **Windows safe_open** — CreateFileW + reparse-point refusal.
+- **Audit-verb registry expansion** — CI/OIDC, migration, session verbs.
+- **Exit-code spec alignment** — 0–15 (full table in `docs/USER_MANUAL.md`
+  §14, including codes 9/17/18 added in this release).
+
+Detailed breaking changes, additions, and infrastructure work are listed in
+the sections below.
+
+### Adversarial-review remediations folded in immediately before tag
+
+Three Opus adversarial reviewers (cross-platform / workflow / UX) ran against
+the release candidate. The following CRITICAL findings were fixed in-place
+before tagging v0.7.0; remaining deeper-architecture findings are listed
+under "Carried over" and tracked for v0.8.0.
+
+1. **Windows import-portability fix** — `scripts/lib/atomic_io.py`,
+   `scripts/lib/audit.py` now gate `fcntl` behind `os.name == "posix"` and
+   use `msvcrt.locking` on Windows. Previously every state-write path was
+   unimportable on native Windows.
+2. **`atomic_write_text` durability + byte-identity** — uses
+   `durable_fs.replace_with_retry` (Windows AV-aware) and passes
+   `newline=""` to `NamedTemporaryFile` so embedded `\n` is never translated
+   to `\r\n` (would break audit/state hash chains on Windows).
+3. **`phase_lock.current_owner_record` ambiguity sentinel** — on
+   transient psutil failure, `process_start_time` is recorded as `None`
+   (was `0.0`). `classify()` now treats `None` as `"ambiguous"` instead
+   of falsely classifying a live holder as `"stale"`, preventing a
+   `try_recover` race that could unlink the lock under an active owner.
+4. **Doc / CLI alignment** — `phase_lock` error messages and
+   `docs/USER_MANUAL.md` no longer point to nonexistent verbs
+   (`harness lock recover --force` → `harness session unlock --force`;
+   `halt-diary show` removed; `migrate --target` corrected to
+   `migrate state --forward|--reverse|--resume`). Install snippets in
+   README + USER_MANUAL no longer ship the literal `{Repo git}`
+   placeholder. README §7 lists Known Limitations honestly.
+
+### Carried over (deferred to v0.8.0)
+
+- Audit-chain GENESIS fallback (`audit_chain.compute_entry_hash`) — full
+  on-disk-chain integrity requires removing the absent-prev fallback +
+  validating first-entry seeds. Out-of-repo anchor still mitigates today.
+- Approval-nonce `consumer_tty` server-binding via `os.ttyname(0)` +
+  `st_rdev` — same-TTY agent currently bypasses isolation if it supplies a
+  fake distinct value via `--consumer-tty`.
+- Audit-rotation Windows atomicity (`audit.py` `os.rename` → `os.replace`).
+- Native Windows pre-commit-scope hook (POSIX-`sh` body today).
+- SSH-signed release tags (`allowed-signers` is a placeholder; first signed
+  tag pending).
+
+---
+
 ### Breaking
 
 - **L1 — `phase=done` no longer requires a specific `approved` value.** The

@@ -143,7 +143,7 @@ active phase docs는 다음 순서로 해석합니다:
 python3 scripts/harness.py phase set discuss
 python3 scripts/harness.py phase set plan
 python3 scripts/harness.py phase set plan --by alice@company.com
-python3 scripts/harness.py phase approve        # execute → done 진행
+python3 scripts/harness.py phase approve        # 현재 phase에 approved=true 스탬프 (다음 phase는 phase set으로 이동)
 python3 scripts/harness.py phase reopen --to plan --reason "scope 추가"
 ```
 
@@ -255,6 +255,7 @@ ROADMAP.md / STATE.md 안에서 machine-owned 영역은 HTML 주석 marker block
 | `/issues` | issue 트래커 연동 | 이슈 관리 |
 | `/ops` | 운영 작업 (deploy, monitor) | 운영 필요 시 |
 | `/review` | 코드 리뷰 | PR 전 적대적 검토 |
+| `/simple` | 작은/저위험 변경용 lightweight workflow | 단순 질문, 작은 edit, cleanup |
 | `/fsd-run-all` | 전체 FSD dispatch (chain autopilot) | 자동화 실행 |
 | `/fsd-run-phase` | 단일 phase FSD dispatch (phase autopilot) | phase 단위 자동화 |
 | `/fsd-status` | FSD 현재 상태 확인 | 진행 확인 |
@@ -478,7 +479,7 @@ Staged/unstaged/untracked change가 `allowed_paths` 밖으로 나갔으면 exit 
 | 명령 | 설명 | 핵심 옵션 |
 | --- | --- | --- |
 | `phase set <phase>` | 새 phase로 전환 | `--by <email>` identity override |
-| `phase approve` | 현재 phase 승인 (execute → done 진행) | `--by <email>`, `--at <iso>` |
+| `phase approve` | 현재 phase에 `approved=true` 스탬프 (실제 phase 이동은 `phase set`이 수행) | `--by <email>`, `--at <iso>` |
 | `phase reopen --to discuss\|plan --reason <text>` | Phase 회귀, approval 리셋 | `--by <email>` |
 | `phase autopilot start --phase <slug>` | Autopilot 시작 (phase 또는 chain) | `--allow-network`, `--mode phase\|chain` |
 | `phase autopilot stop` | Autopilot 중단, manual로 복귀 | (TTY-only) |
@@ -513,8 +514,8 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 12
 
 | 명령 | 설명 |
 | --- | --- |
-| `session unlock` | 잠긴 session 해제 (recovery) |
-| `lock recover --force` | Stale lock 정리 (ambiguous 상황에서만) |
+| `session unlock` | 잠긴 session 해제 (recovery; live owner는 보호됨) |
+| `session unlock --force` | Stale/ambiguous lock 강제 정리 (수동 검토 후에만) |
 
 ### 8.5 릴리스 및 진단
 
@@ -547,17 +548,20 @@ python3 scripts/harness.py anchor <subcommand>
 ### 8.8 Halt Diary Admin
 
 ```bash
-python3 scripts/harness.py halt-diary show
-python3 scripts/harness.py halt-diary clear
+python3 scripts/harness.py halt-diary clear   # 현재 halt 기록을 acknowledged 처리
 ```
+
+Halt 상세 내용 확인은 `python3 scripts/harness.py state show`의 `last_halt` 섹션을 참고하세요. (`halt-diary show` 서브명령은 v0.7.0에 없습니다 — v0.8.0 검토.)
 
 ### 8.9 Migration
 
 ```bash
-python3 scripts/harness.py migrate --target /path/to/project
+python3 scripts/harness.py migrate state --forward    # v0.6 → v0.7 schema 전진 이행
+python3 scripts/harness.py migrate state --reverse    # v0.7 → v0.6 (필요 시)
+python3 scripts/harness.py migrate state --resume     # 중단된 migration 재개
 ```
 
-v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션 (자동 실행됨).
+v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase command 진입 시 자동 실행되며, 수동 trigger가 필요한 경우 위 명령을 사용합니다. (이전 문서의 `migrate --target` 시그니처는 잘못된 표기였으며 실제 CLI에는 존재하지 않습니다.)
 
 ---
 
@@ -792,7 +796,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.7.0 {Repo git} $tmp.FullName
+git clone --depth 1 --branch v0.7.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
@@ -900,10 +904,13 @@ Failure → exit 10 (audit chain failure).
 | 6 | `EXIT_WRONG_PHASE_FOR_VERB` | Phase-verb mismatch 또는 nonce signature invalid |
 | 7 | `EXIT_STALE_UNCERTAIN` | State timestamp 불확실성 (recovery 필요) |
 | 8 | `EXIT_TIMESTAMP_OUT_OF_RANGE` | Approval timestamp 범위 초과 |
+| 9 | `EXIT_AUTOPILOT_BUDGET_EXHAUSTED` | Autopilot budget (대화 turn/시간) 소진 |
 | 10 | (audit chain) | Audit log chain integrity failure |
 | 11 | `EXIT_WINDOWS_CONTAINMENT_DEGRADED` | Windows ADS/reserved-char containment error |
 | 14 | `EXIT_AUDIT_PARTIAL_WRITE` | Crash recovery undecidable (manual action required) |
 | 15 | `EXIT_RELEASE_TRUST_INVALID` | Signed tag verification 실패 또는 trust downgrade refused |
+| 17 | (`next --shell`) | `requires_human` — human approval/nonce 필요 (autopilot 진입 차단) |
+| 18 | (`next --shell`) | autopilot active — 재진입 금지 (`§3.5.2`) |
 
 **중요**: `sub_reason` 필드를 검토하여 정확한 원인 파악. 같은 exit code가 여러 상황에서 사용됩니다.
 
@@ -953,7 +960,7 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 
 ```bash
 python3 scripts/upgrade_harness.py \
-  --repo {Repo git} \
+  --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
   --version v0.7.0 \
   --dry-run
 ```
@@ -1121,7 +1128,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 
 **원인**: Power loss 또는 crash 사이 crash recovery 불확실성. State + audit transaction이 diverged.
 
-**해결**: `harness lock recover --force` 실행 후 상태 재점검.
+**해결**: `harness session unlock --force` 실행 후 상태 재점검.
 
 ### 19.5 "non_tty_authorization_unverified"
 

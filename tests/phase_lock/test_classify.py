@@ -171,6 +171,21 @@ def test_classify_ambiguous_when_psutil_zombie_process_raised():
     assert v == "ambiguous"
 
 
+def test_classify_ambiguous_when_record_start_time_is_none():
+    """v0.7.0 review CRIT WF-3: a record written under transient psutil
+    failure stores process_start_time=None. classify() MUST treat this as
+    ambiguous — never stale — so try_recover refuses to unlink the lock
+    of a live holder that hit a brief psutil hiccup at acquire time."""
+    rec = _record(process_start_time=None)
+    v = phase_lock.classify(
+        rec,
+        current_hostname="host-a",
+        current_boot_id="boot-X",
+        proc_lookup=lambda pid: (True, 2000.0),
+    )
+    assert v == "ambiguous"
+
+
 def test_classify_propagates_unexpected_exceptions():
     """Any *other* exception (not OSError or psutil.Error) is a bug and must
     propagate, not silently downgrade to ambiguous — that would mask real

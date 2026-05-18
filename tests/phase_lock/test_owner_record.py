@@ -58,11 +58,12 @@ def test_read_owner_record_raises_file_not_found(tmp_path: Path):
 
 
 def test_current_owner_record_tolerates_psutil_error_during_lookup(monkeypatch):
-    """S01-C review-fix (P1): if psutil raises NoSuchProcess during the
+    """v0.7.0 review CRIT WF-3: if psutil raises NoSuchProcess during the
     initial self-lookup (race with rapid PID reuse, container weirdness),
-    current_owner_record() MUST still produce a complete record. It is
-    only used by the lock-acquire path, so degrading to
-    process_start_time=0.0 is acceptable; raising a stack trace is not."""
+    current_owner_record() MUST still produce a record but with
+    process_start_time=None — NOT 0.0. The prior 0.0 sentinel caused
+    classify() to falsely report a live holder as 'stale', letting
+    try_recover unlink the lock under an active owner."""
     import psutil
 
     def fake_lookup(pid):
@@ -72,7 +73,9 @@ def test_current_owner_record_tolerates_psutil_error_during_lookup(monkeypatch):
     rec = phase_lock.current_owner_record()
     # Did not raise; record is well-formed.
     assert rec["pid"] == os.getpid()
-    assert rec["process_start_time"] == 0.0
+    # Sentinel changed: None signals "psutil failed at acquire time", which
+    # classify() must treat as ambiguous (never stale).
+    assert rec["process_start_time"] is None
 
 
 def test_write_owner_record_serializes_canonically(tmp_path: Path):

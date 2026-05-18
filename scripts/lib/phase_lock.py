@@ -195,14 +195,15 @@ def current_owner_record(*, owner_token: Optional[str] = None) -> dict[str, Any]
     try:
         _, create_time = _proc_lookup(pid)
     except (OSError, psutil.Error):
-        # S01-C review-fix (P1): psutil.Error is NOT a subclass of OSError
-        # in psutil 7.x. NoSuchProcess / AccessDenied / ZombieProcess must
-        # not bubble out of record construction; degrade to start_time=0.0.
+        # v0.7.0 review CRIT WF-3: prior code stored 0.0 here, which classify()
+        # then compared against a live create_time and falsely returned "stale",
+        # letting try_recover unlink a still-held lock. We now store None and
+        # classify() treats None as "ambiguous" (no-op), refusing to recover.
         create_time = None
     return {
         "pid": pid,
         "hostname": _current_hostname(),
-        "process_start_time": float(create_time) if create_time is not None else 0.0,
+        "process_start_time": float(create_time) if create_time is not None else None,
         "boot_id": _current_boot_id(),
         "monotonic_acquired_at": time.monotonic(),
         "acquired_iso": _now_iso(),
@@ -257,7 +258,13 @@ def classify(
         return "stale"
     if create_time is None:
         return "ambiguous"
-    if float(record.get("process_start_time", -1.0)) != float(create_time):
+    stored = record.get("process_start_time", None)
+    # v0.7.0 review CRIT WF-3: None means the recorder could not read
+    # psutil at acquire time — treat as ambiguous, never stale, so a live
+    # lock holder under transient psutil failure is not silently recovered.
+    if stored is None:
+        return "ambiguous"
+    if float(stored) != float(create_time):
         return "stale"
     return "live"
 
@@ -277,7 +284,7 @@ def acquire_primary(
     """STEP A/B/C/D loop per design §3.7.
 
     Raises `LockTimeoutError` on timeout; `LockHeldError` on "ambiguous"
-    (requires `harness lock recover --force`). Returns a `LockHandle` on
+    (requires `harness session unlock --force`). Returns a `LockHandle` on
     successful acquisition.
 
     `max_recovery_wait_s`: cap for how long STEP A will wait on the recovery
@@ -354,7 +361,7 @@ def acquire_primary(
         )
         if verdict == "ambiguous":
             raise LockHeldError(
-                "lock state ambiguous; run `harness lock recover --force` after manual inspection"
+                "lock state ambiguous; run `harness session unlock --force` after manual inspection"
             )
         if verdict in ("live", "foreign_host"):
             if time.monotonic() >= deadline:
