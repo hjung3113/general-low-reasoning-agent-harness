@@ -767,6 +767,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "docs/USER_MANUAL.md",
+      "source": "docs/USER_MANUAL.md",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/harness.py",
       "source": "scripts/harness.py",
       "policy": "harness-owned"
