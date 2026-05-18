@@ -26,7 +26,6 @@ EXIT_TIMESTAMP_OUT_OF_RANGE = 8
 # EXIT_WRONG_PHASE_FOR_VERB.  Budget-exhausted uses 9 operationally
 # (phase_txn.BudgetExhausted) — that keeps exit 9.
 EXIT_NONCE_SIGNATURE_INVALID = 6
-# Exit 6 multi-meaning per §12.6 — sub_reason disambiguates
 # §12.2: reparse-point refusal uses the same exit code as scope_violation (4)
 # per spec §12.2 line 1254.  FenceWindowsUnsupported stays at 11.
 EXIT_PATH_REPARSE_REFUSED = 4  # path_reparse_refused — reparse point on Windows path

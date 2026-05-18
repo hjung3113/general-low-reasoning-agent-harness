@@ -43,6 +43,7 @@ Sections: §3.5, §3.5.1, §3.5.2, §1.1, §3.4
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import secrets
@@ -369,11 +370,14 @@ def _check_and_record_jti(
     # Periodic cleanup of stale markers (best-effort, background of new mint).
     _cleanup_stale_jti_markers(jti_dir)
 
-    # Sanitize jti for use as a filename: replace chars unsafe on all platforms.
-    safe_jti = jti.replace("/", "_").replace("\\", "_").replace(":", "_")
-    if not safe_jti:
-        safe_jti = "empty"
-    marker = jti_dir / f"{safe_jti}.consumed"
+    # A-6 (Cycle-2): use sha256 of the raw jti bytes as the marker filename to
+    # prevent collision between distinct JTIs that map to the same sanitized string
+    # (e.g. "a/b" and "a_b" both became "a_b" under the old replace-only scheme).
+    if jti:
+        jti_hash = hashlib.sha256(jti.encode("utf-8")).hexdigest()
+    else:
+        jti_hash = hashlib.sha256(b"").hexdigest()
+    marker = jti_dir / f"{jti_hash}.consumed"
 
     try:
         fd = os.open(str(marker), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

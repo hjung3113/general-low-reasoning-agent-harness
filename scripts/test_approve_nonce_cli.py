@@ -431,5 +431,91 @@ class TestMintConsumeRoundTrip(unittest.TestCase):
                          msg="Consumed nonce_id must match minted nonce_id")
 
 
+class TestLoadOrCreateSecretKeyAudit(unittest.TestCase):
+    """A-2 (Cycle-2): corrupt key rotation emits audit.secret_key.rotated row."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.key_dir = Path(self._tmp.name) / "harness"
+        self.key_dir.mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_corrupt_key_creates_fresh_key(self) -> None:
+        """Write a corrupt (wrong-length) key, call _load_or_create_secret_key,
+        then assert a fresh 32-byte key is returned and old content is gone."""
+        secret_path = self.key_dir / "secret.key"
+        secret_path.write_bytes(b"tooshort")
+
+        audit_path = self.key_dir / "audit.log"
+        # Capture emit call without recursion by patching at the boundary.
+        emitted: list[dict] = []
+
+        def _fake_emit(*, backup_path, reason, audit_path=None):
+            emitted.append({"backup_path": backup_path, "reason": reason})
+
+        with mock.patch.object(approval_nonce, "_emit_secret_key_rotated_audit",
+                               side_effect=_fake_emit):
+            key = approval_nonce._load_or_create_secret_key(
+                secret_path, audit_path=audit_path
+            )
+
+        self.assertEqual(len(key), 32, msg="Should return a fresh 32-byte key")
+        self.assertEqual(len(emitted), 1, msg="Exactly one emit call expected")
+        self.assertIn(emitted[0]["reason"], ("corrupt_length", "corrupt_unreadable"))
+
+    def test_corrupt_key_audit_row_has_correct_verb(self) -> None:
+        """Audit row emitted for corrupt key must have verb=audit.secret_key.rotated."""
+        secret_path = self.key_dir / "secret.key2"
+        secret_path.write_bytes(b"x" * 10)  # corrupt
+
+        audit_path = self.key_dir / "audit2.log"
+        captured: list[dict] = []
+
+        from lib import audit as _audit_mod
+
+        def fake_audit_append(entry: dict, *, audit_path: Path) -> int:
+            captured.append(dict(entry))
+            return 0
+
+        with mock.patch.object(_audit_mod, "audit_append", side_effect=fake_audit_append):
+            approval_nonce._load_or_create_secret_key(
+                secret_path, audit_path=audit_path
+            )
+
+        verbs = [e.get("verb") for e in captured]
+        self.assertIn("audit.secret_key.rotated", verbs,
+                      msg=f"Expected audit.secret_key.rotated in {verbs!r}")
+        rot_rows = [e for e in captured if e.get("verb") == "audit.secret_key.rotated"]
+        self.assertTrue(rot_rows)
+        row = rot_rows[0]
+        self.assertIn(row.get("reason"), ("corrupt_length", "corrupt_unreadable"),
+                      msg=f"Unexpected reason: {row.get('reason')!r}")
+        self.assertIn("backup_path", row)
+
+    def test_valid_key_no_audit_row(self) -> None:
+        """No audit row emitted when key is already valid."""
+        import secrets as _sec
+        secret_path = self.key_dir / "secret.valid"
+        secret_path.write_bytes(_sec.token_bytes(32))
+        secret_path.chmod(0o600)
+
+        audit_path = self.key_dir / "audit_valid.log"
+        emitted: list[dict] = []
+
+        def _fake_emit(*, backup_path, reason, audit_path=None):
+            emitted.append({"reason": reason})
+
+        with mock.patch.object(approval_nonce, "_emit_secret_key_rotated_audit",
+                               side_effect=_fake_emit):
+            key = approval_nonce._load_or_create_secret_key(
+                secret_path, audit_path=audit_path
+            )
+
+        self.assertEqual(len(key), 32)
+        self.assertEqual(emitted, [], msg="No rotation emit for valid key")
+
+
 if __name__ == "__main__":
     unittest.main()

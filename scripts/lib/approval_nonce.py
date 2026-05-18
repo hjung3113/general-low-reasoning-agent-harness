@@ -40,6 +40,15 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# Conditionally import platform-specific locking primitives.
+if os.name == "posix":
+    import fcntl as _fcntl
+else:
+    try:
+        import msvcrt as _msvcrt  # type: ignore[import]
+    except ImportError:
+        _msvcrt = None  # type: ignore[assignment]
+
 
 @dataclasses.dataclass(frozen=True)
 class Nonce:
@@ -119,7 +128,11 @@ def default_secret_key_path() -> Path:
     return Path.home() / ".harness" / "secret.key"
 
 
-def _load_or_create_secret_key(secret_path: Path) -> bytes:
+def _load_or_create_secret_key(
+    secret_path: Path,
+    *,
+    audit_path: Optional[Path] = None,
+) -> bytes:
     """Return the 32-byte HMAC key from *secret_path*, creating it if absent.
 
     Uses O_WRONLY|O_CREAT|O_EXCL for atomic create (race-safe).  File
@@ -129,12 +142,52 @@ def _load_or_create_secret_key(secret_path: Path) -> bytes:
     rotate the corrupt file aside to a timestamped backup and create a fresh key.
     This prevents the deadlock where O_EXCL fails (file exists), re-read returns
     the same corrupt data, and processes diverge by using locally-generated keys.
-    Emits 'audit.secret_key.rotated' if an audit log path is reachable.
+    Emits 'audit.secret_key.rotated' real audit row after successful rotation.
+
+    A-1 (Cycle-2): the entire read → detect → rotate → create path runs under an
+    exclusive fcntl.flock (POSIX) / msvcrt.locking (Windows) on a sidecar
+    ``secret.key.lock`` file.  This prevents two concurrent processes from both
+    detecting corruption and creating divergent keys.
     """
-    # Fast path: key file already exists and is valid.
-    # B3-Fix-9: add permissions check (POSIX only) — delegates to secret_key module
-    # guard to inherit the same 0600 enforcement that secret_key.load_secret_key uses.
+    import sys as _sys
+
+    # Create parent directory before acquiring the lock (mkdir is idempotent and
+    # safe to call outside the lock).
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lock_path = secret_path.with_suffix(".lock")
+    lock_fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        # Acquire exclusive lock covering: read → detect → rotate → create.
+        if os.name == "posix":
+            _fcntl.flock(lock_fd, _fcntl.LOCK_EX)
+        elif _msvcrt is not None:
+            try:
+                _msvcrt.locking(lock_fd, _msvcrt.LK_LOCK, 1)
+            except OSError:
+                pass  # best-effort on Windows
+
+        return _load_or_create_secret_key_locked(
+            secret_path, audit_path=audit_path
+        )
+    finally:
+        os.close(lock_fd)
+
+
+def _load_or_create_secret_key_locked(
+    secret_path: Path,
+    *,
+    audit_path: Optional[Path] = None,
+) -> bytes:
+    """Inner implementation — called while the sidecar lock is held.
+
+    B3-Fix-9: add permissions check (POSIX only) — delegates to secret_key module
+    guard to inherit the same 0600 enforcement that secret_key.load_secret_key uses.
+    """
+    import sys as _sys
+
     corrupt_data: bytes | None = None
+    corrupt_reason: str = "corrupt_length"
     try:
         data = secret_path.read_bytes()
         if len(data) == 32:
@@ -150,32 +203,36 @@ def _load_or_create_secret_key(secret_path: Path) -> bytes:
             return data
         # Wrong length — mark as corrupt for rotation below.
         corrupt_data = data
+        corrupt_reason = "corrupt_length"
     except FileNotFoundError:
         pass
     except OSError:
         corrupt_data = b""  # unreadable — also rotate
+        corrupt_reason = "corrupt_unreadable"
 
     # Rotate corrupt file aside (B3-Fix-7).
+    backup_path: Optional[Path] = None
     if corrupt_data is not None and secret_path.exists():
         import shutil as _shutil
-        import time as _time
-        backup = secret_path.with_suffix(f".corrupt-{int(_time.time())}")
+        # Use time_ns + token_hex(4) suffix to prevent collision (A-1 P2-conc P2-4).
+        suffix = f".corrupt-{time.time_ns()}-{secrets.token_hex(4)}"
+        backup = secret_path.with_suffix(suffix)
+        backup_path = backup
         try:
             _shutil.move(str(secret_path), str(backup))
-            import sys as _sys
             _sys.stderr.write(
                 f"WARNING: secret.key at {secret_path} had wrong length "
                 f"({len(corrupt_data)} bytes); rotated to {backup}. "
                 "A fresh key will be created.\n"
             )
         except OSError as _e:
-            import sys as _sys
+            backup_path = None
             _sys.stderr.write(
                 f"WARNING: could not rotate corrupt secret.key {secret_path}: {_e}. "
                 "Proceeding with fresh key generation.\n"
             )
 
-    # Create parent directory if needed.
+    # Create parent directory if needed (may have been absent before).
     secret_path.parent.mkdir(parents=True, exist_ok=True)
 
     key = secrets.token_bytes(32)
@@ -201,7 +258,46 @@ def _load_or_create_secret_key(secret_path: Path) -> bytes:
         except OSError:
             pass
 
+    # A-2 (Cycle-2): emit real audit row after successful rotation (not just stderr).
+    if backup_path is not None:
+        _emit_secret_key_rotated_audit(
+            backup_path=backup_path,
+            reason=corrupt_reason,
+            audit_path=audit_path,
+        )
+
     return key
+
+
+def _emit_secret_key_rotated_audit(
+    *,
+    backup_path: Path,
+    reason: str,
+    audit_path: Optional[Path] = None,
+) -> None:
+    """Emit an audit.secret_key.rotated audit row (A-2, Cycle-2).
+
+    Uses a default audit path derived from the user's ~/.harness/ directory if
+    none is supplied.  Failure is best-effort (audit must not block security-
+    critical key creation).
+    """
+    if audit_path is None:
+        try:
+            audit_path = Path.home() / ".harness" / "audit.log"
+        except Exception:
+            return
+    try:
+        from . import audit as _audit  # local import to avoid circular deps
+        _audit.audit_append(
+            {
+                "verb": "audit.secret_key.rotated",
+                "reason": reason,
+                "backup_path": str(backup_path),
+            },
+            audit_path=audit_path,
+        )
+    except Exception:
+        pass  # audit failure must not block key creation
 
 
 def _gen_id() -> str:

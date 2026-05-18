@@ -1383,8 +1383,11 @@ Audit verb registry (every `verb=...` emitted into `audit.log`):
 | `release.trust.verified` | SSH-signed release tag verified successfully | S15 (Group δ) |
 | `release.trust.bypassed` | Unsigned release accepted via HARNESS_ALLOW_UNSIGNED_DEV | S15 (Group δ) |
 | `release.trust.refused` | Release rejected (downgrade/missing trust/corrupted manifest) | S15 (Group δ) |
+| `audit.secret_key.rotated` | Corrupted ~/.harness/secret.key rotated aside | 02d Cycle-2 |
 
 **Cycle-1 amendment (P5-P2-1):** The following verbs were emitted by code but absent from this table prior to cycle-1 review: `halt_diary.clear`, `phase.autopilot.start_hash_finalized`, `phase.autopilot.start.refused`, `phase.autopilot.start.recover_pending`, `phase.set.noop`, `session.unlock`, `lock.recovered`. A machine-readable `KNOWN_VERBS` frozenset is maintained in `scripts/lib/audit.py`; `HARNESS_STRICT_VERB_REGISTRY=1` enables rejection of unknown verbs at append time.
+
+**Cycle-2 amendment (02d Cycle-2):** `audit.secret_key.rotated` added to table above. `ci.oidc.jti.dir_override` added to `KNOWN_VERBS` for `HARNESS_JTI_DIR` env override forensic logging. `release.trust.bypassed` now also emitted at install time when stamping `trust_origin=dev_unsigned` via install path.
 
 Legacy verbs (deprecated, no longer emitted in new code): `repair.bom_stripped`, `ci_oidc_consumed_jti` (replaced by `ci.oidc.jti.consumed`), `fsd_run_phase.noop`, `fsd_run_all.ignored_args`, `harness.init`, `harness.substrate.degraded`, `durable_fs.close_failed`, `anchor.repaired`.
 

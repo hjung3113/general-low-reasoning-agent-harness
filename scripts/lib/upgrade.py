@@ -254,7 +254,7 @@ def _build_release_manifest_v2(
              - Fall through to working-tree reads with ``trust_origin:
                "dev_unsigned"`` + stderr WARNING.
              - Emit ``release.trust.bypassed`` audit row.
-         - Otherwise: emit ``release.trust.refused`` + raise SystemExit(17).
+         - Otherwise: emit ``release.trust.refused`` + raise SystemExit(EXIT_RELEASE_TRUST_INVALID).
 
     For dev builds (``0.0.0-dev+…`` pattern): skip verification, emit
     ``trust_origin: "dev_unsigned"`` immediately (working-tree path).

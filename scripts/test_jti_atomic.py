@@ -118,6 +118,24 @@ class TestJtiAtomicConcurrency(unittest.TestCase):
             self.assertEqual(sorted(results), ["ok", "ok"],
                              f"Expected both ok; got {results}")
 
+    def test_collision_distinct_jtis_not_replayed(self) -> None:
+        """A-6 (Cycle-2): JTIs that differ only in /vs_ must NOT collide.
+
+        Under the old sanitization scheme "a/b" → "a_b" and "a_b" → "a_b"
+        were identical filenames, causing a false replay.  With sha256 they
+        produce different hex digests and both succeed.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            harness_dir = Path(tmpdir) / ".harness"
+            harness_dir.mkdir()
+            audit_path = harness_dir / "audit.log"
+            audit_path.touch()
+
+            r1 = _check_and_record_jti("a/b", harness_dir=harness_dir, audit_path=audit_path)
+            r2 = _check_and_record_jti("a_b", harness_dir=harness_dir, audit_path=audit_path)
+            self.assertIsNone(r1, "a/b should succeed (new entry)")
+            self.assertIsNone(r2, "a_b should succeed (distinct sha256 — no collision)")
+
     def test_second_call_same_jti_is_replay(self) -> None:
         """Sequential second call with same JTI returns CiOidcJtiReplayed."""
         with tempfile.TemporaryDirectory() as tmpdir:
