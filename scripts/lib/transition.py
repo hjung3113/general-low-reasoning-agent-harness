@@ -26,6 +26,12 @@ from datetime import datetime
 from typing import Optional
 
 
+# v0.7.2 Group C — fleet-wide reopen reason placeholder. Agents MUST substitute
+# concrete text; angle-bracket sentinel forces a replacement step rather than
+# letting the same canned reason pollute every audit trail.
+REOPEN_REASON_PLACEHOLDER = "<describe why you are reopening>"
+
+
 # Each entry: {"requires_approved": bool, "requires_reset_approval": bool}.
 # from_phase=None denotes initial bootstrap.
 TRANSITION_TABLE: dict[tuple[Optional[str], str], dict[str, bool]] = {
@@ -165,7 +171,7 @@ class StaleApprovalError(SystemExit):
         ),
         "last_halt_unacknowledged": (
             "Fix: run 'harness halt-diary clear' to acknowledge and clear the "
-            "halt diary, or 'harness phase reopen --to plan --reason \"...\"' "
+            "halt diary, or 'harness phase reopen --to plan --reason \"" + REOPEN_REASON_PLACEHOLDER + "\"' "
             "to rewind the phase (design §12.12)"
         ),
     }
@@ -339,7 +345,7 @@ def validate_transition_with_state(
                 detail=(
                     "last_halt diary is present but has not been acknowledged. "
                     "Fix: run 'harness halt-diary clear' to acknowledge and clear, "
-                    "or 'harness phase reopen --to plan --reason \"...\"' to rewind."
+                    "or 'harness phase reopen --to plan --reason \"" + REOPEN_REASON_PLACEHOLDER + "\"' to rewind."
                 ),
             )
         return

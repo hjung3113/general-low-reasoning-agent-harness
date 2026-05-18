@@ -39,6 +39,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.transition import REOPEN_REASON_PLACEHOLDER
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -175,7 +177,7 @@ def _next_action_for_state(state: dict) -> Optional[str]:
     elif phase == "execute":
         if _approved_fresh(state, "execute"):
             return "harness phase set done"
-        return 'harness phase reopen --to plan --reason "fix and re-approve"'
+        return f'harness phase reopen --to plan --reason "{REOPEN_REASON_PLACEHOLDER}"'
     elif phase == "done":
         return None
     return None
@@ -316,7 +318,7 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
             return NextResult(
                 requires_human=True,
                 agent_safe=False,
-                command='harness phase reopen --to plan --reason "fix and re-approve"',
+                command=f'harness phase reopen --to plan --reason "{REOPEN_REASON_PLACEHOLDER}"',
                 reason="execute requires fresh approval; reopen to plan first",
                 exit_code=17,
             )
