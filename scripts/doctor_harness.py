@@ -11,7 +11,14 @@ import harness
 
 
 def run(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Diagnose harness planning and adapter drift against the installed target. "
+                    "Equivalent to 'harness doctor' invoked from the installed location.",
+        epilog="Example:\n  python3 scripts/doctor_harness.py\n"
+               "  python3 scripts/doctor_harness.py --format json   # machine-readable drift report\n\n"
+               "For policy/structure validation use 'check_harness.py'; for state inspection use 'harness state show'.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--target", type=Path, default=None)
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     args = parser.parse_args(argv)
