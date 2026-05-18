@@ -381,14 +381,32 @@ def verify_manifest_chain(manifest: dict[str, Any]) -> bool:
         if k not in ("installed_files_chain_hash", "files")
     }
     manifest_without_chain["files"] = normalized_files
-    recomputed = compute_manifest_hash_chain(manifest_without_chain)
 
-    if recomputed != stored:
-        raise ManifestChainTamperedError(
-            f"installed_files_chain_hash mismatch: stored={stored!r}, "
-            f"recomputed={recomputed!r}. Manifest may have been tampered with."
-        )
-    return True
+    # B-1 backward-compat: accept hashes computed with the new format (trust fields
+    # included) OR the old format (pre-Cycle-2, trust fields absent from canonical).
+    # New format: default — compute_manifest_hash_chain now always includes trust fields.
+    recomputed_new = compute_manifest_hash_chain(manifest_without_chain)
+    if recomputed_new == stored:
+        return True
+
+    # Old format fallback: exclude trust fields from canonical input so the hash
+    # matches what pre-Cycle-2 code produced.  Manifests without trust fields that
+    # were written before Cycle-2 should still be accepted.
+    old_format = {
+        k: v for k, v in manifest_without_chain.items()
+        if k not in ("trust_origin", "release_tag", "release_commit")
+    }
+    recomputed_old = compute_manifest_hash_chain(old_format)
+    if recomputed_old == stored:
+        return True
+
+    raise ManifestChainTamperedError(
+        f"installed_files_chain_hash mismatch: stored={stored!r}, "
+        f"recomputed (new format)={recomputed_new!r}, "
+        f"recomputed (old format)={recomputed_old!r}. "
+        f"Manifest may have been tampered with."
+    )
+    return True  # unreachable but satisfies type checkers
 
 
 # ---------------------------------------------------------------------------

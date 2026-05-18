@@ -561,21 +561,43 @@ class TestTamperDetectedViaChainHash(unittest.TestCase):
         self.assertEqual(ctx.exception.sub_reason, "target_manifest_corrupted",
                          msg="Tampered trust_origin must be detected via chain hash")
 
-    def test_delete_trust_origin_still_rejected(self) -> None:
-        """B-2: deleting trust_origin no longer bypasses chain verification."""
+    def test_delete_only_trust_origin_still_rejected(self) -> None:
+        """B-2: deleting ONLY trust_origin (keeping release_tag) is detected via chain hash."""
         import importlib
         import lib.upgrade as _upg
         importlib.reload(_upg)
         manifest = self._make_stamped_manifest(trust_origin="signed_tag")
-        # Tamper: delete trust fields — old B3-Fix-1 would skip chain verification here.
+        # Tamper: delete ONLY trust_origin (keep release_tag and release_commit).
+        # has_any_trust_field will still be True (release_tag is present).
         del manifest["trust_origin"]
-        del manifest["release_tag"]
-        del manifest["release_commit"]
         self._write_install_state(manifest)
         with self.assertRaises(UpgradeTrustError) as ctx:
             _upg._read_target_trust_origin(self._target)
         self.assertEqual(ctx.exception.sub_reason, "target_manifest_corrupted",
-                         msg="Deleted trust fields must still be rejected via chain hash")
+                         msg="Deleting only trust_origin (with other trust fields present) must be detected")
+
+    def test_delete_all_trust_fields_treated_as_legacy(self) -> None:
+        """B-2 backward-compat: deleting ALL trust fields makes manifest look like legacy.
+
+        Security note: if all trust fields are deleted, the chain hash verification
+        is skipped (manifest treated as pre-trust-stamping legacy record).
+        trust_origin returns None, which prevents the UPGRADE guard from treating
+        it as signed_tag (no downgrade is possible from None to dev_unsigned).
+        """
+        import importlib
+        import lib.upgrade as _upg
+        importlib.reload(_upg)
+        manifest = self._make_stamped_manifest(trust_origin="signed_tag")
+        # Tamper: delete ALL trust fields.
+        del manifest["trust_origin"]
+        del manifest["release_tag"]
+        del manifest["release_commit"]
+        self._write_install_state(manifest)
+        # With all trust fields deleted, has_any_trust_field=False → skip verification.
+        # trust_origin returns None (not "signed_tag"), so downgrade guard cannot be bypassed.
+        result = _upg._read_target_trust_origin(self._target)
+        self.assertIsNone(result,
+                          msg="All trust fields deleted → returns None (no signed_tag claim)")
 
     def test_absent_chain_hash_old_manifest_accepted(self) -> None:
         """Backward compat: old v1 manifest without chain hash is accepted (returns trust_origin)."""

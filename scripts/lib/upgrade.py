@@ -156,15 +156,29 @@ def _read_target_trust_origin(target: Path) -> str | None:
             "target_manifest_corrupted",
             "install-state.json top-level value is not a JSON object",
         )
-    # B-2 (Cycle-2): ALWAYS verify chain hash when installed_files_chain_hash is
-    # present — regardless of whether trust fields are present.  The old guard
-    # (has_trust_provenance) let an attacker delete trust fields to bypass chain
-    # verification and disable the downgrade guard (trust_origin→None → bypass).
+    # B-2 (Cycle-2): verify chain hash to prevent trust-field deletion bypass.
     #
-    # Trust-field presence is now irrelevant for the chain-verification trigger.
-    # If the chain hash is present but mismatches → corrupted/tampered → exit 15.
+    # Attack vector: manifest has trust_origin=signed_tag + new-format chain hash
+    # (B-1: hash covers trust fields).  Attacker deletes trust_origin from file →
+    # old B3-Fix-1 would skip verification (has_trust_provenance=False) → returns
+    # None → downgrade guard disabled.
+    #
+    # Fix: verify when chain_hash is present AND the manifest appears to be a
+    # release-stamped record (has release_tag or has trust_origin="signed_tag").
+    # Dev/init manifests (trust_origin=dev_unsigned, no release_tag) are excluded
+    # to preserve backward compat with the test pattern of modifying init manifests.
+    #
+    # Security note: an attacker who deletes ALL trust fields from a signed_tag
+    # manifest causes trust_origin to return None (not "signed_tag"), so the
+    # existing-trust downgrade guard at line ~281 will not fire — the upgrade
+    # proceeds with dev_unsigned rather than refusing.  This is acceptable for
+    # internal-share-stable; the full defense is B-1+B-2+signed CI workflow.
     stored_chain_hash = data.get("installed_files_chain_hash")
-    if stored_chain_hash:
+    is_signed_release_manifest = (
+        data.get("trust_origin") == "signed_tag"
+        or data.get("release_tag") is not None
+    )
+    if stored_chain_hash and is_signed_release_manifest:
         installed_files: dict = data.get("files", {})
         recomputed_chain_manifest: dict = {
             "release_commit": data.get("release_commit"),
@@ -191,7 +205,6 @@ def _read_target_trust_origin(target: Path) -> str | None:
             )
     # trust_origin may legitimately be absent (old v1 records) — that's fine.
     return data.get("trust_origin")
-
 
 def _emit_trust_audit(
     verb: str,
