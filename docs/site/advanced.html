@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>고급 참조 · Low-Reasoning Agent Harness v0.9.0</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="주요 문서">
+      <a class="brand" href="index.html">Harness v0.9.0</a>
+      <span class="nav-links"><a href="index.html">시작하기</a>
+<a href="manual.html">사용자 매뉴얼</a>
+<a href="use-cases.html">활용 사례</a>
+<a href="advanced.html" aria-current="page">고급 참조</a></span>
+    </nav>
+  </header>
+  <main class="layout">
+    <aside class="toc" aria-label="문서 목차"><strong>목차</strong><a class="toc-l2" href="#flag-목록">Flag 목록</a>
+<a class="toc-l3" href="#내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)</a>
+<a class="toc-l2" href="#context">Context</a>
+<a class="toc-l2" href="#decision">Decision</a>
+<a class="toc-l2" href="#consequences">Consequences</a>
+<a class="toc-l2" href="#non-goals">Non-goals</a></aside>
+    <article class="content">
+      <div class="source-link"><a href="../../docs/advanced/harness-flags.md">View Markdown source: docs/advanced/harness-flags.md</a> · <a href="../../docs/adr/2026-05-19-phase-approve-speed-bump.md">View Markdown source: docs/adr/2026-05-19-phase-approve-speed-bump.md</a></div>
+      <h1 id="하네스-설정-flag-harness-flags">하네스 설정 Flag (Harness Flags)<a class="anchor" href="#하네스-설정-flag-harness-flags" aria-label="이 섹션 링크">§</a></h1>
+<blockquote><p>이 문서는 하네스 내부 설정 flag(<code>HARNESS_*</code>) 목록입니다. <strong>평소에는 건드리지 않습니다.</strong> 테스트, CI, 디버깅, 명시적 override가 필요한 경우에만 사용합니다.  이름이 <code>HARNESS_*</code>인 OS 환경 변수로 전달되지만, 일반적인 시스템 환경 변수와 다릅니다 — 하네스에만 영향을 주며, shell rc에 추가할 필요 없습니다.</p></blockquote>
+<h2 id="flag-목록">Flag 목록<a class="anchor" href="#flag-목록" aria-label="이 섹션 링크">§</a></h2>
+<table><thead><tr>
+<th>변수</th>
+<th>값</th>
+<th>의미</th>
+<th>보안 노트</th>
+</tr></thead><tbody>
+<tr>
+<td><code>HARNESS_ALLOW_UNSIGNED_DEV</code></td>
+<td><code>1</code></td>
+<td>Dev 환경에서 unsigned tag bypass</td>
+<td>Production install은 downgrade 불가. 권장하지 않음</td>
+</tr>
+<tr>
+<td><code>HARNESS_ALLOW_UNSIGNED_DEV_SOURCE</code></td>
+<td><code>cli_flag</code> \</td>
+<td><code>path_source</code></td>
+<td>upgrade 시 unsigned source 허용 출처 표시</td>
+</tr>
+<tr>
+<td><code>HARNESS_ALLOW_NETWORK</code></td>
+<td><code>1</code></td>
+<td>Autopilot에서 network 허용 의도를 표명 (input metadata)</td>
+<td><code>HARNESS_AUTOPILOT_NETWORK</code>와 다름 — 단독으로는 network를 승인하지 않음; 적절한 authorization과 함께 사용</td>
+</tr>
+<tr>
+<td><code>HARNESS_AUTOPILOT_NETWORK</code></td>
+<td><code>1</code></td>
+<td>Autopilot에서 network 허용 (승인 경로)</td>
+<td><code>phase autopilot --allow-network</code> flag와 동일; audit 기록</td>
+</tr>
+<tr>
+<td><code>HARNESS_AUTOMATION</code></td>
+<td><code>phase</code> \</td>
+<td><code>chain</code></td>
+<td>CI autopilot mode</td>
+</tr>
+<tr>
+<td><code>HARNESS_BY_TRUST</code></td>
+<td>email</td>
+<td>CI 환경에서 bot identity 지정</td>
+<td>OIDC/signed token과 함께 필수; human approver와 겹치지 않아야 함</td>
+</tr>
+<tr>
+<td><code>HARNESS_BYPASS_TTY_CONFIRM</code></td>
+<td><code>1</code></td>
+<td>TTY gate 무시 (test-only)</td>
+<td>테스트 fixture용; production 금지</td>
+</tr>
+<tr>
+<td><code>HARNESS_DEV_BUILD</code></td>
+<td><code>1</code></td>
+<td>Dev build flag (test fixture)</td>
+<td>Production에서 동작 변경 없음; test context에서만 사용</td>
+</tr>
+<tr>
+<td><code>HARNESS_DELEGATED_SOURCE_KIND</code></td>
+<td>string</td>
+<td>upgrade 위임 소스 종류</td>
+<td><code>upgrade_harness.py</code>가 내부적으로 전달; 직접 설정 금지</td>
+</tr>
+<tr>
+<td><code>HARNESS_DELEGATED_SOURCE_REF</code></td>
+<td>ref</td>
+<td>upgrade 위임 소스 git ref</td>
+<td>위와 동일</td>
+</tr>
+<tr>
+<td><code>HARNESS_DELEGATED_SOURCE_REPO</code></td>
+<td>repo</td>
+<td>upgrade 위임 소스 repo URL</td>
+<td>위와 동일</td>
+</tr>
+<tr>
+<td><code>HARNESS_DELEGATED_SOURCE_VERSION</code></td>
+<td>version</td>
+<td>upgrade 위임 소스 버전</td>
+<td>위와 동일</td>
+</tr>
+<tr>
+<td><code>HARNESS_FIXED_NOW_ISO</code></td>
+<td>timestamp</td>
+<td>고정 시간 (test-only)</td>
+<td>예: <code>2026-05-17T14:30:00Z</code></td>
+</tr>
+<tr>
+<td><code>HARNESS_HOOK_ALLOW_SKIP</code></td>
+<td><code>1</code></td>
+<td>hook skip 레거시 동작 허용 (test-only)</td>
+<td>테스트 검증 목적; production 금지</td>
+</tr>
+<tr>
+<td><code>HARNESS_JTI_DIR</code></td>
+<td>path</td>
+<td>OIDC JTI store override</td>
+<td>위치 override 시 audit warning <code>ci.oidc.jti.dir_override</code> 기록</td>
+</tr>
+<tr>
+<td><code>HARNESS_NONCE_DIR</code></td>
+<td>path</td>
+<td>Approval nonce 저장 위치 override (release path)</td>
+<td>Windows LOCALAPPDATA 불가 시 또는 테스트 격리에 사용</td>
+</tr>
+<tr>
+<td><code>HARNESS_OIDC_TEST_MODE</code></td>
+<td><code>1</code></td>
+<td>OIDC stub 활성화 (test-only)</td>
+<td>CI predicate 테스트 경로용; production 절대 금지</td>
+</tr>
+<tr>
+<td><code>HARNESS_PROJECT_ROOT</code></td>
+<td>path</td>
+<td>PS audit path 지정</td>
+<td>PowerShell deny-shim용; Windows에서 audit path 명확화</td>
+</tr>
+<tr>
+<td><code>HARNESS_RELEASE_RUN</code></td>
+<td><code>1</code></td>
+<td>release smoke test에서 release 모드 활성화</td>
+<td><code>--release</code> flag와 동일; release<em>smoke</em>test.py 전용</td>
+</tr>
+<tr>
+<td><code>HARNESS_SMOKE_BYPASS_SPEED_BUMP</code></td>
+<td><code>0</code>/<code>1</code></td>
+<td>Smoke-test-only: bypass phase.approve <code>[y/N]</code> prompt and TTY gate. ONLY honored when <code>HARNESS_SMOKE_TEST=1</code> is also set. Audit row marks <code>proof_class=smoke_bypass</code>. <strong>Production code paths do not set this.</strong></td>
+<td>두 env var 모두 설정 시에만 활성화; 단독 설정 시 무효</td>
+</tr>
+<tr>
+<td><code>HARNESS_SMOKE_PLATFORM_OVERRIDE</code></td>
+<td><code>win32</code> 등</td>
+<td>smoke test 내 플랫폼 override</td>
+<td>Windows 경로 검증을 non-Windows 환경에서 실행할 때 사용</td>
+</tr>
+<tr>
+<td><code>HARNESS_SMOKE_TEST</code></td>
+<td><code>1</code></td>
+<td>Smoke runner가 설정하는 paired gate. <code>HARNESS_SMOKE_BYPASS_SPEED_BUMP=1</code>과 함께 사용 시에만 bypass 활성화.</td>
+<td>smoke runner 전용; production 금지</td>
+</tr>
+<tr>
+<td><code>HARNESS_STRICT_VERB_REGISTRY</code></td>
+<td><code>1</code></td>
+<td>Unknown verb에 exit 10 enforce</td>
+<td>기본(permissive)은 warning만</td>
+</tr>
+<tr>
+<td><code>HARNESS_TEST_FORCE_TTY</code></td>
+<td><code>1</code></td>
+<td><strong>제거됨 (Cycle-2 이후 production 코드에서 삭제)</strong></td>
+<td>더 이상 TTY gate를 bypass하지 않음; 테스트는 <code>sys.stdin.isatty</code> mock 사용</td>
+</tr>
+<tr>
+<td><code>HARNESS_TEST_OIDC_CLAIMS_</code></td>
+<td>prefix</td>
+<td>OIDC claim 주입 (test stub)</td>
+<td><code>HARNESS_OIDC_TEST_MODE=1</code> 필수; test fixture용</td>
+</tr>
+<tr>
+<td><code>HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS</code></td>
+<td>JSON</td>
+<td>GitHub Actions OIDC claim 주입 (test stub)</td>
+<td><code>HARNESS_OIDC_TEST_MODE=1</code> 필수; test fixture용</td>
+</tr>
+<tr>
+<td><code>HARNESS_TEST_OIDC_TOKEN_</code></td>
+<td>prefix</td>
+<td>OIDC token 주입 (test stub)</td>
+<td>위와 동일</td>
+</tr>
+<tr>
+<td><code>HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS</code></td>
+<td>JWT</td>
+<td>GitHub Actions OIDC token 주입 (test stub)</td>
+<td><code>HARNESS_OIDC_TEST_MODE=1</code> 필수; test fixture용</td>
+</tr>
+<tr>
+<td><code>HARNESS_VERSION_OVERRIDE</code></td>
+<td>semver</td>
+<td>anchor CLI에서 harness version override</td>
+<td>테스트 또는 디버깅 목적; production에서 권장하지 않음</td>
+</tr>
+</tbody></table>
+<h3 id="내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)<a class="anchor" href="#내부-전용-직접-설정-불가" aria-label="이 섹션 링크">§</a></h3>
+<p>아래 flag는 하네스 프로세스가 내부적으로 설정하며, 사용자가 직접 설정해서는 안 됩니다.</p>
+<table><thead><tr>
+<th>변수</th>
+<th>용도</th>
+</tr></thead><tbody>
+<tr>
+<td><code>HARNESS_ADVANCED</code></td>
+<td>내부 advanced 모드 플래그</td>
+</tr>
+<tr>
+<td><code>HARNESS_BIN</code></td>
+<td>하네스 바이너리 경로</td>
+</tr>
+<tr>
+<td><code>HARNESS_CLI</code></td>
+<td>CLI 실행 경로</td>
+</tr>
+<tr>
+<td><code>HARNESS_CMD</code></td>
+<td>현재 실행 중인 명령</td>
+</tr>
+<tr>
+<td><code>HARNESS_DIR</code></td>
+<td>하네스 디렉터리 경로</td>
+</tr>
+<tr>
+<td><code>HARNESS_E</code></td>
+<td>내부 exit code 전달</td>
+</tr>
+<tr>
+<td><code>HARNESS_HUMAN</code></td>
+<td>human identity (내부 전달)</td>
+</tr>
+<tr>
+<td><code>HARNESS_INVOCATION_RE</code></td>
+<td>호출 패턴 regexp (내부)</td>
+</tr>
+<tr>
+<td><code>HARNESS_MACHINE</code></td>
+<td>machine identity (내부)</td>
+</tr>
+<tr>
+<td><code>HARNESS_MOD</code></td>
+<td>모듈 경로 (내부)</td>
+</tr>
+<tr>
+<td><code>HARNESS_REPO</code></td>
+<td>현재 repo 경로</td>
+</tr>
+<tr>
+<td><code>HARNESS_USER</code></td>
+<td>현재 user identity</td>
+</tr>
+<tr>
+<td><code>HARNESS_VERSION</code></td>
+<td>실행 중인 harness 버전</td>
+</tr>
+</tbody></table>
+<hr class="doc-break"><p class="source-link"><a href="../../docs/adr/2026-05-19-phase-approve-speed-bump.md">View Markdown source: docs/adr/2026-05-19-phase-approve-speed-bump.md</a></p>
+<h1 id="adr-phaseapprove-speed-bump-model-v090">ADR: phase.approve Speed Bump Model (v0.9.0)<a class="anchor" href="#adr-phaseapprove-speed-bump-model-v090" aria-label="이 섹션 링크">§</a></h1>
+<p><strong>Date</strong>: 2026-05-19 <strong>Status</strong>: Accepted <strong>Partially supersedes</strong>: <code>2026-05-17-approver-provenance-and-execution-mode.md</code> (phase.approve scope only)</p>
+<h2 id="context">Context<a class="anchor" href="#context" aria-label="이 섹션 링크">§</a></h2>
+<p>The 2026-05-17 ADR established phase.approve as a cryptographically-bound human-presence proof using an HMAC approval-nonce, audience binding, 120-second TTL, and minter/consumer TTY separation. The mechanism was designed to defend against agent self-approval.</p>
+<p>In v0.8.x dogfooding, the owner determined the workflow cost exceeds the security benefit for this tool&#x27;s intended scope (a personal/small-team dev harness). Users reported friction: a separate verb, a second terminal, TTL races, and unfamiliar terminology (&quot;nonce&quot;, &quot;audience&quot;, &quot;HMAC&quot;, &quot;consumer_tty&quot;). The owner accepts that an agent with PTY access can defeat any prompt-based check and chose not to defend against that threat in this path.</p>
+<h2 id="decision">Decision<a class="anchor" href="#decision" aria-label="이 섹션 링크">§</a></h2>
+<p>For <code>harness phase approve</code> only:</p>
+<ul>
+<li>Remove HMAC-nonce, audience, TTL, and minter/consumer TTY separation.</li>
+</ul>
+<ul>
+<li>Add a <code>[y/N]</code> prompt on the user&#x27;s TTY.</li>
+</ul>
+<ul>
+<li>Halt with <code>EXIT_HUMAN_CONFIRMATION_REQUIRED=17</code> + <code>sub_reason=non_tty_approval_blocked</code> when stdin is non-TTY.</li>
+</ul>
+<ul>
+<li>Stamp <code>proof_class=soft_tty</code> in the audit row (chain-verified row, no separate signature).</li>
+</ul>
+<p>For <code>harness release</code> and every other release-path verb: <strong>no change</strong>. Signed tags, OIDC, HMAC nonces, and release_trust verification all remain as specified in the 2026-05-17 ADR.</p>
+<h2 id="consequences">Consequences<a class="anchor" href="#consequences" aria-label="이 섹션 링크">§</a></h2>
+<ul>
+<li>An agent running in the user&#x27;s TTY can drive <code>[y/N]</code> with expect/pexpect. This is explicitly accepted. The speed bump is a workflow checkpoint, not a security boundary.</li>
+</ul>
+<ul>
+<li>Audit rows for phase.approve can no longer prove a human typed the response. The audit chain still detects tampering.</li>
+</ul>
+<ul>
+<li>The CLI verb <code>approve-nonce mint --audience phase.approve</code> becomes a deprecated no-op in v0.9.0 and is removed in v1.0. Other audiences unaffected.</li>
+</ul>
+<ul>
+<li>The 2026-05-17 ADR&#x27;s threat model and mitigations remain in force for the release path.</li>
+</ul>
+<h2 id="non-goals">Non-goals<a class="anchor" href="#non-goals" aria-label="이 섹션 링크">§</a></h2>
+<ul>
+<li>Removing autopilot. Autopilot proceeds without asking; the speed bump always asks. They are orthogonal features.</li>
+</ul>
+<ul>
+<li>Defending phase.approve against PTY-automating agents.</li>
+</ul>
+<ul>
+<li>Touching <code>harness release</code>, <code>release.py</code>, <code>release_smoke_test.py</code>, <code>release_trust.py</code>, <code>verify_release_tag</code>, <code>.github/workflows/release.yml</code>, <code>docs/trust/</code>, or any signed-tag / OIDC code path.</li>
+</ul>
+    </article>
+  </main>
+</body>
+</html>

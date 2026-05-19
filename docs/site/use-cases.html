@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>활용 사례 · Low-Reasoning Agent Harness v0.9.0</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="주요 문서">
+      <a class="brand" href="index.html">Harness v0.9.0</a>
+      <span class="nav-links"><a href="index.html">시작하기</a>
+<a href="manual.html">사용자 매뉴얼</a>
+<a href="use-cases.html" aria-current="page">활용 사례</a>
+<a href="advanced.html">고급 참조</a></span>
+    </nav>
+  </header>
+  <main class="layout">
+    <aside class="toc" aria-label="문서 목차"><strong>목차</strong><a class="toc-l2" href="#언제-쓰나">언제 쓰나</a>
+<a class="toc-l2" href="#어댑터가-먼저-실행할-명령">어댑터가 먼저 실행할 명령</a>
+<a class="toc-l2" href="#json-해석">JSON 해석</a>
+<a class="toc-l2" href="#어댑터-금지-사항">어댑터 금지 사항</a>
+<a class="toc-l2" href="#사용자가-승인한-뒤">사용자가 승인한 뒤</a></aside>
+    <article class="content">
+      <div class="source-link"><a href="../../docs/use-cases/README.md">View Markdown source: docs/use-cases/README.md</a> · <a href="../../docs/use-cases/adapter-agent-workflow.md">View Markdown source: docs/use-cases/adapter-agent-workflow.md</a></div>
+      <h1 id="유즈케이스별-사용-안내">유즈케이스별 사용 안내<a class="anchor" href="#유즈케이스별-사용-안내" aria-label="이 섹션 링크">§</a></h1>
+<p>v0.9.0의 기본 원칙은 간단합니다. 보통 사용자는 네 명령만 기억합니다.</p>
+<pre><code class="language-bash">harness
+harness next
+harness run
+harness check</code></pre>
+<p>케이스별 문서:</p>
+<ul>
+<li><a href="first-install.md">처음 설치하고 시작하기</a></li>
+</ul>
+<ul>
+<li><a href="daily-workflow.md">매일 쓰는 기본 작업 흐름</a></li>
+</ul>
+<ul>
+<li><a href="use-cases.html">Roo/OpenCode 어댑터로 작업하기</a></li>
+</ul>
+<ul>
+<li><a href="approval-and-execute.md">계획 승인 후 구현하기</a></li>
+</ul>
+<ul>
+<li><a href="troubleshooting.md">문제가 생겼을 때 점검하기</a></li>
+</ul>
+<p>저수준 <code>phase</code>, anchor, state repair, autopilot 명령은 고급/디버그/CI용입니다. 일반 사용 문서와 어댑터 문서는 이 명령들을 정상 경로로 요구하지 않습니다.</p>
+<hr class="doc-break"><p class="source-link"><a href="../../docs/use-cases/adapter-agent-workflow.md">View Markdown source: docs/use-cases/adapter-agent-workflow.md</a></p>
+<h1 id="rooopencode-어댑터로-작업하기">Roo/OpenCode 어댑터로 작업하기<a class="anchor" href="#rooopencode-어댑터로-작업하기" aria-label="이 섹션 링크">§</a></h1>
+<h2 id="언제-쓰나">언제 쓰나<a class="anchor" href="#언제-쓰나" aria-label="이 섹션 링크">§</a></h2>
+<p>Roo나 OpenCode 같은 어댑터가 하네스 상태를 읽고 다음 행동을 결정해야 할 때 사용합니다.</p>
+<h2 id="어댑터가-먼저-실행할-명령">어댑터가 먼저 실행할 명령<a class="anchor" href="#어댑터가-먼저-실행할-명령" aria-label="이 섹션 링크">§</a></h2>
+<pre><code class="language-bash">harness check
+HARNESS_MACHINE=1 harness next</code></pre>
+<h2 id="json-해석">JSON 해석<a class="anchor" href="#json-해석" aria-label="이 섹션 링크">§</a></h2>
+<table><thead><tr>
+<th>필드</th>
+<th>의미</th>
+</tr></thead><tbody>
+<tr>
+<td><code>may_edit</code></td>
+<td><code>true</code>일 때만 파일 수정 가능</td>
+</tr>
+<tr>
+<td><code>requires_user_approval</code></td>
+<td><code>true</code>면 사용자에게 승인 요청 후 중지</td>
+</tr>
+<tr>
+<td><code>next_command</code></td>
+<td>다음에 제안할 고수준 명령</td>
+</tr>
+<tr>
+<td><code>next_user_prompt</code></td>
+<td>승인이나 사용자 행동이 필요할 때 그대로 보여줄 문구</td>
+</tr>
+<tr>
+<td><code>warnings</code></td>
+<td>읽어야 할 경고 또는 진단</td>
+</tr>
+</tbody></table>
+<h2 id="어댑터-금지-사항">어댑터 금지 사항<a class="anchor" href="#어댑터-금지-사항" aria-label="이 섹션 링크">§</a></h2>
+<ul>
+<li>사용자를 대신해 스스로 승인하지 않습니다.</li>
+</ul>
+<ul>
+<li><code>requires_user_approval=true</code>이면 <code>next_user_prompt</code>를 그대로 사용자에게 보여주고 멈춥니다.</li>
+</ul>
+<ul>
+<li><code>phase approve</code>, anchor, repair 같은 저수준 명령을 정상 경로로 실행하지 않습니다.</li>
+</ul>
+<ul>
+<li>하네스가 <code>[y/N]</code> 프롬프트를 출력하면 직접 답하지 마세요. 멈추고 사용자에게 본인 터미널에서 확인해달라고 요청하세요.</li>
+</ul>
+<ul>
+<li><code>allowed_paths</code> 밖 파일을 수정하지 않습니다.</li>
+</ul>
+<ul>
+<li>JSON이 깨졌거나 알 수 없는 계약이면 구현을 멈춥니다.</li>
+</ul>
+<h2 id="사용자가-승인한-뒤">사용자가 승인한 뒤<a class="anchor" href="#사용자가-승인한-뒤" aria-label="이 섹션 링크">§</a></h2>
+<pre><code class="language-bash">harness check
+HARNESS_MACHINE=1 harness next</code></pre>
+<p><code>may_edit=true</code>이고 경고가 없을 때만 구현 작업을 시작합니다.</p>
+    </article>
+  </main>
+</body>
+</html>
