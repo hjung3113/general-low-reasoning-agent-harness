@@ -59,3 +59,69 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
     assert audit_path.exists()
     last_line = audit_path.read_text().strip().splitlines()[-1]
     assert "soft_tty" in last_line
+
+
+def test_phase_approve_non_tty_halts_with_exit_17(tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    audit_path = harness_dir / "audit.log"
+    install_record = harness_dir / "install.json"
+    install_record.write_text(
+        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+    )
+    nonce_dir = tmp_path / "nonces"
+    nonce_dir.mkdir()
+
+    result = phase_approve.run_approve(
+        _stub_args(),
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record,
+        nonce_dir=nonce_dir,
+        stdin_isatty=False,
+        consumer_tty="",
+        gitconfig_email_lookup=lambda: "u@example.com",
+        skip_anchor_preflight=True,
+    )
+
+    assert result.exit_code == exitcodes.EXIT_HUMAN_CONFIRMATION_REQUIRED
+    assert result.sub_reason == "non_tty_approval_blocked"
+    assert not audit_path.exists() or audit_path.read_text() == ""
+
+
+def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "N")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    audit_path = harness_dir / "audit.log"
+    install_record = harness_dir / "install.json"
+    install_record.write_text(
+        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+    )
+    nonce_dir = tmp_path / "nonces"
+    nonce_dir.mkdir()
+
+    # Bootstrap scratch state so state_trust preflight passes
+    seed_scratch(scratch, audit_path)
+
+    result = phase_approve.run_approve(
+        _stub_args(),
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record,
+        nonce_dir=nonce_dir,
+        stdin_isatty=True,
+        consumer_tty="/dev/ttys000",
+        gitconfig_email_lookup=lambda: "u@example.com",
+        skip_anchor_preflight=True,
+    )
+
+    assert result.exit_code == exitcodes.EXIT_OK
+    assert result.sub_reason == "user_cancelled"
+    assert not audit_path.exists() or audit_path.read_text() == ""
