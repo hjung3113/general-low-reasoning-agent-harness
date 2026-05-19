@@ -12,6 +12,34 @@ All notable changes to this harness.
   `state_schema_version`, and `migrate state --resume` are recorded in released
   sections below.
 
+## v0.8.3 — 2026-05-19 (hotfix — signed tag + manual restructure + error message)
+
+### Trust
+
+- **Signed release tag 복구**: v0.8.0/8.1/8.2가 unsigned tag로 발행되어 install/upgrade가 `tag_signature_invalid`로 거부되는 문제 수정. v0.8.3은 SSH ed25519로 properly signed. `docs/trust/allowed-signers`에 maintainer pubkey 등록 (release@harness hjung3113@gmail.com).
+- v0.8.0~v0.8.2 unsigned tag는 history 보존을 위해 그대로 둡니다. 해당 버전을 install/upgrade할 때만 `HARNESS_ALLOW_UNSIGNED_DEV=1` 필요.
+
+### Fixed
+
+- `harness status/next` anchor-missing 에러 메시지 수정 (3-persona 적대적 리뷰 적용):
+  - 잘못된 경로(`.harness/audit.tip-anchor.json` in-repo) → 정확한 경로 (`~/.harness/audit-tip/<repo-id>.json` out-of-repo)
+  - 잘못된 fix 명령(`harness init`) → `harness anchor repair`
+  - `({exc})` 보간으로 peer callsites(`halt_diary_cli.py`, `phase_autopilot_cli.py`)와 일치
+
+### Docs
+
+- `docs/USER_MANUAL.md` 재구조 (1288 → 1339 lines, 콘텐츠 0 손실):
+  - **Part 1 (§1–§7)**: 일상 사용자가 읽어야 할 전부 — 개요, 첫 세션, 워크플로, Planning State, Skill Packs, 프롬프트 레시피, 제거.
+  - **Part 2 (§8–§9)**: Adapter 작성자.
+  - **부록 A**: Maintainer/Security — 보안 모델, Release Trust, 감사 로그, Approve-Nonce.
+  - **부록 B**: Troubleshooting + Advanced CLI (`HARNESS_ADVANCED=1`) + Exit Codes.
+  - **부록 C**: CI/자동화 — 환경 변수, Autopilot, 업그레이드, Windows.
+  - **부록 D**: v0.9.0 Carryover, 참고 자료.
+  - TL;DR 안내 블록 추가 (어디서 읽을지).
+  - §B2 CLI 레퍼런스에 `HARNESS_ADVANCED=1` 경고 banner.
+- `README.md` USER_MANUAL anchor 수정 (§16/§17 → §C3/§7).
+- 모든 v0.8.2 → v0.8.3 release token 갱신.
+
 ## v0.8.2 — 2026-05-19 (workflow UX hardening)
 
 - Added compact `next_steps` guidance to `show_phase_status.py` JSON so low-reasoning agents can read trust, next read, edit permission, and verification obligations without inferring them from the full projection.
