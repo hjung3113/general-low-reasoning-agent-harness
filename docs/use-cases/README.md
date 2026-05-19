@@ -17,4 +17,4 @@ harness check
 - [계획 승인 후 구현하기](approval-and-execute.md)
 - [문제가 생겼을 때 점검하기](troubleshooting.md)
 
-저수준 `phase`, nonce, anchor, state repair, autopilot 명령은 고급/디버그/CI용입니다. 일반 사용 문서와 어댑터 문서는 이 명령들을 정상 경로로 요구하지 않습니다.
+저수준 `phase`, anchor, state repair, autopilot 명령은 고급/디버그/CI용입니다. 일반 사용 문서와 어댑터 문서는 이 명령들을 정상 경로로 요구하지 않습니다.
