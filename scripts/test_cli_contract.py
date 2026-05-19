@@ -68,7 +68,9 @@ class CliContractTests(unittest.TestCase):
         self._run(["phase", "set", "discuss"])
         self._run(["phase", "set", "plan"])
         r = self._run(["phase", "approve"])
-        self.assertEqual(r.returncode, 6)
+        # v0.9.0 speed-bump: non-TTY now returns EXIT_HUMAN_CONFIRMATION_REQUIRED (17)
+        # instead of the former EXIT_WRONG_PHASE_FOR_VERB (6). TTY gate fires first.
+        self.assertEqual(r.returncode, 17)
         self.assertEqual(r.stdout, "")
         self.assertIn("non-TTY caller", r.stderr)
         self.assertIn("real terminal", r.stderr)

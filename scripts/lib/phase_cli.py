@@ -455,13 +455,14 @@ def _validate_at_within_24h(at_str: str) -> str:
 
 
 def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
-    """Handle ``harness phase approve`` (ADR-003a verb 2).
+    """Handle ``harness phase approve`` — interactive [y/N] speed bump per spec 2026-05-19-phase-approve-speed-bump-design.md.
 
-    Delegates to ``phase_approve.run_approve`` (S02+S05 spec-compliant path)
-    which enforces the §3.1 TTY gate, identity resolution, install-record
-    membership, anchor + state-trust preflight, human-presence nonce, and
-    §3.1.1 audit provenance. The legacy ``_do_phase_approve`` shim is kept
-    for reference but is no longer called from this handler.
+    Stamps the current phase as approved; does NOT advance to the next phase
+    (use ``phase set <next>`` to advance). Delegates to
+    ``phase_approve.run_approve`` which enforces the TTY gate (exit 17
+    ``non_tty_approval_blocked`` on non-TTY), identity resolution,
+    install-record membership, anchor + state-trust preflight, and audit
+    provenance (``proof_class: soft_tty``).
     """
     _probe_harness_writable()
 
@@ -481,20 +482,22 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     )
 
     stdin_isatty: bool = sys.stdin.isatty()
-    # P2-P2-2: os.ttyname is POSIX-only (raises AttributeError on Windows).
-    # Guard with os.name == "posix" so Windows callers get an empty string
-    # instead of a traceback.
-    # TODO(v0.8 P2-A2): On Windows, consumer_tty="" is passed here. The mint
-    # side (approval_nonce.mint) now stamps a unique "win:<pid>:<token>" into
-    # the nonce file so that "" != stored_minter_tty, preserving cross-TTY
-    # distinctness.  Real per-session enforcement on Windows requires the mint
-    # CLI to STORE its session identifier and the consume side to read its OWN
-    # session id (approve-nonce mint CLI carryover — v0.8 follow-up).
-    consumer_tty: str = (
-        os.ttyname(sys.stdin.fileno())
-        if (stdin_isatty and os.name == "posix")
-        else ""
-    )
+    # X8/HIGH-B-2: On Windows os.ttyname is unavailable; mint a synthetic
+    # identifier so _tty_kind() can classify it as "win-synthetic" instead of
+    # returning the misleading "posix-real" label for an empty string.
+    # On POSIX, use os.ttyname when stdin is a TTY; fall back to empty string
+    # for non-TTY callers (which are blocked earlier by the TTY gate anyway).
+    if os.name == "posix":
+        consumer_tty: str = (
+            os.ttyname(sys.stdin.fileno())
+            if stdin_isatty
+            else ""
+        )
+    else:
+        # Windows / other non-POSIX: ttyname() is unavailable; synthesise a
+        # unique identifier so _tty_kind() classifies it as "win-synthetic".
+        import secrets as _secrets
+        consumer_tty = f"win:{os.getpid()}:{_secrets.token_hex(4)}"
 
     result = _phase_approve.run_approve(
         args,

@@ -99,3 +99,10 @@ Replaces hand-editing of `phase-state.json` (which would otherwise corrupt the a
 - ADR-2 `2026-05-17-audit-canonicalization-locking-and-state-trust.md`: chain, lock, transaction protocol that the audit entries written here ride on.
 - ADR-3 `2026-05-17-autopilot-guards-and-manual-handoff.md`: `phase autopilot start|stop` verbs that mutate `execution_mode`.
 - Slice S01 (state schema), S02 (approve provenance), S03 (stale approval validator), S04 (reopen), S05 (override-identity).
+
+
+---
+
+## Supersession Notice (2026-05-19)
+
+This ADR's threat model and mitigations remain in force for the **release path** (release verb, signed tags, OIDC, release_trust). The **phase.approve scope** is superseded by `2026-05-19-phase-approve-speed-bump.md` (v0.9.0): the HMAC-nonce / audience / TTL / consumer-tty defense is replaced by an interactive `[y/N]` workflow speed bump. See the v0.9.0 ADR for rationale.

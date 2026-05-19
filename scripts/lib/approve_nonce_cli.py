@@ -79,19 +79,7 @@ def run_mint(
     HARNESS_TEST_FORCE_TTY=1 bypasses the check for unit tests only.
     """
     # ------------------------------------------------------------------
-    # 1. TTY guard
-    # C-1 (Cycle-2): HARNESS_TEST_FORCE_TTY and HARNESS_DEV_BUILD removed from
-    # production code path entirely.  Tests must monkeypatch sys.stdin.isatty
-    # directly (e.g. mock.patch.object(sys.stdin, "isatty", return_value=True)).
-    # The env vars no longer have any effect on the TTY decision.
-    # ------------------------------------------------------------------
-    is_tty = sys.stdin is not None and sys.stdin.isatty()
-    if not is_tty:
-        stderr.write("error: approve-nonce mint requires an interactive TTY\n")
-        return 2
-
-    # ------------------------------------------------------------------
-    # 2. Re-validate TTL (defense-in-depth; argparse already checks but
+    # 1. Re-validate TTL (defense-in-depth; argparse already checks but
     #    run_mint may be called directly with arbitrary Namespace objects).
     # ------------------------------------------------------------------
     if not (1 <= args.ttl <= 3600):
@@ -101,13 +89,41 @@ def run_mint(
         return 2
 
     # ------------------------------------------------------------------
-    # 2b. Validate audience format (Fix 5)
+    # 1b. Validate audience format (Fix 5)
     # ------------------------------------------------------------------
     if not _AUDIENCE_RE.fullmatch(args.audience):
         stderr.write(
             f"error: --audience must match [a-z][a-z0-9._]{{0,63}} "
             f"(got {args.audience!r})\n"
         )
+        return 2
+
+    # ------------------------------------------------------------------
+    # 1c. Deprecation no-op for phase.approve audience — MUST fire BEFORE
+    #     the TTY guard so CI scripts (no TTY) receive the right message
+    #     instead of "requires interactive TTY". (X6/Codex-Finding-2)
+    # ------------------------------------------------------------------
+    if args.audience == "phase.approve":
+        stderr.write(
+            "warning: 'approve-nonce mint --audience phase.approve' is "
+            "deprecated. phase.approve now uses an interactive [y/N] prompt; "
+            "this command is a no-op and will be removed in v1.0. Just run "
+            "'harness phase approve' from your terminal. "
+            "Note: this command no longer prints a nonce_id on stdout — any "
+            "shell script that captured the previous output must be updated.\n"
+        )
+        return 0
+
+    # ------------------------------------------------------------------
+    # 2. TTY guard
+    # C-1 (Cycle-2): HARNESS_TEST_FORCE_TTY and HARNESS_DEV_BUILD removed from
+    # production code path entirely.  Tests must monkeypatch sys.stdin.isatty
+    # directly (e.g. mock.patch.object(sys.stdin, "isatty", return_value=True)).
+    # The env vars no longer have any effect on the TTY decision.
+    # ------------------------------------------------------------------
+    is_tty = sys.stdin is not None and sys.stdin.isatty()
+    if not is_tty:
+        stderr.write("error: approve-nonce mint requires an interactive TTY\n")
         return 2
 
     # ------------------------------------------------------------------

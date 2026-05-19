@@ -10,12 +10,32 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ---
 
+## 용어 / Glossary
+
+| 용어 | 뜻 |
+|------|---|
+| **Speed bump (방지턱)** | `phase approve` 시 `[y/N]`로 묻는 단계. 보안 검사 아님. 취소 가능. |
+| **Autopilot** | 묻지 않고 여러 phase를 진행하는 모드. Speed bump와 별개. 기본 OFF. |
+| **Phase** | 워크플로우 단계 (`design`, `discuss`, `plan`, `execute`, `done`). `phase approve`로 stamp, `phase set`로 전환. |
+| **Phase gate** | 특정 verb가 특정 phase에서만 동작하는 규칙. |
+| **Halt** | 하네스가 멈추고 사용자 행동을 요청. 에러 아님. 예: non-TTY halt = "터미널에서 다시 실행하세요". |
+| **Audit log** | `.harness/audit.log`에 append-only로 기록되는 phase 변화/승인 로그. Chain-verified. |
+| **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 다름. (내부는 HMAC nonce — 사용자가 보는 용어는 "release confirmation".) |
+| **Approve-nonce** | Legacy 용어. `phase approve`는 더 이상 사용 안 함. CLI verb `approve-nonce mint`는 v0.9.0에서 deprecated, v1.0에서 제거. |
+| **BY_TRUST** | CI 전용 하네스 flag (release 자동화에서만 사용). 일반 사용자는 설정하지 않음. |
+| **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. |
+| **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` 환경 변수로 전달). 일반 사용자는 만질 일 없음. `docs/advanced/harness-flags.md` 참고. |
+
+자세한 내용: `docs/USER_MANUAL.md` §0.2.
+
+---
+
 ## 1. 이 저장소
 
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.8.3의 일상 CLI 표면은 네 개입니다:
+v0.9.0의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -50,7 +70,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -88,14 +108,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.3 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -193,13 +213,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.8.3
+python3 scripts/harness.py release-check --expected-version v0.9.0
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.3 -m "Release v0.8.3"
-git push origin v0.8.3
+git tag -s v0.9.0 -m "Release v0.9.0"
+git push origin v0.9.0
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -220,8 +240,8 @@ git push origin v0.8.3
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.8.3 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.3
+python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.0
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -233,14 +253,14 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.8.3 Workflow UX Hardening** — `show_phase_status.py`의 `next_steps`, 어댑터 상태 템플릿, 승인 경계 문서를 보강했습니다.
+**v0.9.0 phase.approve Speed Bump** — `harness phase approve`가 interactive `[y/N]` 방지턱이 됨. `approve-nonce mint --audience phase.approve`는 deprecated. Release path 무변경. 자세한 내용은 `CHANGELOG.md` 또는 ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md` 참고.
 
 **한글 유즈케이스 문서 Hotfix** — 유즈케이스별 한글 문서를 `docs/use-cases/`로 분리하고, 최소 워크플로 UML 문서 2개를 한글로 정리했습니다.
 
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.
 - Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in the next minor release.
-- Approval-nonce TTY-isolation accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev`. A same-TTY agent can pass a fake distinct value. Server-side TTY binding lands in the next minor release.
+- Release-path approval-nonce TTY-isolation still accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev` (phase.approve dropped this in v0.9.0). A same-TTY agent can pass a fake distinct value.
 - Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified at this release.
 
 If you need a hardened trust root or strict TTY isolation today, treat this release as **internal-share-stable on POSIX, beta on Windows**, and wait for the next minor release.

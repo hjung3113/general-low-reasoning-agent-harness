@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.8.3)
+# 하네스 사용자 설명서 (v0.9.0)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -11,7 +11,7 @@
 >
 > - **일상 사용자** (개발팀원): **Part 1 (§1–§7)** 만 읽으세요. 명령 4개(`harness`, `harness next`, `harness run`, `harness check`)와 워크플로 모델, 프롬프트 레시피, 제거 절차가 전부입니다.
 > - **Adapter 작성자 / Doctor 사용자**: **Part 2 (§8–§9)** 추가로 읽으세요.
-> - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Approve-Nonce 상세.
+> - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Release Confirmation 상세.
 > - **Troubleshooting / Advanced CLI**: **부록 B** — 오류 해결 레시피, 전체 CLI 레퍼런스, Exit Codes.
 > - **CI / 자동화 엔지니어**: **부록 C** — 환경 변수, Phase Gate 상세(autopilot), 업그레이드, Windows 지원.
 > - **기타**: **부록 D** — v0.9.0 Carryover, 참고 자료.
@@ -19,6 +19,11 @@
 ---
 
 ## 목차
+
+### §0 — 개념 안내
+
+- [0.1 Speed bump vs Autopilot](#01-speed-bump-방지턱-vs-autopilot)
+- [0.2 Glossary / 용어](#02-glossary--용어)
 
 ### Part 1 — 일상 사용자
 
@@ -40,7 +45,7 @@
 - [A1. 보안 모델](#a1-보안-모델)
 - [A2. Release Trust](#a2-release-trust)
 - [A3. 감사 로그](#a3-감사-로그)
-- [A4. Approve-Nonce (Human Presence Proof)](#a4-approve-nonce-human-presence-proof)
+- [A4. Release Confirmation](#a4-release-confirmation)
 
 ### 부록 B — Troubleshooting & Advanced CLI
 
@@ -50,7 +55,7 @@
 
 ### 부록 C — CI / 자동화
 
-- [C1. 환경 변수](#c1-환경-변수)
+- [C1. 고급 설정 flag](#c1-고급-설정-flag)
 - [C2. Phase Gate 상세 (Autopilot)](#c2-phase-gate-상세-autopilot)
 - [C3. 업그레이드](#c3-업그레이드)
 - [C4. Windows 지원](#c4-windows-지원)
@@ -59,6 +64,35 @@
 
 - [D1. v0.9.0 Carryover](#d1-v09-carryover)
 - [D2. 참고 자료](#d2-참고-자료)
+
+---
+
+## §0 — 개념 안내
+
+### 0.1 Speed bump (방지턱) vs Autopilot
+
+이 하네스에는 사용자가 자주 만나는 두 개의 개념이 있습니다. 자주 혼동되니 한 번 짚고 갑니다.
+
+- **Speed bump (방지턱)** — `harness phase approve`가 매번 `[y/N]`로 묻는 단계입니다. 사용자가 `y`를 입력해야 현재 phase가 stamp되고, 그 다음에 `phase set`으로 다음 phase로 이동합니다. **이건 보안 검사가 아닙니다.** 워크플로우 중간에 사람이 한 번 더 확인하라는 의도된 마찰입니다. 답이 `y`가 아니거나, 터미널이 아닌 환경 (agent subprocess, CI 등)에서 실행하면 halt 합니다.
+- **Autopilot** — `harness autopilot start`로 시작합니다. 묻지 않고 여러 phase를 자동 진행합니다. 시간/턴 budget이 정해지면 그 안에서만 동작합니다. 기본 OFF.
+
+둘은 독립적인 기능입니다. autopilot이 활성화돼도 speed bump가 모든 phase 전환을 가로채는 것은 아닙니다 (autopilot 자체의 정책에 따릅니다).
+
+### 0.2 Glossary / 용어
+
+| 용어 | 뜻 | 참고 |
+|------|----|---|
+| **Speed bump (방지턱)** | `phase approve` 시 `[y/N]`로 묻는 단계. 보안 검사 아님. 취소 가능. | §0.1, §1 |
+| **Autopilot** | 묻지 않고 여러 phase를 진행하는 모드. Speed bump와 별개. 기본 OFF. | §0.1, §B3 |
+| **Phase** | 워크플로우 단계. `phase approve`로 stamp, `phase set`로 전환. | §1 |
+| **Phase gate** | 특정 verb가 특정 phase에서만 동작하는 규칙. | 프로토콜 스펙 |
+| **Halt** | 하네스가 멈추고 사용자 행동을 요청. 에러 아님. 예: non-TTY halt = "터미널에서 다시 실행하세요". | §B |
+| **Audit log** | `.harness/audit.log` — chain-verified append-only. | §A |
+| **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 다름. (내부 메커니즘은 HMAC nonce이지만 사용자가 보는 용어는 "release confirmation"입니다.) | §A4 |
+| **Approve-nonce** | Legacy 용어. `phase approve`에서는 더 이상 사용하지 않습니다. CLI `approve-nonce mint` verb는 v0.9.0에서 deprecated, v1.0에서 제거. | §migration |
+| **BY_TRUST** | CI 전용 하네스 flag (release 자동화에서만 사용). 일반 사용자는 설정하지 않음. | §A1, release docs |
+| **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. | §A1 |
+| **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` env vars로 전달). 일반 사용자는 만질 일 없음. | `docs/advanced/harness-flags.md` |
 
 ---
 
@@ -672,7 +706,9 @@ python3 scripts/doctor_harness.py
 - Git commit 직접 작성 (`harness verify --audit`가 forensic 기록)
 - Network access (`phase autopilot --allow-network` flag로 명시적 opt-in, audit 기록)
 
-### A1.3 HMAC Nonce Signing
+### A1.3 Release-path HMAC Signing
+
+> Release path 전용입니다. 일반 `phase approve`는 v0.9.0부터 HMAC을 사용하지 않습니다 (§0.1 참고).
 
 Approval nonce는 HMAC으로 서명됩니다:
 - Key: `~/.harness/secret.key` (0600 perms, 한 번만 생성)
@@ -719,8 +755,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.3 -m "Release v0.8.3"
-git push origin v0.8.3
+git tag -s v0.9.0 -m "Release v0.9.0"
+git push origin v0.9.0
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -730,7 +766,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.3
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.0
 ```
 
 ### A2.5 Trust-Downgrade Refusal
@@ -781,7 +817,7 @@ git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.3
 - `audit.secret_key.rotated` — secret key 손상 및 rotation
 
 **Approval**:
-- `approve_nonce.mint` — human presence proof 생성
+- `approve_nonce.mint` — release-path confirmation token mint (phase.approve audience는 v0.9.0부터 no-op)
 
 **Network/Fence**:
 - `autopilot.fence.deny` — 파일 제한으로 인한 거절
@@ -828,29 +864,25 @@ Failure → exit 10 (audit chain failure).
 
 ---
 
-## A4. Approve-Nonce (Human Presence Proof)
+## A4. Release Confirmation
 
-(백그라운드 자동 — `harness run`이 prompt 출력)
+`harness release`를 실행할 때, 하네스는 사용자가 직접 타이핑한 토큰으로 확인을 받습니다. 일반 `phase approve`의 `[y/N]` 방지턱(§0.1)보다 한 단계 엄격한 단계입니다.
 
-Phase approve 전에 human presence를 증명하는 메커니즘입니다. Agent가 approval을 가장할 수 없도록 합니다.
+### A4.1 사용 흐름
 
-**Flow**:
-1. 터미널 A (agent): 작업 수행, `phase approve` 전 대기
-2. 터미널 B (human): nonce mint 실행
+1. 터미널에서 `python3 scripts/harness.py release v0.9.0` 실행
+2. 하네스가 묻습니다: `Type 'release v0.9.0' to confirm:`
+3. 정확히 `release v0.9.0`를 타이핑하고 Enter
 
-```bash
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 또는 TTL 지정 (기본 120초)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve --ttl 180
-```
+다른 답 (`y`, Ctrl+C, 다른 문자열)은 cancel로 처리되고 release는 진행되지 않습니다.
 
-3. 터미널 A (human 또는 agent): `harness phase approve` 실행 — nonce 자동 소비, 승인 완료
+### A4.2 왜 이 단계가 있는가
 
-**Nonce 특성**:
-- `~/.harness/approval-nonces/` (POSIX) 또는 `%LOCALAPPDATA%\Harness\approval-nonces\` (Windows)에 저장
-- 120초(기본) 유효
-- Single-use (소비 후 삭제)
-- Minter TTY ≠ consumer TTY (동일 PTY 내 agent 자동 실행 방지)
+`release`는 git tag 생성, push, GitHub release 등 외부에 영향을 주는 작업입니다. 근육 기억으로 `y`를 누르는 사고를 막기 위해 토큰 타이핑을 요구합니다. 내부적으로는 HMAC mechanism(`approval nonce`)이 동작하지만, 사용자가 보는 용어는 "release confirmation"입니다.
+
+### A4.3 비-TTY 환경
+
+CI 환경에서는 별도의 trust path (`HARNESS_BY_TRUST` + OIDC)를 사용합니다. 자세한 내용은 §C2.2 참고.
 
 ---
 
@@ -858,18 +890,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve --ttl 180
 
 ## B1. 트러블슈팅
 
-### B1.1 "approve-nonce mint requires interactive TTY"
-
-**원인**: Non-TTY 환경(redirected stdin, agent subprocess)에서 nonce mint 시도.
-
-**해결**: 실제 터미널에서 실행:
-```bash
-# 터미널 B (human)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 8자 code → TTY로 출력
-```
-
-### B1.2 "tag_signature_invalid" / "trust_downgrade_refused"
+### B1.1 "tag_signature_invalid" / "trust_downgrade_refused"
 
 **원인**:
 - Unsigned release tag로 업그레이드 시도 (production install이 이미 signed로 설치됨)
@@ -879,28 +900,28 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.8.3
+   git verify-tag v0.9.0
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
 
-### B1.3 "nonce_signature_invalid"
-
-**원인**:
-- Secret key 손상
-- Nonce 만료 (기본 120초)
-- Minter TTY = consumer TTY (agent가 same PTY에서 approval 시도)
-
-**해결**:
-- Secret key 손상 시 자동 rotation (audit `audit.secret_key.rotated`)
-- Nonce 다시 mint (TTL 재시작)
-- 다른 TTY에서 approval 명령 실행
-
-### B1.4 "audit_partial_write" (exit 14)
+### B1.2 "audit_partial_write" (exit 14)
 
 **원인**: Power loss 또는 crash 사이 crash recovery 불확실성. State + audit transaction이 diverged.
 
 **해결**: `harness session unlock --force` 실행 후 상태 재점검.
+
+### B1.3 "release confirmation expired"
+
+**원인**: `harness release` 실행 시 토큰을 너무 늦게 타이핑함 (내부 expiry 초과).
+
+**해결**: `harness release <version>` 다시 실행. 토큰을 바로 타이핑.
+
+### B1.4 "phase approve requires a terminal"
+
+**원인**: `phase approve`를 agent subprocess, redirected stdin, 또는 CI 환경 등 TTY가 아닌 곳에서 실행함.
+
+**해결**: 본인 터미널에서 `python3 scripts/harness.py phase approve` 직접 실행. `[y/N]` 프롬프트에 `y` 응답.
 
 ### B1.5 "non_tty_authorization_unverified"
 
@@ -910,7 +931,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 - GitHub Actions: `GITHUB_ACTIONS=true`, `ACTIONS_ID_TOKEN_REQUEST_URL`, OIDC token 설정
 - GitLab CI: `GITLAB_CI=true`, `CI_JOB_JWT_V2` token 설정
 - Buildkite: `BUILDKITE=true`, Buildkite OIDC token 설정
-- 없으면 TTY 환경에서 human presence proof 사용
+- CI가 아닌 경우 TTY에서 `phase approve` 직접 실행 (`[y/N]` 응답으로 워크플로우 체크포인트 통과)
 
 ### B1.6 "scope_violation" / "path_reparse_refused" (exit 4)
 
@@ -965,7 +986,7 @@ python3 scripts/harness.py state show
 ### B1.11 자주 혼동하는 케이스 (Common Confusions)
 
 **Q. Approval 했는데 왜 execute로 못 들어가나요?**
-A. `phase approve`만으로는 부족 — approve-nonce(human presence proof)가 필요합니다. `harness phase approve` 후 `harness approve-nonce mint --audience phase.approve` 실행 후 execute 전환이 가능합니다. (§A4)
+**A.** `harness phase approve`만으로 충분합니다. 터미널에서 실행하면 `[y/N]` 프롬프트가 뜨고 `y` 입력 후 현재 phase가 approve로 stamp되고, `phase set <next>`로 다음 phase로 이동할 수 있습니다. 별도의 `approve-nonce mint` 명령은 v0.9.0부터 필요 없습니다 (release는 별개, §A4 참고).
 
 **Q. Skill pack을 설치 후에 추가하려면?**
 A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
@@ -978,7 +999,7 @@ python3 scripts/upgrade_harness.py --target <target> --packs workflow-core,workf
 A. `harness phase reopen --to plan`. 현재 phase에서 plan으로 되돌리며 approval 초기화. audit log에 기록되니 실수가 아니면 새 plan을 다시 세우는 편이 안전합니다. (§C2.4)
 
 **Q. `requires_human` (exit 17)이 뜨는데 무엇을 해야 하나요?**
-A. autopilot 중 human approval/nonce가 필요한 시점에 도달했다는 신호. TTY에서 `harness approve-nonce mint --audience phase.approve` 실행 후 autopilot 재시작. (§B3, §A4)
+A. autopilot 중 human approval이 필요한 시점에 도달했다는 신호. TTY에서 `python3 scripts/harness.py phase approve` 직접 실행 후 `[y/N]` 프롬프트에 `y` 응답. autopilot 재시작. (§B3, §A4)
 
 **Q. Source repo와 installed target을 헷갈립니다.**
 A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skills/**`는 install이 만들어낸 target artifact. Source repo에 `.agents/skills/`가 없는 것이 정상. (§4 ownership 규칙)
@@ -987,7 +1008,7 @@ A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skill
 A. Adapter는 entry-point에 불과하며 phase gate state는 공유. 두 adapter 모두 같은 `.scratch/phase-state.json`을 본다. 충돌 시 마지막 mutation이 audit log에 기록됨. (§8)
 
 **Q. Autopilot이 시작 안 됩니다 — "no human presence proof"?**
-A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§C2.2, §C1)
+A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `python3 scripts/harness.py phase approve` 실행 후 `[y/N]` 프롬프트에 `y` 응답 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§C2.2, §C1)
 
 ---
 
@@ -1014,10 +1035,15 @@ python3 scripts/harness.py phase approve
 python3 scripts/harness.py phase reopen --to plan --reason "scope 추가"
 ```
 
-### B2.2 Approve-Nonce
+### B2.2 Approve-Nonce (Deprecated)
+
+> **v0.9.0에서 deprecated**. `--audience phase.approve`는 no-op + stderr warning. v1.0에서 제거.
+> phase.approve는 이제 interactive `[y/N]` (§0.1 참고). Release path 내부에서는 여전히 사용되지만 사용자가 직접 호출할 일은 없음.
+
+내부 release-path 디버깅 용도로 남아 있는 verb (감사 로그 분석 시 참고):
 
 ```bash
-python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 120]
+python3 scripts/harness.py approve-nonce mint --audience release.publish [--ttl 120]
 ```
 
 ### B2.3 상태 및 조회
@@ -1045,7 +1071,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 12
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.8.3` | Release tag 버전 검증 |
+| `release-check --expected-version v0.9.0` | Release tag 버전 검증 |
 
 ### B2.6 FSD (Fast Slash-command Dispatch)
 
@@ -1106,7 +1132,7 @@ v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase com
 | 11 | `EXIT_WINDOWS_CONTAINMENT_DEGRADED` | Windows ADS/reserved-char containment error |
 | 14 | `EXIT_AUDIT_PARTIAL_WRITE` | Crash recovery undecidable (manual action required) |
 | 15 | `EXIT_RELEASE_TRUST_INVALID` | Signed tag verification 실패 또는 trust downgrade refused |
-| 17 | (`next --shell`) | `requires_human` — human approval/nonce 필요 (autopilot 진입 차단) |
+| 17 | (`next --shell`, `phase approve`) | `requires_human` (autopilot 진입 차단) 또는 `non_tty_approval_blocked` (phase approve 비-TTY halt). `sub_reason`으로 구분. |
 | 18 | (`next --shell`) | autopilot active — 재진입 금지 (§C2.2) |
 
 **중요**: `sub_reason` 필드를 검토하여 정확한 원인 파악. 같은 exit code가 여러 상황에서 사용됩니다.
@@ -1117,20 +1143,9 @@ v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase com
 
 ## 부록 C — CI / 자동화
 
-## C1. 환경 변수
+## C1. 고급 설정 flag
 
-| 변수 | 값 | 의미 | 보안 노트 |
-| --- | --- | --- | --- |
-| `HARNESS_ALLOW_UNSIGNED_DEV` | `1` | Dev 환경에서 unsigned tag bypass | Production install은 downgrade 불가. 권장하지 않음 |
-| `HARNESS_AUTOPILOT_NETWORK` | `1` | Autopilot에서 network 허용 | `phase autopilot --allow-network` flag와 동일; audit 기록 |
-| `HARNESS_BY_TRUST` | email | CI 환경에서 bot identity 지정 | OIDC/signed token과 함께 필수; human approver와 겹치지 않아야 함 |
-| `HARNESS_AUTOMATION` | `phase` \| `chain` | CI autopilot mode | OIDC 또는 환경 검증 필수; TTY 없음 |
-| `HARNESS_NONCE_DIR` | path | Approval nonce 저장 위치 override | Test-only; production은 권장하지 않음 |
-| `HARNESS_JTI_DIR` | path | OIDC JTI store override | 위치 override 시 audit warning `ci.oidc.jti.dir_override` 기록 |
-| `HARNESS_STRICT_VERB_REGISTRY` | `1` | Unknown verb에 exit 10 enforce | 기본(permissive)은 warning만 |
-| `HARNESS_PROJECT_ROOT` | path | PS audit path 지정 | PowerShell deny-shim용; Windows에서 audit path 명확화 |
-| `HARNESS_BYPASS_TTY_CONFIRM` | `1` | TTY gate 무시 (test-only) | 테스트 fixture용; production 금지 |
-| `HARNESS_FIXED_NOW_ISO` | timestamp | 고정 시간 (test-only) | 예: `2026-05-17T14:30:00Z` |
+하네스 내부 설정 flag(`HARNESS_*`)는 [`docs/advanced/harness-flags.md`](../advanced/harness-flags.md)를 참고하세요. 일반 사용자는 건드릴 일 없습니다.
 
 ---
 
@@ -1161,7 +1176,7 @@ python3 scripts/harness.py phase autopilot stop
 
 `phase autopilot start`는:
 - CI 환경: OIDC 또는 환경 변수로 증명된 bot identity 요구
-- TTY 환경: human presence proof (nonce 또는 OS credential)로 충분
+- TTY 환경: `phase approve`의 `[y/N]` 프롬프트에 응답하면 됩니다 (speed-bump 체크포인트). 강한 human-proof는 v0.9.0에서 release path 전용입니다.
 
 **위험과 사용 기준**: Autopilot은 승인된 scope 내에서만 동작하지만, 연속 실행 중 예상치 못한 변경이 발생할 수 있습니다. 중요한 변경 전에는 `manual` 모드를 유지하세요.
 
@@ -1204,8 +1219,8 @@ python3 /path/to/project/scripts/harness.py check
 ### C3.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.8.3 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.3
+python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.0
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -1217,14 +1232,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.8.3 \
+  --version v0.9.0 \
   --dry-run
 ```
 
 ### C3.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.3 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.0 --dry-run
 ```
 
 ### C3.5 오래된 수동 설치 adopt
@@ -1286,7 +1301,7 @@ $HarnessProjectRoot = "C:\path\to\project"
 
 ### C4.4 LOCALAPPDATA 체크
 
-Windows에서 `LOCALAPPDATA` unset 시 approval-nonces 저장 경로 부재로 warning 또는 error 발생합니다. 일반적으로 Windows login session에서는 자동 설정되지만, minimal CI환경이면 수동 설정 필요:
+Windows에서 `LOCALAPPDATA` unset 시 **release-path** approval-nonces 저장 경로 부재로 warning 또는 error 발생합니다. 일반적으로 Windows login session에서는 자동 설정되지만, minimal CI환경이면 수동 설정 필요:
 
 ```powershell
 $env:LOCALAPPDATA = "$env:UserProfile\AppData\Local"
@@ -1306,7 +1321,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 

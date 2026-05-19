@@ -36,6 +36,10 @@ EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded
 # Previously used 17 which §3.4 assigns to "human action required" — collision
 # resolved by moving release-trust to 15.
 EXIT_RELEASE_TRUST_INVALID = 15  # tag_signature_invalid, trust_downgrade_refused, etc.
+# §3.4 "human action required" slot — also used by `harness next` autopilot
+# halt with sub_reason=requires_human. Phase.approve non-TTY halts use the
+# same numeric value with sub_reason=non_tty_approval_blocked.
+EXIT_HUMAN_CONFIRMATION_REQUIRED = 17
 
 
 __all__ = [
@@ -52,4 +56,5 @@ __all__ = [
     "EXIT_PATH_REPARSE_REFUSED",
     "EXIT_WINDOWS_CONTAINMENT_DEGRADED",
     "EXIT_RELEASE_TRUST_INVALID",
+    "EXIT_HUMAN_CONFIRMATION_REQUIRED",
 ]

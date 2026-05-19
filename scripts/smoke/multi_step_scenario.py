@@ -176,6 +176,10 @@ def step(scenario: Scenario, response_text: str) -> StepResult:
         return result
     env = dict(os.environ)
     env["HARNESS_USER"] = "tier2@example.com"
+    # BLOCKER A-4: phase approve exits 17 from non-TTY subprocess without bypass.
+    # Both vars required — production callers never set HARNESS_SMOKE_TEST.
+    env["HARNESS_SMOKE_TEST"] = "1"
+    env["HARNESS_SMOKE_BYPASS_SPEED_BUMP"] = "1"
     for tokens in commands:
         argv = _normalize_command(tokens)
         if argv is None:

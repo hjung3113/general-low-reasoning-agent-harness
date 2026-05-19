@@ -41,6 +41,8 @@ The same exit-4 contract is enforced by the pre-commit hook installable
 via `harness install --pre-commit`; running the check
 yourself here lets you see the diagnostic before the hook fires.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Finish only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do NOT run low-level phase commands from this adapter:
 
 ```text

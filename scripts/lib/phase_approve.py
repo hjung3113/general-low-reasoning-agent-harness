@@ -1,34 +1,31 @@
-"""`phase approve` — human-only gate (design §3.1, §3.1.1).
+"""`phase approve` — interactive speed-bump gate (spec 2026-05-19-phase-approve-speed-bump-design.md).
 
-Order of operations (any failure → typed `ApproveResult` with non-zero
-`exit_code`; the CLI dispatcher maps to `sys.exit`):
+Stamps the *current* phase as approved. Does NOT advance to the next phase;
+use ``phase set <next>`` to advance after stamping.
 
-  1. TTY gate (§3.1 step 1). `stdin_isatty=False` → exit 6
-     `non_tty_approval_blocked`. HARNESS_BY_TRUST / HARNESS_HUMAN env are
-     NEVER consulted on this path (Round-4 BLOCK fix #2).
-  2. Identity resolution (§3.1 step 2). `--by` if provided, else
-     `git config user.email`. Empty → exit 6 `gitconfig_email_unset`.
-  3. install-record approvers membership (§3.1 step 3 + §6.1). Email
-     must appear in `.harness/install-record.json approvers[].email`.
-  4. Anchor preflight + state-trust preflight (§12.1 + §2.6).
-     Anchor verified BEFORE state read; state preflight refuses on
-     forged state with exit 10.
-  5. `state.execution_mode != "manual"` → exit 8
-     `approve_during_autopilot`.
-  6. Idempotency check: `state.approved == True` → exit 0
-     `already_approved`, no nonce burn, no state mutation, no audit.
-  7. Human-presence proof (§3.1.1) — consume newest valid nonce for
-     `audience="phase.approve"`. Failures: `human_proof_missing` /
-     `human_proof_nonce_expired` / `human_proof_nonce_same_tty` /
-     `human_proof_nonce_audience_mismatch` — all exit 6.
-  8. State + audit mutation via `phase_txn.commit_transaction`.
+Order of operations (any failure → typed ``ApproveResult`` with non-zero
+``exit_code``; the CLI dispatcher maps to ``sys.exit``):
 
-The CLI dispatcher in `scripts/harness.py` translates `ApproveResult`
-into an exit. The pure-function shape is so tests can drive the helper
-without spinning a real PTY or real `~/.harness`.
+  1. TTY gate. ``stdin_isatty=False`` → exit 17 ``non_tty_approval_blocked``.
+     HARNESS_BY_TRUST / HARNESS_HUMAN are NEVER consulted on this path.
+  2. Phase guard. Phase not in ``{plan, execute}`` → refuses with EXIT_WRONG_PHASE_FOR_VERB.
+     Discuss is blocked: ``check.py`` SM-invariant requires ``approved=False`` there.
+  3. Identity resolution. ``--by`` if provided, else ``git config user.email``.
+     Empty → exit 6 ``gitconfig_email_unset``.
+  4. install-record approvers membership check.
+  5. Anchor preflight + state-trust preflight. Anchor verified BEFORE state
+     read; forged state → exit 10.
+  6. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
+  7. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
+  8. Prompt ``[y/N]`` on TTY. Non-y answer, EOF, or Ctrl+C → exit 0
+     + sub_reason=user_cancelled (stderr message printed; cancel is not
+     an error, but the shell chain operator ``&&`` will continue. Use
+     ``phase approve && phase set execute`` carefully.)
+  9. State + audit mutation via ``phase_txn.commit_transaction``.
+     Audit row records ``proof_class: soft_tty``.
 
-Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
-ADR : `docs/adr/2026-05-17-approver-provenance-and-execution-mode.md`
+Spec: ``docs/superpowers/specs/2026-05-19-phase-approve-speed-bump-design.md``
+ADR : ``docs/adr/2026-05-17-approver-provenance-and-execution-mode.md``
 """
 
 from __future__ import annotations
@@ -42,7 +39,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import approval_nonce as _approval_nonce
 from . import audit_anchor as _audit_anchor  # kept for tests that monkeypatch
 from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
@@ -86,23 +82,6 @@ _FIX_APPROVER_MEMBERSHIP = (
     "Fix: only emails listed in `.harness/install-record.json approvers[]` "
     "may approve; re-run `harness install` or pass "
     "`--override-identity --reason <text>`"
-)
-_FIX_NONCE_MISSING = (
-    "Fix: in a separate terminal run "
-    "`harness approve-nonce mint --audience phase.approve`, "
-    "then re-run `harness phase approve`"
-)
-_FIX_NONCE_EXPIRED = (
-    "Fix: nonces expire after 120s; re-mint via "
-    "`harness approve-nonce mint --audience phase.approve`"
-)
-_FIX_NONCE_SAME_TTY = (
-    "Fix: mint the nonce from a different terminal "
-    "(same-TTY mint+consume is rejected as agent-impersonation defense)"
-)
-_FIX_NONCE_SIG_INVALID = (
-    "Fix: nonce file appears tampered or was signed with a different "
-    "secret.key; re-mint via `harness approve-nonce mint --audience phase.approve`"
 )
 _FIX_AUTOPILOT = (
     "Fix: run `harness phase autopilot stop --reason \"<text>\"` "
@@ -154,13 +133,19 @@ _FIX_OVERRIDE_IDENTITY_CHARS = (
 def _tty_kind(tty_path: str) -> str:
     """Return the kind label for a TTY path string.
 
-    Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real``.
+    Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real`` | ``unknown``.
+    Empty string or unrecognised paths return ``unknown`` rather than lying
+    with ``posix-real`` (X8/HIGH-B-2 fix).
     """
+    if not tty_path:
+        return "unknown"
     if tty_path.startswith("win:"):
         return "win-synthetic"
     if tty_path.startswith("posix:"):
         return "posix-fallback"
-    return "posix-real"
+    if tty_path.startswith("/dev/"):
+        return "posix-real"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +264,7 @@ def run_approve(
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
     skip_anchor_preflight: bool = False,
+    skip_state_trust_preflight: bool = False,
 ) -> ApproveResult:
     """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
 
@@ -303,14 +289,34 @@ def run_approve(
     # and comparing against an empty-env baseline.
     del env_vars
 
+    # nonce_dir intentionally unused — phase.approve is now a workflow
+    # speed bump (spec 2026-05-19). Release path uses ~/.harness/approval-nonces/
+    # via its own handler, not this one.
+    del nonce_dir
+
+    # ---------- Smoke-test bypass (BLOCKER A-4) ----------
+    # ONLY active when BOTH env vars are set to "1". Production callers never
+    # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
+    # When active: TTY gate + [y/N] prompt are skipped; ALL other checks
+    # (identity, approver allowlist, anchor, state_trust, audit) still run.
+    # Audit row records proof_class=smoke_bypass so forensics can distinguish
+    # smoke runs from real human approves.
+    if (
+        os.environ.get("HARNESS_SMOKE_BYPASS_SPEED_BUMP") == "1"
+        and os.environ.get("HARNESS_SMOKE_TEST") == "1"
+    ):
+        _smoke_bypass_active = True
+    else:
+        _smoke_bypass_active = False
+
     # ---------- Step 1: TTY gate ----------
-    if not stdin_isatty:
+    if not _smoke_bypass_active and not stdin_isatty:
         print(
             f"error: phase approve refused: non-TTY caller "
             f"(agent-spawned subprocess?). {_FIX_TTY}",
             file=sys.stderr,
         )
-        return ApproveResult(exit_code=6, sub_reason="non_tty_approval_blocked")
+        return ApproveResult(exit_code=_exitcodes.EXIT_HUMAN_CONFIRMATION_REQUIRED, sub_reason="non_tty_approval_blocked")
 
     # ---------- Step 2: identity resolution ----------
     by_flag = getattr(args, "by", None)
@@ -549,45 +555,52 @@ def run_approve(
                 )
 
         # State-trust preflight (§2.6). Refuses forged state with exit 10.
-        try:
-            _state_trust.preflight(
-                scratch,
-                audit_path=audit_path,
-                lock=lock,
-                anchor_verified=anchor_verified,
-            )
-        except _state_trust.StateAuditMismatchError as exc:
-            print(
-                f"error: phase approve refused: state trust preflight "
-                f"failed: {exc}. {_FIX_STATE_TRUST}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=10,
-                sub_reason="state_audit_tip_mismatch",
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-        except _state_trust.StateEmptyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return ApproveResult(
-                exit_code=14,
-                sub_reason="state_empty_crash_artefact",
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-        except (
-            _state_trust.StateBomError,
-            _state_trust.StateCrlfError,
-            _state_trust.StateMalformedJsonError,
-        ) as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return ApproveResult(
-                exit_code=5,
-                sub_reason="state_unparseable",
-                resolved_email=resolved,
-                by_source=by_source,
-            )
+        # skip_state_trust_preflight=True is a separate test-only bypass for
+        # tests that do not wire up a real audit chain (e.g. speed-bump prompt
+        # tests seeded via seed_scratch without an audit entry).
+        # skip_anchor_preflight=True does NOT imply skipping state_trust;
+        # tests such as _trigger_exit14_crash_recovery pass skip_anchor_preflight
+        # while still relying on state_trust to fire exit 14.
+        if not skip_state_trust_preflight:
+            try:
+                _state_trust.preflight(
+                    scratch,
+                    audit_path=audit_path,
+                    lock=lock,
+                    anchor_verified=anchor_verified,
+                )
+            except _state_trust.StateAuditMismatchError as exc:
+                print(
+                    f"error: phase approve refused: state trust preflight "
+                    f"failed: {exc}. {_FIX_STATE_TRUST}",
+                    file=sys.stderr,
+                )
+                return ApproveResult(
+                    exit_code=10,
+                    sub_reason="state_audit_tip_mismatch",
+                    resolved_email=resolved,
+                    by_source=by_source,
+                )
+            except _state_trust.StateEmptyError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return ApproveResult(
+                    exit_code=14,
+                    sub_reason="state_empty_crash_artefact",
+                    resolved_email=resolved,
+                    by_source=by_source,
+                )
+            except (
+                _state_trust.StateBomError,
+                _state_trust.StateCrlfError,
+                _state_trust.StateMalformedJsonError,
+            ) as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return ApproveResult(
+                    exit_code=5,
+                    sub_reason="state_unparseable",
+                    resolved_email=resolved,
+                    by_source=by_source,
+                )
 
         # Load canonical state.
         state_path = scratch / _phase_txn.STATE_NAME
@@ -659,49 +672,60 @@ def run_approve(
                 by_source=by_source,
             )
 
-        # ---------- Step 7: human-presence proof ----------
-        consume = _approval_nonce.consume_newest_valid(
-            nonce_dir=nonce_dir,
-            audience="phase.approve",
-            consumer_tty=consumer_tty,
+        # ---------- Step 7: Speed-bump prompt ----------
+        # Per spec 2026-05-19-phase-approve-speed-bump-design.md §4.1, prompt
+        # names the *current* phase being stamped (not the next phase) to avoid
+        # users misreading approve as auto-advance.
+        current_phase = before_state.get("phase", "unknown")
+
+        # Phase-validity guard: only plan and execute are approvable phases.
+        # - done: terminal phase, no further state to stamp.
+        # - discuss: check.py SM-invariant enforces approved=False in discuss;
+        #   approving here creates an immediately-invalid state rejected by
+        #   `harness check`. Discuss also has no plan document yet — approval
+        #   is semantically meaningless (HIGH-7 final-review finding).
+        # Conservative: restrict to plan and execute, the two real gate phases.
+        APPROVABLE_PHASES = {"plan", "execute"}
+        if current_phase not in APPROVABLE_PHASES:
+            if current_phase == "done":
+                msg = (
+                    "error: phase approve refused: current phase is already 'done'. "
+                    "Nothing to approve."
+                )
+                sub = "approve_in_done"
+            else:
+                msg = (
+                    f"error: phase approve refused: cannot approve in phase={current_phase!r}. "
+                    f"Use 'phase set <next>' to advance first, then 'phase approve'. "
+                    f"Approvable phases: {sorted(APPROVABLE_PHASES)}."
+                )
+                sub = f"approve_in_{current_phase}"
+            print(msg, file=sys.stderr)
+            return ApproveResult(
+                exit_code=_exitcodes.EXIT_WRONG_PHASE_FOR_VERB,
+                sub_reason=sub,
+            )
+
+        prompt = (
+            f"Approve current phase={current_phase}? "
+            f"Type y to confirm, N to cancel [y/N]: "
         )
-        if consume.outcome != "consumed":
-            if consume.outcome == "signature_invalid":
+        if not _smoke_bypass_active:
+            try:
+                response = input(prompt)
+            except (EOFError, KeyboardInterrupt):
                 print(
-                    f"error: nonce_signature_invalid — nonce file tampered or wrong secret.key. "
-                    f"{_FIX_NONCE_SIG_INVALID}",
+                    "\nphase approve cancelled (no stamp written).",
                     file=sys.stderr,
                 )
-                return ApproveResult(
-                    exit_code=_exitcodes.EXIT_NONCE_SIGNATURE_INVALID,
-                    sub_reason="signature_invalid",
-                    resolved_email=resolved,
-                    by_source=by_source,
+                return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
+            if response.strip() not in ("y", "Y"):
+                print(
+                    f"phase approve cancelled (response {response.strip()!r}, no stamp written).",
+                    file=sys.stderr,
                 )
-            mapping = {
-                "missing": ("human_proof_missing", _FIX_NONCE_MISSING),
-                "expired": ("human_proof_nonce_expired", _FIX_NONCE_EXPIRED),
-                "same_tty": ("human_proof_nonce_same_tty", _FIX_NONCE_SAME_TTY),
-                "audience_mismatch": (
-                    "human_proof_nonce_audience_mismatch",
-                    _FIX_NONCE_MISSING,
-                ),
-            }
-            sub, fix = mapping.get(
-                consume.outcome, ("human_proof_missing", _FIX_NONCE_MISSING)
-            )
-            print(
-                f"error: phase approve refused: human-presence proof "
-                f"failed ({consume.outcome}). {fix}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason=sub,
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-        nonce = consume.nonce
+                return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
+        # If smoke bypass is active, skip prompt — proceed directly to audit + stamp.
 
         # ---------- Step 8: state + audit mutation ----------
         approved_at = (
@@ -718,78 +742,35 @@ def run_approve(
         # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
         after_state = _phase_txn.with_budget_decrement(after_state)
 
-        # Audit entry shape:
-        #   * Top-level (survives audit_append truncation): verb, by,
-        #     by_source, confirmation_kind, nonce_id, nonce_minter_tty_kind,
-        #     nonce_consumer_tty_kind, at, before/after_sha256, txn_id.
-        #   * `args` carries the verbose timestamps. If the encoded line
-        #     exceeds AUDIT_MAX_LINE_BYTES (1024, raised from 512 in S06),
-        #     `audit.audit_append` archives the full record to
-        #     `.harness/audit.overflow/` and replaces `args` with
-        #     `{"truncated": true}` — the top-level provenance fields are
-        #     preserved, so state_trust and forensic readers still see the
-        #     proof shape.
-        #
-        # S06-verifier RESOLVED: AUDIT_MAX_LINE_BYTES raised to 1024 bytes
-        # to accommodate chain fields + forensic top-level fields. The
-        # `nonce_minted_at` / `nonce_consumed_at` timestamps remain in
-        # `args` which may still truncate for very large entries — overflow
-        # file support in the chain verifier is deferred (no format change
-        # needed now that budget is larger).
-        #
-        # TODO(later-slice): clock-backwards `approval_epoch` counter.
-        # If wall-clock moves backward between mints, two distinct
-        # nonces could end up with identical `minted_at` values; a
-        # monotonic per-install counter would defend against the
-        # corner case. Reviewer P2-3; deferred until clock-skew bites.
-        #
-        # Design decision (under-specified): §3.1 step 6 says
-        # `confirmation_kind="human_cli"` for manual mode; §3.1.1 says
-        # `confirmation_kind="human_nonce"` for nonce path. We use
-        # `"human_nonce"` because §3.1.1 is the more specific (Round-5
-        # BLOCK #2) rule and the value carries strictly more proof
-        # information than "human_cli" (it implies TTY + manual + nonce).
-        nonce_consumed_at = _now_iso_z()
-        nonce_minted_at_iso = (
-            datetime.fromtimestamp(nonce.minted_at, tz=timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        # Audit entry: proof_class=soft_tty records that the human confirmed
+        # via interactive [y/N] prompt on a TTY (speed-bump design §4.1).
         # S05: when override_identity is set, the audit `by` field is the
         # override (forensic-displayed identity); `by_source` is
         # "override_identity"; `confirmation_kind` is also
         # "override_identity" so reviewers can detect this branch from
-        # either field (truncation-resilient cross-check). The original
-        # resolved email lives at top-level `resolved_email` for audit
-        # forensics. `args.override_reason` carries the sanitized text.
+        # either field (truncation-resilient cross-check).
         audit_by = override_identity or resolved
         if override_identity is not None:
             confirmation_kind = "override_identity"
         else:
-            confirmation_kind = "human_nonce"
+            confirmation_kind = "soft_tty"
+        proof_class_value = "smoke_bypass" if _smoke_bypass_active else "soft_tty"
+        audit_extra = {
+            "proof_class": proof_class_value,
+            "tty": consumer_tty,
+            "response": "smoke_bypass" if _smoke_bypass_active else "y",
+        }
         audit_draft = {
             "verb": "phase.approve",
             "by": audit_by,
             "by_source": by_source,
             "confirmation_kind": confirmation_kind,
-            "nonce_id": nonce.nonce_id,
-            "nonce_minter_tty_kind": _tty_kind(nonce.minter_tty),
-            "nonce_consumer_tty_kind": _tty_kind(consumer_tty),
+            **audit_extra,
             "args": {
-                "nonce_minted_at": nonce_minted_at_iso,
-                "nonce_consumed_at": nonce_consumed_at,
                 "approved_at": approved_at,
             },
         }
         if override_identity is not None:
-            # The override-displayed identity is ALREADY the top-level
-            # `by` field; `by_source=override_identity` is the truncation-
-            # resilient discriminator. The resolved-vs-displayed pair and
-            # the sanitized reason live in `args` and the overflow archive
-            # (the line is too tight after sha256 + tty fields to host
-            # additional top-level mirrors without forcing the minimal
-            # fallback in audit.py, which would drop `by_source`).
             audit_draft["args"]["override_reason"] = override_reason_clean
             audit_draft["args"]["override_identity"] = override_identity
             audit_draft["args"]["resolved_email"] = resolved
@@ -816,7 +797,6 @@ def run_approve(
                     "approved_by": resolved,
                     "approved_at": approved_at,
                     "by_source": by_source,
-                    "nonce_id": nonce.nonce_id,
                     "txn_id": txn_id,
                 },
                 indent=2,
@@ -828,7 +808,6 @@ def run_approve(
             sub_reason="approved",
             resolved_email=resolved,
             by_source=by_source,
-            nonce_id=nonce.nonce_id,
         )
     finally:
         _phase_lock.release_primary(lock)

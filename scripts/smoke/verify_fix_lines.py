@@ -15,7 +15,7 @@ Exit codes covered (§3.4):
   3  — session_locked (active session or stale lock)
   4  — scope_violation (worktree scope check) — CLI second-pass: harness check --worktree
   5  — unparseable_state (BOM or malformed JSON)
-  6  — provenance_mismatch / non_tty_approval_blocked
+  6  — provenance_mismatch (gitconfig/identity/anchor errors)
   7  — stale_uncertain (session lock with bad pid)
   8  — approve_during_autopilot — DEFERRED: TTY-required (§S16 P2-1); internal-lib trigger only
   9  — budget_exhausted (wall_seconds)
@@ -25,7 +25,7 @@ Exit codes covered (§3.4):
  13  — deprecated_flag (--chain / --auto)
  14  — crash_recovery_undecidable — DEFERRED: crash undecidable (§S16 P2-1); internal-lib trigger only
  16  — chain_start_dirty_tree — CLI second-pass: harness fsd-run-all in dirty-tree git repo (3 variants)
- 17  — human_action_required — CLI second-pass: harness next --shell needs approval
+ 17  — human_action_required / non_tty_approval_blocked — harness next --shell needs approval OR phase approve from non-TTY
  18  — no_action_during_autopilot — CLI second-pass: harness next --shell, autopilot active
 
 HARNESS_BIN override:
@@ -1212,7 +1212,7 @@ EXIT_CASES: list[ExitCase] = [
         fix_must_contain="Fix:",
     ),
     ExitCase(
-        code=6,
+        code=17,
         name="non_tty_approval_blocked",
         trigger=_trigger_exit6_non_tty_approval,
         fix_must_contain="harness phase approve",

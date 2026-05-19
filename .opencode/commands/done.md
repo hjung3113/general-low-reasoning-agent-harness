@@ -22,6 +22,8 @@ Run `harness check` before closing the phase.
 
 Do not start new implementation work from `done`. New work begins from `discuss` or `plan`.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Advance the lifecycle through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json`:
 
 ```text

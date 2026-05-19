@@ -64,7 +64,7 @@ The prompt names the phase being stamped. It does NOT name a next phase, because
 
 - Remove nonce lookup, HMAC verification, audience matching, and consumer-tty check from the phase.approve handler.
 - Remove `human_proof_*` reason codes from phase.approve exit paths. Replace with two reasons:
-  - `non_tty_approval_blocked` → exit 18
+  - `non_tty_approval_blocked` → exit 17
   - `user_cancelled` → exit 0
 - Release-path nonce verification logic stays in its own module.
 
@@ -196,7 +196,7 @@ Glossary entries (final wording):
 - `state_repair` flow: remove any check that errors on missing `phase.approve` nonce reference. Release-path repair checks retained.
 - Tests:
   - `tests/phase_approve/test_approval_nonce.py` and related nonce-coupled phase.approve tests **deleted**, replaced with TTY-prompt tests.
-  - Negative-path coverage rewritten to assert exit 18 + non_tty_approval_blocked.
+  - Negative-path coverage rewritten to assert exit 17 + non_tty_approval_blocked.
   - `tests/audit/test_chain_verifier.py`, `test_rotation_seam.py`: unchanged (chain logic preserved).
 
 ---
@@ -205,7 +205,7 @@ Glossary entries (final wording):
 
 1. **"Internal nonce allowed" vs "nonce removed"** (round 2 Codex LOW) — Resolved: nonce is entirely removed from `phase.approve` code path and user surface. Nonce concept retained in release path only. No internal nonce remains for `phase.approve`.
 2. **Audit chain "no cryptographic chain" wording** (round 2 subagent HIGH-3) — Removed from earlier draft. This spec uses existing chain unchanged.
-3. **Exit code 6 reuse for new non-TTY halt** (round 2 subagent HIGH-4) — Resolved: new code 18 added; 6 keeps its meaning.
+3. **Exit code 6 reuse for new non-TTY halt** (round 2 subagent HIGH-4) — Resolved: new code 17 added (numeric value already protocol-spec §3.4 "human action required" slot); 6 keeps its meaning.
 4. **`phase approve` stamp-vs-advance semantics** (round 2 Codex MED) — Resolved: stamp only. No advance. Doc and CLI behavior aligned with existing `phase set` for advance.
 5. **`done` phase release-boundary** (round 2 subagent MED-2) — Out of scope. Release path untouched.
 6. **`_release_gate` single chokepoint** (round 1 + round 2 BLOCKER) — Out of scope. Release path untouched.
@@ -217,7 +217,7 @@ Glossary entries (final wording):
 ## 9. Acceptance criteria
 
 - `harness phase approve` from a TTY → prints prompt → on `y` → audit row written → command exits 0. Verified by new integration test.
-- `harness phase approve` non-TTY → exits 18 with stderr message. Verified by new test.
+- `harness phase approve` non-TTY → exits 17 with stderr message. Verified by new test.
 - `harness approve-nonce mint --audience phase.approve` → stderr deprecation warning, exits 0 no-op. Verified by test.
 - `harness approve-nonce mint --audience release.*` → unchanged behavior. Existing release tests still pass.
 - No occurrence of the word `nonce` in user-facing strings emitted on the `phase approve` code path. Verified by `grep` in tests.

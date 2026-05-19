@@ -20,3 +20,5 @@ After start, follow the phase lifecycle in order:
 5. Run `harness phase set done`.
 6. On any non-zero exit, run `harness status`, surface `Halt diary` and `Next action`, then stop. Do not retry or recursively invoke `/fsd-run-phase`.
 7. After every CLI call within the phase, run `HARNESS_MACHINE=1 harness next` and read `requires_user_approval`. If `true`, surface `next_user_prompt` to the user; do NOT approve on their behalf. Stop the phase run.
+
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
