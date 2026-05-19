@@ -27,7 +27,9 @@
 | `HARNESS_OIDC_TEST_MODE` | `1` | OIDC stub 활성화 (test-only) | CI predicate 테스트 경로용; production 절대 금지 |
 | `HARNESS_PROJECT_ROOT` | path | PS audit path 지정 | PowerShell deny-shim용; Windows에서 audit path 명확화 |
 | `HARNESS_RELEASE_RUN` | `1` | release smoke test에서 release 모드 활성화 | `--release` flag와 동일; release_smoke_test.py 전용 |
+| `HARNESS_SMOKE_BYPASS_SPEED_BUMP` | `0`/`1` | Smoke-test-only: bypass phase.approve `[y/N]` prompt and TTY gate. ONLY honored when `HARNESS_SMOKE_TEST=1` is also set. Audit row marks `proof_class=smoke_bypass`. **Production code paths do not set this.** | 두 env var 모두 설정 시에만 활성화; 단독 설정 시 무효 |
 | `HARNESS_SMOKE_PLATFORM_OVERRIDE` | `win32` 등 | smoke test 내 플랫폼 override | Windows 경로 검증을 non-Windows 환경에서 실행할 때 사용 |
+| `HARNESS_SMOKE_TEST` | `1` | Smoke runner가 설정하는 paired gate. `HARNESS_SMOKE_BYPASS_SPEED_BUMP=1`과 함께 사용 시에만 bypass 활성화. | smoke runner 전용; production 금지 |
 | `HARNESS_STRICT_VERB_REGISTRY` | `1` | Unknown verb에 exit 10 enforce | 기본(permissive)은 warning만 |
 | `HARNESS_TEST_FORCE_TTY` | `1` | **제거됨 (Cycle-2 이후 production 코드에서 삭제)** | 더 이상 TTY gate를 bypass하지 않음; 테스트는 `sys.stdin.isatty` mock 사용 |
 | `HARNESS_TEST_OIDC_CLAIMS_` | prefix | OIDC claim 주입 (test stub) | `HARNESS_OIDC_TEST_MODE=1` 필수; test fixture용 |

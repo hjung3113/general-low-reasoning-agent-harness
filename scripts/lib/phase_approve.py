@@ -284,8 +284,23 @@ def run_approve(
     # via its own handler, not this one.
     del nonce_dir
 
+    # ---------- Smoke-test bypass (BLOCKER A-4) ----------
+    # ONLY active when BOTH env vars are set to "1". Production callers never
+    # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
+    # When active: TTY gate + [y/N] prompt are skipped; ALL other checks
+    # (identity, approver allowlist, anchor, state_trust, audit) still run.
+    # Audit row records proof_class=smoke_bypass so forensics can distinguish
+    # smoke runs from real human approves.
+    if (
+        os.environ.get("HARNESS_SMOKE_BYPASS_SPEED_BUMP") == "1"
+        and os.environ.get("HARNESS_SMOKE_TEST") == "1"
+    ):
+        _smoke_bypass_active = True
+    else:
+        _smoke_bypass_active = False
+
     # ---------- Step 1: TTY gate ----------
-    if not stdin_isatty:
+    if not _smoke_bypass_active and not stdin_isatty:
         print(
             f"error: phase approve refused: non-TTY caller "
             f"(agent-spawned subprocess?). {_FIX_TTY}",
@@ -671,12 +686,14 @@ def run_approve(
             f"Approve current phase={current_phase}? "
             f"Type y to confirm, N to cancel [y/N]: "
         )
-        try:
-            response = input(prompt)
-        except (EOFError, KeyboardInterrupt):
-            return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
-        if response.strip() not in ("y", "Y"):
-            return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
+        if not _smoke_bypass_active:
+            try:
+                response = input(prompt)
+            except (EOFError, KeyboardInterrupt):
+                return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
+            if response.strip() not in ("y", "Y"):
+                return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
+        # If smoke bypass is active, skip prompt — proceed directly to audit + stamp.
 
         # ---------- Step 8: state + audit mutation ----------
         approved_at = (
@@ -705,10 +722,11 @@ def run_approve(
             confirmation_kind = "override_identity"
         else:
             confirmation_kind = "soft_tty"
+        proof_class_value = "smoke_bypass" if _smoke_bypass_active else "soft_tty"
         audit_extra = {
-            "proof_class": "soft_tty",
+            "proof_class": proof_class_value,
             "tty": consumer_tty,
-            "response": "y",
+            "response": "smoke_bypass" if _smoke_bypass_active else "y",
         }
         audit_draft = {
             "verb": "phase.approve",
