@@ -1,34 +1,27 @@
-"""`phase approve` — human-only gate (design §3.1, §3.1.1).
+"""`phase approve` — interactive speed-bump gate (spec 2026-05-19-phase-approve-speed-bump-design.md).
 
-Order of operations (any failure → typed `ApproveResult` with non-zero
-`exit_code`; the CLI dispatcher maps to `sys.exit`):
+Stamps the *current* phase as approved. Does NOT advance to the next phase;
+use ``phase set <next>`` to advance after stamping.
 
-  1. TTY gate (§3.1 step 1). `stdin_isatty=False` → exit 6
-     `non_tty_approval_blocked`. HARNESS_BY_TRUST / HARNESS_HUMAN env are
-     NEVER consulted on this path (Round-4 BLOCK fix #2).
-  2. Identity resolution (§3.1 step 2). `--by` if provided, else
-     `git config user.email`. Empty → exit 6 `gitconfig_email_unset`.
-  3. install-record approvers membership (§3.1 step 3 + §6.1). Email
-     must appear in `.harness/install-record.json approvers[].email`.
-  4. Anchor preflight + state-trust preflight (§12.1 + §2.6).
-     Anchor verified BEFORE state read; state preflight refuses on
-     forged state with exit 10.
-  5. `state.execution_mode != "manual"` → exit 8
-     `approve_during_autopilot`.
-  6. Idempotency check: `state.approved == True` → exit 0
-     `already_approved`, no nonce burn, no state mutation, no audit.
-  7. Human-presence proof (§3.1.1) — consume newest valid nonce for
-     `audience="phase.approve"`. Failures: `human_proof_missing` /
-     `human_proof_nonce_expired` / `human_proof_nonce_same_tty` /
-     `human_proof_nonce_audience_mismatch` — all exit 6.
-  8. State + audit mutation via `phase_txn.commit_transaction`.
+Order of operations (any failure → typed ``ApproveResult`` with non-zero
+``exit_code``; the CLI dispatcher maps to ``sys.exit``):
 
-The CLI dispatcher in `scripts/harness.py` translates `ApproveResult`
-into an exit. The pure-function shape is so tests can drive the helper
-without spinning a real PTY or real `~/.harness`.
+  1. TTY gate. ``stdin_isatty=False`` → exit 17 ``non_tty_approval_blocked``.
+     HARNESS_BY_TRUST / HARNESS_HUMAN are NEVER consulted on this path.
+  2. Phase guard. Current phase ``done`` → refuses with a clear error.
+  3. Identity resolution. ``--by`` if provided, else ``git config user.email``.
+     Empty → exit 6 ``gitconfig_email_unset``.
+  4. install-record approvers membership check.
+  5. Anchor preflight + state-trust preflight. Anchor verified BEFORE state
+     read; forged state → exit 10.
+  6. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
+  7. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
+  8. Prompt ``[y/N]`` on TTY. Non-``y`` answer → exit 1 (user declined).
+  9. State + audit mutation via ``phase_txn.commit_transaction``.
+     Audit row records ``proof_class: soft_tty``.
 
-Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
-ADR : `docs/adr/2026-05-17-approver-provenance-and-execution-mode.md`
+Spec: ``docs/superpowers/specs/2026-05-19-phase-approve-speed-bump-design.md``
+ADR : ``docs/adr/2026-05-17-approver-provenance-and-execution-mode.md``
 """
 
 from __future__ import annotations

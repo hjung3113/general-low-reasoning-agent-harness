@@ -73,7 +73,7 @@
 
 이 하네스에는 사용자가 자주 만나는 두 개의 개념이 있습니다. 자주 혼동되니 한 번 짚고 갑니다.
 
-- **Speed bump (방지턱)** — `harness phase approve`가 매번 `[y/N]`로 묻는 단계입니다. 사용자가 직접 답해야 다음으로 넘어갑니다. **이건 보안 검사가 아닙니다.** 워크플로우 중간에 사람이 한 번 더 확인하라는 의도된 마찰입니다. 답이 `y`가 아니거나, 터미널이 아닌 환경 (agent subprocess, CI 등)에서 실행하면 halt 합니다.
+- **Speed bump (방지턱)** — `harness phase approve`가 매번 `[y/N]`로 묻는 단계입니다. 사용자가 `y`를 입력해야 현재 phase가 stamp되고, 그 다음에 `phase set`으로 다음 phase로 이동합니다. **이건 보안 검사가 아닙니다.** 워크플로우 중간에 사람이 한 번 더 확인하라는 의도된 마찰입니다. 답이 `y`가 아니거나, 터미널이 아닌 환경 (agent subprocess, CI 등)에서 실행하면 halt 합니다.
 - **Autopilot** — `harness autopilot start`로 시작합니다. 묻지 않고 여러 phase를 자동 진행합니다. 시간/턴 budget이 정해지면 그 안에서만 동작합니다. 기본 OFF.
 
 둘은 독립적인 기능입니다. autopilot이 활성화돼도 speed bump가 모든 phase 전환을 가로채는 것은 아닙니다 (autopilot 자체의 정책에 따릅니다).
@@ -90,6 +90,7 @@
 | **Audit log** | `.harness/audit.log` — chain-verified append-only. | §A |
 | **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 별개. (내부 메커니즘은 HMAC nonce이지만 사용자가 보는 용어는 "release confirmation"입니다.) | §A4 |
 | **Approve-nonce** | Legacy 용어. `phase approve`에서는 더 이상 사용하지 않습니다. CLI `approve-nonce mint` verb는 v0.9.0에서 deprecated, v1.0에서 제거. | §migration |
+| **BY_TRUST** | CI 전용 하네스 flag (release 자동화에서만 사용). 일반 사용자는 설정하지 않음. | §A1, release docs |
 | **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. | §A1 |
 | **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` env vars로 전달). 일반 사용자는 만질 일 없음. | `docs/advanced/harness-flags.md` |
 
@@ -983,7 +984,7 @@ python3 scripts/harness.py state show
 ### B1.11 자주 혼동하는 케이스 (Common Confusions)
 
 **Q. Approval 했는데 왜 execute로 못 들어가나요?**
-**A.** `harness phase approve`만으로 충분합니다. 터미널에서 실행하면 `[y/N]` 프롬프트가 뜨고 `y` 입력 후 다음 phase로 넘어갈 수 있습니다. 별도의 `approve-nonce mint` 명령은 v0.9.0부터 필요 없습니다 (release는 별개, §A4 참고).
+**A.** `harness phase approve`만으로 충분합니다. 터미널에서 실행하면 `[y/N]` 프롬프트가 뜨고 `y` 입력 후 현재 phase가 approve로 stamp되고, `phase set <next>`로 다음 phase로 이동할 수 있습니다. 별도의 `approve-nonce mint` 명령은 v0.9.0부터 필요 없습니다 (release는 별개, §A4 참고).
 
 **Q. Skill pack을 설치 후에 추가하려면?**
 A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
@@ -1124,7 +1125,7 @@ v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase com
 | 11 | `EXIT_WINDOWS_CONTAINMENT_DEGRADED` | Windows ADS/reserved-char containment error |
 | 14 | `EXIT_AUDIT_PARTIAL_WRITE` | Crash recovery undecidable (manual action required) |
 | 15 | `EXIT_RELEASE_TRUST_INVALID` | Signed tag verification 실패 또는 trust downgrade refused |
-| 17 | (`next --shell`) | `requires_human` — human approval/nonce 필요 (autopilot 진입 차단) |
+| 17 | (`next --shell`, `phase approve`) | `requires_human` (autopilot 진입 차단) 또는 `non_tty_approval_blocked` (phase approve 비-TTY halt). `sub_reason`으로 구분. |
 | 18 | (`next --shell`) | autopilot active — 재진입 금지 (§C2.2) |
 
 **중요**: `sub_reason` 필드를 검토하여 정확한 원인 파악. 같은 exit code가 여러 상황에서 사용됩니다.

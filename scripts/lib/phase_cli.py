@@ -455,13 +455,14 @@ def _validate_at_within_24h(at_str: str) -> str:
 
 
 def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
-    """Handle ``harness phase approve`` (ADR-003a verb 2).
+    """Handle ``harness phase approve`` — interactive [y/N] speed bump per spec 2026-05-19-phase-approve-speed-bump-design.md.
 
-    Delegates to ``phase_approve.run_approve`` (S02+S05 spec-compliant path)
-    which enforces the §3.1 TTY gate, identity resolution, install-record
-    membership, anchor + state-trust preflight, human-presence nonce, and
-    §3.1.1 audit provenance. The legacy ``_do_phase_approve`` shim is kept
-    for reference but is no longer called from this handler.
+    Stamps the current phase as approved; does NOT advance to the next phase
+    (use ``phase set <next>`` to advance). Delegates to
+    ``phase_approve.run_approve`` which enforces the TTY gate (exit 17
+    ``non_tty_approval_blocked`` on non-TTY), identity resolution,
+    install-record membership, anchor + state-trust preflight, and audit
+    provenance (``proof_class: soft_tty``).
     """
     _probe_harness_writable()
 

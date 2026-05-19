@@ -22,6 +22,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 | **Audit log** | `.harness/audit.log`에 append-only로 기록되는 phase 변화/승인 로그. Chain-verified. |
 | **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 다름. (내부는 HMAC nonce — 사용자가 보는 용어는 "release confirmation".) |
 | **Approve-nonce** | Legacy 용어. `phase approve`는 더 이상 사용 안 함. CLI verb `approve-nonce mint`는 v0.9.0에서 deprecated, v1.0에서 제거. |
+| **BY_TRUST** | CI 전용 하네스 flag (release 자동화에서만 사용). 일반 사용자는 설정하지 않음. |
 | **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. |
 | **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` 환경 변수로 전달). 일반 사용자는 만질 일 없음. `docs/advanced/harness-flags.md` 참고. |
 
