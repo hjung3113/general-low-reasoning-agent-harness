@@ -7,31 +7,62 @@
 
 ---
 
+> **TL;DR — 어디서 읽을지 안내**
+>
+> - **일상 사용자** (개발팀원): **Part 1 (§1–§7)** 만 읽으세요. 명령 4개(`harness`, `harness next`, `harness run`, `harness check`)와 워크플로 모델, 프롬프트 레시피, 제거 절차가 전부입니다.
+> - **Adapter 작성자 / Doctor 사용자**: **Part 2 (§8–§9)** 추가로 읽으세요.
+> - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Approve-Nonce 상세.
+> - **Troubleshooting / Advanced CLI**: **부록 B** — 오류 해결 레시피, 전체 CLI 레퍼런스, Exit Codes.
+> - **CI / 자동화 엔지니어**: **부록 C** — 환경 변수, Phase Gate 상세(autopilot), 업그레이드, Windows 지원.
+> - **기타**: **부록 D** — v0.9.0 Carryover, 참고 자료.
+
+---
+
 ## 목차
+
+### Part 1 — 일상 사용자
 
 1. [개요](#1-개요)
 2. [첫 세션 시작하기](#2-첫-세션-시작하기)
 3. [워크플로 모델 — discuss → plan → execute → done](#3-워크플로-모델--discuss--plan--execute--done)
 4. [Planning State 문서](#4-planning-state-문서)
-5. [Adapters — Roo vs OpenCode vs Core-only](#5-adapters--roo-vs-opencode-vs-core-only)
-6. [Skill Packs — 언제 무엇을 쓰는가](#6-skill-packs--언제-무엇을-쓰는가)
-7. [Phase Gate 상세](#7-phase-gate-상세)
-8. [CLI 명령 레퍼런스](#8-cli-명령-레퍼런스)
-9. [프롬프트 레시피](#9-프롬프트-레시피)
-10. [보안 모델](#10-보안-모델)
-11. [Release Trust](#11-release-trust)
-12. [Windows 지원](#12-windows-지원)
-13. [감사 로그](#13-감사-로그)
-14. [Exit Codes](#14-exit-codes)
-15. [환경 변수](#15-환경-변수)
-16. [업그레이드](#16-업그레이드)
-17. [제거](#17-제거)
-18. [점검 / Doctor / 검증](#18-점검--doctor--검증)
-19. [트러블슈팅](#19-트러블슈팅)
-20. [v0.9.0 Carryover](#20-v09-carryover)
-21. [참고 자료](#21-참고-자료)
+5. [Skill Packs — 언제 무엇을 쓰는가](#5-skill-packs--언제-무엇을-쓰는가)
+6. [프롬프트 레시피](#6-프롬프트-레시피)
+7. [제거](#7-제거)
+
+### Part 2 — Adapter 작성자
+
+8. [Adapters — Roo vs OpenCode vs Core-only](#8-adapters--roo-vs-opencode-vs-core-only)
+9. [점검 / Doctor / 검증](#9-점검--doctor--검증)
+
+### 부록 A — Maintainer / Release Trust
+
+- [A1. 보안 모델](#a1-보안-모델)
+- [A2. Release Trust](#a2-release-trust)
+- [A3. 감사 로그](#a3-감사-로그)
+- [A4. Approve-Nonce (Human Presence Proof)](#a4-approve-nonce-human-presence-proof)
+
+### 부록 B — Troubleshooting & Advanced CLI
+
+- [B1. 트러블슈팅](#b1-트러블슈팅)
+- [B2. CLI 명령 레퍼런스 (Advanced)](#b2-cli-명령-레퍼런스-advanced)
+- [B3. Exit Codes](#b3-exit-codes)
+
+### 부록 C — CI / 자동화
+
+- [C1. 환경 변수](#c1-환경-변수)
+- [C2. Phase Gate 상세 (Autopilot)](#c2-phase-gate-상세-autopilot)
+- [C3. 업그레이드](#c3-업그레이드)
+- [C4. Windows 지원](#c4-windows-지원)
+
+### 부록 D — 기타
+
+- [D1. v0.9.0 Carryover](#d1-v09-carryover)
+- [D2. 참고 자료](#d2-참고-자료)
 
 ---
+
+## Part 1 — 일상 사용자
 
 ## 1. 개요
 
@@ -280,106 +311,13 @@ ROADMAP.md / STATE.md 안에서 machine-owned 영역은 HTML 주석 marker block
 
 ---
 
-## 5. Adapters — Roo vs OpenCode vs Core-only
-
-설치 시 선택한 adapter에 따라 사용하는 명령 표면이 달라집니다. 모든 adapter는 동일한 `.planning/**`과 `.scratch/phase-state.json` live gate를 사용합니다.
-
-### 5.1 Roo Adapter
-
-`.roo/commands/`에 설치되는 슬래시 명령:
-
-| 명령 | 용도 | 주요 사용 시점 |
-| --- | --- | --- |
-| `/phase-discuss` | Phase discovery + planning hydration | 모든 phase 시작 |
-| `/phase-plan` | 계획 문서 작성 | discuss 완료 후 |
-| `/phase-execute` | 승인된 범위 구현 | phase approve 후 |
-| `/adr` | ADR(Architecture Decision Record) 문서화 | 중요 설계 결정 |
-| `/bugfix` | 버그 진단 + 수정 워크플로 | 버그 발생 시 |
-| `/doctor` | 환경/구조 진단 | 이상 감지 시 |
-| `/done` | 완료 감사 | execute 완료 후 |
-| `/feature` | 기능 추가 워크플로 | 새 기능 구현 |
-| `/issues` | issue 트래커 연동 | 이슈 관리 |
-| `/ops` | 운영 작업 (deploy, monitor) | 운영 필요 시 |
-| `/review` | 코드 리뷰 | PR 전 적대적 검토 |
-| `/simple` | 작은/저위험 변경용 lightweight workflow | 단순 질문, 작은 edit, cleanup |
-| `/fsd-run-all` | 전체 FSD dispatch (chain autopilot) | 자동화 실행 |
-| `/fsd-run-phase` | 단일 phase FSD dispatch (phase autopilot) | phase 단위 자동화 |
-| `/fsd-status` | FSD 현재 상태 확인 | 진행 확인 |
-
-**Roo modes** (기본 8개):
-
-| Mode | 역할 |
-| --- | --- |
-| `orchestrator` | 전체 조율, phase 진행 관리 |
-| `architect` | 설계 결정, ADR 작성 |
-| `tdd-code` | TDD 구현 (test-first) |
-| `diagnose` | 버그 진단, 환경 점검 |
-| `review` | 코드/spec 적대적 리뷰 |
-| `docs-issues` | 문서화, issue 트래커 |
-| `ops-observability` | 운영, 모니터링 |
-| `harness-maintainer` | 하네스 자체 유지보수 |
-
-Profile-contributed mode 추가:
-- `ui-engineer` (`react-web` profile + Roo adapter): browser-first UI 구현. Profile 제거 시 자동 drop.
-
-**권장 시작 prompt**:
-```text
-/phase-discuss planning-hydration --pass 0
-```
-
-### 5.2 OpenCode Adapter
-
-`.opencode/commands/`에 설치되는 슬래시 명령:
-
-| 명령 | 용도 |
-| --- | --- |
-| `/discuss` | 요구사항 논의, phase 후보 제안 |
-| `/plan` | 계획 문서 작성 |
-| `/execute` | 승인된 범위 구현 (live gate가 execution approved일 때만) |
-| `/done` | 완료 감사 |
-| `/fsd-run-all` | 전체 chain autopilot dispatch |
-| `/fsd-run-phase` | 단일 phase autopilot dispatch |
-| `/fsd-status` | FSD 현재 상태 확인 |
-
-OpenCode adapter는 의도적으로 phase primitive만 제공합니다. 세부 workflow(debugging, TDD, security review)는 설치된 `.agents/skills/**` pack에서 가져옵니다.
-
-`.opencode/commands/execute.md`는 live gate가 execution approved 상태일 때만 사용합니다.
-
-**OpenCode에서 버그 수정**:
-```text
-Use /discuss first.
-Then use installed skills workflow-debugging,workflow-tdd.
-Do not edit application code until the plan names allowed_paths and I approve execute.
-```
-
-### 5.3 Core-only (Adapter 없음)
-
-Roo/OpenCode adapter 없이 `harness.py` CLI와 `AGENTS.md` 직접 사용.
-
-### 클라이언트별 커맨드 모델
-
-| 클라이언트 | Discuss | Plan | Execute | Done / audit |
-| --- | --- | --- | --- | --- |
-| Roo | `/phase-discuss` | `/phase-plan` | `/phase-execute` | `/done` |
-| OpenCode | `/discuss` | `/plan` | `/execute` | `/done` |
-| Generic agent | `AGENTS.md` 읽기 | plan docs 작성 | live gate 준수 | verification evidence 요약 |
-
-Core-only에서 agent에게 직접 prompt:
-```text
-Read AGENTS.md first.
-Then read .planning/STATE.md and .planning/ROADMAP.md.
-Do not modify application code until we are in execute phase and I approve.
-```
-
----
-
-## 6. Skill Packs — 언제 무엇을 쓰는가
+## 5. Skill Packs — 언제 무엇을 쓰는가
 
 skill pack은 플러그인입니다. 필요한 pack만 설치하세요. 생략하면 `workflow-core`가 설치됩니다.
 
 설치된 `.agents/skills/` 아래 pack이 실제 workflow를 구동합니다. Adapter command(`/feature`, `/bugfix` 등)가 적절한 skill을 자동 invoke하거나, 직접 prompt에 명시할 수 있습니다.
 
-### 6.1 Always 포함: workflow-core
+### 5.1 Always 포함: workflow-core
 
 모든 install의 기본. 다음 sub-skill을 포함합니다:
 
@@ -394,7 +332,7 @@ skill pack은 플러그인입니다. 필요한 pack만 설치하세요. 생략�
 | `data-workflow` | ingestion, transformation, validation, generated dataset |
 | `integration-boundary` | 외부 시스템 contract와 boundary |
 
-### 6.2 Quality Workflows
+### 5.2 Quality Workflows
 
 | Pack | 역할 | 언제 쓰는가 |
 | --- | --- | --- |
@@ -404,7 +342,7 @@ skill pack은 플러그인입니다. 필요한 pack만 설치하세요. 생략�
 | `workflow-security-review` | auth, secret, permission boundary, dependency risk | 보안 민감 변경 |
 | `workflow-skill-authoring` | project-local skill 설계와 검증 | 새 skill 작성 시 |
 
-### 6.3 Tech Packs (stack별)
+### 5.3 Tech Packs (stack별)
 
 | Pack | 대상 |
 | --- | --- |
@@ -416,7 +354,7 @@ skill pack은 플러그인입니다. 필요한 pack만 설치하세요. 생략�
 | `tech-mssql` | SQL Server-backed persistence verification |
 | `tech-postgresql` | PostgreSQL-backed persistence verification |
 
-### 6.4 Domain Workflows
+### 5.4 Domain Workflows
 
 | Pack | 역할 |
 | --- | --- |
@@ -426,7 +364,7 @@ skill pack은 플러그인입니다. 필요한 pack만 설치하세요. 생략�
 | `workflow-data-analysis` | reproducible analysis, assumptions, outputs, checks |
 | `workflow-data-processing` | parsing, transformation, generated artifacts, validation |
 
-### 6.5 Skill 호출 방법
+### 5.5 Skill 호출 방법
 
 **Adapter 통해 자동 invoke** (권장):
 - Roo `/feature` → `workflow-tdd`, `workflow-code-review` 자동 적용
@@ -441,177 +379,7 @@ Use workflow-security-review and workflow-code-review. Treat auth changes as hig
 
 ---
 
-## 7. Phase Gate 상세
-
-### 7.1 Live Gate: .scratch/phase-state.json
-
-`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate입니다. 직접 편집하지 마세요. harness CLI만 이 파일을 수정합니다.
-
-주요 필드:
-- `current_phase`: 현재 phase slug
-- `execution_mode`: `manual` / `phase_autopilot` / `chain_autopilot`
-- `approved`: boolean (execute 진입 허용 여부)
-
-### 7.2 Execution Mode와 Autopilot
-
-| Mode | 의미 | 사용 조건 |
-| --- | --- | --- |
-| `manual` (기본) | human이 `harness phase set` 명령 직접 실행 | 일반 작업 |
-| `phase_autopilot` | agent가 phase 범위 내에서 단계별 진행 | human approval 여전히 필요 |
-| `chain_autopilot` | agent가 phase sequence 전체 진행 | CI + OIDC 또는 TTY human proof |
-
-```bash
-python3 scripts/harness.py phase autopilot start --phase <slug>
-python3 scripts/harness.py phase autopilot start --phase <slug> --mode chain
-python3 scripts/harness.py phase autopilot stop
-```
-
-`phase autopilot start`는:
-- CI 환경: OIDC 또는 환경 변수로 증명된 bot identity 요구
-- TTY 환경: human presence proof (nonce 또는 OS credential)로 충분
-
-**위험과 사용 기준**: Autopilot은 승인된 scope 내에서만 동작하지만, 연속 실행 중 예상치 못한 변경이 발생할 수 있습니다. 중요한 변경 전에는 `manual` 모드를 유지하세요.
-
-### 7.3 Approve-Nonce (Human Presence Proof)
-
-Phase approve 전에 human presence를 증명하는 메커니즘입니다. Agent가 approval을 가장할 수 없도록 합니다.
-
-**Flow**:
-1. 터미널 A (agent): 작업 수행, `phase approve` 전 대기
-2. 터미널 B (human): nonce mint 실행
-
-```bash
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 또는 TTL 지정 (기본 120초)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve --ttl 180
-```
-
-3. 터미널 A (human 또는 agent): `harness phase approve` 실행 — nonce 자동 소비, 승인 완료
-
-**Nonce 특성**:
-- `~/.harness/approval-nonces/` (POSIX) 또는 `%LOCALAPPDATA%\Harness\approval-nonces\` (Windows)에 저장
-- 120초(기본) 유효
-- Single-use (소비 후 삭제)
-- Minter TTY ≠ consumer TTY (동일 PTY 내 agent 자동 실행 방지)
-
-### 7.4 Halt Diary
-
-Autopilot이 중단되면(budget exhausted, fence deny, halt 명령):
-
-```bash
-python3 scripts/harness.py status          # halt diary + suggested next command 확인
-python3 scripts/harness.py next            # 승인된 다음 step 제안
-python3 scripts/harness.py halt-diary clear   # diary 초기화
-```
-
-`last_halt.suggested_next_command_requires_human`이 true이면 human이 직접 실행해야 합니다.
-
-### 7.5 Worktree Check
-
-Phase execute 중 approved paths 밖으로 change가 나갔는지 확인:
-
-```bash
-python3 scripts/harness.py check --worktree
-```
-
-Staged/unstaged/untracked change가 `allowed_paths` 밖으로 나갔으면 exit 4로 차단합니다.
-
----
-
-## 8. CLI 명령 레퍼런스
-
-### 8.1 Phase Lifecycle
-
-| 명령 | 설명 | 핵심 옵션 |
-| --- | --- | --- |
-| `phase set <phase>` | 새 phase로 전환 | `--by <email>` identity override |
-| `phase approve` | 현재 phase에 `approved=true` 스탬프 (실제 phase 이동은 `phase set`이 수행) | `--by <email>`, `--at <iso>` |
-| `phase reopen --to discuss\|plan --reason <text>` | Phase 회귀, approval 리셋 | `--by <email>` |
-| `phase autopilot start --phase <slug>` | Autopilot 시작 (phase 또는 chain) | `--allow-network`, `--mode phase\|chain` |
-| `phase autopilot stop` | Autopilot 중단, manual로 복귀 | (TTY-only) |
-| `phase next-pending` | 다음 non-done roadmap phase slug 출력 | (pure read) |
-
-**사용 예시**:
-```bash
-python3 scripts/harness.py phase set discuss
-python3 scripts/harness.py phase set plan --by alice@company.com
-python3 scripts/harness.py phase approve
-python3 scripts/harness.py phase reopen --to plan --reason "scope 추가"
-```
-
-### 8.2 Approve-Nonce
-
-```bash
-python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 120]
-```
-
-### 8.3 상태 및 조회
-
-| 명령 | 설명 |
-| --- | --- |
-| `state show` | 현재 phase, execution mode, active checkpoint 표시 |
-| `state show --format json` | JSON 형식 출력 |
-| `state repair` | 깨진 managed block 또는 누락된 marker 복구 |
-| `status` | Autopilot halt diary 및 suggested next command 표시 |
-| `next` | Current position에서 승인된 다음 step 제안 |
-| `verify --audit` | Audit log chain integrity 검증 |
-
-### 8.4 Session Lock
-
-| 명령 | 설명 |
-| --- | --- |
-| `session unlock` | 잠긴 session 해제 (recovery; live owner는 보호됨) |
-| `session unlock --force` | Stale/ambiguous lock 강제 정리 (수동 검토 후에만) |
-
-### 8.5 릴리스 및 진단
-
-| 명령 | 설명 |
-| --- | --- |
-| `check` | 설치된 harness 구조 검증 |
-| `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
-| `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.8.2` | Release tag 버전 검증 |
-
-### 8.6 FSD (Fast Slash-command Dispatch)
-
-Adapter Markdown command wrapper로서, 주로 adapter 내에서 호출됩니다.
-
-```bash
-python3 scripts/harness.py fsd-run-phase --slug discuss
-python3 scripts/harness.py fsd-run-all
-```
-
-사용자는 일반적으로 `.roo/commands/` 또는 `.opencode/commands/`를 통해 간접 호출합니다.
-
-### 8.7 Anchor
-
-Out-of-repo audit-tip anchor 관리 (TTY-only):
-
-```bash
-python3 scripts/harness.py anchor <subcommand>
-```
-
-### 8.8 Halt Diary Admin
-
-```bash
-python3 scripts/harness.py halt-diary clear   # 현재 halt 기록을 acknowledged 처리
-```
-
-Halt 상세 내용 확인은 `python3 scripts/harness.py state show`의 `last_halt` 섹션을 참고하세요. (`halt-diary show` 서브명령은 v0.7.0에 없습니다 — v0.8.0 검토.)
-
-### 8.9 Migration
-
-```bash
-python3 scripts/harness.py migrate state --forward    # v0.6 → v0.7 schema 전진 이행
-python3 scripts/harness.py migrate state --reverse    # v0.7 → v0.6 (필요 시)
-python3 scripts/harness.py migrate state --resume     # 중단된 migration 재개
-```
-
-v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase command 진입 시 자동 실행되며, 수동 trigger가 필요한 경우 위 명령을 사용합니다. (이전 문서의 `migrate --target` 시그니처는 잘못된 표기였으며 실제 CLI에는 존재하지 않습니다.)
-
----
-
-## 9. 프롬프트 레시피
+## 6. 프롬프트 레시피
 
 ### Planning Hydration
 
@@ -699,9 +467,190 @@ Output as a structured list: [CRITICAL], [MAJOR], [MINOR], [SUGGESTION].
 
 ---
 
-## 10. 보안 모델
+## 7. 제거
 
-### 10.1 Trust Boundaries
+Target-local uninstall은 전용 script를 씁니다.
+
+```bash
+python3 scripts/uninstall_harness.py --interactive
+```
+
+Source checkout에서 target을 지정:
+
+```bash
+python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2 --dry-run
+python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2
+```
+
+**제거 범위**:
+
+| 번호 | 제거 범위 |
+| --- | --- |
+| 1 | Roo 환경만 제거: `.roo/**`, `.roomodes`, `.rooignore` |
+| 2 | OpenCode 환경만 제거: `.opencode/**` |
+| 3 | Runtime harness만 제거: `.agents/skills/**`, harness scripts 등. Adapter와 core protocol은 보존 |
+| 4 | Core protocol만 제거: `AGENTS.md`/`.gitignore` managed block, `.scratch/**` 등. Adapter/runtime/docs는 보존 |
+| 5 | Planning/docs만 제거: `.planning/**`, harness docs/profiles 등. 권장하지 않음. 프로젝트 계획 기록이 사라집니다 |
+
+전체 범위 `1,2,3,4,5`를 삭제해도 기본적으로 `.harness/installed-manifest.json`은 보존됩니다. 설치 상태까지 지우려면:
+
+```bash
+python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2,3,4,5 --remove-install-state
+```
+
+`--dry-run`으로 먼저 확인. Conflict가 있으면 실제 삭제는 중단됩니다.
+
+---
+
+## Part 2 — Adapter 작성자
+
+## 8. Adapters — Roo vs OpenCode vs Core-only
+
+설치 시 선택한 adapter에 따라 사용하는 명령 표면이 달라집니다. 모든 adapter는 동일한 `.planning/**`과 `.scratch/phase-state.json` live gate를 사용합니다.
+
+### 8.1 Roo Adapter
+
+`.roo/commands/`에 설치되는 슬래시 명령:
+
+| 명령 | 용도 | 주요 사용 시점 |
+| --- | --- | --- |
+| `/phase-discuss` | Phase discovery + planning hydration | 모든 phase 시작 |
+| `/phase-plan` | 계획 문서 작성 | discuss 완료 후 |
+| `/phase-execute` | 승인된 범위 구현 | phase approve 후 |
+| `/adr` | ADR(Architecture Decision Record) 문서화 | 중요 설계 결정 |
+| `/bugfix` | 버그 진단 + 수정 워크플로 | 버그 발생 시 |
+| `/doctor` | 환경/구조 진단 | 이상 감지 시 |
+| `/done` | 완료 감사 | execute 완료 후 |
+| `/feature` | 기능 추가 워크플로 | 새 기능 구현 |
+| `/issues` | issue 트래커 연동 | 이슈 관리 |
+| `/ops` | 운영 작업 (deploy, monitor) | 운영 필요 시 |
+| `/review` | 코드 리뷰 | PR 전 적대적 검토 |
+| `/simple` | 작은/저위험 변경용 lightweight workflow | 단순 질문, 작은 edit, cleanup |
+| `/fsd-run-all` | 전체 FSD dispatch (chain autopilot) | 자동화 실행 |
+| `/fsd-run-phase` | 단일 phase FSD dispatch (phase autopilot) | phase 단위 자동화 |
+| `/fsd-status` | FSD 현재 상태 확인 | 진행 확인 |
+
+**Roo modes** (기본 8개):
+
+| Mode | 역할 |
+| --- | --- |
+| `orchestrator` | 전체 조율, phase 진행 관리 |
+| `architect` | 설계 결정, ADR 작성 |
+| `tdd-code` | TDD 구현 (test-first) |
+| `diagnose` | 버그 진단, 환경 점검 |
+| `review` | 코드/spec 적대적 리뷰 |
+| `docs-issues` | 문서화, issue 트래커 |
+| `ops-observability` | 운영, 모니터링 |
+| `harness-maintainer` | 하네스 자체 유지보수 |
+
+Profile-contributed mode 추가:
+- `ui-engineer` (`react-web` profile + Roo adapter): browser-first UI 구현. Profile 제거 시 자동 drop.
+
+**권장 시작 prompt**:
+```text
+/phase-discuss planning-hydration --pass 0
+```
+
+### 8.2 OpenCode Adapter
+
+`.opencode/commands/`에 설치되는 슬래시 명령:
+
+| 명령 | 용도 |
+| --- | --- |
+| `/discuss` | 요구사항 논의, phase 후보 제안 |
+| `/plan` | 계획 문서 작성 |
+| `/execute` | 승인된 범위 구현 (live gate가 execution approved일 때만) |
+| `/done` | 완료 감사 |
+| `/fsd-run-all` | 전체 chain autopilot dispatch |
+| `/fsd-run-phase` | 단일 phase autopilot dispatch |
+| `/fsd-status` | FSD 현재 상태 확인 |
+
+OpenCode adapter는 의도적으로 phase primitive만 제공합니다. 세부 workflow(debugging, TDD, security review)는 설치된 `.agents/skills/**` pack에서 가져옵니다.
+
+`.opencode/commands/execute.md`는 live gate가 execution approved 상태일 때만 사용합니다.
+
+**OpenCode에서 버그 수정**:
+```text
+Use /discuss first.
+Then use installed skills workflow-debugging,workflow-tdd.
+Do not edit application code until the plan names allowed_paths and I approve execute.
+```
+
+### 8.3 Core-only (Adapter 없음)
+
+Roo/OpenCode adapter 없이 `harness.py` CLI와 `AGENTS.md` 직접 사용.
+
+### 클라이언트별 커맨드 모델
+
+| 클라이언트 | Discuss | Plan | Execute | Done / audit |
+| --- | --- | --- | --- | --- |
+| Roo | `/phase-discuss` | `/phase-plan` | `/phase-execute` | `/done` |
+| OpenCode | `/discuss` | `/plan` | `/execute` | `/done` |
+| Generic agent | `AGENTS.md` 읽기 | plan docs 작성 | live gate 준수 | verification evidence 요약 |
+
+Core-only에서 agent에게 직접 prompt:
+```text
+Read AGENTS.md first.
+Then read .planning/STATE.md and .planning/ROADMAP.md.
+Do not modify application code until we are in execute phase and I approve.
+```
+
+---
+
+## 9. 점검 / Doctor / 검증
+
+### 9.1 Check 명령
+
+```bash
+python3 scripts/harness.py check
+```
+
+감지 항목:
+- 구조 오류, missing verification
+- Managed block 누락
+- 단계 경로 drift
+
+```bash
+python3 scripts/harness.py check --worktree
+```
+
+Staged/unstaged/untracked change가 `allowed_paths` 밖으로 나갔는지 확인. Exit 4로 차단.
+
+### 9.2 Doctor 명령
+
+```bash
+python3 scripts/harness.py doctor
+```
+
+Warning으로 보고:
+- 누락된 required reads
+- 설치 manifest 불일치
+- Workflow 품질 신호
+
+### 9.3 Verify 명령
+
+```bash
+python3 scripts/harness.py verify --audit
+```
+
+Audit log chain integrity 전체 검증. §A3.4 참고.
+
+### 9.4 Target-local 스크립트
+
+설치된 target 안에서도 별도 스크립트로 점검 가능:
+
+```bash
+python3 scripts/check_harness.py
+python3 scripts/doctor_harness.py
+```
+
+---
+
+## 부록 A — Maintainer / Release Trust
+
+## A1. 보안 모델
+
+### A1.1 Trust Boundaries
 
 | 경계 | 위치 | 내용 | 접근 |
 | --- | --- | --- | --- |
@@ -709,7 +658,7 @@ Output as a structured list: [CRITICAL], [MAJOR], [MINOR], [SUGGESTION].
 | Project-scoped install | `<target>/.harness/` | installed manifest, audit log, phase state | harness CLI + human |
 | Agent workspace | `.planning/**`, `.roo/**`, `.opencode/**` | planning docs, adapter commands | agent + human |
 
-### 10.2 Project-Scoped Agent 방어
+### A1.2 Project-Scoped Agent 방어
 
 **우회 불가** (project agent가 직접 우회할 수 없는 항목):
 - `phase approve` (TTY-only + human presence proof)
@@ -723,18 +672,18 @@ Output as a structured list: [CRITICAL], [MAJOR], [MINOR], [SUGGESTION].
 - Git commit 직접 작성 (`harness verify --audit`가 forensic 기록)
 - Network access (`phase autopilot --allow-network` flag로 명시적 opt-in, audit 기록)
 
-### 10.3 HMAC Nonce Signing
+### A1.3 HMAC Nonce Signing
 
 Approval nonce는 HMAC으로 서명됩니다:
 - Key: `~/.harness/secret.key` (0600 perms, 한 번만 생성)
 - Signature: `minter_tty + consumer_tty + expires_at`로 계산
 - Corruption 감지 시 자동 rotation (새 secret.key 생성, audit `verb=audit.secret_key.rotated`)
 
-### 10.4 Signed Release Tags
+### A1.4 Signed Release Tags
 
-Release tag는 maintainer의 SSH key로 서명됩니다 (§11 참고). `harness upgrade`는 자동 검증. Dev 환경은 `--allow-unsigned-dev`로 bypass 가능하지만, 한 번 signed로 설치되면 downgrade 불가.
+Release tag는 maintainer의 SSH key로 서명됩니다 (§A2 참고). `harness upgrade`는 자동 검증. Dev 환경은 `--allow-unsigned-dev`로 bypass 가능하지만, 한 번 signed로 설치되면 downgrade 불가.
 
-### 10.5 Audit Log Tamper Detection
+### A1.5 Audit Log Tamper Detection
 
 Audit log는 두 가지 chain을 유지합니다:
 - **State-content chain**: `before_sha256` / `after_sha256`로 state file 전환 증명
@@ -746,9 +695,9 @@ Audit log는 두 가지 chain을 유지합니다:
 
 ---
 
-## 11. Release Trust
+## A2. Release Trust
 
-### 11.1 allowed-signers 파일
+### A2.1 allowed-signers 파일
 
 `docs/trust/allowed-signers`는 OpenSSH format 허용 목록:
 
@@ -758,14 +707,14 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 
 각 line은 release engineer의 SSH public key를 authorize합니다.
 
-### 11.2 New Signer 추가
+### A2.2 New Signer 추가
 
 1. Maintainer의 SSH public key 얻기: `cat ~/.ssh/id_ed25519.pub`
 2. Fingerprint out-of-band 검증: `ssh-keygen -lf <pubkey-file>`
 3. `docs/trust/allowed-signers`에 line 추가
 4. Main으로 commit & push
 
-### 11.3 Release Tag 서명 (Maintainer)
+### A2.3 Release Tag 서명 (Maintainer)
 
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
@@ -776,7 +725,7 @@ git push origin v0.8.2
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 
-### 11.4 Tag 검증 (Consumer)
+### A2.4 Tag 검증 (Consumer)
 
 `harness upgrade`는 자동 검증. 수동 검증:
 
@@ -784,7 +733,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.2
 ```
 
-### 11.5 Trust-Downgrade Refusal
+### A2.5 Trust-Downgrade Refusal
 
 한 번 signed tag로 설치되면, `--allow-unsigned-dev`로도 unsigned로 downgrade 불가능합니다. 대신:
 - Properly signed release tag로 업그레이드, 또는
@@ -792,65 +741,9 @@ git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.8.2
 
 ---
 
-## 12. Windows 지원
+## A3. 감사 로그
 
-### 12.1 요구사항
-
-- **Git for Windows ≥ 2.34**: SSH-signed-tag 검증을 위해 필요
-- **Python 3**: `py -3`, `python`, 또는 Python Launcher
-- **PowerShell 5.1+** 또는 **pwsh 7+**: autopilot deny-shim 실행
-
-### 12.2 safe_open (Production Write)
-
-Production write는 Windows CreateFileW를 사용합니다:
-- Handle-bound reparse-point refusal: 열린 handle을 통해 junction/symlink 확인 및 거절
-- ADS (Alternate Data Stream) 거절: `:`, `::$DATA` 같은 component 금지
-- Case-fold containment: path normalization으로 case mismatch로 인한 escape 방지
-
-Exit code 4 (`path_reparse_refused`) 또는 11 (`windows_containment_degraded`)이 emit됩니다.
-
-### 12.3 PowerShell Deny-Shim
-
-`autopilot_guard.ps1`은 network deny, file fence를 PowerShell에서 강제합니다. `$PROFILE`에 wire:
-
-```powershell
-$HarnessProjectRoot = "C:\path\to\project"
-& "$HarnessProjectRoot\.harness\autopilot_guard.ps1"
-```
-
-`HARNESS_PROJECT_ROOT` env로 audit path 지정. 단, PowerShell 외 Bash/shell 명령은 이 shim을 우회할 수 있습니다. Phase gate는 여전히 적용됩니다.
-
-### 12.4 LOCALAPPDATA 체크
-
-Windows에서 `LOCALAPPDATA` unset 시 approval-nonces 저장 경로 부재로 warning 또는 error 발생합니다. 일반적으로 Windows login session에서는 자동 설정되지만, minimal CI환경이면 수동 설정 필요:
-
-```powershell
-$env:LOCALAPPDATA = "$env:UserProfile\AppData\Local"
-```
-
-### 12.5 지원 환경과 명령 표기
-
-`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다. Windows에서는 `harness.py` 명령(init, check, doctor)을 직접 사용하세요.
-
-| 작업 | Linux/macOS | Windows PowerShell |
-| --- | --- | --- |
-| harness check | `python3 scripts/harness.py check` | `py -3 scripts/harness.py check` |
-| 단위 테스트 | `python3 -m unittest scripts/test_harness.py` | `py -3 -m unittest scripts/test_harness.py` |
-| smoke | `python3 scripts/release_smoke_test.py` | `py -3 scripts/release_smoke_test.py` |
-
-PowerShell temp install 예시:
-
-```powershell
-$tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.8.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
-py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
-```
-
----
-
-## 13. 감사 로그
-
-### 13.1 위치 및 형식
+### A3.1 위치 및 형식
 
 `.harness/audit.log` (JSON Lines). 각 entry:
 
@@ -870,7 +763,7 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 }
 ```
 
-### 13.2 주요 Verb 레지스트리
+### A3.2 주요 Verb 레지스트리
 
 **Phase Lifecycle**:
 - `phase.set` — phase 전환
@@ -912,7 +805,7 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 **Migration**:
 - `migrate.state_v2` — v0.6 automation_mode → v0.7 execution_mode 마이그레이션
 
-### 13.3 Strict Verb Registry Mode
+### A3.3 Strict Verb Registry Mode
 
 ```bash
 HARNESS_STRICT_VERB_REGISTRY=1 python3 scripts/harness.py ...
@@ -920,7 +813,7 @@ HARNESS_STRICT_VERB_REGISTRY=1 python3 scripts/harness.py ...
 
 `1`로 설정하면, 등록되지 않은 verb는 exit 10으로 거절됩니다. 기본값(permissive)은 unknown verb를 warning으로만 보고하고 진행합니다.
 
-### 13.4 Chain Integrity 검증
+### A3.4 Chain Integrity 검증
 
 ```bash
 python3 scripts/harness.py verify --audit
@@ -935,7 +828,265 @@ Failure → exit 10 (audit chain failure).
 
 ---
 
-## 14. Exit Codes
+## A4. Approve-Nonce (Human Presence Proof)
+
+(백그라운드 자동 — `harness run`이 prompt 출력)
+
+Phase approve 전에 human presence를 증명하는 메커니즘입니다. Agent가 approval을 가장할 수 없도록 합니다.
+
+**Flow**:
+1. 터미널 A (agent): 작업 수행, `phase approve` 전 대기
+2. 터미널 B (human): nonce mint 실행
+
+```bash
+python3 scripts/harness.py approve-nonce mint --audience phase.approve
+# 또는 TTL 지정 (기본 120초)
+python3 scripts/harness.py approve-nonce mint --audience phase.approve --ttl 180
+```
+
+3. 터미널 A (human 또는 agent): `harness phase approve` 실행 — nonce 자동 소비, 승인 완료
+
+**Nonce 특성**:
+- `~/.harness/approval-nonces/` (POSIX) 또는 `%LOCALAPPDATA%\Harness\approval-nonces\` (Windows)에 저장
+- 120초(기본) 유효
+- Single-use (소비 후 삭제)
+- Minter TTY ≠ consumer TTY (동일 PTY 내 agent 자동 실행 방지)
+
+---
+
+## 부록 B — Troubleshooting & Advanced CLI
+
+## B1. 트러블슈팅
+
+### B1.1 "approve-nonce mint requires interactive TTY"
+
+**원인**: Non-TTY 환경(redirected stdin, agent subprocess)에서 nonce mint 시도.
+
+**해결**: 실제 터미널에서 실행:
+```bash
+# 터미널 B (human)
+python3 scripts/harness.py approve-nonce mint --audience phase.approve
+# 8자 code → TTY로 출력
+```
+
+### B1.2 "tag_signature_invalid" / "trust_downgrade_refused"
+
+**원인**:
+- Unsigned release tag로 업그레이드 시도 (production install이 이미 signed로 설치됨)
+- `allowed-signers`의 signer public key가 outdated/missing
+
+**해결**:
+1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
+2. Properly signed release tag로 upgrade:
+   ```bash
+   git verify-tag v0.8.2
+   python3 scripts/harness.py upgrade --target /path/to/project
+   ```
+3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
+
+### B1.3 "nonce_signature_invalid"
+
+**원인**:
+- Secret key 손상
+- Nonce 만료 (기본 120초)
+- Minter TTY = consumer TTY (agent가 same PTY에서 approval 시도)
+
+**해결**:
+- Secret key 손상 시 자동 rotation (audit `audit.secret_key.rotated`)
+- Nonce 다시 mint (TTL 재시작)
+- 다른 TTY에서 approval 명령 실행
+
+### B1.4 "audit_partial_write" (exit 14)
+
+**원인**: Power loss 또는 crash 사이 crash recovery 불확실성. State + audit transaction이 diverged.
+
+**해결**: `harness session unlock --force` 실행 후 상태 재점검.
+
+### B1.5 "non_tty_authorization_unverified"
+
+**원인**: Non-TTY에서 `phase autopilot start` 시도, CI 환경 증명 없음.
+
+**해결**:
+- GitHub Actions: `GITHUB_ACTIONS=true`, `ACTIONS_ID_TOKEN_REQUEST_URL`, OIDC token 설정
+- GitLab CI: `GITLAB_CI=true`, `CI_JOB_JWT_V2` token 설정
+- Buildkite: `BUILDKITE=true`, Buildkite OIDC token 설정
+- 없으면 TTY 환경에서 human presence proof 사용
+
+### B1.6 "scope_violation" / "path_reparse_refused" (exit 4)
+
+**원인**:
+- Approved `allowed_paths` 밖 file 수정
+- Windows: reparse point(symlink, junction) 또는 reserved chars(`:`, `|`)
+
+**해결**:
+- `harness.py check --worktree` 실행, 위반 경로 확인
+- Phase plan으로 돌아가 `allowed_paths` 수정
+- Windows: `$Profile` 내 `.harness\autopilot_guard.ps1` wire 확인
+
+### B1.7 "managed block missing" (warning)
+
+**원인**: `.planning/ROADMAP.md` 또는 `.planning/STATE.md`에 managed marker block 누락.
+
+**해결**: 메시지의 command 실행:
+```bash
+python3 scripts/harness.py state repair
+```
+
+### B1.8 "cli_bot_identity_overlaps_human_approver"
+
+**원인**: `HARNESS_BY_TRUST` (bot identity)이 `.harness/install-record.json`의 approvers[] entry와 동일.
+
+**해결**: CI bot identity 변경 또는 install-record approvers 재확인:
+```bash
+cat .harness/installed-manifest.json | grep approvers
+```
+
+### B1.9 State projection 불일치
+
+**원인**: `state show`와 실제 파일 내용이 다를 때.
+
+**해결**:
+```bash
+python3 scripts/harness.py state repair
+python3 scripts/harness.py state show
+```
+
+`state repair`가 해결하지 못하면, git log로 파일 변경 이력 확인 후 `git revert`를 검토하세요.
+
+### B1.10 Python 명령 미발견 (Windows)
+
+**원인**: Python Launcher 미설치 또는 PATH 미설정.
+
+**해결**:
+- `py -3 --version` 확인
+- `python3`이 없으면 `python` 또는 `py -3` 사용
+- `scripts/codex-cloud-setup.sh`는 Linux/macOS 전용 — Windows에서는 `harness.py` 직접 사용
+
+### B1.11 자주 혼동하는 케이스 (Common Confusions)
+
+**Q. Approval 했는데 왜 execute로 못 들어가나요?**
+A. `phase approve`만으로는 부족 — approve-nonce(human presence proof)가 필요합니다. `harness phase approve` 후 `harness approve-nonce mint --audience phase.approve` 실행 후 execute 전환이 가능합니다. (§A4)
+
+**Q. Skill pack을 설치 후에 추가하려면?**
+A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
+```bash
+python3 scripts/upgrade_harness.py --target <target> --packs workflow-core,workflow-debugging,workflow-tdd
+```
+`--packs`는 "추가"가 아닌 "전체 교체"이므로 기존 packs를 포함시켜야 합니다. (§5, §B2.5)
+
+**Q. Phase를 한 단계 뒤로 돌릴 수 있나요?**
+A. `harness phase reopen --to plan`. 현재 phase에서 plan으로 되돌리며 approval 초기화. audit log에 기록되니 실수가 아니면 새 plan을 다시 세우는 편이 안전합니다. (§C2.4)
+
+**Q. `requires_human` (exit 17)이 뜨는데 무엇을 해야 하나요?**
+A. autopilot 중 human approval/nonce가 필요한 시점에 도달했다는 신호. TTY에서 `harness approve-nonce mint --audience phase.approve` 실행 후 autopilot 재시작. (§B3, §A4)
+
+**Q. Source repo와 installed target을 헷갈립니다.**
+A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skills/**`는 install이 만들어낸 target artifact. Source repo에 `.agents/skills/`가 없는 것이 정상. (§4 ownership 규칙)
+
+**Q. Roo와 OpenCode adapter를 동시에 깔면 둘 중 무엇이 우선인가요?**
+A. Adapter는 entry-point에 불과하며 phase gate state는 공유. 두 adapter 모두 같은 `.scratch/phase-state.json`을 본다. 충돌 시 마지막 mutation이 audit log에 기록됨. (§8)
+
+**Q. Autopilot이 시작 안 됩니다 — "no human presence proof"?**
+A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§C2.2, §C1)
+
+---
+
+## B2. CLI 명령 레퍼런스 (Advanced)
+
+> ⚠️ 이하 명령은 advanced/debug/CI용입니다. 일상 사용은 §2.0의 4개 명령으로 충분합니다. `HARNESS_ADVANCED=1`을 설정해야 도움말에 표시됩니다.
+
+### B2.1 Phase Lifecycle
+
+| 명령 | 설명 | 핵심 옵션 |
+| --- | --- | --- |
+| `phase set <phase>` | 새 phase로 전환 | `--by <email>` identity override |
+| `phase approve` | 현재 phase에 `approved=true` 스탬프 (실제 phase 이동은 `phase set`이 수행) | `--by <email>`, `--at <iso>` |
+| `phase reopen --to discuss\|plan --reason <text>` | Phase 회귀, approval 리셋 | `--by <email>` |
+| `phase autopilot start --phase <slug>` | Autopilot 시작 (phase 또는 chain) | `--allow-network`, `--mode phase\|chain` |
+| `phase autopilot stop` | Autopilot 중단, manual로 복귀 | (TTY-only) |
+| `phase next-pending` | 다음 non-done roadmap phase slug 출력 | (pure read) |
+
+**사용 예시**:
+```bash
+python3 scripts/harness.py phase set discuss
+python3 scripts/harness.py phase set plan --by alice@company.com
+python3 scripts/harness.py phase approve
+python3 scripts/harness.py phase reopen --to plan --reason "scope 추가"
+```
+
+### B2.2 Approve-Nonce
+
+```bash
+python3 scripts/harness.py approve-nonce mint --audience phase.approve [--ttl 120]
+```
+
+### B2.3 상태 및 조회
+
+| 명령 | 설명 |
+| --- | --- |
+| `state show` | 현재 phase, execution mode, active checkpoint 표시 |
+| `state show --format json` | JSON 형식 출력 |
+| `state repair` | 깨진 managed block 또는 누락된 marker 복구 |
+| `status` | Autopilot halt diary 및 suggested next command 표시 |
+| `next` | Current position에서 승인된 다음 step 제안 |
+| `verify --audit` | Audit log chain integrity 검증 |
+
+### B2.4 Session Lock
+
+| 명령 | 설명 |
+| --- | --- |
+| `session unlock` | 잠긴 session 해제 (recovery; live owner는 보호됨) |
+| `session unlock --force` | Stale/ambiguous lock 강제 정리 (수동 검토 후에만) |
+
+### B2.5 릴리스 및 진단
+
+| 명령 | 설명 |
+| --- | --- |
+| `check` | 설치된 harness 구조 검증 |
+| `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
+| `doctor` | Workflow 품질 신호 진단 |
+| `release-check --expected-version v0.8.2` | Release tag 버전 검증 |
+
+### B2.6 FSD (Fast Slash-command Dispatch)
+
+Adapter Markdown command wrapper로서, 주로 adapter 내에서 호출됩니다.
+
+```bash
+python3 scripts/harness.py fsd-run-phase --slug discuss
+python3 scripts/harness.py fsd-run-all
+```
+
+사용자는 일반적으로 `.roo/commands/` 또는 `.opencode/commands/`를 통해 간접 호출합니다.
+
+### B2.7 Anchor
+
+Out-of-repo audit-tip anchor 관리 (TTY-only):
+
+```bash
+python3 scripts/harness.py anchor <subcommand>
+```
+
+### B2.8 Halt Diary Admin
+
+```bash
+python3 scripts/harness.py halt-diary clear   # 현재 halt 기록을 acknowledged 처리
+```
+
+Halt 상세 내용 확인은 `python3 scripts/harness.py state show`의 `last_halt` 섹션을 참고하세요. (`halt-diary show` 서브명령은 v0.7.0에 없습니다 — v0.8.0 검토.)
+
+### B2.9 Migration
+
+```bash
+python3 scripts/harness.py migrate state --forward    # v0.6 → v0.7 schema 전진 이행
+python3 scripts/harness.py migrate state --reverse    # v0.7 → v0.6 (필요 시)
+python3 scripts/harness.py migrate state --resume     # 중단된 migration 재개
+```
+
+v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase command 진입 시 자동 실행되며, 수동 trigger가 필요한 경우 위 명령을 사용합니다. (이전 문서의 `migrate --target` 시그니처는 잘못된 표기였으며 실제 CLI에는 존재하지 않습니다.)
+
+---
+
+## B3. Exit Codes
 
 `scripts/lib/exitcodes.py` 기준. `sub_reason` 필드는 exit code의 정확한 원인 식별.
 
@@ -956,13 +1107,17 @@ Failure → exit 10 (audit chain failure).
 | 14 | `EXIT_AUDIT_PARTIAL_WRITE` | Crash recovery undecidable (manual action required) |
 | 15 | `EXIT_RELEASE_TRUST_INVALID` | Signed tag verification 실패 또는 trust downgrade refused |
 | 17 | (`next --shell`) | `requires_human` — human approval/nonce 필요 (autopilot 진입 차단) |
-| 18 | (`next --shell`) | autopilot active — 재진입 금지 (`§7.2`) |
+| 18 | (`next --shell`) | autopilot active — 재진입 금지 (§C2.2) |
 
 **중요**: `sub_reason` 필드를 검토하여 정확한 원인 파악. 같은 exit code가 여러 상황에서 사용됩니다.
 
 ---
 
-## 15. 환경 변수
+---
+
+## 부록 C — CI / 자동화
+
+## C1. 환경 변수
 
 | 변수 | 값 | 의미 | 보안 노트 |
 | --- | --- | --- | --- |
@@ -979,9 +1134,64 @@ Failure → exit 10 (audit chain failure).
 
 ---
 
-## 16. 업그레이드
+## C2. Phase Gate 상세 (Autopilot)
 
-### 16.1 새 source checkout에서 target upgrade
+### C2.1 Live Gate: .scratch/phase-state.json
+
+`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate입니다. 직접 편집하지 마세요. harness CLI만 이 파일을 수정합니다.
+
+주요 필드:
+- `current_phase`: 현재 phase slug
+- `execution_mode`: `manual` / `phase_autopilot` / `chain_autopilot`
+- `approved`: boolean (execute 진입 허용 여부)
+
+### C2.2 Execution Mode와 Autopilot
+
+| Mode | 의미 | 사용 조건 |
+| --- | --- | --- |
+| `manual` (기본) | human이 `harness phase set` 명령 직접 실행 | 일반 작업 |
+| `phase_autopilot` | agent가 phase 범위 내에서 단계별 진행 | human approval 여전히 필요 |
+| `chain_autopilot` | agent가 phase sequence 전체 진행 | CI + OIDC 또는 TTY human proof |
+
+```bash
+python3 scripts/harness.py phase autopilot start --phase <slug>
+python3 scripts/harness.py phase autopilot start --phase <slug> --mode chain
+python3 scripts/harness.py phase autopilot stop
+```
+
+`phase autopilot start`는:
+- CI 환경: OIDC 또는 환경 변수로 증명된 bot identity 요구
+- TTY 환경: human presence proof (nonce 또는 OS credential)로 충분
+
+**위험과 사용 기준**: Autopilot은 승인된 scope 내에서만 동작하지만, 연속 실행 중 예상치 못한 변경이 발생할 수 있습니다. 중요한 변경 전에는 `manual` 모드를 유지하세요.
+
+### C2.3 Halt Diary
+
+Autopilot이 중단되면(budget exhausted, fence deny, halt 명령):
+
+```bash
+python3 scripts/harness.py status          # halt diary + suggested next command 확인
+python3 scripts/harness.py next            # 승인된 다음 step 제안
+python3 scripts/harness.py halt-diary clear   # diary 초기화
+```
+
+`last_halt.suggested_next_command_requires_human`이 true이면 human이 직접 실행해야 합니다.
+
+### C2.4 Worktree Check
+
+Phase execute 중 approved paths 밖으로 change가 나갔는지 확인:
+
+```bash
+python3 scripts/harness.py check --worktree
+```
+
+Staged/unstaged/untracked change가 `allowed_paths` 밖으로 나갔으면 exit 4로 차단합니다.
+
+---
+
+## C3. 업그레이드
+
+### C3.1 새 source checkout에서 target upgrade
 
 ```bash
 python3 /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/project --dry-run
@@ -991,7 +1201,7 @@ python3 /path/to/project/scripts/harness.py check
 
 새 버전으로 upgrade하면 공용 workflow 정적 검사 helper인 `scripts/lib/workflow_static_checks.py`도 target에 설치됩니다.
 
-### 16.2 Installed target bootstrapper로 upgrade
+### C3.2 Installed target bootstrapper로 upgrade
 
 ```bash
 python3 scripts/upgrade_harness.py --version v0.8.2 --dry-run
@@ -1002,7 +1212,7 @@ python3 scripts/doctor_harness.py
 
 Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 기본값으로 씁니다. 사내 mirror에서 설치한 target은 별도 지정 없이도 같은 mirror에서 upgrade됩니다.
 
-### 16.3 사내/외부 repo 명시 override
+### C3.3 사내/외부 repo 명시 override
 
 ```bash
 python3 scripts/upgrade_harness.py \
@@ -1011,13 +1221,13 @@ python3 scripts/upgrade_harness.py \
   --dry-run
 ```
 
-### 16.4 Remote access 막힌 경우 local source fallback
+### C3.4 Remote access 막힌 경우 local source fallback
 
 ```bash
 python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.8.2 --dry-run
 ```
 
-### 16.5 오래된 수동 설치 adopt
+### C3.5 오래된 수동 설치 adopt
 
 Target에 harness file은 있지만 `.harness/installed-manifest.json`이 없으면 adopt 후 upgrade:
 
@@ -1032,7 +1242,7 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade \
 
 Conflict는 `.harness/conflicts/` 아래에 기록됩니다. 검토 전에는 `--force`를 쓰지 않습니다.
 
-### 16.6 --allow-unsigned-dev 플래그
+### C3.6 --allow-unsigned-dev 플래그
 
 Dev 환경에서 서명되지 않은 tag로부터 설치할 때:
 
@@ -1046,226 +1256,67 @@ python3 scripts/harness.py upgrade --target /path/to/project --allow-unsigned-de
 
 ---
 
-## 17. 제거
+## C4. Windows 지원
 
-Target-local uninstall은 전용 script를 씁니다.
+### C4.1 요구사항
 
-```bash
-python3 scripts/uninstall_harness.py --interactive
+- **Git for Windows ≥ 2.34**: SSH-signed-tag 검증을 위해 필요
+- **Python 3**: `py -3`, `python`, 또는 Python Launcher
+- **PowerShell 5.1+** 또는 **pwsh 7+**: autopilot deny-shim 실행
+
+### C4.2 safe_open (Production Write)
+
+Production write는 Windows CreateFileW를 사용합니다:
+- Handle-bound reparse-point refusal: 열린 handle을 통해 junction/symlink 확인 및 거절
+- ADS (Alternate Data Stream) 거절: `:`, `::$DATA` 같은 component 금지
+- Case-fold containment: path normalization으로 case mismatch로 인한 escape 방지
+
+Exit code 4 (`path_reparse_refused`) 또는 11 (`windows_containment_degraded`)이 emit됩니다.
+
+### C4.3 PowerShell Deny-Shim
+
+`autopilot_guard.ps1`은 network deny, file fence를 PowerShell에서 강제합니다. `$PROFILE`에 wire:
+
+```powershell
+$HarnessProjectRoot = "C:\path\to\project"
+& "$HarnessProjectRoot\.harness\autopilot_guard.ps1"
 ```
 
-Source checkout에서 target을 지정:
+`HARNESS_PROJECT_ROOT` env로 audit path 지정. 단, PowerShell 외 Bash/shell 명령은 이 shim을 우회할 수 있습니다. Phase gate는 여전히 적용됩니다.
 
-```bash
-python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2 --dry-run
-python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2
+### C4.4 LOCALAPPDATA 체크
+
+Windows에서 `LOCALAPPDATA` unset 시 approval-nonces 저장 경로 부재로 warning 또는 error 발생합니다. 일반적으로 Windows login session에서는 자동 설정되지만, minimal CI환경이면 수동 설정 필요:
+
+```powershell
+$env:LOCALAPPDATA = "$env:UserProfile\AppData\Local"
 ```
 
-**제거 범위**:
+### C4.5 지원 환경과 명령 표기
 
-| 번호 | 제거 범위 |
-| --- | --- |
-| 1 | Roo 환경만 제거: `.roo/**`, `.roomodes`, `.rooignore` |
-| 2 | OpenCode 환경만 제거: `.opencode/**` |
-| 3 | Runtime harness만 제거: `.agents/skills/**`, harness scripts 등. Adapter와 core protocol은 보존 |
-| 4 | Core protocol만 제거: `AGENTS.md`/`.gitignore` managed block, `.scratch/**` 등. Adapter/runtime/docs는 보존 |
-| 5 | Planning/docs만 제거: `.planning/**`, harness docs/profiles 등. 권장하지 않음. 프로젝트 계획 기록이 사라집니다 |
+`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다. Windows에서는 `harness.py` 명령(init, check, doctor)을 직접 사용하세요.
 
-전체 범위 `1,2,3,4,5`를 삭제해도 기본적으로 `.harness/installed-manifest.json`은 보존됩니다. 설치 상태까지 지우려면:
+| 작업 | Linux/macOS | Windows PowerShell |
+| --- | --- | --- |
+| harness check | `python3 scripts/harness.py check` | `py -3 scripts/harness.py check` |
+| 단위 테스트 | `python3 -m unittest scripts/test_harness.py` | `py -3 -m unittest scripts/test_harness.py` |
+| smoke | `python3 scripts/release_smoke_test.py` | `py -3 scripts/release_smoke_test.py` |
 
-```bash
-python3 /path/to/harness/scripts/uninstall_harness.py --target /path/to/project --select 1,2,3,4,5 --remove-install-state
-```
+PowerShell temp install 예시:
 
-`--dry-run`으로 먼저 확인. Conflict가 있으면 실제 삭제는 중단됩니다.
-
----
-
-## 18. 점검 / Doctor / 검증
-
-### 18.1 Check 명령
-
-```bash
-python3 scripts/harness.py check
-```
-
-감지 항목:
-- 구조 오류, missing verification
-- Managed block 누락
-- 단계 경로 drift
-
-```bash
-python3 scripts/harness.py check --worktree
-```
-
-Staged/unstaged/untracked change가 `allowed_paths` 밖으로 나갔는지 확인. Exit 4로 차단.
-
-### 18.2 Doctor 명령
-
-```bash
-python3 scripts/harness.py doctor
-```
-
-Warning으로 보고:
-- 누락된 required reads
-- 설치 manifest 불일치
-- Workflow 품질 신호
-
-### 18.3 Verify 명령
-
-```bash
-python3 scripts/harness.py verify --audit
-```
-
-Audit log chain integrity 전체 검증. §13.4 참고.
-
-### 18.4 Target-local 스크립트
-
-설치된 target 안에서도 별도 스크립트로 점검 가능:
-
-```bash
-python3 scripts/check_harness.py
-python3 scripts/doctor_harness.py
+```powershell
+$tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
+git clone --depth 1 --branch v0.8.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
 ---
 
-## 19. 트러블슈팅
-
-### 19.1 "approve-nonce mint requires interactive TTY"
-
-**원인**: Non-TTY 환경(redirected stdin, agent subprocess)에서 nonce mint 시도.
-
-**해결**: 실제 터미널에서 실행:
-```bash
-# 터미널 B (human)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 8자 code → TTY로 출력
-```
-
-### 19.2 "tag_signature_invalid" / "trust_downgrade_refused"
-
-**원인**:
-- Unsigned release tag로 업그레이드 시도 (production install이 이미 signed로 설치됨)
-- `allowed-signers`의 signer public key가 outdated/missing
-
-**해결**:
-1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
-2. Properly signed release tag로 upgrade:
-   ```bash
-   git verify-tag v0.8.2
-   python3 scripts/harness.py upgrade --target /path/to/project
-   ```
-3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
-
-### 19.3 "nonce_signature_invalid"
-
-**원인**:
-- Secret key 손상
-- Nonce 만료 (기본 120초)
-- Minter TTY = consumer TTY (agent가 same PTY에서 approval 시도)
-
-**해결**:
-- Secret key 손상 시 자동 rotation (audit `audit.secret_key.rotated`)
-- Nonce 다시 mint (TTL 재시작)
-- 다른 TTY에서 approval 명령 실행
-
-### 19.4 "audit_partial_write" (exit 14)
-
-**원인**: Power loss 또는 crash 사이 crash recovery 불확실성. State + audit transaction이 diverged.
-
-**해결**: `harness session unlock --force` 실행 후 상태 재점검.
-
-### 19.5 "non_tty_authorization_unverified"
-
-**원인**: Non-TTY에서 `phase autopilot start` 시도, CI 환경 증명 없음.
-
-**해결**:
-- GitHub Actions: `GITHUB_ACTIONS=true`, `ACTIONS_ID_TOKEN_REQUEST_URL`, OIDC token 설정
-- GitLab CI: `GITLAB_CI=true`, `CI_JOB_JWT_V2` token 설정
-- Buildkite: `BUILDKITE=true`, Buildkite OIDC token 설정
-- 없으면 TTY 환경에서 human presence proof 사용
-
-### 19.6 "scope_violation" / "path_reparse_refused" (exit 4)
-
-**원인**:
-- Approved `allowed_paths` 밖 file 수정
-- Windows: reparse point(symlink, junction) 또는 reserved chars(`:`, `|`)
-
-**해결**:
-- `harness.py check --worktree` 실행, 위반 경로 확인
-- Phase plan으로 돌아가 `allowed_paths` 수정
-- Windows: `$Profile` 내 `.harness\autopilot_guard.ps1` wire 확인
-
-### 19.7 "managed block missing" (warning)
-
-**원인**: `.planning/ROADMAP.md` 또는 `.planning/STATE.md`에 managed marker block 누락.
-
-**해결**: 메시지의 command 실행:
-```bash
-python3 scripts/harness.py state repair
-```
-
-### 19.8 "cli_bot_identity_overlaps_human_approver"
-
-**원인**: `HARNESS_BY_TRUST` (bot identity)이 `.harness/install-record.json`의 approvers[] entry와 동일.
-
-**해결**: CI bot identity 변경 또는 install-record approvers 재확인:
-```bash
-cat .harness/installed-manifest.json | grep approvers
-```
-
-### 19.9 State projection 불일치
-
-**원인**: `state show`와 실제 파일 내용이 다를 때.
-
-**해결**:
-```bash
-python3 scripts/harness.py state repair
-python3 scripts/harness.py state show
-```
-
-`state repair`가 해결하지 못하면, git log로 파일 변경 이력 확인 후 `git revert`를 검토하세요.
-
-### 19.10 Python 명령 미발견 (Windows)
-
-**원인**: Python Launcher 미설치 또는 PATH 미설정.
-
-**해결**:
-- `py -3 --version` 확인
-- `python3`이 없으면 `python` 또는 `py -3` 사용
-- `scripts/codex-cloud-setup.sh`는 Linux/macOS 전용 — Windows에서는 `harness.py` 직접 사용
-
-### 19.11 자주 혼동하는 케이스 (Common Confusions)
-
-**Q. Approval 했는데 왜 execute로 못 들어가나요?**
-A. `phase approve`만으로는 부족 — approve-nonce(human presence proof)가 필요합니다. `harness phase approve` 후 `harness approve-nonce mint --audience phase.approve` 실행 후 execute 전환이 가능합니다. (§7.3)
-
-**Q. Skill pack을 설치 후에 추가하려면?**
-A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
-```bash
-python3 scripts/upgrade_harness.py --target <target> --packs workflow-core,workflow-debugging,workflow-tdd
-```
-`--packs`는 "추가"가 아닌 "전체 교체"이므로 기존 packs를 포함시켜야 합니다. (§6, §8.5)
-
-**Q. Phase를 한 단계 뒤로 돌릴 수 있나요?**
-A. `harness phase reopen --to plan`. 현재 phase에서 plan으로 되돌리며 approval 초기화. audit log에 기록되니 실수가 아니면 새 plan을 다시 세우는 편이 안전합니다. (§7.4)
-
-**Q. `requires_human` (exit 17)이 뜨는데 무엇을 해야 하나요?**
-A. autopilot 중 human approval/nonce가 필요한 시점에 도달했다는 신호. TTY에서 `harness approve-nonce mint --audience phase.approve` 실행 후 autopilot 재시작. (§14, §7.3)
-
-**Q. Source repo와 installed target을 헷갈립니다.**
-A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skills/**`는 install이 만들어낸 target artifact. Source repo에 `.agents/skills/`가 없는 것이 정상. (§4 ownership 규칙)
-
-**Q. Roo와 OpenCode adapter를 동시에 깔면 둘 중 무엇이 우선인가요?**
-A. Adapter는 entry-point에 불과하며 phase gate state는 공유. 두 adapter 모두 같은 `.scratch/phase-state.json`을 본다. 충돌 시 마지막 mutation이 audit log에 기록됨. (§5)
-
-**Q. Autopilot이 시작 안 됩니다 — "no human presence proof"?**
-A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§7.2, §15)
-
 ---
 
-## 20. v0.9.0 Carryover
+## 부록 D — 기타
+
+## D1. v0.9.0 Carryover
 
 다음 메이저 버전에 deferred된 항목:
 
@@ -1276,7 +1327,7 @@ A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 �
 
 ---
 
-## 21. 참고 자료
+## D2. 참고 자료
 
 - [README.md](../README.md) — harness source, 설치 패턴, 개발자 가이드
 - [CHANGELOG.md](../CHANGELOG.md) — 릴리스 노트

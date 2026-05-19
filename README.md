@@ -214,7 +214,7 @@ git push origin v0.8.2
 
 ## 6. 업그레이드 / 제거
 
-상세 절차는 [docs/USER_MANUAL.md §16 업그레이드](docs/USER_MANUAL.md#16-업그레이드), [§17 제거](docs/USER_MANUAL.md#17-제거) 참고.
+상세 절차는 [docs/USER_MANUAL.md §C3 업그레이드](docs/USER_MANUAL.md#c3-업그레이드), [§7 제거](docs/USER_MANUAL.md#7-제거) 참고.
 
 빠른 포인터:
 
