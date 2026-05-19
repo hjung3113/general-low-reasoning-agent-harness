@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import sys
 
@@ -14,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.project_dashboard import core as project_dashboard
 from lib.project_dashboard import renderer as dashboard_renderer
+from lib.project_dashboard import server as dashboard_server
 
 
 class ProjectDashboardTests(unittest.TestCase):
@@ -148,6 +151,90 @@ progress:
         line_count = len(entrypoint.read_text(encoding="utf-8").splitlines())
 
         self.assertLessEqual(line_count, 40)
+
+    def test_dashboard_json_contains_three_page_inputs_and_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            write_fixture_repository(root)
+
+            payload = project_dashboard.dashboard_data_to_json(project_dashboard.load_dashboard_data(root))
+
+            self.assertEqual("Example milestone", payload["project"]["milestone_name"])
+            self.assertEqual("done", payload["gate"]["phase"])
+            self.assertEqual(2, len(payload["roadmap"]))
+            self.assertTrue(any(action["id"] == "check" for action in payload["actions"]))
+            self.assertTrue(any(action["id"] == "run" and action["confirmation"] for action in payload["actions"]))
+
+    def test_dashboard_assets_are_present_for_dynamic_routes(self) -> None:
+        asset_dir = Path(__file__).resolve().parent / "lib/project_dashboard/assets"
+
+        html = (asset_dir / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<html lang="en">', html)
+        self.assertIn(">Overview<", html)
+        self.assertIn(">Progress<", html)
+        self.assertIn(">Actions<", html)
+        self.assertIn("/assets/dashboard.css", html)
+        self.assertIn("/assets/dashboard.js", html)
+        self.assertNotIn("dashboard-token", html)
+        self.assertIn("renderOverview", (asset_dir / "dashboard.js").read_text(encoding="utf-8"))
+        self.assertIn("renderProgress", (asset_dir / "dashboard.js").read_text(encoding="utf-8"))
+        self.assertIn("renderActions", (asset_dir / "dashboard.js").read_text(encoding="utf-8"))
+
+    def test_dashboard_action_rejects_unknown_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError):
+                dashboard_server.run_dashboard_action(root=Path(tmpdir), action_id="rm-rf")
+
+    def test_dashboard_action_requires_confirmation_for_mutating_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError):
+                dashboard_server.run_dashboard_action(root=Path(tmpdir), action_id="run")
+
+    def test_dashboard_action_uses_allowlisted_argv_without_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            completed = mock.Mock(returncode=0, stdout="ok\n")
+
+            with mock.patch.object(dashboard_server.subprocess, "run", return_value=completed) as run_mock:
+                result = dashboard_server.run_dashboard_action(root=root, action_id="check")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(f"{sys.executable} scripts/harness.py check", result["command"])
+            _, kwargs = run_mock.call_args
+            self.assertEqual([sys.executable, "scripts/harness.py", "check"], run_mock.call_args.args[0])
+            self.assertEqual(root, kwargs["cwd"])
+            self.assertFalse(kwargs.get("shell", False))
+            self.assertEqual(dashboard_server.COMMAND_TIMEOUT_SECONDS, kwargs["timeout"])
+
+    def test_dashboard_action_truncates_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            completed = mock.Mock(returncode=0, stdout="x" * (dashboard_server.MAX_OUTPUT_CHARS + 100))
+
+            with mock.patch.object(dashboard_server.subprocess, "run", return_value=completed):
+                result = dashboard_server.run_dashboard_action(root=Path(tmpdir), action_id="check")
+
+            self.assertLessEqual(len(result["output"]), dashboard_server.MAX_OUTPUT_CHARS + 64)
+            self.assertIn("output truncated", result["output"])
+
+    def test_dashboard_refuses_non_local_bind_addresses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(SystemExit):
+                dashboard_server.serve_dashboard(root=Path(tmpdir), host="0.0.0.0", port=0)
+
+    def test_dashboard_host_parser_accepts_ipv6_loopback_host_header(self) -> None:
+        self.assertEqual("::1", dashboard_server.host_without_port("[::1]:8765"))
+        self.assertEqual("127.0.0.1", dashboard_server.host_without_port("127.0.0.1:8765"))
+
+    def test_manifest_installs_dashboard_runtime_files(self) -> None:
+        manifest = json.loads((Path(__file__).resolve().parents[1] / "harness/manifest.json").read_text(encoding="utf-8"))
+        paths = {entry["path"] for entry in manifest["files"]}
+
+        self.assertIn("scripts/project_dashboard.py", paths)
+        self.assertIn("scripts/lib/project_dashboard/core.py", paths)
+        self.assertIn("scripts/lib/project_dashboard/server.py", paths)
+        self.assertIn("scripts/lib/project_dashboard/assets/dashboard.html", paths)
+        self.assertIn("scripts/lib/project_dashboard/assets/dashboard.css", paths)
+        self.assertIn("scripts/lib/project_dashboard/assets/dashboard.js", paths)
 
 
 def write_fixture_repository(root: Path) -> None:

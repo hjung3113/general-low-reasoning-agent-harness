@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harness Dashboard</title>
+  <link rel="stylesheet" href="/assets/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Installed Harness</p>
+      <h1>Project Control Dashboard</h1>
+    </div>
+    <nav aria-label="Dashboard pages">
+      <a href="/overview" data-route="overview">Overview</a>
+      <a href="/progress" data-route="progress">Progress</a>
+      <a href="/actions" data-route="actions">Actions</a>
+    </nav>
+  </header>
+
+  <main id="app" class="app" aria-live="polite">
+    <section class="panel">
+      <h2>Loading dashboard...</h2>
+    </section>
+  </main>
+
+  <script src="/assets/dashboard.js" defer></script>
+</body>
+</html>

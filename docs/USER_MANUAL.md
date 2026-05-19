@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.9.1)
+# 하네스 사용자 설명서 (v0.9.2)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -133,6 +133,20 @@ harness check
 - `harness check`: 하네스 구조와 현재 workflow gate를 검증합니다.
 
 저수준 `phase`, nonce, audit, state repair, autopilot 명령은 advanced/debug/CI용입니다. 일반 prompt와 adapter prompt는 이를 정상 경로로 요구하지 않습니다.
+
+터미널 명령을 한 화면에서 보고 실행하고 싶으면 target repository에서 로컬 대시보드를 열 수 있습니다:
+
+```bash
+python3 scripts/project_dashboard.py --serve
+```
+
+브라우저에서 `http://127.0.0.1:8765/overview`를 엽니다.
+
+- `/overview`: 전체 프로젝트 개요, 마일스톤 진행률, 현재 checkpoint, 다음 행동.
+- `/progress`: phase gate 상세, acceptance criteria, verification, allowed/blocked paths, phase 문서.
+- `/actions`: `check`, `next`, `run`, `doctor`, snapshot 생성 버튼.
+
+대시보드는 localhost 전용 Python 서버입니다. 버튼은 하네스가 미리 정한 allowlist 명령만 실행하며, 임의 shell 입력은 받지 않습니다. `run`처럼 workflow state를 움직일 수 있는 버튼은 브라우저 확인을 요구하고, 실제 판단은 계속 `scripts/harness.py`의 기존 phase gate가 수행합니다. Speed bump가 나오면 대시보드가 대신 승인하지 않습니다.
 
 유즈케이스별 빠른 안내:
 
@@ -755,8 +769,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.1 -m "Release v0.9.1"
-git push origin v0.9.1
+git tag -s v0.9.2 -m "Release v0.9.2"
+git push origin v0.9.2
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -766,7 +780,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.1
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.2
 ```
 
 ### A2.5 Trust-Downgrade Refusal

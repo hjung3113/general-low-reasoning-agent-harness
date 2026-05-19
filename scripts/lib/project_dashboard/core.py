@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -13,6 +14,7 @@ from lib.planning_status import ProjectionError, load_projection, projection_to_
 from lib.project_dashboard.renderer import render_html
 from lib.project_dashboard.models import (
     DashboardData,
+    DashboardAction,
     DecisionRecord,
     DocumentLink,
     IssueCard,
@@ -26,6 +28,47 @@ from lib.project_dashboard.models import (
 
 
 DEFAULT_OUTPUT = Path(".scratch/reports/project-dashboard.html")
+
+DEFAULT_DASHBOARD_PORT = 8765
+DASHBOARD_ACTIONS = [
+    DashboardAction(
+        action_id="check",
+        label="Run Check",
+        description="Validate installed harness structure and the current planning gate.",
+        command=[sys.executable, "scripts/harness.py", "check"],
+        intent="Validate the harness and planning state before edits.",
+    ),
+    DashboardAction(
+        action_id="next",
+        label="Show Next",
+        description="Ask the harness for the next safe user or agent action.",
+        command=[sys.executable, "scripts/harness.py", "next"],
+        intent="Inspect the current gate and next action.",
+    ),
+    DashboardAction(
+        action_id="run",
+        label="Step Workflow",
+        description="Run the safe workflow stepper; it stops when user approval is required.",
+        command=[sys.executable, "scripts/harness.py", "run"],
+        intent="Advance only harness-approved workflow steps.",
+        confirmation="This can advance harness workflow state. Continue?",
+    ),
+    DashboardAction(
+        action_id="doctor",
+        label="Run Doctor",
+        description="Run read-only diagnostics for planning and harness drift.",
+        command=[sys.executable, "scripts/harness.py", "doctor"],
+        intent="Diagnose drift without mutating project files.",
+    ),
+    DashboardAction(
+        action_id="snapshot",
+        label="Write Snapshot",
+        description="Regenerate the local static dashboard snapshot under .scratch/reports/.",
+        command=[sys.executable, "scripts/project_dashboard.py"],
+        intent="Create a shareable local HTML report.",
+        confirmation="This writes .scratch/reports/project-dashboard.html. Continue?",
+    ),
+]
 
 
 def parse_frontmatter(text: str) -> dict[str, str]:
@@ -131,6 +174,111 @@ def load_dashboard_data(root: Path) -> DashboardData:
         warnings=warnings,
         active_checkpoint=str(projection.get("active_checkpoint_id") if projection else checkpoint_id(state.active_checkpoint)),
     )
+
+
+def dashboard_data_to_json(data: DashboardData) -> dict[str, object]:
+    phase_state = data.phase_state
+    return {
+        "project": {
+            "root": str(data.root),
+            "milestone": data.state.milestone,
+            "milestone_name": data.state.milestone_name,
+            "status": data.state.status,
+            "last_updated": data.state.last_updated,
+            "progress_percent": data.state.progress_percent,
+            "completed_phases": data.state.completed_phases,
+            "total_phases": data.state.total_phases,
+            "active_checkpoint": data.active_checkpoint,
+            "checkpoint_label": data.state.active_checkpoint,
+            "checkpoint_file": data.state.checkpoint_file,
+            "next_action": data.state.next_action,
+            "blockers": data.state.blockers,
+        },
+        "gate": {
+            "phase": str(phase_state.get("phase", "unknown")),
+            "plan_id": str(phase_state.get("plan_id", "unknown")),
+            "approved": phase_state.get("approved") is True,
+            "approved_by": str(phase_state.get("approved_by", "unknown")),
+            "approved_at": str(phase_state.get("approved_at", "unknown")),
+            "automation_mode": str(phase_state.get("automation_mode", "manual")),
+            "current_checkpoint": str(phase_state.get("current_checkpoint", "unknown")),
+            "next_action": str(phase_state.get("next_action", data.state.next_action)),
+            "allowed_paths": string_list(phase_state.get("allowed_paths")),
+            "blocked_paths": string_list(phase_state.get("blocked_paths")),
+            "acceptance_criteria": string_list(phase_state.get("acceptance_criteria")),
+            "verification": string_list(phase_state.get("verification")),
+        },
+        "roadmap": [
+            {
+                "title": phase.title,
+                "summary": phase.summary,
+                "completed": phase.completed,
+                "raw_line": phase.raw_line,
+            }
+            for phase in data.roadmap_phases
+        ],
+        "memory": {
+            "one_liner": data.memory.one_liner,
+            "scope": data.memory.scope,
+            "requirements": [
+                {"id": item.requirement_id, "summary": item.summary}
+                for item in data.memory.requirements
+            ],
+            "decisions": [
+                {
+                    "id": item.decision_id,
+                    "status": item.status,
+                    "decision": item.decision,
+                    "source": item.source,
+                    "scope": item.scope,
+                }
+                for item in data.memory.decisions
+            ],
+            "verification": [
+                {
+                    "date": item.date,
+                    "phase": item.phase,
+                    "check": item.check,
+                    "result": item.result,
+                    "notes": item.notes,
+                }
+                for item in data.memory.verification
+            ],
+            "concerns": data.memory.concerns,
+        },
+        "phase_documents": [
+            {"phase_dir": item.phase_dir, "files": item.files, "headings": item.headings}
+            for item in data.phase_documents
+        ],
+        "issues": [
+            {"title": item.title, "path": item.path, "labels": item.labels}
+            for item in data.issues
+        ],
+        "documents": [
+            {"title": item.title, "path": item.path, "category": item.category}
+            for item in data.documents
+        ],
+        "warnings": data.warnings,
+        "actions": [
+            {
+                "id": action.action_id,
+                "label": action.label,
+                "description": action.description,
+                "command": " ".join(action.command),
+                "intent": action.intent,
+                "confirmation": action.confirmation,
+            }
+            for action in DASHBOARD_ACTIONS
+        ],
+    }
+
+
+def string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        return [value]
+    return []
 
 
 def read_optional_text(path: Path, warnings: list[str]) -> str:
@@ -465,12 +613,20 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("."), help="Repository root to read.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="HTML file to write.")
+    parser.add_argument("--serve", action="store_true", help="Start the interactive dashboard server.")
+    parser.add_argument("--host", default="127.0.0.1", help="Dashboard server host.")
+    parser.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT, help="Dashboard server port.")
     return parser.parse_args(argv)
 
 
 def run(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
     root = args.root.resolve()
+    if args.serve:
+        from lib.project_dashboard.server import serve_dashboard
+
+        serve_dashboard(root=root, host=args.host, port=args.port)
+        return 0
     output = args.output
     if not output.is_absolute():
         output = root / output

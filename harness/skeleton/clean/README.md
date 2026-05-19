@@ -31,6 +31,20 @@ python3 scripts/project_dashboard.py
 
 The dashboard reads `.planning/**`, `.scratch/**`, `docs/**`, `README.md`, and `AGENTS.md`, then writes `.scratch/reports/project-dashboard.html`. The generated report is local output; regenerate it whenever planning documents change.
 
+To open the interactive local dashboard:
+
+```bash
+python3 scripts/project_dashboard.py --serve
+```
+
+Then open `http://127.0.0.1:8765/overview`. The dashboard has three pages:
+
+- `/overview` — project overview, milestone progress, current checkpoint, and next action.
+- `/progress` — detailed gate state, acceptance criteria, verification, allowed paths, and phase documents.
+- `/actions` — buttons for allowlisted local CLI actions: `check`, `next`, `run`, `doctor`, and static snapshot generation.
+
+The server binds to localhost only. Buttons do not accept arbitrary shell input. Mutating actions require browser confirmation and still delegate to the installed `scripts/harness.py` workflow gate; the dashboard does not bypass speed bumps or approvals.
+
 `check` is the strict validation path. `doctor` is read-only diagnostics for planning/Roo/DB context drift; it reports severity, cause, impact, fix, evidence, and diff-before-mutation guidance without changing files.
 
 The harness-owned files define client adapters, rules, commands, profiles, skill packs, and reusable workflows. Project-owned planning files describe this repository and should be hydrated from the actual project before implementation work starts.

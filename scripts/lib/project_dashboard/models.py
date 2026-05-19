@@ -96,3 +96,13 @@ class DashboardData:
     memory: ProjectMemory
     warnings: list[str]
     active_checkpoint: str
+
+
+@dataclass(frozen=True)
+class DashboardAction:
+    action_id: str
+    label: str
+    description: str
+    command: list[str]
+    intent: str
+    confirmation: str = ""

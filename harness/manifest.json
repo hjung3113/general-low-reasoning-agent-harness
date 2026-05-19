@@ -968,6 +968,46 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/project_dashboard/__init__.py",
+      "source": "scripts/lib/project_dashboard/__init__.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/models.py",
+      "source": "scripts/lib/project_dashboard/models.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/core.py",
+      "source": "scripts/lib/project_dashboard/core.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/renderer.py",
+      "source": "scripts/lib/project_dashboard/renderer.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/server.py",
+      "source": "scripts/lib/project_dashboard/server.py",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/assets/dashboard.html",
+      "source": "scripts/lib/project_dashboard/assets/dashboard.html",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/assets/dashboard.css",
+      "source": "scripts/lib/project_dashboard/assets/dashboard.css",
+      "policy": "harness-owned"
+    },
+    {
+      "path": "scripts/lib/project_dashboard/assets/dashboard.js",
+      "source": "scripts/lib/project_dashboard/assets/dashboard.js",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/test_project_dashboard.py",
       "source": "scripts/test_project_dashboard.py",
       "policy": "harness-owned"

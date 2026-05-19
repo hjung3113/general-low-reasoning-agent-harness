@@ -13,6 +13,25 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.2 — 2026-05-20 (installed dashboard)
+
+### Added
+- Installed target repositories now include an interactive local dashboard via
+  `python3 scripts/project_dashboard.py --serve`.
+- Dashboard pages:
+  - `/overview` for project overview, milestones, checkpoint, and next action.
+  - `/progress` for phase-gate details, acceptance criteria, verification,
+    allowed paths, and phase documents.
+  - `/actions` for allowlisted local CLI buttons (`check`, `next`, `run`,
+    `doctor`, and static snapshot generation).
+- Dashboard server stays localhost-only, token-protected, and delegates actions
+  to existing `scripts/harness.py` commands instead of reimplementing workflow
+  semantics.
+
+### Docs
+- README, target skeleton README, and USER_MANUAL document the installed
+  dashboard launch command and safety model.
+
 ## v0.9.1 — 2026-05-20 (docs hotfix)
 
 ### Fixed
