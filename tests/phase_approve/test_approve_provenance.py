@@ -72,6 +72,7 @@ def env(tmp_path: Path) -> dict:
     # Seed phase-state via commit_transaction so the audit tail's
     # after_sha256 matches on-disk canonical bytes (state_trust preflight
     # will accept it).
+    # TODO: dedupe with conftest.seed_scratch
     seed_state = {
         "phase": "plan",
         "approved": False,

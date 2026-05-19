@@ -1,14 +1,14 @@
 """Tests for the v0.9.0 [y/N] speed-bump replacement of the nonce flow."""
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from lib import exitcodes, phase_approve, phase_lock, phase_txn
+from lib import exitcodes, phase_approve
+from tests.phase_approve.conftest import seed_scratch
 
 
 def _stub_args(**overrides):
@@ -17,37 +17,7 @@ def _stub_args(**overrides):
     return SimpleNamespace(**base)
 
 
-def _seed_scratch(scratch: Path, audit_path: Path) -> None:
-    """Bootstrap a minimal phase_state so state_trust preflight passes."""
-    seed_state = {
-        "phase": "plan",
-        "approved": False,
-        "approved_at": None,
-        "approved_by": None,
-        "execution_mode": "manual",
-        "state_schema_version": 2,
-    }
-    lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
-    try:
-        req = phase_txn.TxnRequest(
-            action="phase.set",
-            before_state=None,
-            after_state=seed_state,
-            audit_entry_draft={
-                "verb": "phase.set",
-                "by": "seed",
-                "args": {"phase": "plan"},
-            },
-        )
-        phase_txn.commit_transaction(
-            scratch, lock=lock, request=req, audit_path=audit_path
-        )
-    finally:
-        phase_lock.release_primary(lock)
-
-
 def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
-    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     harness_dir = tmp_path / ".harness"
@@ -61,7 +31,7 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
     nonce_dir.mkdir()
 
     # Bootstrap scratch state so state_trust preflight passes
-    _seed_scratch(scratch, audit_path)
+    seed_scratch(scratch, audit_path)
 
     captured = {}
 
