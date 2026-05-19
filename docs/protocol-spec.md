@@ -281,8 +281,24 @@ The phase lifecycle CLI verbs are defined by ADR-003a Artifact 1 and implemented
 
 ### `harness phase approve`
 
+**v0.9.0+ behavior (speed-bump; see ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md`).**
+
 - Optional flags: `--by <identifier>`, `--at <ISO-8601 nanos>`, `--stdin-json`.
-- Stdout: JSON object `{ok, verb, phase, approved, approved_by, approved_at, state_path, audit_entry_index, updated_at, updated_by}`.
+- Stdout (success): JSON object `{ok: true, verb, phase, approved, approved_by, approved_at, state_path, audit_entry_index, updated_at, updated_by}`.
+
+**Step / Behavior:**
+
+1. **TTY check first.** If `sys.stdin.isatty() == False`, halt immediately with `EXIT_HUMAN_CONFIRMATION_REQUIRED=17` and `sub_reason=non_tty_approval_blocked`. No state change, no audit row.
+2. **Done-phase guard.** If the current phase is `done`, refuse with `EXIT_WRONG_PHASE_FOR_VERB=6` and `sub_reason=approve_in_done`. No state change.
+3. **Interactive prompt.** On a TTY, prints to stderr:
+   ```
+   Approve current phase=<phase>? Type y to confirm, N to cancel [y/N]:
+   ```
+4. **Response handling:**
+   - `y` or `Y`: audit row appended (chain-stamped via `audit_append`), state updated, exit 0. Audit row includes extra fields `proof_class=soft_tty`, `tty=true`, `response=y`. The fields `nonce_id`, `nonce_minter_tty`, `nonce_audience`, and `confirmation_kind=human_nonce` are **not** emitted on `phase.approve` rows (release-path `approve.nonce` rows retain their own schema).
+   - Any other input, `EOFError`, or `KeyboardInterrupt`: no state change, no audit row, exit 0 with `sub_reason=user_cancelled`. A message is printed to stderr.
+
+**Threat-model scope:** `phase.approve` is a workflow speed-bump checkpoint, not a cryptographic human-presence proof. See ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md`.
 
 ### `harness session unlock`
 
@@ -297,11 +313,14 @@ The phase lifecycle CLI verbs are defined by ADR-003a Artifact 1 and implemented
 | 1 | `EXIT_OPERATIONAL` | I/O / permissions / generic write failure |
 | 2 | `EXIT_INVALID_TRANSITION` | violates ADR-001 transition table |
 | 3 | `EXIT_SESSION_LOCKED` | `.harness/session.lock` held |
-| 4 | `EXIT_SCOPE_VIOLATION` | write outside `allowed_paths` (T1-1) |
+| 4 | `EXIT_SCOPE_VIOLATION` / `EXIT_PATH_REPARSE_REFUSED` | write outside `allowed_paths` (T1-1) or reparse-point path refused (Windows); `sub_reason` disambiguates |
 | 5 | `EXIT_UNPARSEABLE_JSON` | state file or stdin failed `json.loads` |
-| 6 | `EXIT_WRONG_PHASE_FOR_VERB` | verb invoked in a phase that does not accept it |
+| 6 | `EXIT_WRONG_PHASE_FOR_VERB` / `EXIT_NONCE_SIGNATURE_INVALID` | verb invoked in wrong phase, or release-path nonce HMAC invalid; `sub_reason` disambiguates |
 | 7 | `EXIT_STALE_UNCERTAIN` | `session unlock` staleness uncertain |
 | 8 | `EXIT_TIMESTAMP_OUT_OF_RANGE` | `--at` value not within 24h of current UTC |
+| 11 | `EXIT_WINDOWS_CONTAINMENT_DEGRADED` | Windows ADS / Win32 reserved-char component in path |
+| 15 | `EXIT_RELEASE_TRUST_INVALID` | release tag signature invalid or trust downgrade refused |
+| 17 | `EXIT_HUMAN_CONFIRMATION_REQUIRED` | human action required — autopilot `requires_human` halt or `phase.approve` non-TTY (`non_tty_approval_blocked`); `sub_reason` disambiguates |
 
 Constants live in `scripts/lib/exitcodes.py`.
 
@@ -349,6 +368,8 @@ warning: .scratch/phase-state.json sha256 (<actual>) does not match the last aud
 ```
 
 First-write / empty-log cases are suppressed.
+
+Note: `harness phase approve` (v0.9.0+: speed-bump; see ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md`) now requires an interactive TTY confirmation before writing the approval state; non-TTY invocations halt with exit 17 without producing a drift-causing write.
 
 ## Verification Allowlist
 
