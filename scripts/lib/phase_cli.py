@@ -487,15 +487,17 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     # returning the misleading "posix-real" label for an empty string.
     # On POSIX, use os.ttyname when stdin is a TTY; fall back to empty string
     # for non-TTY callers (which are blocked earlier by the TTY gate anyway).
-    if os.name == "nt":
-        import secrets as _secrets
-        consumer_tty: str = f"win:{os.getpid()}:{_secrets.token_hex(4)}"
-    else:
-        consumer_tty = (
+    if os.name == "posix":
+        consumer_tty: str = (
             os.ttyname(sys.stdin.fileno())
             if stdin_isatty
             else ""
         )
+    else:
+        # Windows / other non-POSIX: ttyname() is unavailable; synthesise a
+        # unique identifier so _tty_kind() classifies it as "win-synthetic".
+        import secrets as _secrets
+        consumer_tty = f"win:{os.getpid()}:{_secrets.token_hex(4)}"
 
     result = _phase_approve.run_approve(
         args,

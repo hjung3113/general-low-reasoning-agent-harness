@@ -6,7 +6,12 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-_v0.9.0 in progress above._
+### Breaking
+- Prior ledger entries: `phase=done` contract (state machine terminal guard),
+  `state_schema_version` bump from v0.8 → v0.9, and `migrate state --resume`
+  verb are recorded in the **v0.9.0** section below.
+
+_No further unreleased breaking changes._
 
 ## v0.9.0 — 2026-05-19 (phase.approve speed bump)
 
