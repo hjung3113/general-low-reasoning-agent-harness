@@ -11,7 +11,7 @@
 >
 > - **일상 사용자** (개발팀원): **Part 1 (§1–§7)** 만 읽으세요. 명령 4개(`harness`, `harness next`, `harness run`, `harness check`)와 워크플로 모델, 프롬프트 레시피, 제거 절차가 전부입니다.
 > - **Adapter 작성자 / Doctor 사용자**: **Part 2 (§8–§9)** 추가로 읽으세요.
-> - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Approve-Nonce 상세.
+> - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Release Confirmation 상세.
 > - **Troubleshooting / Advanced CLI**: **부록 B** — 오류 해결 레시피, 전체 CLI 레퍼런스, Exit Codes.
 > - **CI / 자동화 엔지니어**: **부록 C** — 환경 변수, Phase Gate 상세(autopilot), 업그레이드, Windows 지원.
 > - **기타**: **부록 D** — v0.9.0 Carryover, 참고 자료.
@@ -45,7 +45,7 @@
 - [A1. 보안 모델](#a1-보안-모델)
 - [A2. Release Trust](#a2-release-trust)
 - [A3. 감사 로그](#a3-감사-로그)
-- [A4. Approve-Nonce (Human Presence Proof)](#a4-approve-nonce-human-presence-proof)
+- [A4. Release Confirmation](#a4-release-confirmation)
 
 ### 부록 B — Troubleshooting & Advanced CLI
 
@@ -861,29 +861,25 @@ Failure → exit 10 (audit chain failure).
 
 ---
 
-## A4. Approve-Nonce (Human Presence Proof)
+## A4. Release Confirmation
 
-(백그라운드 자동 — `harness run`이 prompt 출력)
+`harness release`를 실행할 때, 하네스는 사용자가 직접 타이핑한 토큰으로 확인을 받습니다. 일반 `phase approve`의 `[y/N]` 방지턱(§0.3)보다 한 단계 엄격한 단계입니다.
 
-Phase approve 전에 human presence를 증명하는 메커니즘입니다. Agent가 approval을 가장할 수 없도록 합니다.
+### A4.1 사용 흐름
 
-**Flow**:
-1. 터미널 A (agent): 작업 수행, `phase approve` 전 대기
-2. 터미널 B (human): nonce mint 실행
+1. 터미널에서 `python3 scripts/harness.py release v0.9.0` 실행
+2. 하네스가 묻습니다: `Type 'release v0.9.0' to confirm:`
+3. 정확히 `release v0.9.0`를 타이핑하고 Enter
 
-```bash
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 또는 TTL 지정 (기본 120초)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve --ttl 180
-```
+다른 답 (`y`, Ctrl+C, 다른 문자열)은 cancel로 처리되고 release는 진행되지 않습니다.
 
-3. 터미널 A (human 또는 agent): `harness phase approve` 실행 — nonce 자동 소비, 승인 완료
+### A4.2 왜 이 단계가 있는가
 
-**Nonce 특성**:
-- `~/.harness/approval-nonces/` (POSIX) 또는 `%LOCALAPPDATA%\Harness\approval-nonces\` (Windows)에 저장
-- 120초(기본) 유효
-- Single-use (소비 후 삭제)
-- Minter TTY ≠ consumer TTY (동일 PTY 내 agent 자동 실행 방지)
+`release`는 git tag 생성, push, GitHub release 등 외부에 영향을 주는 작업입니다. 근육 기억으로 `y`를 누르는 사고를 막기 위해 토큰 타이핑을 요구합니다. 내부적으로는 HMAC mechanism(`approval nonce`)이 동작하지만, 사용자가 보는 용어는 "release confirmation"입니다.
+
+### A4.3 비-TTY 환경
+
+CI 환경에서는 별도의 trust path (`HARNESS_BY_TRUST` + OIDC)를 사용합니다. 자세한 내용은 §C2.2 참고.
 
 ---
 
