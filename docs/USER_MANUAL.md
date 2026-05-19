@@ -887,18 +887,7 @@ CI 환경에서는 별도의 trust path (`HARNESS_BY_TRUST` + OIDC)를 사용합
 
 ## B1. 트러블슈팅
 
-### B1.1 "approve-nonce mint requires interactive TTY"
-
-**원인**: Non-TTY 환경(redirected stdin, agent subprocess)에서 nonce mint 시도.
-
-**해결**: 실제 터미널에서 실행:
-```bash
-# 터미널 B (human)
-python3 scripts/harness.py approve-nonce mint --audience phase.approve
-# 8자 code → TTY로 출력
-```
-
-### B1.2 "tag_signature_invalid" / "trust_downgrade_refused"
+### B1.1 "tag_signature_invalid" / "trust_downgrade_refused"
 
 **원인**:
 - Unsigned release tag로 업그레이드 시도 (production install이 이미 signed로 설치됨)
@@ -913,23 +902,23 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
 
-### B1.3 "nonce_signature_invalid"
-
-**원인**:
-- Secret key 손상
-- Nonce 만료 (기본 120초)
-- Minter TTY = consumer TTY (agent가 same PTY에서 approval 시도)
-
-**해결**:
-- Secret key 손상 시 자동 rotation (audit `audit.secret_key.rotated`)
-- Nonce 다시 mint (TTL 재시작)
-- 다른 TTY에서 approval 명령 실행
-
-### B1.4 "audit_partial_write" (exit 14)
+### B1.2 "audit_partial_write" (exit 14)
 
 **원인**: Power loss 또는 crash 사이 crash recovery 불확실성. State + audit transaction이 diverged.
 
 **해결**: `harness session unlock --force` 실행 후 상태 재점검.
+
+### B1.3 "release confirmation expired"
+
+**원인**: `harness release` 실행 시 토큰을 너무 늦게 타이핑함 (내부 expiry 초과).
+
+**해결**: `harness release <version>` 다시 실행. 토큰을 바로 타이핑.
+
+### B1.4 "phase approve requires a terminal"
+
+**원인**: `phase approve`를 agent subprocess, redirected stdin, 또는 CI 환경 등 TTY가 아닌 곳에서 실행함.
+
+**해결**: 본인 터미널에서 `python3 scripts/harness.py phase approve` 직접 실행. `[y/N]` 프롬프트에 `y` 응답.
 
 ### B1.5 "non_tty_authorization_unverified"
 
@@ -939,7 +928,7 @@ python3 scripts/harness.py approve-nonce mint --audience phase.approve
 - GitHub Actions: `GITHUB_ACTIONS=true`, `ACTIONS_ID_TOKEN_REQUEST_URL`, OIDC token 설정
 - GitLab CI: `GITLAB_CI=true`, `CI_JOB_JWT_V2` token 설정
 - Buildkite: `BUILDKITE=true`, Buildkite OIDC token 설정
-- 없으면 TTY 환경에서 human presence proof 사용
+- CI가 아닌 경우 TTY에서 `python3 scripts/harness.py phase approve` 직접 실행
 
 ### B1.6 "scope_violation" / "path_reparse_refused" (exit 4)
 
@@ -994,7 +983,7 @@ python3 scripts/harness.py state show
 ### B1.11 자주 혼동하는 케이스 (Common Confusions)
 
 **Q. Approval 했는데 왜 execute로 못 들어가나요?**
-A. `phase approve`만으로는 부족 — approve-nonce(human presence proof)가 필요합니다. `harness phase approve` 후 `harness approve-nonce mint --audience phase.approve` 실행 후 execute 전환이 가능합니다. (§A4)
+**A.** `harness phase approve`만으로 충분합니다. 터미널에서 실행하면 `[y/N]` 프롬프트가 뜨고 `y` 입력 후 다음 phase로 넘어갈 수 있습니다. 별도의 `approve-nonce mint` 명령은 v0.9.0부터 필요 없습니다 (release는 별개, §A4 참고).
 
 **Q. Skill pack을 설치 후에 추가하려면?**
 A. `harness state show`로 현재 installed packs 확인 후, 원하는 전체 packs를 `--packs`로 명시해 upgrade:
@@ -1007,7 +996,7 @@ python3 scripts/upgrade_harness.py --target <target> --packs workflow-core,workf
 A. `harness phase reopen --to plan`. 현재 phase에서 plan으로 되돌리며 approval 초기화. audit log에 기록되니 실수가 아니면 새 plan을 다시 세우는 편이 안전합니다. (§C2.4)
 
 **Q. `requires_human` (exit 17)이 뜨는데 무엇을 해야 하나요?**
-A. autopilot 중 human approval/nonce가 필요한 시점에 도달했다는 신호. TTY에서 `harness approve-nonce mint --audience phase.approve` 실행 후 autopilot 재시작. (§B3, §A4)
+A. autopilot 중 human approval이 필요한 시점에 도달했다는 신호. TTY에서 `python3 scripts/harness.py phase approve` 직접 실행 후 `[y/N]` 프롬프트에 `y` 응답. autopilot 재시작. (§B3, §A4)
 
 **Q. Source repo와 installed target을 헷갈립니다.**
 A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skills/**`는 install이 만들어낸 target artifact. Source repo에 `.agents/skills/`가 없는 것이 정상. (§4 ownership 규칙)
@@ -1016,7 +1005,7 @@ A. `harness/skill-packs/**`가 source — clone한 곳에 존재. `.agents/skill
 A. Adapter는 entry-point에 불과하며 phase gate state는 공유. 두 adapter 모두 같은 `.scratch/phase-state.json`을 본다. 충돌 시 마지막 mutation이 audit log에 기록됨. (§8)
 
 **Q. Autopilot이 시작 안 됩니다 — "no human presence proof"?**
-A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `approve-nonce` mint 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§C2.2, §C1)
+A. CI: `HARNESS_BY_TRUST` + OIDC 토큰 필요. TTY: `python3 scripts/harness.py phase approve` 실행 후 `[y/N]` 프롬프트에 `y` 응답 후 시작. Dev에서 임시로 우회하려면 `HARNESS_ALLOW_UNSIGNED_DEV=1` (production 금지). (§C2.2, §C1)
 
 ---
 
@@ -1190,7 +1179,7 @@ python3 scripts/harness.py phase autopilot stop
 
 `phase autopilot start`는:
 - CI 환경: OIDC 또는 환경 변수로 증명된 bot identity 요구
-- TTY 환경: human presence proof (nonce 또는 OS credential)로 충분
+- TTY 환경: `phase approve`의 `[y/N]` 프롬프트에 응답하거나 OS credential로 충분
 
 **위험과 사용 기준**: Autopilot은 승인된 scope 내에서만 동작하지만, 연속 실행 중 예상치 못한 변경이 발생할 수 있습니다. 중요한 변경 전에는 `manual` 모드를 유지하세요.
 
