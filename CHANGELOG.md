@@ -13,6 +13,17 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.1 — 2026-05-20 (docs hotfix)
+
+### Fixed
+- Restore correct location for HTML site files:
+  - Presentation deck (~80KB) moved to `docs/site/presentation.html`.
+  - Landing page (~5KB) restored at `docs/site/index.html`.
+  - `docs/index.html` removed (was a mis-named copy of the deck in v0.9.0).
+- README and USER_MANUAL install/upgrade examples bumped to `v0.9.1`.
+
+No code or test changes.
+
 ## v0.9.0 — 2026-05-19 (phase.approve speed bump)
 
 ### Breaking

@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.9.0)
+# 하네스 사용자 설명서 (v0.9.1)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -755,8 +755,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.0 -m "Release v0.9.0"
-git push origin v0.9.0
+git tag -s v0.9.1 -m "Release v0.9.1"
+git push origin v0.9.1
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -766,7 +766,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.0
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.1
 ```
 
 ### A2.5 Trust-Downgrade Refusal
