@@ -43,7 +43,7 @@ This is a **workflow speed bump**, not a security boundary. It exists to make ac
 |-----------|----------|
 | `sys.stdin.isatty() == True`, user types `y` or `Y` and Enter | Approval stamped on current phase. **No automatic phase advance.** `phase set <next>` remains the explicit advance command. Audit row appended. Exit 0. |
 | TTY, user types `N`, `n`, empty Enter, anything else, or Ctrl+C | Halt. No state change. No audit row (cancel is not an event). Exit 0 (clean cancel). |
-| `sys.stdin.isatty() == False` | Halt. No state change. Stderr message: `phase approve requires a terminal. Run this command yourself.` Exit code: `EXIT_HUMAN_CONFIRMATION_REQUIRED = 18` (new). |
+| `sys.stdin.isatty() == False` | Halt. No state change. Stderr message: `phase approve requires a terminal. Run this command yourself.` Exit code: `EXIT_HUMAN_CONFIRMATION_REQUIRED = 17` (new). |
 
 **Prompt format** (stdout, single line, newline-terminated):
 
@@ -87,9 +87,9 @@ Cancels are not logged.
 |------|--------|---------|
 | 6 | `EXIT_WRONG_PHASE_FOR_VERB` | Existing meaning preserved. |
 | 6 | `EXIT_NONCE_SIGNATURE_INVALID` | Retained for release-path nonce errors only. Internal alias of the same numeric value. |
-| 18 | `EXIT_HUMAN_CONFIRMATION_REQUIRED` | **New.** Non-TTY phase.approve. |
+| 17 | `EXIT_HUMAN_CONFIRMATION_REQUIRED` | **New symbol** at numeric 17 (already protocol-spec §3.4 "human action required"; existing `requires_human` autopilot halts also exit 17). `sub_reason: non_tty_approval_blocked` disambiguates from autopilot's `requires_human`. |
 
-Tests asserting `exit 6 + human_proof_*` reason on phase.approve are rewritten to assert `exit 18 + non_tty_approval_blocked`.
+Tests asserting `exit 6 + human_proof_*` reason on phase.approve are rewritten to assert `exit 17 + non_tty_approval_blocked`.
 
 ---
 
@@ -152,7 +152,7 @@ Glossary entries (final wording):
 | §B1.3 nonce_signature_invalid | Scoped to release path only (release errors retained). |
 | §B3 (autopilot human-required) | Updated: no longer says "run approve-nonce". Now says "run `phase approve` from your terminal". |
 | §C2.2 FAQ "approve만으로 부족" | Rewritten: phase.approve is now sufficient on its own. Release path keeps its own confirmation. |
-| Exit-code table | Add row for `18` `EXIT_HUMAN_CONFIRMATION_REQUIRED`. |
+| Exit-code table | Add row for `17` `EXIT_HUMAN_CONFIRMATION_REQUIRED` (alongside existing `requires_human` row, since both share numeric 17 with sub_reason disambiguation). |
 | Env-var table (current §C, "환경 변수") | **Section moved out of USER_MANUAL.** Replaced with a single sentence: "고급 설정 flag는 `docs/advanced/harness-flags.md` 참고. 일반 사용자는 건드릴 일 없음." `HARNESS_NONCE_DIR` row removed (phase.approve no longer uses it; if release path still uses it, that row stays in the advanced doc only). |
 
 ### 6.2 README.md changes
