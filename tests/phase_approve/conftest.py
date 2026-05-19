@@ -21,9 +21,9 @@ def seed_scratch(scratch: Path, audit_path: Path) -> None:  # noqa: ARG001
     """Bootstrap a minimal phase_state for speed-bump tests.
 
     Writes the canonical phase-state JSON directly to scratch/ WITHOUT
-    writing an audit entry.  This is intentional: the new speed-bump
-    tests use skip_anchor_preflight=True which also skips state_trust
-    preflight (see phase_approve.run_approve).  The audit_path parameter
+    writing an audit entry.  This is intentional: the speed-bump tests
+    use skip_state_trust_preflight=True (the no-audit variant) to bypass
+    the state_trust audit-consistency check.  The audit_path parameter
     is accepted for API compatibility but is NOT written to, so that
     tests asserting ``audit_path.read_text() == ""`` after a cancelled
     approve remain valid.

@@ -279,6 +279,7 @@ def run_approve(
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
     skip_anchor_preflight: bool = False,
+    skip_state_trust_preflight: bool = False,
 ) -> ApproveResult:
     """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
 
@@ -554,11 +555,13 @@ def run_approve(
                 )
 
         # State-trust preflight (§2.6). Refuses forged state with exit 10.
-        # When skip_anchor_preflight=True (test-only bypass), also skip the
-        # state-trust audit-consistency check — tests that use this flag
-        # do not wire up a real audit chain, so the preflight would always
-        # fail. The anchor-verified path still runs state_trust (security).
-        if not skip_anchor_preflight:
+        # skip_state_trust_preflight=True is a separate test-only bypass for
+        # tests that do not wire up a real audit chain (e.g. speed-bump prompt
+        # tests seeded via seed_scratch without an audit entry).
+        # skip_anchor_preflight=True does NOT imply skipping state_trust;
+        # tests such as _trigger_exit14_crash_recovery pass skip_anchor_preflight
+        # while still relying on state_trust to fire exit 14.
+        if not skip_state_trust_preflight:
             try:
                 _state_trust.preflight(
                     scratch,

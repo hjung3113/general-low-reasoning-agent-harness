@@ -12,7 +12,7 @@ from tests.phase_approve.conftest import seed_scratch
 
 
 def _stub_args(**overrides):
-    base = dict(by=None, dry_run=False)
+    base = dict(by=None)
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -52,6 +52,7 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
         skip_anchor_preflight=True,
+        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_OK
@@ -120,6 +121,7 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
         skip_anchor_preflight=True,
+        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_OK
