@@ -42,7 +42,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import approval_nonce as _approval_nonce
 from . import audit_anchor as _audit_anchor  # kept for tests that monkeypatch
 from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
@@ -86,23 +85,6 @@ _FIX_APPROVER_MEMBERSHIP = (
     "Fix: only emails listed in `.harness/install-record.json approvers[]` "
     "may approve; re-run `harness install` or pass "
     "`--override-identity --reason <text>`"
-)
-_FIX_NONCE_MISSING = (
-    "Fix: in a separate terminal run "
-    "`harness approve-nonce mint --audience phase.approve`, "
-    "then re-run `harness phase approve`"
-)
-_FIX_NONCE_EXPIRED = (
-    "Fix: nonces expire after 120s; re-mint via "
-    "`harness approve-nonce mint --audience phase.approve`"
-)
-_FIX_NONCE_SAME_TTY = (
-    "Fix: mint the nonce from a different terminal "
-    "(same-TTY mint+consume is rejected as agent-impersonation defense)"
-)
-_FIX_NONCE_SIG_INVALID = (
-    "Fix: nonce file appears tampered or was signed with a different "
-    "secret.key; re-mint via `harness approve-nonce mint --audience phase.approve`"
 )
 _FIX_AUTOPILOT = (
     "Fix: run `harness phase autopilot stop --reason \"<text>\"` "
