@@ -55,7 +55,7 @@
 
 ### 부록 C — CI / 자동화
 
-- [C1. 환경 변수](#c1-환경-변수)
+- [C1. 고급 설정 flag](#c1-고급-설정-flag)
 - [C2. Phase Gate 상세 (Autopilot)](#c2-phase-gate-상세-autopilot)
 - [C3. 업그레이드](#c3-업그레이드)
 - [C4. Windows 지원](#c4-windows-지원)
@@ -1135,20 +1135,9 @@ v0.6 `automation_mode` → v0.7 `execution_mode` 마이그레이션은 phase com
 
 ## 부록 C — CI / 자동화
 
-## C1. 환경 변수
+## C1. 고급 설정 flag
 
-| 변수 | 값 | 의미 | 보안 노트 |
-| --- | --- | --- | --- |
-| `HARNESS_ALLOW_UNSIGNED_DEV` | `1` | Dev 환경에서 unsigned tag bypass | Production install은 downgrade 불가. 권장하지 않음 |
-| `HARNESS_AUTOPILOT_NETWORK` | `1` | Autopilot에서 network 허용 | `phase autopilot --allow-network` flag와 동일; audit 기록 |
-| `HARNESS_BY_TRUST` | email | CI 환경에서 bot identity 지정 | OIDC/signed token과 함께 필수; human approver와 겹치지 않아야 함 |
-| `HARNESS_AUTOMATION` | `phase` \| `chain` | CI autopilot mode | OIDC 또는 환경 검증 필수; TTY 없음 |
-| `HARNESS_NONCE_DIR` | path | Approval nonce 저장 위치 override | Test-only; production은 권장하지 않음 |
-| `HARNESS_JTI_DIR` | path | OIDC JTI store override | 위치 override 시 audit warning `ci.oidc.jti.dir_override` 기록 |
-| `HARNESS_STRICT_VERB_REGISTRY` | `1` | Unknown verb에 exit 10 enforce | 기본(permissive)은 warning만 |
-| `HARNESS_PROJECT_ROOT` | path | PS audit path 지정 | PowerShell deny-shim용; Windows에서 audit path 명확화 |
-| `HARNESS_BYPASS_TTY_CONFIRM` | `1` | TTY gate 무시 (test-only) | 테스트 fixture용; production 금지 |
-| `HARNESS_FIXED_NOW_ISO` | timestamp | 고정 시간 (test-only) | 예: `2026-05-17T14:30:00Z` |
+하네스 내부 설정 flag(`HARNESS_*`)는 [`docs/advanced/harness-flags.md`](../advanced/harness-flags.md)를 참고하세요. 일반 사용자는 건드릴 일 없습니다.
 
 ---
 
