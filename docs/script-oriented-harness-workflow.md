@@ -104,6 +104,14 @@ Required fields:
 - `warnings`
 - `required_reads`
 - `suggested_next_read`
+- `next_steps`
+
+`next_steps` is a compact additive summary for low-reasoning agents:
+
+- `trusted`: `true` when no warning requires an extra read before trusting the projection.
+- `read_next`: the first required planning file to read next.
+- `may_edit`: mirrors the projected execute gate; it is not a substitute for `harness check` in adapter workflows.
+- `must_verify`: verification commands named by the active phase.
 
 Identity fields must be stable, path-independent identifiers extracted from
 canonical planning files, not inferred display labels. At minimum:

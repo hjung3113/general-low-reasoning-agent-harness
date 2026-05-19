@@ -56,7 +56,7 @@ class ReleaseScriptTests(unittest.TestCase):
                 "python3 scripts/harness.py check",
                 "python3 scripts/release_smoke_test.py",
                 "git push origin main",
-                "git tag -a v0.4.3 -m v0.4.3",
+                "git tag -s v0.4.3 -m v0.4.3",
                 "python3 scripts/release_smoke_test.py --release --expected-version v0.4.3",
                 "git push origin v0.4.3",
             ],

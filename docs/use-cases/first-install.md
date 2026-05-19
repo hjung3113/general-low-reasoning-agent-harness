@@ -8,7 +8,7 @@
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.1 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 

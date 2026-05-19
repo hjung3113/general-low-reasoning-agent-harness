@@ -6,13 +6,79 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-(Nothing accumulated yet.)
+### Breaking
+- Prior ledger entries: `phase=done` contract (state machine terminal guard),
+  `state_schema_version` bump from v0.8 → v0.9, and `migrate state --resume`
+  verb are recorded in the **v0.9.0** section below.
+
+_No further unreleased breaking changes._
+
+## v0.9.0 — 2026-05-19 (phase.approve speed bump)
 
 ### Breaking
+- `harness phase approve` no longer consumes an HMAC nonce. Replaced with interactive `[y/N]` prompt on a TTY.
+- Non-TTY callers now exit `EXIT_HUMAN_CONFIRMATION_REQUIRED=17` with `sub_reason=non_tty_approval_blocked` (previously exit 6 with varied sub_reasons like `human_proof_missing`, `human_proof_nonce_expired`).
+- `harness approve-nonce mint --audience phase.approve` is now a deprecation no-op that emits a stderr warning and exits 0 without writing a nonce. Removal scheduled for v1.0. Other audiences (release.*) unchanged.
+- `phase approve` while in `done` phase refused with `EXIT_WRONG_PHASE_FOR_VERB=6` + `sub_reason=approve_in_done`.
 
-- No unreleased breaking changes. Prior ledger entries for `phase=done`,
-  `state_schema_version`, and `migrate state --resume` are recorded in released
-  sections below.
+### Changed
+- Audit row for phase.approve now records `proof_class=soft_tty`, `tty`, `response`. Chain stamping (schema_version, seq, previous_entry_hash, entry_hash) preserved unchanged via `audit_append`.
+- `confirmation_kind` field value `human_nonce` → `soft_tty` for phase.approve rows.
+- `_do_phase_approve` legacy shim retired; `run_approve` is the direct dispatch.
+
+### Added
+- New ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md` records the threat-model downgrade scoped to phase.approve.
+- USER_MANUAL §0.1 (Speed-bump vs autopilot boundary), §0.2 (Glossary).
+- README "용어 / Glossary" section.
+- `docs/advanced/harness-flags.md` lists all `HARNESS_*` flags; USER_MANUAL no longer carries the env-var table.
+- New exit code symbol `EXIT_HUMAN_CONFIRMATION_REQUIRED=17` (numeric value already reserved by protocol-spec §3.4 "human action required" slot).
+- New test-only parameter `skip_state_trust_preflight` on `run_approve` (decoupled from `skip_anchor_preflight`).
+
+### Docs
+- USER_MANUAL §A4 renamed "Approve-Nonce" → "Release Confirmation".
+- USER_MANUAL §B1.1/B1.2 (approve-nonce troubleshooting) removed. New §B1.4 "phase approve requires a terminal".
+- USER_MANUAL §C2.2 FAQ rewritten: `phase approve` alone is sufficient.
+- Adapter prompt templates updated: `[y/N]` prompts must not be answered by adapter agents.
+
+### Out of scope (intentionally unchanged)
+- `harness release`, signed tags, OIDC, release_trust, `.github/workflows/release.yml`, `docs/trust/`.
+
+See ADR 2026-05-19-phase-approve-speed-bump for rationale.
+
+## v0.8.3 — 2026-05-19 (hotfix — signed tag + manual restructure + error message)
+
+### Trust
+
+- **Signed release tag 복구**: v0.8.0/8.1/8.2가 unsigned tag로 발행되어 install/upgrade가 `tag_signature_invalid`로 거부되는 문제 수정. v0.8.3은 SSH ed25519로 properly signed. `docs/trust/allowed-signers`에 maintainer pubkey 등록 (release@harness hjung3113@gmail.com).
+- v0.8.0~v0.8.2 unsigned tag는 history 보존을 위해 그대로 둡니다. 해당 버전을 install/upgrade할 때만 `HARNESS_ALLOW_UNSIGNED_DEV=1` 필요.
+
+### Fixed
+
+- `harness status/next` anchor-missing 에러 메시지 수정 (3-persona 적대적 리뷰 적용):
+  - 잘못된 경로(`.harness/audit.tip-anchor.json` in-repo) → 정확한 경로 (`~/.harness/audit-tip/<repo-id>.json` out-of-repo)
+  - 잘못된 fix 명령(`harness init`) → `harness anchor repair`
+  - `({exc})` 보간으로 peer callsites(`halt_diary_cli.py`, `phase_autopilot_cli.py`)와 일치
+
+### Docs
+
+- `docs/USER_MANUAL.md` 재구조 (1288 → 1339 lines, 콘텐츠 0 손실):
+  - **Part 1 (§1–§7)**: 일상 사용자가 읽어야 할 전부 — 개요, 첫 세션, 워크플로, Planning State, Skill Packs, 프롬프트 레시피, 제거.
+  - **Part 2 (§8–§9)**: Adapter 작성자.
+  - **부록 A**: Maintainer/Security — 보안 모델, Release Trust, 감사 로그, Approve-Nonce.
+  - **부록 B**: Troubleshooting + Advanced CLI (`HARNESS_ADVANCED=1`) + Exit Codes.
+  - **부록 C**: CI/자동화 — 환경 변수, Autopilot, 업그레이드, Windows.
+  - **부록 D**: v0.9.0 Carryover, 참고 자료.
+  - TL;DR 안내 블록 추가 (어디서 읽을지).
+  - §B2 CLI 레퍼런스에 `HARNESS_ADVANCED=1` 경고 banner.
+- `README.md` USER_MANUAL anchor 수정 (§16/§17 → §C3/§7).
+- 모든 v0.8.2 → v0.8.3 release token 갱신.
+
+## v0.8.2 — 2026-05-19 (workflow UX hardening)
+
+- Added compact `next_steps` guidance to `show_phase_status.py` JSON so low-reasoning agents can read trust, next read, edit permission, and verification obligations without inferring them from the full projection.
+- Updated adapter status and phase-run prompts to use the current `HARNESS_MACHINE=1 harness next` contract fields: `may_edit`, `requires_user_approval`, `next_command`, and `next_user_prompt`.
+- Clarified approval-boundary docs: humans approve after `harness run` surfaces the prompt; adapters must never self-approve.
+- Updated README/manual release examples from v0.8.1 to v0.8.2.
 
 ## v0.8.1 — 2026-05-19 (한글 유즈케이스 문서 hotfix)
 

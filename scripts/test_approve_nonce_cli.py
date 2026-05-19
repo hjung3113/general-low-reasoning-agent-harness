@@ -24,7 +24,7 @@ from lib import approval_nonce
 _MOCK_TTY = mock.patch.object(sys.stdin, "isatty", return_value=True)
 
 
-def _make_args(audience: str = "phase.approve", ttl: int = 120) -> argparse.Namespace:
+def _make_args(audience: str = "release.publish", ttl: int = 120) -> argparse.Namespace:
     return argparse.Namespace(audience=audience, ttl=ttl)
 
 
@@ -43,7 +43,7 @@ class TestRunMintHappyPath(unittest.TestCase):
         stderr = io.StringIO()
         with mock.patch.object(sys.stdin, "isatty", return_value=True):
             rc = approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve", ttl=120),
+                _make_args(audience="release.publish", ttl=120),
                 nonce_dir=self.nonce_dir,
                 stdout=stdout,
                 stderr=stderr,
@@ -51,7 +51,7 @@ class TestRunMintHappyPath(unittest.TestCase):
         self.assertEqual(rc, 0, msg=f"stderr={stderr.getvalue()!r}")
         out = stdout.getvalue()
         self.assertIn("nonce_id=", out)
-        self.assertIn("audience=phase.approve", out)
+        self.assertIn("audience=release.publish", out)
         self.assertIn("expires_in_s=120", out)
 
     def test_nonce_file_exists_with_correct_audience(self) -> None:
@@ -84,7 +84,7 @@ class TestRunMintHappyPath(unittest.TestCase):
         with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve"),
+                _make_args(audience="release.publish"),
                 nonce_dir=self.nonce_dir,
                 stdout=stdout,
                 stderr=io.StringIO(),
@@ -312,7 +312,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve"),
+                _make_args(audience="release.publish"),
                 nonce_dir=self.nonce_dir,
                 stdout=stdout,
                 stderr=io.StringIO(),
@@ -327,7 +327,7 @@ class TestWindowsSyntheticTtyBranch(unittest.TestCase):
         with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli, "_resolve_minter_tty", self._win_tty_resolver):
             rc = approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve"),
+                _make_args(audience="release.publish"),
                 nonce_dir=self.nonce_dir,
                 stdout=io.StringIO(),
                 stderr=io.StringIO(),
@@ -362,7 +362,7 @@ class TestAuditRowContent(unittest.TestCase):
         with mock.patch.object(sys.stdin, "isatty", return_value=True), \
              mock.patch.object(approve_nonce_cli._audit, "audit_append", side_effect=fake_audit_append):
             rc = approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve"),
+                _make_args(audience="release.publish"),
                 nonce_dir=self.nonce_dir,
                 stdout=io.StringIO(),
                 stderr=io.StringIO(),
@@ -397,7 +397,7 @@ class TestMintConsumeRoundTrip(unittest.TestCase):
                                return_value=("posix:/dev/pts/99", "posix-real")), \
              mock.patch.object(approval_nonce, "_load_or_create_secret_key", return_value=key):
             rc = approve_nonce_cli.run_mint(
-                _make_args(audience="phase.approve", ttl=120),
+                _make_args(audience="release.publish", ttl=120),
                 nonce_dir=self.nonce_dir,
                 stdout=stdout,
                 stderr=io.StringIO(),
@@ -413,7 +413,7 @@ class TestMintConsumeRoundTrip(unittest.TestCase):
         # Consume with a different consumer_tty.
         result = approval_nonce.consume_newest_valid(
             self.nonce_dir,
-            audience="phase.approve",
+            audience="release.publish",
             consumer_tty="/dev/pts/42",
             secret_key=key,
         )

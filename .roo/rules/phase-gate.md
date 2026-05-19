@@ -6,7 +6,8 @@ Use `.scratch/phase-state.schema.json` for external phase state. Durable phase m
 
 - Default to `discuss` when no phase state is present.
 - Use only the normal user workflow by default: `harness`, `harness next`, `harness run`, and `harness check`.
-- Do not run low-level phase, approval, nonce, anchor, state repair, or autopilot commands from Roo rules unless the user explicitly asks for advanced/debug/CI handling.
+- Do not run low-level phase, approval, anchor, state repair, or autopilot commands from Roo rules unless the user explicitly asks for advanced/debug/CI handling.
+- If the harness prints a `[y/N]` prompt, do not answer it yourself. Stop and ask the user to confirm from their terminal.
 - Treat `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, and the active `.planning/phases/*/*-CHECKPOINTS.md` as the canonical restart source of truth behind the status projection; `.scratch/phase-state.json` is only the live gate pointer.
 - During existing-repository adoption or `project init`, treat missing, placeholder-only, or stale `.planning/codebase/**` and active `.planning/phases/**` files as an incomplete gate that must return to `plan` for hydration.
 - Treat `discuss` as read-only discovery.

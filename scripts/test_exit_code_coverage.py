@@ -53,10 +53,14 @@ class ExitCodeCoverageTests(unittest.TestCase):
         r = run(["phase", "set", "discuss"], cwd=self.tmp)
         self.assertEqual(r.returncode, 5, r.stderr)
 
-    def test_exit_6_wrong_phase(self) -> None:
+    def test_exit_17_non_tty_approve(self) -> None:
+        # v0.9.0 speed-bump: phase approve from non-TTY subprocess now returns
+        # EXIT_HUMAN_CONFIRMATION_REQUIRED (17). The TTY gate fires before any
+        # phase/identity checks. Prior name was test_exit_6_wrong_phase; that
+        # tested the old non-TTY guard which returned 6.
         run(["phase", "set", "discuss"], cwd=self.tmp)
         r = run(["phase", "approve"], cwd=self.tmp)
-        self.assertEqual(r.returncode, 6, r.stderr)
+        self.assertEqual(r.returncode, 17, r.stderr)
 
     def test_exit_7_staleness_uncertain(self) -> None:
         (self.tmp / ".harness" / "session.lock").write_text(json.dumps(

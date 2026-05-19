@@ -17,6 +17,8 @@
 | `next_user_prompt` | 사용자에게 보여줄 승인 안내문, 없으면 `null` |
 | `warnings` | 점검/상태 진단 목록. 정상 성공 시 빈 배열 |
 
+구현 직전 어댑터는 `harness check` 후 `python3 scripts/show_phase_status.py`도 실행합니다. 이 projection에서 `projected_execute_gate_valid=true`, `next_steps.may_edit=true`, `allowed_paths`와 `verification`이 비어 있지 않을 때만 파일을 수정합니다.
+
 ```mermaid
 stateDiagram-v2
     [*] --> 논의: 상태 없음 또는 새 phase
@@ -35,4 +37,3 @@ stateDiagram-v2
         차단: 어댑터는 self-approve 불가
     }
 ```
-

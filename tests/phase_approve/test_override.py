@@ -7,10 +7,14 @@ Design refs:
   - §3.1.1 final paragraph — sanitization rules for `--by` / `--reason` /
                   `--override-reason`: max 1024 chars; control chars
                   rejected; newlines normalized.
-  - §12.6 — human-presence proof tightening (override still requires nonce).
   - ADR-001 (`docs/adr/2026-05-17-approver-provenance-and-execution-mode.md`)
             — `by_source=override_identity` is the audit discriminator for
             non-installed-record approvers; reason is mandatory.
+
+NOTE v0.9.0: nonce is no longer required for phase.approve (speed-bump
+design §4.1 replaces the nonce flow with [y/N] prompt). Tests that
+verified nonce-specific override behavior (test_override_still_requires_nonce,
+test_override_consumes_nonce) are deleted — those semantics no longer exist.
 
 Tests target `run_approve` directly with dependency injection; the env
 fixture is reused from `test_approve_provenance.py` via the local
@@ -35,7 +39,7 @@ from pathlib import Path
 
 import pytest
 
-from lib import phase_approve, approval_nonce, phase_lock, phase_txn
+from lib import phase_approve, phase_lock, phase_txn
 
 
 # ---------------------------------------------------------------------------
@@ -106,15 +110,6 @@ def env(tmp_path: Path) -> dict:
     }
 
 
-def _mint_valid_nonce(nonce_dir: Path, *, minter_tty: str = "/dev/ttys001"):
-    return approval_nonce.mint(
-        nonce_dir=nonce_dir,
-        audience="phase.approve",
-        minter_tty=minter_tty,
-        ttl_seconds=120,
-    )
-
-
 def _make_args(**overrides):
     base = {
         "by": None,
@@ -134,7 +129,17 @@ def _make_args(**overrides):
 
 
 def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
-         gitconfig_email="alice@example.com", **arg_overrides):
+         gitconfig_email="alice@example.com",
+         monkeypatch=None, input_response="y",
+         **arg_overrides):
+    """Invoke run_approve with test-controlled environment.
+
+    Pass `monkeypatch` + `input_response` for calls that are expected to
+    reach the Step 7 speed-bump prompt. Tests that return before Step 7
+    (TTY gate, sanitization failures, etc.) can omit both.
+    """
+    if monkeypatch is not None:
+        monkeypatch.setattr("builtins.input", lambda _prompt="": input_response)
     args = _make_args(**arg_overrides)
     return phase_approve.run_approve(
         args,
@@ -156,17 +161,17 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
 # ---------------------------------------------------------------------------
 
 
-def test_override_identity_replaces_by_in_audit(env):
+def test_override_identity_replaces_by_in_audit(env, monkeypatch):
     """Override identity is the *audit display*; gate is still approvers
     membership. We use `--by alice@example.com` (a listed approver) plus
     `--override-identity alice-alt@example.com --reason "..."`. Audit
     `by` MUST be the override value; `by_source=override_identity`."""
-    _mint_valid_nonce(env["nonce_dir"])
     rc = _run(
         env,
         by="alice@example.com",
         override_identity="alice-alt@example.com",
         override_reason="lost laptop, using backup identity",
+        monkeypatch=monkeypatch,
     )
     assert rc.exit_code == 0
     assert rc.by_source == "override_identity"
@@ -185,7 +190,7 @@ def test_override_identity_replaces_by_in_audit(env):
 
 
 def test_override_identity_without_reason_rejected(env):
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="alice@example.com",
@@ -197,7 +202,7 @@ def test_override_identity_without_reason_rejected(env):
 
 
 def test_override_identity_empty_reason_rejected(env):
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="alice@example.com",
@@ -225,7 +230,7 @@ def test_resolved_email_not_in_approvers_rejected_even_with_override(env):
     operational invariant is "humans listed in install-record approve".
     See ADR-001 + conductor brief.
     """
-    _mint_valid_nonce(env["nonce_dir"])
+    # approver gate fires before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="mallory@evil.example",  # NOT in approvers
@@ -252,7 +257,7 @@ def test_resolved_email_not_in_approvers_rejected_even_with_override(env):
     ("bidi⁦isolate", "bidi LRI"),
 ])
 def test_override_reason_invalid_chars_rejected(env, bad_reason, desc):
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="alice@example.com",
@@ -265,7 +270,7 @@ def test_override_reason_invalid_chars_rejected(env, bad_reason, desc):
 
 def test_override_reason_too_long_rejected(env):
     """§3.1.1 caps reason at 1024 chars."""
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="alice@example.com",
@@ -276,46 +281,24 @@ def test_override_reason_too_long_rejected(env):
     assert rc.sub_reason == "override_reason_too_long"
 
 
-def test_override_reason_at_length_cap_accepted(env):
-    _mint_valid_nonce(env["nonce_dir"])
+def test_override_reason_at_length_cap_accepted(env, monkeypatch):
     rc = _run(
         env,
         by="alice@example.com",
         override_identity="alice-alt@example.com",
         override_reason="x" * 1024,
+        monkeypatch=monkeypatch,
     )
     assert rc.exit_code == 0
 
 
 # ---------------------------------------------------------------------------
-# 5. Nonce still required + consumed
+# 5. Nonce tests removed (v0.9.0 speed-bump)
+#
+# test_override_still_requires_nonce and test_override_consumes_nonce are
+# deleted — the nonce flow no longer exists on phase.approve. The [y/N]
+# speed-bump prompt replaces it. TTY gate still applies (see section 6).
 # ---------------------------------------------------------------------------
-
-
-def test_override_still_requires_nonce(env):
-    """No nonce minted → human_proof_missing even with override flags."""
-    rc = _run(
-        env,
-        by="alice@example.com",
-        override_identity="alice-alt@example.com",
-        override_reason="legit reason",
-    )
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "human_proof_missing"
-
-
-def test_override_consumes_nonce(env):
-    nonce = _mint_valid_nonce(env["nonce_dir"])
-    rc = _run(
-        env,
-        by="alice@example.com",
-        override_identity="alice-alt@example.com",
-        override_reason="rotating identity",
-    )
-    assert rc.exit_code == 0
-    # Nonce file gone (single-use).
-    remaining = list(env["nonce_dir"].glob("*.json"))
-    assert not any(p.stem == nonce.nonce_id for p in remaining)
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +307,8 @@ def test_override_consumes_nonce(env):
 
 
 def test_override_still_requires_tty(env):
-    _mint_valid_nonce(env["nonce_dir"])
+    # non-TTY fires before Step 7 prompt; no input monkeypatch needed
+    # exit code is now 17 (EXIT_HUMAN_CONFIRMATION_REQUIRED)
     rc = _run(
         env,
         stdin_isatty=False,
@@ -332,7 +316,7 @@ def test_override_still_requires_tty(env):
         override_identity="alice-alt@example.com",
         override_reason="legit",
     )
-    assert rc.exit_code == 6
+    assert rc.exit_code == 17
     assert rc.sub_reason == "non_tty_approval_blocked"
 
 
@@ -341,13 +325,13 @@ def test_override_still_requires_tty(env):
 # ---------------------------------------------------------------------------
 
 
-def test_audit_records_override_reason_in_args(env):
-    _mint_valid_nonce(env["nonce_dir"])
+def test_audit_records_override_reason_in_args(env, monkeypatch):
     rc = _run(
         env,
         by="alice@example.com",
         override_identity="alice-alt@example.com",
         override_reason="rotating identity per security policy",
+        monkeypatch=monkeypatch,
     )
     assert rc.exit_code == 0
     lines = [
@@ -366,12 +350,11 @@ def test_audit_records_override_reason_in_args(env):
 # ---------------------------------------------------------------------------
 
 
-def test_baseline_unchanged_when_no_override_flag(env):
-    """`override_identity=None` MUST yield the pre-S05 behavior:
-    `by_source=gitconfig_auto`, `confirmation_kind=human_nonce`, audit
+def test_baseline_unchanged_when_no_override_flag(env, monkeypatch):
+    """`override_identity=None` MUST yield the speed-bump behavior:
+    `by_source=gitconfig_auto`, `confirmation_kind=soft_tty`, audit
     `by=alice@example.com` (the resolved identity)."""
-    _mint_valid_nonce(env["nonce_dir"])
-    rc = _run(env)  # no override
+    rc = _run(env, monkeypatch=monkeypatch)  # no override
     assert rc.exit_code == 0
     assert rc.by_source == "gitconfig_auto"
     assert rc.resolved_email == "alice@example.com"
@@ -381,7 +364,7 @@ def test_baseline_unchanged_when_no_override_flag(env):
     last = json.loads(lines[-1])
     assert last["by"] == "alice@example.com"
     assert last["by_source"] == "gitconfig_auto"
-    assert last["confirmation_kind"] == "human_nonce"
+    assert last["confirmation_kind"] == "soft_tty"
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +389,7 @@ def test_sanitizer_rejects_zwj_zwnj_alm_ls_ps(env, char, name):
     Letter Mark, and Unicode line/paragraph separators must be rejected
     by the sanitizer (they are visual-spoof / audit-line-framing hazards
     that the original _BIDI_CONTROLS set missed)."""
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     bad_reason = f"legit reason{char}injected"
     rc = _run(
         env,
@@ -423,7 +406,7 @@ def test_sanitizer_rejects_zwj_zwnj_alm_ls_ps(env, char, name):
 
 
 def test_override_identity_with_control_chars_rejected(env):
-    _mint_valid_nonce(env["nonce_dir"])
+    # sanitization failure returns before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
         by="alice@example.com",

@@ -23,9 +23,11 @@ sequenceDiagram
     사용자->>하네스: 명시적 승인
     하네스->>상태: 승인 provenance 기록
     어댑터->>하네스: harness check
-    하네스-->>어댑터: execute gate 유효
+    하네스-->>어댑터: 구조와 live gate 정상
+    어댑터->>하네스: python3 scripts/show_phase_status.py
+    하네스->>상태: durable planning pointer projection
+    하네스-->>어댑터: projected_execute_gate_valid + next_steps
     어댑터->>상태: 승인된 경로만 수정
     어댑터->>하네스: harness check
     하네스-->>어댑터: 최종 검증 결과
 ```
-

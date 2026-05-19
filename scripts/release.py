@@ -171,7 +171,7 @@ def run_release(
     runner.run(["python3", "scripts/harness.py", "check"])
     runner.run(["python3", "scripts/release_smoke_test.py"])
     runner.run(["git", "push", "origin", "main"])
-    runner.run(["git", "tag", "-a", selected_version, "-m", selected_version])
+    runner.run(["git", "tag", "-s", selected_version, "-m", selected_version])
     runner.run(["python3", "scripts/release_smoke_test.py", "--release", "--expected-version", selected_version])
     runner.run(["git", "push", "origin", selected_version])
     wait_for_release_workflow(runner, selected_version)

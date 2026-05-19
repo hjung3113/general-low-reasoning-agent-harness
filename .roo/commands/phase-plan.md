@@ -25,6 +25,8 @@ Preflight checklist:
 
 For one-pass automation, use `/fsd-run-phase <phase>` or another phase-gated workflow command; canonical automation rules live in `workflow-phase-gate`.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Advance the lifecycle only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do not self-approve:
 
 ```text

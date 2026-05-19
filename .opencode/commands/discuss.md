@@ -34,6 +34,8 @@ Forbidden work:
 - changing the live gate to `execute`
 - using stack-specific profile commands before that profile is confirmed
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Advance the lifecycle only through the high-level CLI; do NOT direct-edit `.scratch/phase-state.json` and do NOT run low-level phase/approval commands from this adapter:
 
 ```text

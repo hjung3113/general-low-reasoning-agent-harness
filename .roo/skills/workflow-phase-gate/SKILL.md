@@ -246,11 +246,13 @@ Move forward in the phase lifecycle via the CLI; do NOT direct-edit `.scratch/ph
 harness phase set <discuss|plan|execute|done>
 
 # Approve in phase=plan or phase=execute (writes approved=true, approved_by, approved_at):
-harness phase approve
+harness phase approve  # Do not run this yourself if the harness prompts [y/N]; ask the user.
 
 # From phase=done, start a new cycle (safety prompt required):
 harness phase set discuss --reset-approval
 ```
+
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
 
 `harness phase approve` in `phase=done` is a no-op error (exit 6, G2-C). Direct-editing the state file still works but emits an ADR-003a drift warning on the next `harness check` run.
 
