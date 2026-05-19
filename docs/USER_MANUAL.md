@@ -20,6 +20,11 @@
 
 ## 목차
 
+### §0 — 개념 안내
+
+- [0.3 Speed bump vs Autopilot](#03-speed-bump-방지턱-vs-autopilot)
+- [0.4 Glossary / 용어](#04-glossary--용어)
+
 ### Part 1 — 일상 사용자
 
 1. [개요](#1-개요)
@@ -59,6 +64,34 @@
 
 - [D1. v0.9.0 Carryover](#d1-v09-carryover)
 - [D2. 참고 자료](#d2-참고-자료)
+
+---
+
+## §0 — 개념 안내
+
+### 0.3 Speed bump (방지턱) vs Autopilot
+
+이 하네스에는 사용자가 자주 만나는 두 개의 개념이 있습니다. 자주 혼동되니 한 번 짚고 갑니다.
+
+- **Speed bump (방지턱)** — `harness phase approve`가 매번 `[y/N]`로 묻는 단계입니다. 사용자가 직접 답해야 다음으로 넘어갑니다. **이건 보안 검사가 아닙니다.** 워크플로우 중간에 사람이 한 번 더 확인하라는 의도된 마찰입니다. 답이 `y`가 아니거나, 터미널이 아닌 환경 (agent subprocess, CI 등)에서 실행하면 halt 합니다.
+- **Autopilot** — `harness autopilot start`로 시작합니다. 묻지 않고 여러 phase를 자동 진행합니다. 시간/턴 budget이 정해지면 그 안에서만 동작합니다. 기본 OFF.
+
+둘은 독립적인 기능입니다. autopilot이 활성화돼도 speed bump가 모든 phase 전환을 가로채는 것은 아닙니다 (autopilot 자체의 정책에 따릅니다).
+
+### 0.4 Glossary / 용어
+
+| 용어 | 뜻 | 참고 |
+|------|----|---|
+| **Speed bump (방지턱)** | `phase approve` 시 `[y/N]`로 묻는 단계. 보안 검사 아님. | §0.3, §1 |
+| **Autopilot** | 묻지 않고 여러 phase를 진행하는 모드. | §0.3, §B3 |
+| **Phase** | 워크플로우 단계. | §1 |
+| **Phase gate** | 특정 verb가 특정 phase에서만 동작하는 규칙. | 프로토콜 스펙 |
+| **Halt** | 하네스가 멈추고 사용자 행동을 요청. 에러 아님. | §B |
+| **Audit log** | `.harness/audit.log` — chain-verified append-only. | §A |
+| **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 별개. (내부 메커니즘은 HMAC nonce이지만 사용자가 보는 용어는 "release confirmation"입니다.) | §A4 |
+| **Approve-nonce** | Legacy 용어. `phase approve`에서는 더 이상 사용하지 않습니다. CLI `approve-nonce mint` verb는 v0.9.0에서 deprecated, v1.0에서 제거. | §migration |
+| **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. | §A1 |
+| **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` env vars로 전달). 일반 사용자는 만질 일 없음. | `docs/advanced/harness-flags.md` |
 
 ---
 
