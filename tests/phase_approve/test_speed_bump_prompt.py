@@ -194,6 +194,42 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
     assert result.sub_reason == "approve_in_done"
 
 
+def test_phase_approve_in_discuss_phase_refuses(tmp_path, monkeypatch):
+    """HIGH-7: approve in discuss must be refused (check.py SM-invariant: discuss.approved=False)."""
+    monkeypatch.setattr("builtins.input", lambda _="": "y")
+    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
+
+    # Seed discuss phase
+    from lib import phase_txn
+    seed_state = {
+        "phase": "discuss",
+        "approved": False,
+        "approved_at": None,
+        "approved_by": None,
+        "execution_mode": "manual",
+        "state_schema_version": 2,
+    }
+    state_path = scratch / phase_txn.STATE_NAME
+    state_path.write_bytes(phase_txn._canonical_bytes(seed_state))
+
+    result = phase_approve.run_approve(
+        _stub_args(),
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record,
+        nonce_dir=nonce_dir,
+        stdin_isatty=True,
+        consumer_tty="/dev/ttys000",
+        gitconfig_email_lookup=lambda: "u@example.com",
+        skip_anchor_preflight=True,
+        skip_state_trust_preflight=True,
+    )
+
+    assert result.exit_code == exitcodes.EXIT_WRONG_PHASE_FOR_VERB
+    assert result.sub_reason == "approve_in_discuss"
+
+
 def test_smoke_bypass_only_when_both_env_vars_set(tmp_path, monkeypatch):
     """Smoke bypass refuses to activate when only one of the two env vars is set."""
     monkeypatch.setenv("HARNESS_SMOKE_BYPASS_SPEED_BUMP", "1")

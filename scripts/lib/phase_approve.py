@@ -8,7 +8,8 @@ Order of operations (any failure → typed ``ApproveResult`` with non-zero
 
   1. TTY gate. ``stdin_isatty=False`` → exit 17 ``non_tty_approval_blocked``.
      HARNESS_BY_TRUST / HARNESS_HUMAN are NEVER consulted on this path.
-  2. Phase guard. Current phase ``done`` → refuses with a clear error.
+  2. Phase guard. Phase not in ``{plan, execute}`` → refuses with EXIT_WRONG_PHASE_FOR_VERB.
+     Discuss is blocked: ``check.py`` SM-invariant requires ``approved=False`` there.
   3. Identity resolution. ``--by`` if provided, else ``git config user.email``.
      Empty → exit 6 ``gitconfig_email_unset``.
   4. install-record approvers membership check.
@@ -677,18 +678,32 @@ def run_approve(
         # users misreading approve as auto-advance.
         current_phase = before_state.get("phase", "unknown")
 
-        # Phase-validity guard: approving in 'done' is meaningless — there is
-        # no further state to stamp. All other non-terminal phases are valid
-        # under the speed-bump model (user is the gate, not the harness).
-        if current_phase == "done":
-            print(
-                "error: phase approve refused: current phase is already 'done'. "
-                "Nothing to approve.",
-                file=sys.stderr,
-            )
+        # Phase-validity guard: only plan and execute are approvable phases.
+        # - done: terminal phase, no further state to stamp.
+        # - discuss: check.py SM-invariant enforces approved=False in discuss;
+        #   approving here creates an immediately-invalid state rejected by
+        #   `harness check`. Discuss also has no plan document yet — approval
+        #   is semantically meaningless (HIGH-7 final-review finding).
+        # Conservative: restrict to plan and execute, the two real gate phases.
+        APPROVABLE_PHASES = {"plan", "execute"}
+        if current_phase not in APPROVABLE_PHASES:
+            if current_phase == "done":
+                msg = (
+                    "error: phase approve refused: current phase is already 'done'. "
+                    "Nothing to approve."
+                )
+                sub = "approve_in_done"
+            else:
+                msg = (
+                    f"error: phase approve refused: cannot approve in phase={current_phase!r}. "
+                    f"Use 'phase set <next>' to advance first, then 'phase approve'. "
+                    f"Approvable phases: {sorted(APPROVABLE_PHASES)}."
+                )
+                sub = f"approve_in_{current_phase}"
+            print(msg, file=sys.stderr)
             return ApproveResult(
                 exit_code=_exitcodes.EXIT_WRONG_PHASE_FOR_VERB,
-                sub_reason="approve_in_done",
+                sub_reason=sub,
             )
 
         prompt = (
