@@ -73,5 +73,7 @@ Advance the phase lifecycle via the CLI; do NOT direct-edit `.scratch/phase-stat
 
 ```text
 harness phase set <discuss|plan|execute|done>
-harness phase approve
+harness phase approve  # Do not run this yourself if the harness prompts [y/N]; ask the user.
 ```
+
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.

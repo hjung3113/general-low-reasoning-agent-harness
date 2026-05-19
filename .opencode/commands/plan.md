@@ -18,6 +18,8 @@ Preflight checklist:
 3. Write or update the phase plan, allowed path candidates, verification candidates, and review checks.
 4. Request execute approval instead of self-approving.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Do not advance the gate to implementation unless explicit approval provenance exists. Use `harness run`; it stops for human approval and does not let the adapter self-approve. The gate remains blocked unless these prerequisites are present in the live state:
 
 - `plan_id`

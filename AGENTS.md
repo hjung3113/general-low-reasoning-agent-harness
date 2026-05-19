@@ -35,6 +35,10 @@ This repository is the generalized low-reasoning agent harness source.
 - Skill packs are composable workflow plugins selected per request.
 - Stack-specific assumptions must live in optional profiles, packs, examples, or project-local skills.
 
+## Speed-bump checkpoint
+
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 ## Coding Conduct
 
 ### Think Before Coding

@@ -19,4 +19,6 @@ Run exactly:
 5. New slug → `harness phase set <slug>` and loop to 2. **Do NOT recursively invoke `/fsd-run-all`.**
 6. After every CLI call, run `HARNESS_MACHINE=1 harness next` and read `requires_user_approval`. If `true`, surface `next_user_prompt` to the user; do NOT approve on their behalf. Stop the chain.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Halt on ADR-001 reject, approve exit 8, audit-chain break, budget exhausted. On halt: `execution_mode` flips to manual; halt diary populated; report and stop.

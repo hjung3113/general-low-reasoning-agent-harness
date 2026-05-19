@@ -18,6 +18,8 @@ Use `/phase-execute` only for approved execute handoff:
 
 Do not restate or weaken `--chain` safety rules here. The canonical conditions are the `workflow-phase-gate` Automation Flags and Stop Conditions.
 
+If the harness prints a `[y/N]` prompt, stop and ask the user to confirm from their own terminal. Do not answer the prompt yourself — speed-bump is the user's checkpoint.
+
 Move forward in the phase lifecycle through the high-level CLI:
 
 ```text
