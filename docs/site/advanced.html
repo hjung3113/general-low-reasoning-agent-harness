@@ -3,37 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>고급 참조 · Low-Reasoning Agent Harness v0.9.0</title>
+  <meta name="description" content="Advanced flags and ADR for v0.9.0 harness">
+  <title>고급 하네스 레퍼런스</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="site-header">
-    <nav class="top-nav" aria-label="주요 문서">
-      <a class="brand" href="index.html">Harness v0.9.0</a>
-      <span class="nav-links"><a href="index.html">시작하기</a>
-<a href="manual.html">사용자 매뉴얼</a>
-<a href="use-cases.html">활용 사례</a>
-<a href="advanced.html" aria-current="page">고급 참조</a></span>
-    </nav>
+    <nav class="site-nav" aria-label="Primary navigation"><a href="index.html" class="">시작</a><a href="manual.html" class="">사용자 설명서</a><a href="use-cases.html" class="">유즈케이스</a><a href="advanced.html" class="active">고급 / ADR</a></nav>
   </header>
   <main class="layout">
-    <aside class="toc" aria-label="문서 목차"><strong>목차</strong><a class="toc-l2" href="#flag-목록">Flag 목록</a>
-<a class="toc-l3" href="#내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)</a>
-<a class="toc-l2" href="#context">Context</a>
-<a class="toc-l2" href="#decision">Decision</a>
-<a class="toc-l2" href="#consequences">Consequences</a>
-<a class="toc-l2" href="#non-goals">Non-goals</a></aside>
     <article class="content">
-      <div class="source-link"><a href="../../docs/advanced/harness-flags.md">View Markdown source: docs/advanced/harness-flags.md</a> · <a href="../../docs/adr/2026-05-19-phase-approve-speed-bump.md">View Markdown source: docs/adr/2026-05-19-phase-approve-speed-bump.md</a></div>
-      <h1 id="하네스-설정-flag-harness-flags">하네스 설정 Flag (Harness Flags)<a class="anchor" href="#하네스-설정-flag-harness-flags" aria-label="이 섹션 링크">§</a></h1>
+      <div class="source-links"><span>View Markdown source</span><a href="../advanced/harness-flags.md">harness-flags.md</a><a href="../adr/2026-05-19-phase-approve-speed-bump.md">phase approve ADR</a></div>
+      <h1 id="하네스-설정-flag-harness-flags">하네스 설정 Flag (Harness Flags)<a class="anchor" href="#하네스-설정-flag-harness-flags" aria-label="Link to this section">§</a></h1>
 <blockquote><p>이 문서는 하네스 내부 설정 flag(<code>HARNESS_*</code>) 목록입니다. <strong>평소에는 건드리지 않습니다.</strong> 테스트, CI, 디버깅, 명시적 override가 필요한 경우에만 사용합니다.  이름이 <code>HARNESS_*</code>인 OS 환경 변수로 전달되지만, 일반적인 시스템 환경 변수와 다릅니다 — 하네스에만 영향을 주며, shell rc에 추가할 필요 없습니다.</p></blockquote>
-<h2 id="flag-목록">Flag 목록<a class="anchor" href="#flag-목록" aria-label="이 섹션 링크">§</a></h2>
-<table><thead><tr>
+<h2 id="flag-목록">Flag 목록<a class="anchor" href="#flag-목록" aria-label="Link to this section">§</a></h2>
+<div class="table-wrap"><table>
+<thead><tr>
 <th>변수</th>
 <th>값</th>
 <th>의미</th>
 <th>보안 노트</th>
-</tr></thead><tbody>
+</tr></thead>
+<tbody>
 <tr>
 <td><code>HARNESS_ALLOW_UNSIGNED_DEV</code></td>
 <td><code>1</code></td>
@@ -45,6 +36,7 @@
 <td><code>cli_flag</code> \</td>
 <td><code>path_source</code></td>
 <td>upgrade 시 unsigned source 허용 출처 표시</td>
+<td>harness 내부 전달용; 직접 설정 금지</td>
 </tr>
 <tr>
 <td><code>HARNESS_ALLOW_NETWORK</code></td>
@@ -63,6 +55,7 @@
 <td><code>phase</code> \</td>
 <td><code>chain</code></td>
 <td>CI autopilot mode</td>
+<td>OIDC 또는 환경 검증 필수; TTY 없음</td>
 </tr>
 <tr>
 <td><code>HARNESS_BY_TRUST</code></td>
@@ -208,13 +201,15 @@
 <td>anchor CLI에서 harness version override</td>
 <td>테스트 또는 디버깅 목적; production에서 권장하지 않음</td>
 </tr>
-</tbody></table>
-<h3 id="내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)<a class="anchor" href="#내부-전용-직접-설정-불가" aria-label="이 섹션 링크">§</a></h3>
+</tbody></table></div>
+<h3 id="내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)<a class="anchor" href="#내부-전용-직접-설정-불가" aria-label="Link to this section">§</a></h3>
 <p>아래 flag는 하네스 프로세스가 내부적으로 설정하며, 사용자가 직접 설정해서는 안 됩니다.</p>
-<table><thead><tr>
+<div class="table-wrap"><table>
+<thead><tr>
 <th>변수</th>
 <th>용도</th>
-</tr></thead><tbody>
+</tr></thead>
+<tbody>
 <tr>
 <td><code>HARNESS_ADVANCED</code></td>
 <td>내부 advanced 모드 플래그</td>
@@ -267,52 +262,45 @@
 <td><code>HARNESS_VERSION</code></td>
 <td>실행 중인 harness 버전</td>
 </tr>
-</tbody></table>
-<hr class="doc-break"><p class="source-link"><a href="../../docs/adr/2026-05-19-phase-approve-speed-bump.md">View Markdown source: docs/adr/2026-05-19-phase-approve-speed-bump.md</a></p>
-<h1 id="adr-phaseapprove-speed-bump-model-v090">ADR: phase.approve Speed Bump Model (v0.9.0)<a class="anchor" href="#adr-phaseapprove-speed-bump-model-v090" aria-label="이 섹션 링크">§</a></h1>
+</tbody></table></div>
+<hr>
+<h1 id="adr-phaseapprove-speed-bump-model-v090">ADR: phase.approve Speed Bump Model (v0.9.0)<a class="anchor" href="#adr-phaseapprove-speed-bump-model-v090" aria-label="Link to this section">§</a></h1>
 <p><strong>Date</strong>: 2026-05-19 <strong>Status</strong>: Accepted <strong>Partially supersedes</strong>: <code>2026-05-17-approver-provenance-and-execution-mode.md</code> (phase.approve scope only)</p>
-<h2 id="context">Context<a class="anchor" href="#context" aria-label="이 섹션 링크">§</a></h2>
+<h2 id="context">Context<a class="anchor" href="#context" aria-label="Link to this section">§</a></h2>
 <p>The 2026-05-17 ADR established phase.approve as a cryptographically-bound human-presence proof using an HMAC approval-nonce, audience binding, 120-second TTL, and minter/consumer TTY separation. The mechanism was designed to defend against agent self-approval.</p>
-<p>In v0.8.x dogfooding, the owner determined the workflow cost exceeds the security benefit for this tool&#x27;s intended scope (a personal/small-team dev harness). Users reported friction: a separate verb, a second terminal, TTL races, and unfamiliar terminology (&quot;nonce&quot;, &quot;audience&quot;, &quot;HMAC&quot;, &quot;consumer_tty&quot;). The owner accepts that an agent with PTY access can defeat any prompt-based check and chose not to defend against that threat in this path.</p>
-<h2 id="decision">Decision<a class="anchor" href="#decision" aria-label="이 섹션 링크">§</a></h2>
+<p>In v0.8.x dogfooding, the owner determined the workflow cost exceeds the security benefit for this tool's intended scope (a personal/small-team dev harness). Users reported friction: a separate verb, a second terminal, TTL races, and unfamiliar terminology ("nonce", "audience", "HMAC", "consumer_tty"). The owner accepts that an agent with PTY access can defeat any prompt-based check and chose not to defend against that threat in this path.</p>
+<h2 id="decision">Decision<a class="anchor" href="#decision" aria-label="Link to this section">§</a></h2>
 <p>For <code>harness phase approve</code> only:</p>
 <ul>
-<li>Remove HMAC-nonce, audience, TTL, and minter/consumer TTY separation.</li>
-</ul>
-<ul>
-<li>Add a <code>[y/N]</code> prompt on the user&#x27;s TTY.</li>
-</ul>
-<ul>
-<li>Halt with <code>EXIT_HUMAN_CONFIRMATION_REQUIRED=17</code> + <code>sub_reason=non_tty_approval_blocked</code> when stdin is non-TTY.</li>
-</ul>
-<ul>
-<li>Stamp <code>proof_class=soft_tty</code> in the audit row (chain-verified row, no separate signature).</li>
-</ul>
+<li>Remove HMAC-nonce, audience, TTL, and minter/consumer TTY separation.
+</li>
+<li>Add a <code>[y/N]</code> prompt on the user's TTY.
+</li>
+<li>Halt with <code>EXIT_HUMAN_CONFIRMATION_REQUIRED=17</code> + <code>sub_reason=non_tty_approval_blocked</code> when stdin is non-TTY.
+</li>
+<li>Stamp <code>proof_class=soft_tty</code> in the audit row (chain-verified row, no separate signature).
+</li></ul>
 <p>For <code>harness release</code> and every other release-path verb: <strong>no change</strong>. Signed tags, OIDC, HMAC nonces, and release_trust verification all remain as specified in the 2026-05-17 ADR.</p>
-<h2 id="consequences">Consequences<a class="anchor" href="#consequences" aria-label="이 섹션 링크">§</a></h2>
+<h2 id="consequences">Consequences<a class="anchor" href="#consequences" aria-label="Link to this section">§</a></h2>
 <ul>
-<li>An agent running in the user&#x27;s TTY can drive <code>[y/N]</code> with expect/pexpect. This is explicitly accepted. The speed bump is a workflow checkpoint, not a security boundary.</li>
-</ul>
+<li>An agent running in the user's TTY can drive <code>[y/N]</code> with expect/pexpect. This is explicitly accepted. The speed bump is a workflow checkpoint, not a security boundary.
+</li>
+<li>Audit rows for phase.approve can no longer prove a human typed the response. The audit chain still detects tampering.
+</li>
+<li>The CLI verb <code>approve-nonce mint --audience phase.approve</code> becomes a deprecated no-op in v0.9.0 and is removed in v1.0. Other audiences unaffected.
+</li>
+<li>The 2026-05-17 ADR's threat model and mitigations remain in force for the release path.
+</li></ul>
+<h2 id="non-goals">Non-goals<a class="anchor" href="#non-goals" aria-label="Link to this section">§</a></h2>
 <ul>
-<li>Audit rows for phase.approve can no longer prove a human typed the response. The audit chain still detects tampering.</li>
-</ul>
-<ul>
-<li>The CLI verb <code>approve-nonce mint --audience phase.approve</code> becomes a deprecated no-op in v0.9.0 and is removed in v1.0. Other audiences unaffected.</li>
-</ul>
-<ul>
-<li>The 2026-05-17 ADR&#x27;s threat model and mitigations remain in force for the release path.</li>
-</ul>
-<h2 id="non-goals">Non-goals<a class="anchor" href="#non-goals" aria-label="이 섹션 링크">§</a></h2>
-<ul>
-<li>Removing autopilot. Autopilot proceeds without asking; the speed bump always asks. They are orthogonal features.</li>
-</ul>
-<ul>
-<li>Defending phase.approve against PTY-automating agents.</li>
-</ul>
-<ul>
-<li>Touching <code>harness release</code>, <code>release.py</code>, <code>release_smoke_test.py</code>, <code>release_trust.py</code>, <code>verify_release_tag</code>, <code>.github/workflows/release.yml</code>, <code>docs/trust/</code>, or any signed-tag / OIDC code path.</li>
-</ul>
+<li>Removing autopilot. Autopilot proceeds without asking; the speed bump always asks. They are orthogonal features.
+</li>
+<li>Defending phase.approve against PTY-automating agents.
+</li>
+<li>Touching <code>harness release</code>, <code>release.py</code>, <code>release_smoke_test.py</code>, <code>release_trust.py</code>, <code>verify_release_tag</code>, <code>.github/workflows/release.yml</code>, <code>docs/trust/</code>, or any signed-tag / OIDC code path.
+</li></ul>
     </article>
+    <aside class="toc" aria-label="Table of contents"><strong>On this page</strong><a class="toc-h2" href="#flag-목록">Flag 목록</a><a class="toc-h3" href="#내부-전용-직접-설정-불가">내부 전용 (직접 설정 불가)</a><a class="toc-h2" href="#context">Context</a><a class="toc-h2" href="#decision">Decision</a><a class="toc-h2" href="#consequences">Consequences</a><a class="toc-h2" href="#non-goals">Non-goals</a></aside>
   </main>
 </body>
 </html>
