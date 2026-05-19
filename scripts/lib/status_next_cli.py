@@ -156,12 +156,11 @@ def _read_state_with_preflight(
     try:
         _audit_anchor.verify_existing_anchor_for_repo(cwd)
         anchor_verified = True
-    except _audit_anchor.AnchorMissingError:
+    except _audit_anchor.AnchorMissingError as exc:
         # Anchor absent but state exists → fail-closed (attacker path).
         print(
-            "error: harness status/next refused: audit-tip anchor not found "
-            "but phase-state.json exists. "
-            "Fix: run 'harness init' or restore .harness/audit.tip-anchor.json",
+            f"error: harness status/next refused: audit-tip anchor not found ({exc}). "
+            "Fix: run 'harness anchor repair' to rebuild the anchor from current state.",
             file=sys.stderr,
         )
         return None, 6  # sub_reason: anchor_missing
