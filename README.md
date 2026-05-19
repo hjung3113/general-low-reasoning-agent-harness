@@ -10,6 +10,25 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 
 ---
 
+## 용어 / Glossary
+
+| 용어 | 뜻 |
+|------|---|
+| **Speed bump (방지턱)** | `phase approve` 시 `[y/N]`로 묻는 단계. 보안 검사 아님. 취소 가능. |
+| **Autopilot** | 묻지 않고 여러 phase를 진행하는 모드. Speed bump와 별개. 기본 OFF. |
+| **Phase** | 워크플로우 단계 (`design`, `discuss`, `plan`, `execute`, `done`). `phase approve`로 stamp, `phase set`로 전환. |
+| **Phase gate** | 특정 verb가 특정 phase에서만 동작하는 규칙. |
+| **Halt** | 하네스가 멈추고 사용자 행동을 요청. 에러 아님. 예: non-TTY halt = "터미널에서 다시 실행하세요". |
+| **Audit log** | `.harness/audit.log`에 append-only로 기록되는 phase 변화/승인 로그. Chain-verified. |
+| **Release confirmation** | `harness release`가 요구하는 타이핑 토큰. `phase approve`와 다름. (내부는 HMAC nonce — 사용자가 보는 용어는 "release confirmation".) |
+| **Approve-nonce** | Legacy 용어. `phase approve`는 더 이상 사용 안 함. CLI verb `approve-nonce mint`는 v0.9.0에서 deprecated, v1.0에서 제거. |
+| **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. |
+| **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` 환경 변수로 전달). 일반 사용자는 만질 일 없음. `docs/advanced/harness-flags.md` 참고. |
+
+자세한 내용: `docs/USER_MANUAL.md` §0.4.
+
+---
+
 ## 1. 이 저장소
 
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
