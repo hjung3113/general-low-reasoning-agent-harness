@@ -127,3 +127,48 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
     assert result.exit_code == exitcodes.EXIT_OK
     assert result.sub_reason == "user_cancelled"
     assert not audit_path.exists() or audit_path.read_text() == ""
+
+
+def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda _="": "y")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    audit_path = harness_dir / "audit.log"
+    install_record = harness_dir / "install.json"
+    install_record.write_text(
+        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+    )
+    nonce_dir = tmp_path / "nonces"
+    nonce_dir.mkdir()
+
+    # Seed scratch in done phase — no further state to stamp
+    from lib import phase_txn
+    seed_state = {
+        "phase": "done",
+        "approved": False,
+        "approved_at": None,
+        "approved_by": None,
+        "execution_mode": "manual",
+        "state_schema_version": 2,
+    }
+    state_path = scratch / phase_txn.STATE_NAME
+    state_path.write_bytes(phase_txn._canonical_bytes(seed_state))
+
+    result = phase_approve.run_approve(
+        _stub_args(),
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record,
+        nonce_dir=nonce_dir,
+        stdin_isatty=True,
+        consumer_tty="/dev/ttys000",
+        gitconfig_email_lookup=lambda: "u@example.com",
+        skip_anchor_preflight=True,
+        skip_state_trust_preflight=True,
+    )
+
+    assert result.exit_code == exitcodes.EXIT_WRONG_PHASE_FOR_VERB
+    assert result.sub_reason == "approve_in_done"

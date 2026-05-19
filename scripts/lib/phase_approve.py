@@ -677,6 +677,21 @@ def run_approve(
         # names the *current* phase being stamped (not the next phase) to avoid
         # users misreading approve as auto-advance.
         current_phase = before_state.get("phase", "unknown")
+
+        # Phase-validity guard: approving in 'done' is meaningless — there is
+        # no further state to stamp. All other non-terminal phases are valid
+        # under the speed-bump model (user is the gate, not the harness).
+        if current_phase == "done":
+            print(
+                "error: phase approve refused: current phase is already 'done'. "
+                "Nothing to approve.",
+                file=sys.stderr,
+            )
+            return ApproveResult(
+                exit_code=_exitcodes.EXIT_WRONG_PHASE_FOR_VERB,
+                sub_reason="approve_in_done",
+            )
+
         prompt = (
             f"Approve current phase={current_phase}? "
             f"Type y to confirm, N to cancel [y/N]: "
