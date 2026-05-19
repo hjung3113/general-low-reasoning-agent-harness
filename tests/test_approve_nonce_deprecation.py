@@ -34,6 +34,23 @@ def test_phase_approve_audience_is_deprecated_noop(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_phase_approve_audience_deprecation_fires_even_without_tty(tmp_path):
+    """Deprecation no-op must fire BEFORE the TTY guard so CI scripts get the right message (X6/Codex-Finding-2)."""
+    args = SimpleNamespace(audience="phase.approve", ttl=120)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    # No TTY mock — simulate non-TTY environment (sys.stdin.isatty() returns False)
+    rc = approve_nonce_cli.run_mint(
+        args,
+        nonce_dir=tmp_path,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    assert rc == 0
+    assert "deprecated" in stderr.getvalue().lower()
+    assert "interactive tty" not in stderr.getvalue().lower()
+
+
 def test_release_audience_still_writes_nonce(tmp_path):
     args = _make_args("release.publish")
     stdout = io.StringIO()

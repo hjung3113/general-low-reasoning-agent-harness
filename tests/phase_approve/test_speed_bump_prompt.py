@@ -214,6 +214,39 @@ def test_smoke_bypass_only_when_both_env_vars_set(tmp_path, monkeypatch):
     assert result.sub_reason == "non_tty_approval_blocked"
 
 
+def test_cancel_prints_stderr_message(tmp_path, monkeypatch, capsys):
+    """Non-y response must print a cancellation message to stderr (X5/HIGH-6)."""
+    monkeypatch.setattr("builtins.input", lambda _="": "N")
+    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
+    seed_scratch(scratch, audit_path)
+    result = phase_approve.run_approve(
+        _stub_args(),
+        scratch=scratch,
+        harness_dir=harness_dir,
+        audit_path=audit_path,
+        install_record_path=install_record,
+        nonce_dir=nonce_dir,
+        stdin_isatty=True,
+        consumer_tty="/dev/ttys000",
+        gitconfig_email_lookup=lambda: "u@example.com",
+        skip_anchor_preflight=True,
+        skip_state_trust_preflight=True,
+    )
+    captured = capsys.readouterr()
+    assert result.exit_code == exitcodes.EXIT_OK
+    assert result.sub_reason == "user_cancelled"
+    assert "cancelled" in captured.err.lower()
+
+
+def test_tty_kind_classification():
+    """_tty_kind must classify all four cases correctly (X8/HIGH-B-2)."""
+    from lib.phase_approve import _tty_kind
+    assert _tty_kind("") == "unknown"
+    assert _tty_kind("/dev/ttys000") == "posix-real"
+    assert _tty_kind("win:12345:abcd1234") == "win-synthetic"
+    assert _tty_kind("garbage") == "unknown"
+
+
 def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
     """Smoke bypass active: skips TTY check + prompt, writes smoke_bypass audit row."""
     monkeypatch.setenv("HARNESS_SMOKE_BYPASS_SPEED_BUMP", "1")

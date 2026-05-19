@@ -16,7 +16,10 @@ Order of operations (any failure → typed ``ApproveResult`` with non-zero
      read; forged state → exit 10.
   6. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
   7. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
-  8. Prompt ``[y/N]`` on TTY. Non-``y`` answer → exit 1 (user declined).
+  8. Prompt ``[y/N]`` on TTY. Non-y answer, EOF, or Ctrl+C → exit 0
+     + sub_reason=user_cancelled (stderr message printed; cancel is not
+     an error, but the shell chain operator ``&&`` will continue. Use
+     ``phase approve && phase set execute`` carefully.)
   9. State + audit mutation via ``phase_txn.commit_transaction``.
      Audit row records ``proof_class: soft_tty``.
 
@@ -129,13 +132,19 @@ _FIX_OVERRIDE_IDENTITY_CHARS = (
 def _tty_kind(tty_path: str) -> str:
     """Return the kind label for a TTY path string.
 
-    Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real``.
+    Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real`` | ``unknown``.
+    Empty string or unrecognised paths return ``unknown`` rather than lying
+    with ``posix-real`` (X8/HIGH-B-2 fix).
     """
+    if not tty_path:
+        return "unknown"
     if tty_path.startswith("win:"):
         return "win-synthetic"
     if tty_path.startswith("posix:"):
         return "posix-fallback"
-    return "posix-real"
+    if tty_path.startswith("/dev/"):
+        return "posix-real"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -690,8 +699,16 @@ def run_approve(
             try:
                 response = input(prompt)
             except (EOFError, KeyboardInterrupt):
+                print(
+                    "\nphase approve cancelled (no stamp written).",
+                    file=sys.stderr,
+                )
                 return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
             if response.strip() not in ("y", "Y"):
+                print(
+                    f"phase approve cancelled (response {response.strip()!r}, no stamp written).",
+                    file=sys.stderr,
+                )
                 return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
         # If smoke bypass is active, skip prompt — proceed directly to audit + stamp.
 
