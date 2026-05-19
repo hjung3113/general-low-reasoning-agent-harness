@@ -253,7 +253,7 @@ python3 scripts/uninstall_harness.py --interactive
 
 → [CHANGELOG.md](CHANGELOG.md)
 
-**v0.8.3 Workflow UX Hardening** — `show_phase_status.py`의 `next_steps`, 어댑터 상태 템플릿, 승인 경계 문서를 보강했습니다.
+**v0.9.0 phase.approve Speed Bump** — `harness phase approve`가 interactive `[y/N]` 방지턱이 됨. `approve-nonce mint --audience phase.approve`는 deprecated. Release path 무변경. 자세한 내용은 `CHANGELOG.md` 또는 ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md` 참고.
 
 **한글 유즈케이스 문서 Hotfix** — 유즈케이스별 한글 문서를 `docs/use-cases/`로 분리하고, 최소 워크플로 UML 문서 2개를 한글로 정리했습니다.
 
