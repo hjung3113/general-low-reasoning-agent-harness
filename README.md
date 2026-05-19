@@ -26,7 +26,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 | **Trust root** | 설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용. |
 | **하네스 설정 flag (harness flag)** | 하네스 내부 설정값 (`HARNESS_*` 환경 변수로 전달). 일반 사용자는 만질 일 없음. `docs/advanced/harness-flags.md` 참고. |
 
-자세한 내용: `docs/USER_MANUAL.md` §0.4.
+자세한 내용: `docs/USER_MANUAL.md` §0.2.
 
 ---
 
@@ -35,7 +35,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.8.3의 일상 CLI 표면은 네 개입니다:
+v0.9.0의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -70,7 +70,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -108,14 +108,14 @@ Windows 사용자는 `python3` 대신 `py -3` 또는 `python`을 사용하세요
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.8.3 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.8.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -213,13 +213,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.8.3
+python3 scripts/harness.py release-check --expected-version v0.9.0
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.8.3 -m "Release v0.8.3"
-git push origin v0.8.3
+git tag -s v0.9.0 -m "Release v0.9.0"
+git push origin v0.9.0
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -240,8 +240,8 @@ git push origin v0.8.3
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.8.3 --dry-run
-python3 scripts/upgrade_harness.py --version v0.8.3
+python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.0
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -260,7 +260,7 @@ python3 scripts/uninstall_harness.py --interactive
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.
 - Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in the next minor release.
-- Approval-nonce TTY-isolation accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev`. A same-TTY agent can pass a fake distinct value. Server-side TTY binding lands in the next minor release.
+- Release-path approval-nonce TTY-isolation still accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev` (phase.approve dropped this in v0.9.0). A same-TTY agent can pass a fake distinct value.
 - Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified at this release.
 
 If you need a hardened trust root or strict TTY isolation today, treat this release as **internal-share-stable on POSIX, beta on Windows**, and wait for the next minor release.

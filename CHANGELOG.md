@@ -6,11 +6,39 @@ All notable changes to this harness.
 
 ## Unreleased (develop)
 
-### Breaking
+_v0.9.0 in progress above._
 
-- No unreleased breaking changes. Prior ledger entries for `phase=done`,
-  `state_schema_version`, and `migrate state --resume` are recorded in released
-  sections below.
+## v0.9.0 — 2026-05-19 (phase.approve speed bump)
+
+### Breaking
+- `harness phase approve` no longer consumes an HMAC nonce. Replaced with interactive `[y/N]` prompt on a TTY.
+- Non-TTY callers now exit `EXIT_HUMAN_CONFIRMATION_REQUIRED=17` with `sub_reason=non_tty_approval_blocked` (previously exit 6 with varied sub_reasons like `human_proof_missing`, `human_proof_nonce_expired`).
+- `harness approve-nonce mint --audience phase.approve` is now a deprecation no-op that emits a stderr warning and exits 0 without writing a nonce. Removal scheduled for v1.0. Other audiences (release.*) unchanged.
+- `phase approve` while in `done` phase refused with `EXIT_WRONG_PHASE_FOR_VERB=6` + `sub_reason=approve_in_done`.
+
+### Changed
+- Audit row for phase.approve now records `proof_class=soft_tty`, `tty`, `response`. Chain stamping (schema_version, seq, previous_entry_hash, entry_hash) preserved unchanged via `audit_append`.
+- `confirmation_kind` field value `human_nonce` → `soft_tty` for phase.approve rows.
+- `_do_phase_approve` legacy shim retired; `run_approve` is the direct dispatch.
+
+### Added
+- New ADR `docs/adr/2026-05-19-phase-approve-speed-bump.md` records the threat-model downgrade scoped to phase.approve.
+- USER_MANUAL §0.1 (Speed-bump vs autopilot boundary), §0.2 (Glossary).
+- README "용어 / Glossary" section.
+- `docs/advanced/harness-flags.md` lists all `HARNESS_*` flags; USER_MANUAL no longer carries the env-var table.
+- New exit code symbol `EXIT_HUMAN_CONFIRMATION_REQUIRED=17` (numeric value already reserved by protocol-spec §3.4 "human action required" slot).
+- New test-only parameter `skip_state_trust_preflight` on `run_approve` (decoupled from `skip_anchor_preflight`).
+
+### Docs
+- USER_MANUAL §A4 renamed "Approve-Nonce" → "Release Confirmation".
+- USER_MANUAL §B1.1/B1.2 (approve-nonce troubleshooting) removed. New §B1.4 "phase approve requires a terminal".
+- USER_MANUAL §C2.2 FAQ rewritten: `phase approve` alone is sufficient.
+- Adapter prompt templates updated: `[y/N]` prompts must not be answered by adapter agents.
+
+### Out of scope (intentionally unchanged)
+- `harness release`, signed tags, OIDC, release_trust, `.github/workflows/release.yml`, `docs/trust/`.
+
+See ADR 2026-05-19-phase-approve-speed-bump for rationale.
 
 ## v0.8.3 — 2026-05-19 (hotfix — signed tag + manual restructure + error message)
 
