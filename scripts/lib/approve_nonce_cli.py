@@ -111,6 +111,18 @@ def run_mint(
         return 2
 
     # ------------------------------------------------------------------
+    # 2c. Deprecation no-op for phase.approve audience
+    # ------------------------------------------------------------------
+    if args.audience == "phase.approve":
+        stderr.write(
+            "warning: 'approve-nonce mint --audience phase.approve' is "
+            "deprecated. phase.approve now uses an interactive [y/N] "
+            "prompt; this command is a no-op and will be removed in "
+            "v1.0. Just run `harness phase approve` from your terminal.\n"
+        )
+        return 0
+
+    # ------------------------------------------------------------------
     # 3. Resolve nonce directory
     # ------------------------------------------------------------------
     if nonce_dir is None:
