@@ -57,7 +57,7 @@ def test_enforcer_summary_line() -> None:
         (3, "session_locked"),
         (4, "scope_violation"),
         (5, "unparseable_state"),
-        (6, "non_tty_approval_blocked"),
+        (17, "non_tty_approval_blocked"),
         (7, "stale_uncertain"),
         (8, "approve_during_autopilot"),
         (9, "budget_exhausted"),
