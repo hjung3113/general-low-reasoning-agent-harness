@@ -1,101 +1,1034 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="v0.9.0 harness release documentation landing page">
-  <title>v0.9.0 Harness Docs</title>
-  <link rel="stylesheet" href="styles.css">
+<head><script data-od-sandbox-shim>(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+  document.addEventListener('click', (e) => {
+    if (!e.target || !(e.target instanceof Element)) return;
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (href === null) return;
+    var isAnchor = href.startsWith('#') || href === '';
+    if (isAnchor) {
+      e.preventDefault();
+      if (href === '' || href === '#') {
+        window.scrollTo({ top: 0 });
+        history.replaceState(null, '', ' ');
+      } else {
+        var targetId = href.slice(1);
+        var target = targetId ? document.getElementById(targetId) : null;
+        if (target) {
+          target.scrollIntoView();
+          location.hash === href && history.replaceState(null, '', ' ');
+          location.hash = href;
+        }
+      }
+    } else if (link.getAttribute('target') === '_blank') {
+      e.preventDefault();
+      let safe = false;
+      try {
+        var url = new URL(href, location.href);
+        safe =
+          url.protocol === 'http:' ||
+          url.protocol === 'https:' ||
+          url.protocol === 'mailto:';
+      } catch (_) {}
+      safe && window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  });
+})();</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>하네스 사용자 가이드 · Install and Use</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@300;400;500;600&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#08090a; --ink-rgb:8,9,10; --paper:#f7f8f8; --paper-rgb:247,248,248;
+    --paper-tint:#0f1011; --ink-tint:#191a1b;
+    --linear-panel:#0f1011; --linear-surface:#191a1b; --linear-surface-2:#28282c;
+    --linear-text:#f7f8f8; --linear-secondary:#d0d6e0; --linear-muted:#8a8f98; --linear-faint:#62666d;
+    --linear-border:rgba(255,255,255,.08); --linear-border-subtle:rgba(255,255,255,.05);
+    --linear-brand:#5e6ad2; --linear-accent:#7170ff; --linear-hover:#828fff; --linear-success:#10b981;
+    --mono:"Berkeley Mono","IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --serif-en:"Inter Variable","SF Pro Display",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    --serif-body-en:"Inter Variable","SF Pro Text",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    --serif-zh:"Inter Variable","Noto Sans SC","Apple SD Gothic Neo",system-ui,sans-serif;
+    --sans-zh:"Inter Variable","Noto Sans SC","Apple SD Gothic Neo",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:
+    radial-gradient(circle at 50% -20%,rgba(113,112,255,.10),transparent 34%),
+    linear-gradient(180deg,#08090a 0%,#0b0c0e 48%,#08090a 100%);
+    color:var(--paper);font-family:var(--sans-zh);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:72px 72px;mask-image:linear-gradient(180deg,rgba(0,0,0,.58),rgba(0,0,0,.18));opacity:.32}
+
+  /* ============ Static background ============ */
+  canvas.bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:none;transition:opacity 1.2s ease}
+  canvas#bg-light{opacity:0}
+  canvas#bg-dark{opacity:1}
+  body.light-bg canvas#bg-light{opacity:1}
+  body.light-bg canvas#bg-dark{opacity:0}
+
+  /* ============ Deck container + paging ============ */
+  /* width: NSLIDES * 100vw; corrected dynamically in JS */
+  #deck{position:fixed;inset:0;width:10000vw;height:100vh;display:flex;flex-wrap:nowrap;transition:transform .9s cubic-bezier(.77,0,.175,1);z-index:10;will-change:transform}
+  .slide{width:100vw;height:100vh;flex:0 0 100vw;position:relative;padding:6vh 6vw 10vh 6vw;display:flex;flex-direction:column;overflow:hidden}
+  .slide.light{color:var(--ink)}
+  .slide.dark{color:var(--paper)}
+
+  /* 默认页：遮罩较厚，保证文字可读 */
+  .slide::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;transition:background .7s ease}
+  .slide.light::before{background:rgba(var(--paper-rgb),.88);backdrop-filter:none}
+  .slide.dark::before{background:rgba(var(--ink-rgb),.88);backdrop-filter:none}
+  /* Hero pages stay quiet: no fluid motion, only a low-contrast static field. */
+  .slide.hero.light::before{background:rgba(var(--paper-rgb),.84);backdrop-filter:none}
+  .slide.hero.dark::before{background:rgba(var(--ink-rgb),.84);backdrop-filter:none}
+  /* Hero 页顶底微弱渐隐，保证 chrome/foot 区域可读 */
+  .slide.hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none}
+  .slide.hero.light::after{background:linear-gradient(180deg,rgba(var(--paper-rgb),.28) 0%,rgba(var(--paper-rgb),0) 14%,rgba(var(--paper-rgb),0) 86%,rgba(var(--paper-rgb),.28) 100%)}
+  .slide.hero.dark::after{background:linear-gradient(180deg,rgba(var(--ink-rgb),.32) 0%,rgba(var(--ink-rgb),0) 14%,rgba(var(--ink-rgb),0) 86%,rgba(var(--ink-rgb),.32) 100%)}
+
+  /* ============ Magazine chrome：顶部 meta + 底部 foot ============ */
+  .chrome{display:flex;justify-content:space-between;align-items:flex-start;font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.7}
+  .chrome .left,.chrome .right{display:flex;gap:2.4em;align-items:center}
+  .chrome .sep{width:40px;height:1px;background:currentColor;opacity:.4}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.55}
+  .foot .title{font-family:var(--serif-zh);font-weight:400;letter-spacing:.05em;text-transform:none;opacity:.75;font-size:13px}
+
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;padding:6px 14px;border:1px solid currentColor;opacity:.85}
+  .rule{width:100%;height:1px;background:currentColor;opacity:.25;margin:3vh 0}
+  .rule.v{width:1px;height:100%;margin:0}
+
+  /* ============ 字体规则 ============
+     · 衬线（Noto Serif SC / Playfair）：大标题、重点金句、数字
+     · 非衬线（Noto Sans SC）：正文描述、body、补充说明
+     · 等宽（IBM Plex Mono）：kicker、meta 小标签、foot 右侧
+  */
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;opacity:.6;margin-bottom:2.6vh}
+  .display{font-family:var(--serif-en);font-weight:700;font-size:11vw;line-height:.92;letter-spacing:-.025em}
+  .display-zh{font-family:var(--serif-zh);font-weight:700;font-size:7.8vw;line-height:1.04;letter-spacing:-.005em}
+  .h1-zh{font-family:var(--serif-zh);font-weight:700;font-size:4.6vw;line-height:1.12;letter-spacing:-.005em}
+  .h2-zh{font-family:var(--serif-zh);font-weight:600;font-size:3.2vw;line-height:1.2;letter-spacing:0}
+  .h3-zh{font-family:var(--serif-zh);font-weight:500;font-size:1.9vw;line-height:1.35}
+  .body-zh{font-family:var(--sans-zh);font-weight:400;font-size:max(15px,1.22vw);line-height:1.75;opacity:.82;letter-spacing:.01em}
+  .body-serif{font-family:var(--serif-zh);font-weight:400;font-size:max(15px,1.3vw);line-height:1.65;opacity:.88}
+  .lead{font-family:var(--serif-zh);font-weight:400;font-size:1.9vw;line-height:1.4;opacity:.85}
+  .meta{font-family:var(--mono);font-size:max(11px,.88vw);letter-spacing:.16em;text-transform:uppercase;opacity:.6}
+  .big-num{font-family:var(--serif-en);font-weight:800;font-size:10vw;line-height:.85;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .mid-num{font-family:var(--serif-en);font-weight:700;font-size:5.5vw;line-height:.88;letter-spacing:-.02em;font-feature-settings:"tnum"}
+  .ghost{font-family:var(--serif-en);font-weight:900;font-size:34vw;line-height:.8;opacity:.06;letter-spacing:-.04em;position:absolute;font-feature-settings:"tnum"}
+  em{font-style:italic;font-family:var(--serif-en)}
+  .en{font-family:var(--serif-en);font-style:italic;font-weight:500}
+
+  /* ============ 布局工具 ============ */
+  .col{display:flex;flex-direction:column;gap:2.4vh}
+  .row{display:flex;align-items:center;gap:3vw}
+  .grid-6{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:4vw 6vw;flex:1;align-content:center;padding:2vh 0}
+  .grid-9{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:3vh 4vw;flex:1;align-content:center}
+  .grid-4{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:4vh 6vw;flex:1;align-content:center}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:4vw;flex:1;align-content:center}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:4vw;flex:1;align-items:center}
+  .split-55{display:grid;grid-template-columns:55fr 45fr;gap:5vw;flex:1;align-items:stretch}
+  .fill{flex:1}
+  .center{align-items:center;justify-content:center;text-align:center}
+  .bottom-left{position:absolute;left:6vw;bottom:9vh;max-width:50vw}
+  .bottom-right{position:absolute;right:6vw;bottom:9vh;max-width:50vw;text-align:right}
+  .top-right{position:absolute;right:6vw;top:6vh;text-align:right}
+
+  /* ============ Stat（数字矩阵） ============ */
+  .stat{display:flex;flex-direction:column;gap:1vh;align-items:flex-start}
+  .stat .n{font-family:var(--serif-en);font-weight:800;font-size:8vw;line-height:.88;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .stat .l{font-family:var(--sans-zh);font-size:max(13px,1.05vw);opacity:.7;margin-top:1vh;font-weight:400;line-height:1.5}
+  .stat .m{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.5;margin-bottom:.2vh}
+
+  /* ============ Callout（引用框） ============ */
+  .callout{padding:3vh 2.4vw;border-left:3px solid currentColor;position:relative;font-family:var(--serif-zh);font-size:max(15px,1.2vw);line-height:1.55;opacity:.92}
+  .slide.light .callout{background:rgba(var(--ink-rgb),.05)}
+  .slide.dark .callout{background:rgba(var(--paper-rgb),.06)}
+  .callout .cite{display:block;margin-top:1.6vh;font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6}
+  .callout .q-big{font-family:var(--serif-zh);font-weight:600;font-size:max(17px,1.6vw);line-height:1.42}
+
+  /* ============ Platform（平台卡） ============ */
+  .plat{display:flex;flex-direction:column;justify-content:flex-end;padding:2vh 0;border-top:1px solid currentColor;border-color:rgba(127,127,127,.35)}
+  .plat .name{font-family:var(--serif-zh);font-weight:700;font-size:1.8vw;margin-bottom:.6vh}
+  .plat .nb{font-family:var(--serif-en);font-weight:700;font-size:3.2vw;letter-spacing:-.02em;line-height:1;font-feature-settings:"tnum"}
+  .plat .sub{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55;margin-top:.6vh}
+  .plat .fill{font-family:var(--sans-zh);font-weight:300;font-size:2.4vw;opacity:.28;letter-spacing:-.01em;line-height:1}
+
+  /* ============ Rowline（表格行） ============ */
+  .rowline{display:grid;grid-template-columns:1fr 2fr 1fr;gap:2vw;padding:2.2vh 0;border-top:1px solid currentColor;align-items:center;border-color:rgba(127,127,127,.25)}
+  .rowline:last-child{border-bottom:1px solid currentColor;border-color:rgba(127,127,127,.25)}
+  .rowline .k{font-family:var(--serif-zh);font-weight:700;font-size:1.7vw}
+  .rowline .v{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.2vw);opacity:.85;line-height:1.55}
+  .rowline .m{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6;justify-self:end}
+
+  /* ============ Pillar（支柱卡片） ============ */
+  .pillar{display:flex;flex-direction:column;gap:1.8vh}
+  .pillar .ic{font-family:var(--serif-en);font-style:italic;font-size:2.6vw;opacity:.45;font-weight:400}
+  .pillar .ic svg{width:2.8vw;height:2.8vw;stroke-width:1.2;opacity:.7}
+  .pillar .t{font-family:var(--serif-zh);font-weight:700;font-size:2.4vw;line-height:1.1}
+  .pillar .d{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.1vw);opacity:.76;line-height:1.6}
+
+  /* ============ Signature / Highlight ============ */
+  .sign{font-family:var(--serif-en);font-style:italic;font-weight:500;font-size:2vw;opacity:.7}
+  .hi{position:relative;display:inline}
+  .slide.dark .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--paper-rgb),.15);z-index:-1}
+  .slide.light .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--ink-rgb),.08);z-index:-1}
+
+  /* ============ Icons（Lucide via CDN） ============ */
+  .ico{width:1em;height:1em;display:inline-block;vertical-align:-.12em;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .ico-lg,.ico-md,.ico-sm{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+  .ico-lg{width:2.6vw;height:2.6vw;stroke-width:1.2;display:inline-block}
+  .ico-md{width:1.8vw;height:1.8vw;stroke-width:1.3;display:inline-block;vertical-align:-.4em}
+  .ico-sm{width:1.1vw;height:1.1vw;stroke-width:1.4;display:inline-block;vertical-align:-.15em;opacity:.7}
+
+  /* ============ 图片占位（虚线框，提示设计师位置） ============ */
+  .img-slot{border:1.5px dashed rgba(127,127,127,.4);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1vh;padding:2vh 2vw;font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;opacity:.55;position:relative;aspect-ratio:16/9;width:100%;max-height:56vh;margin-inline:auto;box-sizing:border-box}
+  .img-slot::before{content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.2}
+  .img-slot .plus{font-size:2vw;font-weight:300;opacity:.5;letter-spacing:0}
+  .img-slot .label{position:relative;z-index:2;text-align:center}
+  .img-slot.r-4x3{aspect-ratio:4/3}
+  .img-slot.r-3x2{aspect-ratio:3/2}
+  .img-slot.r-1x1{aspect-ratio:1/1}
+
+  /* ============ 图片实填框（关键：固定高度 + 只裁底部） ============
+     重要约束：高度用内联 height:Nvh 精确控制，不要用 aspect-ratio（会撑破布局）
+     object-position:top center 保证严禁裁剪顶部和左右，只裁剪底部
+  */
+  .frame-img{overflow:hidden;position:relative;background:rgba(0,0,0,.04);box-sizing:border-box;width:100%;border-radius:4px}
+  .slide.dark .frame-img{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}
+  .frame-img > img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+  .frame-cap{display:flex;justify-content:space-between;align-items:baseline;gap:1vw;margin-top:.8vh;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.72}
+  .frame-cap .pf{font-family:var(--serif-zh);font-weight:600;font-size:max(13px,1vw);letter-spacing:.04em;text-transform:none;opacity:.94}
+  .frame-cap .nb{font-family:var(--serif-en);font-style:italic;font-size:max(15px,1.2vw);letter-spacing:.02em;text-transform:none;opacity:.88}
+  .frame-cap .idx{font-family:var(--mono);opacity:.5}
+  figure.tile{display:flex;flex-direction:column;margin:0;min-width:0}
+  figure.tile > .frame-img{flex:0 0 auto}
+
+  /* ============ 导航 ============ */
+  #nav{position:fixed;left:50%;bottom:2.6vh;transform:translateX(-50%);z-index:30;display:flex;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(0,0,0,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #nav .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:all .3s ease;border:0;padding:0}
+  #nav .dot:hover{background:rgba(255,255,255,.5);transform:scale(1.15)}
+  #nav .dot.active{background:rgba(255,255,255,.95);width:22px;border-radius:999px}
+  body.light-bg #nav{background:rgba(255,255,255,.25)}
+  body.light-bg #nav .dot{background:rgba(var(--ink-rgb),.25)}
+  body.light-bg #nav .dot.active{background:rgba(var(--ink-rgb),.9)}
+  #hint{position:fixed;bottom:3vh;right:3vw;z-index:30;font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.4;mix-blend-mode:difference;color:#aaa}
+
+  /* ============================================================
+     ============ LAYOUTS API · 面向 agent 的类（v2）============
+     所有 layouts.md 中的骨架都基于下面这套命名。
+     如果你在 layouts.md 里看到某个类，它必须在下面有定义。
+     ============================================================ */
+
+  /* ---------- .frame：每页主内容容器 ---------- */
+  .frame{flex:1;display:flex;flex-direction:column;min-height:0}
+  /* 当 .frame 同时加了 grid 类时，grid 的 display:grid 覆盖 flex */
+  .frame.grid-2-7-5,
+  .frame.grid-2-6-6,
+  .frame.grid-2-8-4,
+  .frame.grid-3-3,
+  .frame.grid-6{display:grid}
+
+  /* ---------- 标题层级（API 名称，衬线为主） ---------- */
+  .h-hero{
+    font-family:var(--serif-zh);
+    font-weight:900;
+    font-size:10vw;
+    line-height:.96;
+    letter-spacing:-.02em;
+  }
+  .h-xl{
+    font-family:var(--serif-zh);
+    font-weight:700;
+    font-size:6.2vw;
+    line-height:1.08;
+    letter-spacing:-.01em;
+  }
+  .h-sub{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:3.1vw;
+    line-height:1.25;
+    letter-spacing:0;
+    opacity:.7;
+  }
+  .h-md{
+    font-family:var(--serif-zh);
+    font-weight:600;
+    font-size:2.3vw;
+    line-height:1.3;
+  }
+  /* 英文标题专用（Playfair 衬线） */
+  .h-hero-en,.h-xl-en{font-family:var(--serif-en);letter-spacing:-.025em}
+
+  /* ---------- lead 引语 ---------- */
+  .lead{
+    font-family:var(--serif-zh);
+    font-weight:400;
+    font-size:1.75vw;
+    line-height:1.5;
+    opacity:.86;
+  }
+
+  /* ---------- meta-row 底部元数据 ---------- */
+  .meta-row{
+    display:flex;
+    gap:1.2em;
+    align-items:baseline;
+    flex-wrap:wrap;
+    font-family:var(--mono);
+    font-size:max(12px,.92vw);
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- stat-card（数据大字报用） ---------- */
+  .stat-card{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    align-items:flex-start;
+    padding-top:1.6vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.3);
+  }
+  .stat-card .stat-label{
+    font-family:var(--mono);
+    font-size:max(10px,.78vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.55;
+  }
+  .stat-card .stat-nb{
+    font-family:var(--serif-en);
+    font-weight:800;
+    font-size:5.8vw;
+    line-height:.9;
+    letter-spacing:-.03em;
+    font-feature-settings:"tnum";
+    margin-top:.4vh;
+  }
+  .stat-card .stat-nb .stat-unit{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:.38em;
+    letter-spacing:0;
+    opacity:.72;
+    margin-left:.14em;
+  }
+  .stat-card .stat-note{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(13px,1.05vw);
+    line-height:1.5;
+    opacity:.72;
+    margin-top:.6vh;
+  }
+  /* 当 stat-card 用于 grid-4（2x2），数字可以更大 */
+  .grid-4 .stat-card .stat-nb{font-size:7.5vw}
+  /* 当只有 3 个，字也可以稍大 */
+  .grid-3 .stat-card .stat-nb{font-size:6.8vw}
+
+  /* ---------- pipeline（流水线） ---------- */
+  .pipeline-section{
+    margin-top:4.4vh;
+    padding-top:2.8vh;
+    border-top:1px dashed rgba(127,127,127,.32);
+  }
+  .pipeline-section:first-of-type{
+    border-top:0;
+    padding-top:0;
+    margin-top:3vh;
+  }
+  .pipeline-label{
+    font-family:var(--mono);
+    font-size:max(11px,.85vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.62;
+    margin-bottom:2.2vh;
+  }
+  .pipeline{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:1.2vw;
+  }
+  .pipeline[data-cols="3"]{grid-template-columns:repeat(3,1fr)}
+  .pipeline[data-cols="4"]{grid-template-columns:repeat(4,1fr)}
+  .pipeline[data-cols="6"]{grid-template-columns:repeat(6,1fr)}
+  .step{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    padding-top:1.4vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.35);
+  }
+  .step-nb{
+    font-family:var(--serif-en);
+    font-style:italic;
+    font-weight:500;
+    font-size:1.15vw;
+    opacity:.45;
+  }
+  .step-title{
+    font-family:var(--sans-zh);
+    font-weight:700;
+    font-size:1.55vw;
+    letter-spacing:.01em;
+    line-height:1.2;
+  }
+  .step-desc{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(12px,.95vw);
+    line-height:1.45;
+    opacity:.72;
+  }
+
+  /* ---------- 网格（layouts.md 所用） ---------- */
+  /* 这些类独立挂到任何容器上都能生效，不依赖 .frame 复合选择器 */
+  .grid-2-7-5{display:grid;grid-template-columns:7fr 5fr;gap:3vw 4vh;align-items:start}
+  .grid-2-6-6{display:grid;grid-template-columns:1fr 1fr;gap:3vw 4vh;align-items:start}
+  .grid-2-8-4{display:grid;grid-template-columns:8fr 4fr;gap:3vw 4vh;align-items:start}
+  .grid-3-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-auto-rows:minmax(0,1fr);
+    gap:2.4vh 2vw;
+  }
+  /* grid-6 已在旧样式里定义为 3x2，这里仅补 align */
+
+  /* ---------- 图片 frame-img（layouts.md 主命名） ---------- */
+  /* 在旧样式里已定义，这里补 img-cap 命名别名与增强 */
+  figure.frame-img{margin:0;display:flex;flex-direction:column;min-width:0}
+  .img-cap{
+    display:block;
+    margin-top:.8vh;
+    font-family:var(--mono);
+    font-size:max(10px,.8vw);
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+  /* callout src 命名别名 */
+  .callout-src{
+    display:block;
+    margin-top:1.6vh;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- chrome & foot 补位（layouts.md 简单写法） ---------- */
+  .chrome{font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.2em;text-transform:uppercase;opacity:.62}
+  .foot{font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.18em;text-transform:uppercase;opacity:.5}
+
+  /* ---------- 响应式降级 ---------- */
+  @media (max-width:900px){
+    .display{font-size:16vw}
+    .display-zh{font-size:12vw}
+    .h1-zh{font-size:7vw}
+    .h-hero{font-size:14vw}
+    .h-xl{font-size:9vw}
+    .pipeline{grid-template-columns:repeat(2,1fr)}
+    .grid-2-7-5,.grid-2-6-6,.grid-2-8-4{grid-template-columns:1fr}
+  }
+
+  body{font-feature-settings:"cv01","ss03"}.slide{padding:7vh 6vw 8vh}.slide::before{background:rgba(8,9,10,.78)}.slide.light::before{background:rgba(247,248,248,.92)}.slide.light{background:#f7f8f8;color:#08090a}
+  code{font-family:var(--mono);font-size:.88em;color:var(--linear-accent)}.light code{color:#5e6ad2}.deck-kicker{font-family:var(--mono);font-size:1.02vw;letter-spacing:.06em;text-transform:uppercase;color:var(--linear-accent);margin-bottom:2.2vh;display:flex;gap:.8vw;align-items:center}.deck-kicker i{width:1.2vw;height:1.2vw}.deck-title{font-family:var(--sans-zh);font-size:clamp(48px,5vw,92px);line-height:.96;letter-spacing:-1.56px;font-weight:510;color:var(--linear-text);max-width:88vw;text-wrap:balance;word-break:keep-all;overflow-wrap:break-word}.light .deck-title{color:#08090a}.deck-sub{margin-top:2.4vh;max-width:58vw;color:var(--linear-secondary);font-size:1.38vw;line-height:1.55;font-weight:400;letter-spacing:-.16px}.light .deck-sub{color:#4b515b}.section-title{font-size:clamp(40px,3.5vw,64px);line-height:1.08;letter-spacing:-1.05px;font-weight:510;color:var(--linear-text);text-wrap:balance;max-width:84vw;word-break:keep-all;overflow-wrap:break-word}.light .section-title{color:#08090a}.section-sub{font-size:1.2vw;line-height:1.55;color:var(--linear-muted);max-width:54vw;margin-top:1.6vh}.light .section-sub{color:#62666d}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:3vw;align-items:stretch;margin-top:5vh}.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25vw;margin-top:4vh}.card{background:rgba(255,255,255,.035);border:1px solid var(--linear-border);border-radius:8px;padding:1.45vw;position:relative;overflow:hidden}.light .card{background:rgba(8,9,10,.025);border-color:rgba(8,9,10,.1)}.card h3{font-size:1.32vw;font-weight:590;letter-spacing:-.24px;color:var(--linear-text);line-height:1.25;margin-bottom:1vh}.light .card h3{color:#08090a}.card p,.card li{font-size:1.02vw;line-height:1.48;color:var(--linear-muted);font-weight:400}.light .card p,.light .card li{color:#4b515b}.card ul{display:grid;gap:.8vh;margin-left:1.1vw}.tag{display:inline-flex;align-items:center;gap:.42vw;border:1px solid var(--linear-border);border-radius:999px;padding:.45vh .75vw;font-family:var(--mono);font-size:.78vw;color:var(--linear-secondary);background:rgba(255,255,255,.025)}.light .tag{color:#34343a;border-color:rgba(8,9,10,.12);background:rgba(8,9,10,.025)}.command{font-family:var(--mono);font-size:1vw;line-height:1.55;color:#d0d6e0;background:#0f1011;border:1px solid var(--linear-border);border-radius:8px;padding:1.1vw;white-space:pre-wrap;box-shadow:inset 0 0 18px rgba(0,0,0,.28)}.flow{display:flex;align-items:center;gap:.85vw;margin-top:4vh;flex-wrap:wrap}.node{border:1px solid var(--linear-border);background:rgba(255,255,255,.04);border-radius:8px;padding:1.1vw 1.25vw;min-width:10vw;min-height:9vh;display:grid;align-content:center;gap:.5vh}.light .node{border-color:rgba(8,9,10,.12);background:rgba(8,9,10,.025)}.node b{font-size:1.1vw;font-weight:590;color:var(--linear-text);letter-spacing:-.18px}.light .node b{color:#08090a}.node span{font-family:var(--mono);font-size:.78vw;color:var(--linear-muted)}.arrow{color:var(--linear-accent);font-size:1.5vw;font-family:var(--mono)}.swim{display:grid;grid-template-columns:10vw repeat(4,1fr);border:1px solid var(--linear-border);border-radius:8px;overflow:hidden;margin-top:4vh;background:rgba(255,255,255,.02)}.swim div{padding:1vw;border-right:1px solid var(--linear-border-subtle);border-bottom:1px solid var(--linear-border-subtle);min-height:9vh;color:var(--linear-muted);font-size:.95vw;line-height:1.35}.swim .head,.swim .role{font-family:var(--mono);color:var(--linear-secondary);background:rgba(255,255,255,.035);font-size:.8vw;text-transform:uppercase;letter-spacing:.04em}.checklist{display:grid;grid-template-columns:repeat(2,1fr);gap:1vw;margin-top:4vh}.check{display:flex;gap:.9vw;align-items:flex-start;border:1px solid var(--linear-border);border-radius:8px;padding:1.05vw;background:rgba(255,255,255,.03)}.check i{color:var(--linear-success);width:1.25vw;height:1.25vw;flex:0 0 auto;margin-top:.1vh}.check b{display:block;color:var(--linear-text);font-size:1vw;margin-bottom:.3vh;font-weight:590}.check span{display:block;color:var(--linear-muted);font-size:.9vw;line-height:1.4}.light .check{border-color:rgba(8,9,10,.1);background:rgba(8,9,10,.025)}.light .check b{color:#08090a}.light .check span{color:#4b515b}.matrix{display:grid;grid-template-columns:1.1fr 1.1fr 1.4fr;gap:0;border:1px solid var(--linear-border);border-radius:8px;overflow:hidden;margin-top:4vh;background:rgba(255,255,255,.025)}.matrix div{padding:1vw;border-right:1px solid var(--linear-border-subtle);border-bottom:1px solid var(--linear-border-subtle);font-size:.96vw;line-height:1.38;color:var(--linear-muted)}.matrix .mh{font-family:var(--mono);font-size:.78vw;color:var(--linear-secondary);background:rgba(255,255,255,.04);text-transform:uppercase;letter-spacing:.04em}.matrix b{color:var(--linear-text);font-weight:590}.light .matrix{border-color:rgba(8,9,10,.12);background:rgba(8,9,10,.02)}.light .matrix div{border-color:rgba(8,9,10,.08);color:#4b515b}.light .matrix .mh{background:rgba(8,9,10,.04);color:#34343a}.light .matrix b{color:#08090a}.big-number{font-family:var(--mono);font-size:6vw;line-height:.9;color:var(--linear-accent);font-weight:500;letter-spacing:-.08em}.split-title{display:grid;grid-template-columns:.9fr 1.1fr;gap:4vw;align-items:end;height:72vh}.quote{font-size:2.65vw;line-height:1.13;font-weight:510;letter-spacing:-.8px;color:var(--linear-text);text-wrap:balance}.light .quote{color:#08090a}.footnote{position:absolute;bottom:4vh;left:6vw;font-family:var(--mono);font-size:.75vw;color:var(--linear-faint)}.phase-ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:.7vw;margin-top:4vh}.phase{border:1px solid var(--linear-border);border-radius:8px;padding:1.2vw;background:rgba(255,255,255,.03);min-height:20vh}.phase b{display:block;font-size:1.18vw;color:var(--linear-text);margin-bottom:1vh}.phase span{font-family:var(--mono);font-size:.72vw;color:var(--linear-accent);text-transform:uppercase}.phase p{font-size:.95vw;color:var(--linear-muted);line-height:1.42;margin-top:1vh}.warning{border-color:rgba(113,112,255,.5);box-shadow:0 0 0 1px rgba(113,112,255,.08) inset}.accent-line{height:1px;background:linear-gradient(90deg,transparent,var(--linear-accent),transparent);margin:3vh 0}
+
+  /* Layout normalization pass: keep every slide on the same visual grid. */
+  .slide{
+    padding:7.2vh 6.4vw 7.2vh 6.4vw;
+    gap:0;
+  }
+  .deck-kicker{
+    margin-bottom:2vh;
+    min-height:1.5vw;
+  }
+  .deck-title{
+    max-width:74vw;
+  }
+  .deck-sub{
+    max-width:52vw;
+    margin-top:2vh;
+  }
+  .section-title{
+    max-width:78vw;
+  }
+  .section-sub{
+    max-width:56vw;
+    margin-top:1.4vh;
+  }
+  .two-col,
+  .three-col,
+  .checklist,
+  .matrix,
+  .swim,
+  .phase-ribbon,
+  .pipeline,
+  .flow{
+    margin-top:3.2vh;
+  }
+  .two-col{gap:1.4vw}
+  .three-col{gap:1vw}
+  .card{padding:1.15vw}
+  .card h3{margin-bottom:.7vh}
+  .card p,.card li{line-height:1.42}
+  .matrix div,.swim div{padding:.82vw}
+  .flow{gap:.65vw}
+  .node{
+    min-height:7.2vh;
+    padding:.9vw 1vw;
+  }
+  .footnote{
+    bottom:4.2vh;
+    left:6.4vw;
+  }
+  .cover-grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.05fr) minmax(380px,.95fr);
+    gap:4.2vw;
+    align-items:center;
+    min-height:68vh;
+  }
+  .cover-grid .deck-title{max-width:50vw}
+  .cover-grid .deck-sub{max-width:43vw}
+  .cover-map{
+    border:1px solid var(--linear-border);
+    border-radius:12px;
+    background:rgba(255,255,255,.035);
+    padding:1.2vw;
+    display:grid;
+    gap:.75vh;
+  }
+  .cover-row{
+    display:grid;
+    grid-template-columns:5.4vw 1fr;
+    gap:.9vw;
+    align-items:center;
+    min-height:10vh;
+    padding:.9vw;
+    border:1px solid var(--linear-border-subtle);
+    border-radius:8px;
+    background:rgba(255,255,255,.025);
+  }
+  .cover-row strong{
+    font-size:1.06vw;
+    font-weight:590;
+    color:var(--linear-text);
+    letter-spacing:-.18px;
+  }
+  .cover-row span{
+    display:block;
+    margin-top:.35vh;
+    color:var(--linear-muted);
+    font-size:.88vw;
+    line-height:1.35;
+  }
+  .cover-step{
+    font-family:var(--mono);
+    color:var(--linear-accent);
+    font-size:.78vw;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .cover-caption{
+    color:var(--linear-faint);
+    font-family:var(--mono);
+    font-size:.75vw;
+    margin-top:.4vh;
+  }
+  .pipeline[style],
+  .matrix[style],
+  .slide > div[style*="margin-top:6vh"],
+  .slide > div[style*="margin-top:5vh"],
+  .slide > div[style*="margin-top:4vh"]{
+    margin-top:3.2vh !important;
+  }
+
+  /* === Table polish (matrix / swim): bigger bold centered headers, bigger left body === */
+  .matrix .mh,
+  .swim .head,
+  .swim .role{
+    font-size:1.02vw !important;
+    font-weight:700 !important;
+    letter-spacing:.06em !important;
+    text-align:center !important;
+    color:var(--linear-text) !important;
+    padding:1.05vw .9vw !important;
+  }
+  .light .matrix .mh,
+  .light .swim .head,
+  .light .swim .role{color:#08090a !important}
+  .matrix > div:not(.mh),
+  .swim > div:not(.head):not(.role){
+    font-size:1.08vw !important;
+    line-height:1.5 !important;
+    text-align:left !important;
+    padding:1.1vw 1.1vw !important;
+    color:var(--linear-secondary) !important;
+  }
+  .light .matrix > div:not(.mh),
+  .light .swim > div:not(.head):not(.role){color:#34343a !important}
+  .matrix b{font-size:1.06em;letter-spacing:-.01em}
+
+  /* === Card unified rhythm: line-height drives vertical balance === */
+  .card{
+    padding:1.35vw 1.35vw 1.35vw 1.35vw;
+    display:flex;
+    flex-direction:column;
+    gap:.95vh;
+  }
+  .card h3{margin-bottom:.4vh;line-height:1.28}
+  .card p{line-height:1.62;margin:0}
+  .card ul{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:grid;
+    gap:.95vh;
+  }
+  .card ul li{
+    position:relative;
+    padding-left:1.35em;
+    line-height:1.6;
+  }
+  .card ul li::before{
+    content:"\203A";
+    position:absolute;
+    left:0;
+    top:-.05em;
+    color:var(--linear-accent);
+    font-family:var(--mono);
+    font-weight:600;
+    font-size:1.15em;
+    line-height:1.4;
+  }
+  .light .card ul li::before{color:#5e6ad2}
+
+  /* === s07 row-of-four checklist === */
+  .checklist.row4{
+    grid-template-columns:repeat(4,1fr);
+    gap:1vw;
+  }
+  .checklist.row4 .check{
+    flex-direction:column;
+    gap:.7vh;
+    padding:1.15vw;
+  }
+  .checklist.row4 .check i{margin-bottom:.4vh}
+  .checklist.row4 .check b{font-size:1.04vw;line-height:1.3}
+  .checklist.row4 .check span{font-size:.88vw;line-height:1.5}
+
+  /* === s16 condition rationale === */
+  .why-grid{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:1vw;
+    margin-top:3vh;
+  }
+  .why-cell{
+    border:1px solid var(--linear-border);
+    border-radius:8px;
+    padding:1.1vw;
+    background:rgba(255,255,255,.025);
+  }
+  .why-cell .wlabel{
+    font-family:var(--mono);
+    font-size:.78vw;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--linear-accent);
+    margin-bottom:.7vh;
+  }
+  .why-cell .wbody{
+    color:var(--linear-secondary);
+    font-size:.92vw;
+    line-height:1.5;
+  }
+
+  /* === s11 hero usage: side legend === */
+  .use-hero{
+    display:grid;
+    grid-template-columns:minmax(0,1.05fr) minmax(280px,.95fr);
+    gap:3.6vw;
+    align-items:center;
+    margin-top:3.6vh;
+  }
+  .use-legend{
+    border:1px solid var(--linear-border);
+    border-radius:12px;
+    padding:1.3vw;
+    background:rgba(8,9,10,.04);
+    display:grid;
+    gap:.9vh;
+  }
+  .light .use-legend{background:rgba(8,9,10,.025)}
+  .use-legend .row{
+    display:grid;
+    grid-template-columns:6.2vw 1fr;
+    gap:.9vw;
+    padding:.7vw;
+    border:1px solid var(--linear-border-subtle);
+    border-radius:8px;
+    align-items:center;
+  }
+  .use-legend .k{
+    font-family:var(--mono);
+    color:var(--linear-accent);
+    font-size:.86vw;
+    text-transform:uppercase;
+  }
+  .use-legend .v{
+    color:var(--linear-secondary);
+    font-size:.92vw;
+    line-height:1.45;
+  }
+  .light .use-legend .v{color:#34343a}
+
+  /* === s22 closing density === */
+  .closing-grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);
+    gap:4vw;
+    align-items:center;
+    margin-top:2.4vh;
+  }
+  .closing-rules{
+    display:grid;
+    gap:1.1vh;
+  }
+  .closing-rules .cr{
+    display:grid;
+    grid-template-columns:2.4vw 1fr;
+    gap:.9vw;
+    padding:.95vw 1.1vw;
+    border:1px solid var(--linear-border);
+    border-radius:8px;
+    background:rgba(255,255,255,.04);
+  }
+  .closing-rules .cr .num{
+    font-family:var(--mono);
+    color:var(--linear-accent);
+    font-size:1.1vw;
+    font-weight:600;
+  }
+  .closing-rules .cr .txt{
+    color:var(--linear-secondary);
+    font-size:1.05vw;
+    line-height:1.5;
+  }
+</style>
 </head>
 <body>
-  <header class="site-header">
-    <nav class="site-nav" aria-label="Primary navigation"><a href="index.html" class="active">시작</a><a href="manual.html" class="">사용자 설명서</a><a href="use-cases.html" class="">유즈케이스</a><a href="advanced.html" class="">고급 / ADR</a></nav>
-  </header>
-  <main class="layout">
-    <article class="content">
-      <div class="source-links"><span>View Markdown source</span><a href="../../README.md">README.md</a></div>
-      <section class="hero" id="top">
-  <p class="eyebrow">v0.9.0 Release Docs</p>
-  <h1>범용 저추론 에이전트 하네스</h1>
-  <p class="lead">저추론 에이전트가 discuss, plan, execute, done 흐름을 놓치지 않도록 돕는 클라이언트 중립 하네스입니다. 이번 정적 문서는 설치부터 어댑터 작성, speed bump 의사결정까지 한 자리에서 볼 수 있게 정리했습니다.</p>
-  <div class="quick-links" aria-label="Quick links">
-    <a href="manual.html#02-glossary--용어">용어 바로가기</a>
-    <a href="#whats-new">v0.9.0 변경점</a>
-    <a href="use-cases.html#rooopencode-어댑터로-작업하기">어댑터 유즈케이스</a>
-  </div>
-</section>
-<section class="cards" aria-label="Documentation sections">
-  <a class="doc-card" href="manual.html"><span>Manual</span><strong>사용자 설명서</strong><p>일상 사용자, 어댑터 작성자, maintainer를 위한 전체 설명서.</p></a>
-  <a class="doc-card" href="use-cases.html"><span>Use Cases</span><strong>실전 흐름</strong><p>설치 패턴과 Roo/OpenCode 어댑터 작업 흐름.</p></a>
-  <a class="doc-card" href="advanced.html"><span>Advanced</span><strong>Flags & ADR</strong><p>하네스 플래그와 phase.approve speed bump 결정 기록.</p></a>
-</section>
-<section id="whats-new">
-  <h2>What’s new in v0.9.0<a class="anchor" href="#whats-new" aria-label="Link to this section">§</a></h2>
-  <ul>
-    <li><strong>Speed bump 모델:</strong> <code>phase approve</code>는 보안 장벽이 아니라 사용자가 직접 확인하는 release checkpoint입니다.</li>
-    <li><strong>Autopilot 분리:</strong> 자동 진행 모드와 speed bump 확인을 별도 개념으로 유지해 오해를 줄입니다.</li>
-    <li><strong>Adapter 중립성:</strong> Roo/OpenCode는 adapter이며 core protocol의 출처가 아닙니다.</li>
-    <li><strong>Release-ready docs:</strong> 사용자 설명서, 유즈케이스, 고급 플래그, ADR을 브라우저에서 바로 읽을 수 있습니다.</li>
-  </ul>
-</section>
-<section id="glossary">
-<h2 id="용어-glossary">용어 / Glossary<a class="anchor" href="#용어-glossary" aria-label="Link to this section">§</a></h2>
-<div class="table-wrap"><table>
-<thead><tr>
-<th>용어</th>
-<th>뜻</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><strong>Speed bump (방지턱)</strong></td>
-<td><code>phase approve</code> 시 <code>[y/N]</code>로 묻는 단계. 보안 검사 아님. 취소 가능.</td>
-</tr>
-<tr>
-<td><strong>Autopilot</strong></td>
-<td>묻지 않고 여러 phase를 진행하는 모드. Speed bump와 별개. 기본 OFF.</td>
-</tr>
-<tr>
-<td><strong>Phase</strong></td>
-<td>워크플로우 단계 (<code>design</code>, <code>discuss</code>, <code>plan</code>, <code>execute</code>, <code>done</code>). <code>phase approve</code>로 stamp, <code>phase set</code>로 전환.</td>
-</tr>
-<tr>
-<td><strong>Phase gate</strong></td>
-<td>특정 verb가 특정 phase에서만 동작하는 규칙.</td>
-</tr>
-<tr>
-<td><strong>Halt</strong></td>
-<td>하네스가 멈추고 사용자 행동을 요청. 에러 아님. 예: non-TTY halt = "터미널에서 다시 실행하세요".</td>
-</tr>
-<tr>
-<td><strong>Audit log</strong></td>
-<td><code>.harness/audit.log</code>에 append-only로 기록되는 phase 변화/승인 로그. Chain-verified.</td>
-</tr>
-<tr>
-<td><strong>Release confirmation</strong></td>
-<td><code>harness release</code>가 요구하는 타이핑 토큰. <code>phase approve</code>와 다름. (내부는 HMAC nonce — 사용자가 보는 용어는 "release confirmation".)</td>
-</tr>
-<tr>
-<td><strong>Approve-nonce</strong></td>
-<td>Legacy 용어. <code>phase approve</code>는 더 이상 사용 안 함. CLI verb <code>approve-nonce mint</code>는 v0.9.0에서 deprecated, v1.0에서 제거.</td>
-</tr>
-<tr>
-<td><strong>BY_TRUST</strong></td>
-<td>CI 전용 하네스 flag (release 자동화에서만 사용). 일반 사용자는 설정하지 않음.</td>
-</tr>
-<tr>
-<td><strong>Trust root</strong></td>
-<td>설치/업그레이드 시 검증되는 서명된 git tag. Release-path 전용.</td>
-</tr>
-<tr>
-<td><strong>하네스 설정 flag (harness flag)</strong></td>
-<td>하네스 내부 설정값 (<code>HARNESS_*</code> 환경 변수로 전달). 일반 사용자는 만질 일 없음. <code>docs/advanced/harness-flags.md</code> 참고.</td>
-</tr>
-</tbody></table></div>
-<p>자세한 내용: <code>docs/USER_MANUAL.md</code> §0.2.</p>
-<hr>
-</section>
-    </article>
-    <aside class="toc" aria-label="Table of contents"><strong>On this page</strong><a class="toc-h2" href="#whats-new">What’s new in v0.9.0</a><a class="toc-h2" href="#glossary">Glossary</a><a class="toc-h2" href="#용어-glossary">용어 / Glossary</a></aside>
-  </main>
+
+<canvas id="bg-dark" class="bg"></canvas>
+<canvas id="bg-light" class="bg"></canvas>
+<div id="hint">← → 넘기기 · ESC 인덱스</div>
+
+<div id="deck">
+
+<!-- Deck slides -->
+
+<section class="slide hero dark" data-screen-label="01 Title"><div class="cover-grid"><div><div class="deck-kicker"><i data-lucide="route"></i> 사용자 가이드 프레젠테이션</div><div class="deck-title">하네스를 설치하는 시점과 활용하는 시점</div><p class="deck-sub">처음 쓰는 개발자와 에이전트 사용자가 “언제 설치하고, 언제 멈추고, 언제 구현해도 되는지”를 판단하도록 만든 온보딩 deck입니다.</p></div><div class="cover-map"><div class="cover-row"><div class="cover-step">Part 1</div><div><strong>설치</strong><span>프로젝트에 profile, adapter, planning, gate를 배치하고 첫 점검을 통과시킵니다.</span></div></div><div class="cover-row"><div class="cover-step">Part 2</div><div><strong>활용</strong><span><code>check → next → run → check</code> 루프로 요청마다 안전한 다음 행동만 수행합니다.</span></div></div><div class="cover-row"><div class="cover-step">Part 3</div><div><strong>복구</strong><span>scope drift, approval 누락, verification 실패를 계획 단계로 되돌립니다.</span></div></div><div class="cover-caption">Install · Use · Recover를 같은 프레임에서 읽도록 구성</div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="02 Why Harness"><div class="deck-kicker"><i data-lucide="shield-check"></i> 하네스의 역할</div><div class="section-title">하네스는 에이전트의 속도를 늦추는 도구가 아니라, 잘못 빠른 행동을 막는 도구입니다.</div><div class="three-col"><div class="card"><h3>읽기와 구현을 분리</h3><p>요청 이해와 evidence 수집은 <code>discuss</code>, 구현은 승인된 <code>execute</code>에서만 진행합니다.</p></div><div class="card"><h3>수정 범위를 고정</h3><p><code>allowed_paths</code>와 <code>blocked_paths</code>로 에이전트가 손댈 수 있는 파일의 경계를 명시합니다.</p></div><div class="card"><h3>검증을 작업의 일부로</h3><p><code>verification</code>이 비어 있거나 <code>harness check</code>가 실패하면 구현으로 넘어가지 않습니다.</p></div></div><div class="matrix" style="margin-top:5vh;grid-template-columns:1fr 1.4fr 1.4fr"><div class="mh">대표 실수</div><div class="mh">하네스 없을 때</div><div class="mh">하네스가 막는 방식</div><div><b>요청을 즉시 코딩</b></div><div>읽지 않은 채 파일 수정 → 잘못된 위치 변경</div><div><code>discuss</code>에서 repo 먼저 읽기, <code>may_edit=false</code></div><div><b>관련 없는 파일까지 손댐</b></div><div>범위 폭주, diff가 30+ 파일</div><div><code>allowed_paths</code> 밖 수정은 차단</div><div><b>테스트 없이 done</b></div><div>"동작할 것 같다"로 push</div><div><code>verification</code> 빈 채로 <code>execute</code> 진입 불가</div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="03 Two Moments"><div class="deck-kicker"><i data-lucide="git-branch"></i> 두 개의 사용 시점</div><div class="split-title"><div><div class="big-number">01</div><div class="section-title">설치 시점</div><p class="section-sub">프로젝트에 하네스 구조, adapter, profile, planning 문서를 설치하고 첫 상태를 확인합니다.</p></div><div><div class="big-number">02</div><div class="section-title">활용 시점</div><p class="section-sub">매일 요청을 처리하면서 <code>next</code>, <code>run</code>, <code>check</code>로 안전한 다음 행동만 실행합니다.</p></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide hero dark" data-screen-label="04 Install Section"><div class="deck-kicker"><i data-lucide="download"></i> Part 1</div><div class="deck-title">하네스를 설치하는 시점</div><p class="deck-sub">설치는 “어떤 프로젝트인가”, “어떤 agent adapter를 쓸 것인가”, “얼마나 많은 기존 문서를 보존해야 하는가”를 정하는 단계입니다.</p><div class="pipeline" data-cols="5" style="margin-top:6vh"><div class="step"><div class="step-nb">01</div><div class="step-title">진입점 선택</div><div class="step-desc">remote release · local clone · 기존 프로젝트</div></div><div class="step"><div class="step-nb">02</div><div class="step-title">profile / adapter</div><div class="step-desc">generic · react-web · python-etl · roo · opencode</div></div><div class="step"><div class="step-nb">03</div><div class="step-title">installer 실행</div><div class="step-desc"><code>install_harness.py --interactive</code></div></div><div class="step"><div class="step-nb">04</div><div class="step-title">첫 점검</div><div class="step-desc"><code>harness check</code> · <code>harness next</code></div></div><div class="step"><div class="step-nb">05</div><div class="step-title">planning hydration</div><div class="step-desc">구조 / 관례 / roadmap을 <code>.planning</code>에</div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="05 Install Entry Points"><div class="deck-kicker"><i data-lucide="terminal"></i> 설치 진입점</div><div class="section-title">처음 설치는 interactive installer가 기본입니다.</div><div class="two-col"><div class="card"><h3>원격 release에서 한 번에 설치</h3><div class="command">tmp="$(mktemp -d)"
+git clone --depth 1 --branch v0.8.3 \
+  https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+python3 "$tmp/scripts/install_harness.py" --interactive</div></div><div class="card"><h3>설치 중 결정하는 것</h3><ul><li>Target repository의 absolute path</li><li>Adapter: <code>roo</code>, <code>opencode</code>, <code>both</code>, <code>none</code></li><li>Profile: <code>generic</code>, <code>react-web</code>, <code>python-etl</code>, <code>dotnet-etl</code></li><li>필요한 경우 database 축: <code>mssql</code>, <code>postgresql</code>, <code>none</code></li><li>기본 skill pack + 추가 pack</li></ul></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="06 Installation Decision Matrix"><div class="deck-kicker"><i data-lucide="list-checks"></i> 설치 패턴 선택</div><div class="section-title">대부분의 코너 케이스는 설치 전에 profile과 adapter를 제대로 고르면 줄어듭니다.</div><div class="matrix"><div class="mh">상황</div><div class="mh">추천 선택</div><div class="mh">이유</div><div><b>범용 프로젝트</b></div><div><code>generic</code> + 필요한 adapter</div><div>도메인 추정을 줄이고 기본 phase gate만 적용합니다.</div><div><b>Roo만 사용</b></div><div><code>--adapters roo</code></div><div>Roo command와 rules 중심으로 agent 행동을 제한합니다.</div><div><b>OpenCode만 사용</b></div><div><code>--adapters opencode</code></div><div>OpenCode command surface만 설치해 불필요한 파일을 줄입니다.</div><div><b>둘 다 사용</b></div><div><code>--adapters both</code></div><div>팀원마다 agent가 달라도 같은 phase state를 공유합니다.</div><div><b>React/TS UI</b></div><div><code>react-web</code> profile</div><div>프론트엔드 검증과 작업 경계를 기본값으로 잡습니다.</div><div><b>ETL 프로젝트</b></div><div><code>python-etl</code> / <code>dotnet-etl</code> + DB 축</div><div>데이터베이스별 skill pack과 검증 흐름을 같이 설치합니다.</div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="07 Existing Project Cases"><div class="deck-kicker"><i data-lucide="folder-git-2"></i> 기존 프로젝트에 설치할 때</div><div class="section-title">기존 repo에서는 “덮어쓰기”보다 “관리 블록과 manifest를 확인”하는 감각이 중요합니다.</div><div class="checklist row4"><div class="check"><i data-lucide="check-circle-2"></i><div><b>먼저 dry-run 성격으로 읽기</b><span>설치가 만드는 파일과 managed block을 미리 확인합니다. 기존 팀 문서, 기존 AGENTS.md, 기존 planning 폴더와 충돌 가능성을 검토한 뒤 실제 설치를 결정합니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>AGENTS.md는 공동 소유</b><span>하네스가 관리하는 BEGIN/END managed block 안은 스크립트가 자동으로 갱신합니다. block 밖은 팀의 메모 영역으로 보존되어 자유롭게 적어둘 수 있습니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>Planning은 canonical memory</b><span><code>.planning/**</code>은 프로젝트의 구조, 관례, roadmap, 검증 evidence를 모아두는 공식 기록입니다. 임시 메모는 <code>.scratch/</code>로 분리하여 핵심 기억과 섞이지 않게 합니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>Live gate는 명령으로만</b><span><code>.scratch/phase-state.json</code>은 현재 작업을 열거나 막는 상태 파일입니다. 직접 편집하면 nonce가 어긋나 다음 <code>harness check</code>에서 drift 경고가 발생합니다.</span></div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="08 Post Install Verification"><div class="deck-kicker"><i data-lucide="activity"></i> 설치 직후 확인</div><div class="section-title">설치가 끝나면 바로 구현하지 말고, 두 명령으로 현재 상태를 읽습니다.</div><div class="two-col"><div class="card warning"><h3>첫 점검</h3><div class="command">harness
+harness check
+harness next</div><p><code>check</code>는 구조 오류, missing verification, managed block 누락, 단계 drift를 감지합니다. <code>next</code>는 지금 안전하게 할 다음 행동을 말합니다.</p></div><div class="card"><h3>경고가 있으면</h3><ul><li>경고가 가리키는 파일을 먼저 읽습니다.</li><li><code>may_edit=false</code>면 코드를 수정하지 않습니다.</li><li>승인 요청이 나오면 사람이 명시적으로 승인하기 전 멈춥니다.</li><li>JSON이나 상태를 해석할 수 없으면 구현을 시작하지 않습니다.</li></ul></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="09 First Agent Prompt"><div class="deck-kicker"><i data-lucide="message-square-text"></i> 첫 세션 시작</div><div class="section-title">첫 agent에게는 “구현해줘”보다 “planning hydration부터 해줘”가 안전합니다.</div><div class="two-col"><div class="card"><h3>프로젝트 맥락이 비어 있을 때</h3><p>repository 구조, stack, convention, 테스트 방법을 먼저 읽고 <code>.planning/**</code>에 현재 지식을 채우게 합니다.</p><div class="accent-line"></div><p class="tag">목표: 구현 전 shared memory 만들기</p></div><div class="card"><h3>이미 작업 요청이 있을 때</h3><p>요청을 바로 구현하지 말고 <code>discuss</code>에서 evidence를 모은 뒤 <code>plan</code>에 allowed paths와 verification을 쓰게 합니다.</p><div class="accent-line"></div><p class="tag">목표: 수정 경계와 검증 기준 만들기</p></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="10 Install Troubles"><div class="deck-kicker"><i data-lucide="wrench"></i> 설치 시 코너 케이스</div><div class="section-title">설치 문제가 생기면 “무엇을 지울까”보다 “무엇이 설치됐는가”부터 확인합니다.</div><div class="matrix"><div class="mh">증상</div><div class="mh">첫 대응</div><div class="mh">주의</div><div>설치/업그레이드가 꼬임</div><div><code>harness check</code> 결과와 변경 파일 목록 확인</div><div>자동으로 삭제하지 말고 manifest와 managed block 충돌을 먼저 봅니다.</div><div>adapter를 잘못 고름</div><div>필요한 adapter만 재설치 또는 uninstall 범위 선택</div><div>core protocol까지 지우면 planning 기록과 상태 흐름도 영향받습니다.</div><div>Windows 환경</div><div><code>python3</code> 대신 <code>py -3</code> 또는 <code>python</code> 사용</div><div>문서의 shell 예시는 플랫폼에 맞게 치환합니다.</div><div>제거가 필요함</div><div><code>scripts/uninstall_harness.py --interactive</code> + dry-run</div><div>Planning/docs 제거는 권장하지 않습니다. 프로젝트 기억이 사라집니다.</div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide hero light" data-screen-label="11 Use Section"><div class="deck-kicker"><i data-lucide="play-circle"></i> Part 2</div><div class="deck-title">만들어진 하네스를 활용하는 시점</div><p class="deck-sub">일상 사용자는 네 명령만 기억하면 됩니다. 핵심은 agent에게 “지금 가능한 행동”을 하네스 상태에 맞춰 수행하게 하는 것입니다.</p><div class="use-hero"><svg viewBox="0 0 720 220" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><marker id="arr-l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5e6ad2"/></marker></defs><g font-family="ui-monospace,SF Mono,Menlo" font-size="14"><rect x="20" y="50" width="140" height="64" rx="8" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="90" y="78" text-anchor="middle" font-weight="600" fill="#08090a">harness check</text><text x="90" y="98" text-anchor="middle" fill="#62666d" font-size="11">상태 읽기</text><rect x="200" y="50" width="140" height="64" rx="8" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="270" y="78" text-anchor="middle" font-weight="600" fill="#08090a">harness next</text><text x="270" y="98" text-anchor="middle" fill="#62666d" font-size="11">다음 행동</text><rect x="380" y="50" width="140" height="64" rx="8" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="450" y="78" text-anchor="middle" font-weight="600" fill="#08090a">harness run</text><text x="450" y="98" text-anchor="middle" fill="#62666d" font-size="11">안전 전환</text><rect x="560" y="50" width="140" height="64" rx="8" fill="rgba(94,106,210,.08)" stroke="#5e6ad2"/><text x="630" y="78" text-anchor="middle" font-weight="600" fill="#08090a">harness check</text><text x="630" y="98" text-anchor="middle" fill="#5e6ad2" font-size="11">검증 / drift</text><line x1="160" y1="82" x2="200" y2="82" stroke="#5e6ad2" stroke-width="1.5" marker-end="url(#arr-l)"/><line x1="340" y1="82" x2="380" y2="82" stroke="#5e6ad2" stroke-width="1.5" marker-end="url(#arr-l)"/><line x1="520" y1="82" x2="560" y2="82" stroke="#5e6ad2" stroke-width="1.5" marker-end="url(#arr-l)"/><path d="M630 130 Q630 180 360 190 Q90 190 90 130" fill="none" stroke="#5e6ad2" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr-l)"/><text x="360" y="208" text-anchor="middle" fill="#62666d" font-size="11">다음 요청에서 반복</text></g></svg><div class="use-legend"><div class="row"><div class="k">check</div><div class="v">phase, may_edit, warnings, allowed_paths를 한 번에 읽습니다.</div></div><div class="row"><div class="k">next</div><div class="v">지금 단계에서 사용자가 해도 되는 다음 행동을 알려줍니다.</div></div><div class="row"><div class="k">run</div><div class="v">사람 승인이 끝난 안전한 phase 전환만 실행합니다.</div></div><div class="row"><div class="k">check</div><div class="v">실행 결과 drift와 검증 누락을 다음 요청 전에 잡습니다.</div></div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="12 Four Commands"><div class="deck-kicker"><i data-lucide="panel-top"></i> 매일 쓰는 네 명령</div><div class="section-title">CLI 전체를 외우지 말고, 네 개의 사용자 명령만 일상 루프로 둡니다.</div><div class="phase-ribbon"><div class="phase"><span>guide</span><b>harness</b><p>짧은 사용 가이드와 사용 가능한 명령을 확인합니다.</p></div><div class="phase"><span>decide</span><b>harness next</b><p>현재 phase와 gate 기준으로 다음에 해도 되는 행동을 봅니다.</p></div><div class="phase"><span>transition</span><b>harness run</b><p>안전한 workflow 전환만 실행합니다. 사람 승인이 필요하면 멈춥니다.</p></div><div class="phase"><span>verify</span><b>harness check</b><p>구조, 상태, workflow gate, worktree drift를 점검합니다.</p></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="13 Workflow State Machine"><div class="deck-kicker"><i data-lucide="workflow"></i> 상태 모델</div><div class="section-title">모든 작업은 discuss → plan → execute → done 순서로 흐릅니다.</div><div style="margin-top:3.5vh"><svg viewBox="0 0 1000 220" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><marker id="arr-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5e6ad2"/></marker></defs><g font-family="ui-monospace,SF Mono,Menlo" font-size="14"><rect x="20" y="60" width="170" height="70" rx="10" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="105" y="90" text-anchor="middle" font-weight="700" fill="#08090a" font-size="16">discuss</text><text x="105" y="112" text-anchor="middle" fill="#62666d" font-size="11">may_edit = false</text><rect x="270" y="60" width="170" height="70" rx="10" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="355" y="90" text-anchor="middle" font-weight="700" fill="#08090a" font-size="16">plan</text><text x="355" y="112" text-anchor="middle" fill="#62666d" font-size="11">allowed_paths · verification</text><rect x="520" y="60" width="170" height="70" rx="10" fill="rgba(94,106,210,.10)" stroke="#5e6ad2"/><text x="605" y="90" text-anchor="middle" font-weight="700" fill="#08090a" font-size="16">execute</text><text x="605" y="112" text-anchor="middle" fill="#5e6ad2" font-size="11">may_edit = true</text><rect x="770" y="60" width="170" height="70" rx="10" fill="rgba(8,9,10,.04)" stroke="rgba(8,9,10,.18)"/><text x="855" y="90" text-anchor="middle" font-weight="700" fill="#08090a" font-size="16">done</text><text x="855" y="112" text-anchor="middle" fill="#62666d" font-size="11">test · diff · residual risk</text><line x1="190" y1="95" x2="270" y2="95" stroke="#5e6ad2" stroke-width="1.6" marker-end="url(#arr-s)"/><line x1="440" y1="95" x2="520" y2="95" stroke="#5e6ad2" stroke-width="1.6" marker-end="url(#arr-s)"/><line x1="690" y1="95" x2="770" y2="95" stroke="#5e6ad2" stroke-width="1.6" marker-end="url(#arr-s)"/><text x="230" y="84" text-anchor="middle" fill="#5e6ad2" font-size="11">propose</text><text x="480" y="84" text-anchor="middle" fill="#5e6ad2" font-size="11">approve</text><text x="730" y="84" text-anchor="middle" fill="#5e6ad2" font-size="11">verify</text><path d="M605 130 Q605 180 480 195 Q355 195 355 130" fill="none" stroke="#62666d" stroke-width="1.1" stroke-dasharray="4 4" marker-end="url(#arr-s)"/><text x="480" y="212" text-anchor="middle" fill="#62666d" font-size="11">scope 변경 시 plan으로 복귀</text></g></svg></div><div class="matrix" style="margin-top:3vh"><div class="mh">단계</div><div class="mh">해도 되는 일</div><div class="mh">금지</div><div><b>discuss</b></div><div>repo 읽기, phase 후보 제안, 문제 파악</div><div>구현 금지</div><div><b>plan</b></div><div><code>allowed_paths</code>, <code>verification</code>, acceptance criteria 작성</div><div>application code 수정 금지</div><div><b>execute</b></div><div>승인된 paths만 수정하고 worktree 확인</div><div>plan 밖 파일 수정 금지</div><div><b>done</b></div><div>test, diff, residual risk, push readiness 기록</div><div>미검증 push 금지</div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="14 Daily Flow"><div class="deck-kicker"><i data-lucide="repeat-2"></i> 기본 작업 흐름</div><div class="section-title">사용자는 “다음 행동 확인 → 안전 전환 → 검증”을 반복합니다.</div><div class="two-col"><div class="card"><h3>일상 루프</h3><div class="command">harness check
+harness next
+harness run
+harness check</div><p>처음과 끝에 <code>check</code>를 둬서 상태 drift와 검증 누락을 초기에 잡습니다.</p></div><div class="card"><h3>중요한 규칙</h3><ul><li><code>may_edit=false</code> 상태에서는 애플리케이션 코드를 수정하지 않습니다.</li><li>구현은 <code>phase=execute</code>, <code>approved=true</code>, <code>allowed_paths</code>가 맞을 때만 시작합니다.</li><li>작업 중 범위가 커지면 구현을 멈추고 계획으로 돌아갑니다.</li></ul></div></div><div style="margin-top:4vh"><svg viewBox="0 0 1000 230" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><marker id="arr-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7170ff"/></marker></defs><g font-family="ui-monospace,SF Mono,Menlo" font-size="13" fill="#d0d6e0"><text x="120" y="24" text-anchor="middle" font-weight="700" fill="#f7f8f8">User</text><text x="500" y="24" text-anchor="middle" font-weight="700" fill="#f7f8f8">Agent</text><text x="880" y="24" text-anchor="middle" font-weight="700" fill="#f7f8f8">Harness</text><line x1="120" y1="36" x2="120" y2="220" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/><line x1="500" y1="36" x2="500" y2="220" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/><line x1="880" y1="36" x2="880" y2="220" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/><line x1="120" y1="60" x2="495" y2="60" stroke="#7170ff" stroke-width="1.4" marker-end="url(#arr-d)"/><text x="307" y="54" text-anchor="middle" fill="#d0d6e0">"이 기능 고쳐줘"</text><line x1="500" y1="90" x2="875" y2="90" stroke="#7170ff" stroke-width="1.4" marker-end="url(#arr-d)"/><text x="687" y="84" text-anchor="middle" fill="#d0d6e0">harness check · next</text><line x1="880" y1="120" x2="505" y2="120" stroke="#7170ff" stroke-width="1.4" stroke-dasharray="2 3" marker-end="url(#arr-d)"/><text x="687" y="114" text-anchor="middle" fill="#8a8f98">phase · may_edit · warnings</text><line x1="500" y1="150" x2="125" y2="150" stroke="#7170ff" stroke-width="1.4" marker-end="url(#arr-d)"/><text x="307" y="144" text-anchor="middle" fill="#d0d6e0">plan + allowed_paths 보여주기</text><line x1="120" y1="180" x2="495" y2="180" stroke="#7170ff" stroke-width="1.4" marker-end="url(#arr-d)"/><text x="307" y="174" text-anchor="middle" fill="#d0d6e0">사람 승인 (approve)</text><line x1="500" y1="210" x2="875" y2="210" stroke="#7170ff" stroke-width="1.4" marker-end="url(#arr-d)"/><text x="687" y="204" text-anchor="middle" fill="#d0d6e0">harness run → execute</text></g></svg></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="15 Approval Gate"><div class="deck-kicker"><i data-lucide="badge-check"></i> 승인 gate</div><div class="section-title">승인은 agent가 대신할 수 없습니다. 사람이 계획을 읽고 명시적으로 열어야 합니다.</div><div class="checklist"><div class="check"><i data-lucide="check-circle-2"></i><div><b>계획이 현재 요청과 맞는가</b><span>이전 요청의 ghost plan이 아닌지 확인합니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b><code>allowed_paths</code>가 충분하지만 과도하지 않은가</b><span>필요한 파일은 포함하고, 관련 없는 영역은 막습니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>검증 명령이 실제로 가능한가</b><span>테스트, lint, build가 현실적으로 실행 가능한지 봅니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>adapter가 스스로 승인하지 않는가</b><span><code>requires_user_approval=true</code>면 prompt를 보여주고 멈춰야 합니다.</span></div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="16 Execute Conditions"><div class="deck-kicker"><i data-lucide="lock-open"></i> 구현 시작 조건</div><div class="section-title">구현은 다섯 조건이 모두 맞을 때만 시작합니다.</div><div class="flow"><div class="node"><b>phase</b><span>execute</span></div><div class="arrow">+</div><div class="node"><b>approval</b><span>출처 기록 있음</span></div><div class="arrow">+</div><div class="node"><b>paths</b><span>allowed_paths 있음</span></div><div class="arrow">+</div><div class="node"><b>verification</b><span>비어 있지 않음</span></div><div class="arrow">+</div><div class="node"><b>check</b><span>통과</span></div></div><div class="why-grid"><div class="why-cell"><div class="wlabel">phase</div><div class="wbody">discuss나 plan에서는 코드를 만지면 안 됩니다. execute에서만 구현 권한이 열립니다.</div></div><div class="why-cell"><div class="wlabel">approval</div><div class="wbody">사람이 plan을 보고 명시적으로 승인한 출처가 phase-state에 기록되어 있어야 합니다.</div></div><div class="why-cell"><div class="wlabel">paths</div><div class="wbody">수정 가능한 파일이 사전에 적혀 있어야 합니다. 비어 있으면 범위를 모르는 상태입니다.</div></div><div class="why-cell"><div class="wlabel">verification</div><div class="wbody">테스트, lint, build 같은 검증 절차가 없는 구현은 done으로 닫히지 못합니다.</div></div><div class="why-cell"><div class="wlabel">check</div><div class="wbody">최근 <code>harness check</code>가 구조, gate, drift 오류 없이 통과해야 합니다.</div></div></div><p class="section-sub" style="margin-top:2.6vh">하나라도 빠지면 구현을 멈추고 <code>harness next</code>가 안내하는 단계로 돌아갑니다.</p><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="17 Adapter Flow"><div class="deck-kicker"><i data-lucide="plug"></i> Roo / OpenCode adapter 사용</div><div class="section-title">adapter는 하네스 상태를 읽고, 사용자가 승인하기 전까지 실행을 보류하는 얇은 layer입니다.</div><div class="two-col"><div class="card"><h3>adapter가 먼저 실행</h3><div class="command">harness check
+HARNESS_MACHINE=1 harness next</div><p>machine-readable 상태로 <code>may_edit</code>, warnings, approval 요구를 확인합니다.</p></div><div class="card"><h3>adapter 금지 사항</h3><ul><li>사용자를 대신해 승인하지 않기</li><li><code>requires_user_approval=true</code>이면 prompt를 보여주고 멈추기</li><li>저수준 nonce, repair, phase approve를 정상 경로로 남발하지 않기</li><li><code>allowed_paths</code> 밖 파일 수정하지 않기</li></ul></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="18 Use Case Flow"><div class="deck-kicker"><i data-lucide="map"></i> 활용 시점 유스케이스 플로우</div><div class="section-title">사용자의 요청은 하네스 gate를 통과하면서 점점 구체적인 작업으로 바뀝니다.</div><div class="swim"><div class="head">역할</div><div class="head">요청</div><div class="head">discuss</div><div class="head">plan</div><div class="head">execute / done</div><div class="role">사용자</div><div>“이 기능 고쳐줘”</div><div>질문에 답하거나 자료 제공</div><div>계획과 경로를 승인</div><div>결과, 테스트, 남은 위험 확인</div><div class="role">Agent</div><div>요청을 해석</div><div>repo 읽기, evidence 수집</div><div>allowed paths, verification 작성</div><div>승인된 범위 구현 후 검증</div><div class="role">Harness</div><div><code>harness next</code></div><div><code>may_edit=false</code> 유지</div><div>승인 필요 prompt 출력</div><div><code>may_edit=true</code> 조건 점검</div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="19 Scope Change"><div class="deck-kicker"><i data-lucide="corner-down-left"></i> 범위 변경 코너 케이스</div><div class="section-title">작업 중 새 책임이 생기면, 구현을 계속하는 것이 아니라 plan으로 돌아갑니다.</div><div class="two-col"><div class="card warning"><h3>멈춰야 하는 신호</h3><ul><li>새 파일/새 모듈이 필요하지만 <code>allowed_paths</code>에 없음</li><li>테스트 명령이 계획과 맞지 않음</li><li>수정 이유가 원래 acceptance criteria를 벗어남</li><li>사용자가 중간에 목표를 바꿈</li></ul></div><div class="card"><h3>올바른 복귀</h3><p><code>harness next</code>로 현재 gate를 확인하고, plan을 갱신한 뒤 다시 사람 승인을 받습니다. 억지로 기존 계획에 끼워 넣으면 하네스의 의미가 사라집니다.</p><div class="accent-line"></div><p class="tag">Rule: plan 밖 변경은 구현 밖으로 보낸다</p></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide dark" data-screen-label="20 Troubleshooting"><div class="deck-kicker"><i data-lucide="alert-triangle"></i> 문제가 생겼을 때</div><div class="section-title">대부분의 문제는 첫 점검 두 줄에서 분류됩니다.</div><div class="two-col"><div class="card"><h3>첫 점검</h3><div class="command">harness check
+harness next</div></div><div class="card"><h3>흔한 상황</h3><ul><li><code>may_edit=false</code>: 구현하지 말고 계획 또는 승인으로 돌아가기</li><li><code>warnings</code> 있음: 경고가 가리키는 파일 먼저 읽기</li><li><code>allowed_paths</code> 밖 변경: 변경 제외 또는 계획 갱신</li><li>JSON 해석 불가: 구현 중단, 상태를 사용자에게 보여주기</li></ul></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide light" data-screen-label="21 Operator Checklist"><div class="deck-kicker"><i data-lucide="clipboard-check"></i> 운영 체크리스트</div><div class="section-title">처음 쓰는 사용자가 매 세션 끝에 확인할 것.</div><div class="checklist"><div class="check"><i data-lucide="check-circle-2"></i><div><b>현재 phase가 말이 되는가</b><span>작업이 끝났는데 execute에 남아 있거나, 계획 없이 execute로 간 상태가 아닌지 확인합니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>검증 evidence가 남았는가</b><span>테스트를 못 돌렸다면 못 돌린 이유와 residual risk를 남깁니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>diff가 plan 경계 안인가</b><span>수정 파일이 allowed paths와 맞는지 봅니다.</span></div></div><div class="check"><i data-lucide="check-circle-2"></i><div><b>다음 사용자 행동이 명확한가</b><span>승인, 리뷰, 추가 자료 제공, done 전환 중 무엇이 필요한지 적습니다.</span></div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+<section class="slide hero dark" data-screen-label="22 Closing"><div class="deck-kicker"><i data-lucide="sparkles"></i> 기억할 네 문장</div><div class="section-title">하네스는 “언제 멈추고 언제 움직이는지”를 같은 규칙으로 묻습니다.</div><div class="closing-grid"><div class="closing-rules"><div class="cr"><div class="num">01</div><div class="txt">설치는 프로젝트에 규칙을 배치하는 일입니다. profile, adapter, planning을 골라 첫 점검을 통과시킵니다.</div></div><div class="cr"><div class="num">02</div><div class="txt">활용은 매 요청마다 다음 안전 행동을 묻는 일입니다. <code>check → next → run → check</code> 루프를 깨지 않습니다.</div></div><div class="cr"><div class="num">03</div><div class="txt">승인은 사람이 합니다. agent와 adapter는 사용자가 plan을 읽고 명시적으로 열기 전에는 구현을 시작하지 않습니다.</div></div><div class="cr"><div class="num">04</div><div class="txt">계획 밖 변경은 다시 계획으로 보냅니다. 범위가 커지면 구현을 멈추고 plan을 갱신한 뒤 새 승인을 받습니다.</div></div></div><div><div class="flow" style="margin-top:0"><div class="node"><b>check</b><span>상태 확인</span></div><div class="arrow">→</div><div class="node"><b>next</b><span>다음 행동</span></div><div class="arrow">→</div><div class="node"><b>run</b><span>안전 전환</span></div></div><div class="matrix" style="margin-top:3vh;grid-template-columns:1fr 1.4fr"><div class="mh">상황</div><div class="mh">기억할 한 줄</div><div><b>요청을 받았다</b></div><div>구현 전에 <code>harness check</code>를 먼저 본다</div><div><b>plan이 있다</b></div><div>사람이 직접 승인하기 전엔 코드 안 만진다</div><div><b>범위가 커진다</b></div><div>구현을 멈추고 plan으로 돌아간다</div><div><b>작업이 끝났다</b></div><div>verification evidence와 다음 행동을 남긴다</div></div></div></div><div class="footnote">General Low-Reasoning Agent Harness · User Guide</div></section>
+
+</div>
+
+<div id="nav"></div>
+
+<script>
+/* =============== WebGL 双背景 ===============
+   深色页：Holographic Dispersion（全息色散 · 钛金暗流）—— 彩虹微扰、鼠标径向涟漪
+   浅色页：Spiral Vortex（旋转涡流 · 银色珍珠）—— domain-warp 流动、无中心
+   修改风格请参考 references/webgl-backgrounds.md
+*/
+const VS = `attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}`;
+
+const FS_DARK = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+vec3 palette(float t,vec3 a,vec3 b,vec3 c,vec3 d){return a+b*cos(6.28318*(c*t+d));}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv*2.0-1.0;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse*2.0-1.0;m.x*=u_resolution.x/u_resolution.y;
+  float md=length(p-m);
+  float mr=sin(md*15.0-u_time*4.0)*exp(-md*3.0);p+=mr*0.08;
+  vec2 p0=p;
+  for(float i=1.0;i<4.0;i++){
+    p.x+=0.1/i*sin(i*3.0*p.y+u_time*0.4)+0.05;
+    p.y+=0.1/i*cos(i*2.0*p.x+u_time*0.3)-0.05;
+  }
+  float r=length(p);float ang=atan(p.y,p.x);
+  vec3 a=vec3(0.12,0.12,0.13);
+  vec3 b=vec3(0.03,0.04,0.05);
+  vec3 c=vec3(1.0,1.0,1.0);
+  vec3 d=vec3(0.1,0.2,0.4);
+  vec3 col=palette(r*1.5+p0.x*0.5+u_time*0.1,a,b,c,d);
+  float disp=sin(r*25.0-u_time*1.5+ang*2.0)*0.5+0.5;
+  col+=vec3(disp*0.015,disp*0.01,disp*0.02);
+  float hi=pow(sin(p.x*4.0+p.y*3.0+u_time)*0.5+0.5,8.0);
+  col+=hi*0.08;
+  vec3 base=vec3(0.05,0.05,0.06);
+  col=mix(base,col,0.85);
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const FS_LIGHT = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p);
+  float a=hash(i),b=hash(i+vec2(1,0));
+  float c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+}
+float fbm(vec2 p){
+  float v=0.0,a=0.5;
+  mat2 m=mat2(0.80,0.60,-0.60,0.80);
+  for(int i=0;i<5;i++){v+=a*noise(p);p=m*p*2.02;a*=0.5;}
+  return v;
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse;m.x*=u_resolution.x/u_resolution.y;
+  vec2 md=p-m;float dl=length(md);
+  p+=normalize(md+vec2(0.0001))*exp(-dl*5.0)*0.03;
+  vec2 q=vec2(fbm(p*1.8+u_time*0.07),fbm(p*1.8+vec2(5.2,1.3)+u_time*0.06));
+  vec2 r=vec2(fbm(p*2.0+q*1.3+vec2(1.7,9.2)+u_time*0.05),
+              fbm(p*2.0+q*1.3+vec2(8.3,2.8)+u_time*0.04));
+  float f=fbm(p*2.2+r*1.5);
+  vec3 silverDark=vec3(0.86,0.85,0.84);
+  vec3 paper=vec3(0.955,0.945,0.925);
+  vec3 col=mix(silverDark,paper,f);
+  float ph=r.x*2.2+u_time*0.35;
+  col+=vec3(0.78,0.62,0.92)*sin(ph)*0.055;
+  col+=vec3(0.55,0.72,0.95)*sin(ph*0.8+2.0)*0.05;
+  float hl=smoothstep(0.48,0.92,f);
+  col+=hl*0.06;
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const mouse={x:0.5,y:0.5};
+addEventListener('mousemove',e=>{mouse.x=e.clientX/innerWidth;mouse.y=e.clientY/innerHeight});
+
+function bootGL(canvasId, fsSrc){
+  const canvas=document.getElementById(canvasId);
+  const gl=canvas.getContext('webgl',{alpha:false,antialias:true});
+  if(!gl) return ()=>false;
+  const mk=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh};
+  const prog=gl.createProgram();
+  gl.attachShader(prog,mk(gl.VERTEX_SHADER,VS));
+  gl.attachShader(prog,mk(gl.FRAGMENT_SHADER,fsSrc));
+  gl.linkProgram(prog);gl.useProgram(prog);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+  const pos=gl.getAttribLocation(prog,'position');
+  gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  const lRes=gl.getUniformLocation(prog,'u_resolution');
+  const lT=gl.getUniformLocation(prog,'u_time');
+  const lM=gl.getUniformLocation(prog,'u_mouse');
+  const resize=()=>{
+    const d=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=innerWidth*d;canvas.height=innerHeight*d;
+    gl.viewport(0,0,canvas.width,canvas.height);
+  };
+  addEventListener('resize',resize);resize();
+  return (tSec)=>{
+    gl.uniform2f(lRes,canvas.width,canvas.height);
+    gl.uniform1f(lT,tSec);
+    gl.uniform2f(lM,mouse.x,1-mouse.y);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+    return true;
+  };
+}
+// Background motion is intentionally disabled for this guide deck.
+// The static Linear-style field keeps focus on the installation and usage flows.
+
+// =============== 导航（翻页 / 圆点 / 键盘 / 滚轮 / 触屏） ===============
+const deck=document.getElementById('deck');
+const slides=deck.querySelectorAll('.slide');
+const nav=document.getElementById('nav');
+let idx=Number(localStorage.getItem('harness-guide-slide')||0),total=slides.length,lock=false;
+
+// 关键：矫正 deck 宽度为 total * 100vw，否则翻页会错位
+deck.style.width=(total*100)+'vw';
+
+slides.forEach((s,i)=>{
+  const b=document.createElement('button');
+  b.className='dot';b.dataset.i=i;b.setAttribute('aria-label','Page '+(i+1));
+  b.onclick=()=>go(i);
+  nav.appendChild(b);
+});
+
+function go(n){
+  if(lock)return;
+  idx=Math.max(0,Math.min(total-1,n));
+  localStorage.setItem('harness-guide-slide',String(idx));
+  deck.style.transform=`translateX(${-idx*100}vw)`;
+  /* load-bearing: .slide.active is read by Open Design's host bridge
+     (src/runtime/srcdoc.ts findActiveByClass) to drive the slide counter.
+     No CSS targets it — do not remove. */
+  slides.forEach((s,i)=>s.classList.toggle('active',i===idx));
+  nav.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===idx));
+  /* 主题切换：优先读 data-theme，其次从 class（light/dark）推断 */
+  const el=slides[idx];
+  const th=el.dataset.theme || (el.classList.contains('light')?'light':(el.classList.contains('dark')?'dark':'dark'));
+  document.body.classList.toggle('light-bg',th==='light');
+  lock=true;setTimeout(()=>lock=false,700);
+}
+
+    /* =============== ESC overview =============== */
+let overviewOn=false;
+const ov=document.createElement('div');
+ov.id='overview';
+ov.style.cssText='position:fixed;inset:0;z-index:100;background:rgba(var(--ink-rgb),.92);backdrop-filter:blur(12px);display:none;overflow-y:auto;padding:4vh 4vw';
+document.body.appendChild(ov);
+
+function buildOverview(){
+  ov.innerHTML='';
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:2vh 1.6vw;max-width:90vw;margin:0 auto';
+  slides.forEach((s,i)=>{
+    const card=document.createElement('div');
+    card.style.cssText='cursor:pointer;border-radius:6px;overflow:hidden;border:2px solid '+(i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)')+';transition:border-color .2s';
+    card.onmouseenter=()=>card.style.borderColor='rgba(var(--paper-rgb),.6)';
+    card.onmouseleave=()=>card.style.borderColor=i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)';
+    const wrap=document.createElement('div');
+    wrap.style.cssText='width:100%;aspect-ratio:16/9;overflow:hidden;position:relative;pointer-events:none;background:'+(s.classList.contains('light')?'var(--paper)':'var(--ink)');
+    const clone=s.cloneNode(true);
+    clone.style.cssText='width:100vw;height:100vh;transform:scale('+(1/4.5)+');transform-origin:top left;position:absolute;top:0;left:0;pointer-events:none';
+    wrap.appendChild(clone);
+    const label=document.createElement('div');
+    label.style.cssText='padding:6px 10px;font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);opacity:.7';
+    label.textContent=(i+1)+' / '+total;
+    card.appendChild(wrap);
+    card.appendChild(label);
+    card.onclick=()=>{toggleOverview();go(i)};
+    grid.appendChild(card);
+  });
+  ov.appendChild(grid);
+}
+
+function toggleOverview(){
+  overviewOn=!overviewOn;
+  if(overviewOn){buildOverview();ov.style.display='block';}
+  else{ov.style.display='none';}
+}
+
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();toggleOverview();return;}
+  if(overviewOn)return;
+  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '||e.key==='ArrowDown')go(idx+1);
+  if(e.key==='ArrowLeft'||e.key==='PageUp'||e.key==='ArrowUp')go(idx-1);
+  if(e.key==='Home')go(0);
+  if(e.key==='End')go(total-1);
+});
+
+let wheelTO=null,wheelAcc=0;
+addEventListener('wheel',e=>{
+  wheelAcc+=e.deltaY+e.deltaX;
+  if(Math.abs(wheelAcc)>50){go(idx+(wheelAcc>0?1:-1));wheelAcc=0;}
+  clearTimeout(wheelTO);wheelTO=setTimeout(()=>wheelAcc=0,150);
+},{passive:true});
+
+let tx=0,ty=0;
+addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+addEventListener('touchend',e=>{
+  const dx=(e.changedTouches[0].clientX-tx);
+  const dy=(e.changedTouches[0].clientY-ty);
+  if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy))go(idx+(dx<0?1:-1));
+},{passive:true});
+
+go(idx);
+</script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>
 </body>
 </html>
