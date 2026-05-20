@@ -156,21 +156,24 @@ def _canonicalize_state_bytes(state_bytes: bytes) -> bytes:
 
 
 def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
-    """Return the most recent audit entry whose verb is in ``_TXN_VERBS``
-    AND that carries an ``after_sha256`` field.
+    """Return the most recent audit entry that carries an
+    ``after_sha256`` field — i.e. the most recent state-mutation
+    commit, regardless of verb.
 
-    Non-TXN telemetry verbs (e.g. ``cli.deprecated_flag``,
-    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``) tail the audit log
-    without state-mutation fields and must be skipped so they don't
-    shadow the last legitimate state-commit oracle.
+    Telemetry-only verbs (``cli.deprecated_flag``,
+    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``, etc.) do not
+    carry ``after_sha256`` and are skipped so they don't shadow the
+    last legitimate state-commit oracle.
 
-    A TXN-verb entry with a missing/empty/null ``after_sha256`` is a
-    disk-corruption signal (torn write, truncation mid-flush). We
-    surface that as ``StateAuditMismatchError`` rather than silently
-    walking past it, since skipping would hide real integrity damage.
+    A TXN-verb entry (verbs in ``phase_txn._TXN_VERBS``) with a
+    missing/empty/null ``after_sha256`` is a disk-corruption signal
+    (torn write, truncation mid-flush). We surface that as
+    ``StateAuditMismatchError`` rather than silently walking past it,
+    since skipping would hide real integrity damage.
 
     Returns ``None`` when the audit log is absent, empty, or contains
-    only non-TXN entries (clean fresh-install or telemetry-only history).
+    no entries with ``after_sha256`` (clean fresh-install or
+    telemetry-only history).
     """
     if not audit_path.exists():
         return None
@@ -187,20 +190,61 @@ def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
             continue
         if not isinstance(entry, dict):
             continue
-        verb = entry.get("verb")
-        if verb not in _phase_txn._TXN_VERBS:
-            continue
         after_sha = entry.get("after_sha256")
-        if not after_sha:
-            # TXN-verb entry with missing/empty after_sha256 = corruption.
+        if after_sha:
+            return entry
+        # No after_sha256. If this is a TXN-verb entry, that's a
+        # torn-write corruption signal — raise instead of skipping.
+        verb = entry.get("verb")
+        if verb in _phase_txn._TXN_VERBS:
             raise StateAuditMismatchError(
                 f"audit TXN-verb entry (verb={verb!r}) is missing after_sha256; "
                 f"sub_reason=txn_entry_missing_after_sha256; "
                 f"likely torn write or truncation; "
                 f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
             )
-        return entry
+        # Otherwise non-TXN telemetry without after_sha256: skip.
     return None
+
+
+def _is_baseline_state(parsed_state: dict) -> bool:
+    """Return True iff ``parsed_state`` matches the fresh-install baseline
+    shape written by ``harness install`` (see
+    ``harness/skeleton/clean/.scratch/phase-state.json``).
+
+    A baseline state has not yet been approved/advanced/autopiloted, so
+    it is legitimate to trust without audit-log corroboration. Any
+    deviation (approved=true, plan_id set, advanced phase, autopilot
+    active, etc.) indicates real progression that must be backed by
+    audit-log TXN entries.
+    """
+    if not isinstance(parsed_state, dict):
+        return False
+    # Discriminating fields: each must match the skeleton.
+    if parsed_state.get("approved") is not False:
+        return False
+    if parsed_state.get("phase") != "discuss":
+        return False
+    if parsed_state.get("plan_id") is not None:
+        return False
+    if parsed_state.get("automation_mode", "manual") != "manual":
+        return False
+    if parsed_state.get("execution_mode", "manual") != "manual":
+        return False
+    # Any of these progression markers being present/set = not baseline.
+    progression_markers = (
+        "approved_at",
+        "approved_by",
+        "autopilot_started_at_iso",
+        "autopilot_start_entry_hash",
+        "autopilot_id",
+        "plan_finalized_at",
+        "halt_reason",
+    )
+    for key in progression_markers:
+        if parsed_state.get(key):
+            return False
+    return True
 
 
 def preflight(
@@ -254,10 +298,27 @@ def preflight(
     # they don't shadow the last legitimate state commit.
     tail = _most_recent_txn_entry(audit_path)
     if tail is None:
-        # No state-mutating audit entry found. If the audit log is entirely
-        # absent OR has only non-TXN telemetry entries, this is a clean
-        # fresh-install state that predates the audit verb history → trust it
-        # as a no-op (the lock already ensures no concurrent writer).
+        # No state-mutating audit entry found. Two valid cases:
+        #   (a) State is at the fresh-install baseline shape (phase=discuss,
+        #       approved=false, no plan, updated_by=harness-init) — this is
+        #       the legitimate first-run path, trust it.
+        #   (b) State carries real progression (approved=true, advanced
+        #       phase, plan_id set, autopilot active, etc.) — the audit log
+        #       must corroborate that progression. Missing audit evidence
+        #       here means the audit log was deleted (e.g. `git clean -fd`)
+        #       or never existed, and prior approvals are unverifiable.
+        try:
+            parsed_state = json.loads(canonical_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed_state = None
+        if parsed_state is not None and not _is_baseline_state(parsed_state):
+            raise StateAuditMismatchError(
+                "state file shows progression beyond the fresh-install "
+                "baseline, but the audit log has no state-mutating "
+                "(TXN-verb) entries to corroborate it; "
+                "sub_reason=state_advanced_without_audit_evidence; "
+                f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
+            )
         return None
     audit_after_sha = tail.get("after_sha256")
     if not audit_after_sha:
