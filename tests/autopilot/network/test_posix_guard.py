@@ -491,8 +491,6 @@ def test_run_start_sets_autopilot_network_env(tmp_path: Path, monkeypatch: pytes
             mode="phase",
             budgets=None,
             allow_network=False,
-            skip_anchor_preflight=True,
-            anchor_verified=True,
             stdin_is_tty=False,
             env=ci_env,
             oidc_fetcher=_fake_oidc_fetcher,
@@ -562,8 +560,6 @@ def test_run_start_does_not_set_autopilot_network_env_on_failure(
             mode="phase",
             budgets=None,
             allow_network=False,
-            skip_anchor_preflight=True,
-            anchor_verified=True,
             env={"HARNESS_OIDC_TEST_MODE": "1"},
         )
     finally:
