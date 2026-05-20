@@ -22,6 +22,10 @@ tmp/
 # Claude Code worktrees — content lives in linked branches (already merged to develop).
 .claude/
 
+# v0.9.4 test fixture tarballs — always rebuilt by scripts/build_v094_fixture.py;
+# only the .sha256 pin files are checked-in (CI verifies the hash after rebuild).
+tests/fixtures/*.tar.gz
+
 # Python build / install artifacts
 __pycache__/
 *.egg-info/
