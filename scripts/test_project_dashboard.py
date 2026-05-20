@@ -358,5 +358,30 @@ def test_roadmap_phase_has_phase_id_field():
     assert p2.phase_id == "02b"
 
 
+def test_dashboard_recognises_letter_suffix_phase_no_phantom_warning(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    # 02b is now declared in the ROADMAP fixture, so no "not in ROADMAP" warning:
+    assert not any(w.code == "phase_folder_not_in_roadmap" for w in data.warnings)
+    # And no grammar-invalid warning:
+    assert not any(w.code == "phase_folder_grammar_invalid" for w in data.warnings)
+
+
+def test_dashboard_emits_actionable_warning_when_phase_folder_missing_from_roadmap(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    # Add an extra phase folder NOT declared in ROADMAP — simulating 02b-hardening on the live repo today:
+    (root / ".planning/phases/02c-followup").mkdir()
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    matched = [w for w in data.warnings if w.code == "phase_folder_not_in_roadmap"]
+    assert len(matched) == 1
+    assert "02c-followup" in matched[0].message
+    assert "ROADMAP" in matched[0].message
+    assert matched[0].severity == "warning"
+
+
 if __name__ == "__main__":
     unittest.main()

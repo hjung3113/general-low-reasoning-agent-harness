@@ -10,6 +10,24 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+# dual import: callers use either 'lib.X' (scripts/ via sys.path injection) or 'scripts.lib.X' (pytest from repo root)
+try:
+    from scripts.lib.planning_grammar import (
+        canonical_phase_id,
+        display_phase_id,
+        heading_matches,
+        parse_frontmatter as _parse_frontmatter_grammar,
+        parse_roadmap_phase_bullets,
+    )
+except ModuleNotFoundError:
+    from lib.planning_grammar import (  # type: ignore[no-redef]
+        canonical_phase_id,
+        display_phase_id,
+        heading_matches,
+        parse_frontmatter as _parse_frontmatter_grammar,
+        parse_roadmap_phase_bullets,
+    )
+
 from lib.planning_status import ProjectionError, load_projection, projection_to_dict
 from lib.project_dashboard.renderer import render_html
 from lib.project_dashboard.models import (
@@ -72,48 +90,21 @@ DASHBOARD_ACTIONS = [
 ]
 
 
-def parse_frontmatter(text: str) -> dict[str, str]:
-    if not text.startswith("---"):
-        return {}
-    lines = text.splitlines()
-    values: dict[str, str] = {}
-    parents: list[tuple[int, str]] = []
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        key, sep, value = line.strip().partition(":")
-        if not sep:
-            continue
-        while parents and parents[-1][0] >= indent:
-            parents.pop()
-        clean_value = value.strip().strip('"').strip("'")
-        full_key = ".".join([item[1] for item in parents] + [key.strip()])
-        if clean_value:
-            values[full_key] = clean_value
-        else:
-            parents.append((indent, key.strip()))
-    return values
+# Re-export from planning_grammar so existing callers of core.parse_frontmatter keep working.
+parse_frontmatter = _parse_frontmatter_grammar
 
 
 def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
-    phases: list[RoadmapPhase] = []
-    pattern = re.compile(r"^- \[(?P<mark>[ xX])\] \*\*(?P<title>[^*]+)\*\*(?: - (?P<summary>.*))?$")
-    for line in text.splitlines():
-        match = pattern.match(line.strip())
-        if not match:
-            continue
-        phases.append(
-            RoadmapPhase(
-                title=match.group("title").strip(),
-                summary=(match.group("summary") or "").strip(),
-                completed=match.group("mark").lower() == "x",
-                raw_line=line.strip(),
-            )
+    return [
+        RoadmapPhase(
+            title=f"Phase {display_phase_id(b.phase_id)}: {b.title}",
+            summary=b.summary,
+            completed=b.completed,
+            raw_line=b.raw_line,
+            phase_id=b.phase_id,
         )
-    return phases
+        for b in parse_roadmap_phase_bullets(text)
+    ]
 
 
 def parse_headings(text: str) -> list[str]:
@@ -166,7 +157,7 @@ def load_dashboard_data(root: Path) -> DashboardData:
             )
         )
 
-    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents))
+    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents, roadmap_text))
     if projection is not None:
         warnings.extend(format_projection_warnings(projection))
 
@@ -350,11 +341,15 @@ def parse_section_bullets(text: str, heading: str) -> list[str]:
     in_section = False
     bullets: list[str] = []
     for line in lines:
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
+                # different heading, not yet in section
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section and line.strip().startswith("- "):
             bullets.append(line.strip()[2:].strip())
     return bullets
@@ -366,11 +361,14 @@ def parse_section_paragraph(text: str, heading: str) -> str:
     paragraph: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section and stripped:
             paragraph.append(stripped)
     return " ".join(paragraph)
@@ -381,11 +379,14 @@ def parse_section_until_heading(text: str, heading: str) -> list[str]:
     in_section = False
     section: list[str] = []
     for line in lines:
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section:
             section.append(line)
     return section
@@ -575,6 +576,7 @@ def check_consistency(
     phase_state: dict[str, object],
     issues: list[IssueCard],
     documents: list[DocumentLink],
+    roadmap_text: str = "",
 ) -> list[DashboardWarning]:
     warnings: list[DashboardWarning] = []
     for key in ("state_path", "plan_path", "checkpoint_path"):
@@ -621,19 +623,27 @@ def check_consistency(
             )
         )
 
-    roadmap_text = " ".join(phase.title for phase in roadmap_phases)
+    roadmap_phase_ids = {b.phase_id for b in parse_roadmap_phase_bullets(roadmap_text)}
     for document in phase_documents:
-        phase_slug = Path(document.phase_dir).name
-        phase_number = phase_slug.split("-", 1)[0].lstrip("0")
-        if phase_number and f"Phase {phase_number}" not in roadmap_text:
-            warnings.append(
-                DashboardWarning(
-                    code="phase_folder_not_in_roadmap",
-                    severity="warning",
-                    message=f"Phase folder is present but not listed in ROADMAP: {document.phase_dir}",
-                    paths=[document.phase_dir],
-                )
-            )
+        pid = canonical_phase_id(document.phase_dir)
+        if not pid:
+            warnings.append(DashboardWarning(
+                code="phase_folder_grammar_invalid",
+                severity="blocking",
+                message=f"Phase folder name does not match grammar (expected NN[a-z]?-slug): {document.phase_dir}",
+                paths=[document.phase_dir],
+            ))
+            continue
+        if pid not in roadmap_phase_ids:
+            warnings.append(DashboardWarning(
+                code="phase_folder_not_in_roadmap",
+                severity="warning",
+                message=(
+                    f"Phase folder {document.phase_dir} (id={pid}) is not listed in ROADMAP.md. "
+                    "Add a corresponding Phase entry to ROADMAP, or move the folder to .planning/archive/ if the phase has already shipped."
+                ),
+                paths=[document.phase_dir, ".planning/ROADMAP.md"],
+            ))
 
     if issues and not phase_documents:
         warnings.append(
