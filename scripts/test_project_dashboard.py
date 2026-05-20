@@ -410,5 +410,18 @@ def test_load_phase_documents_top_level_wins_on_name_collision(tmp_path):
     assert files["duplicate.md"].endswith(".planning/phases/02b-hardening/duplicate.md")
 
 
+def test_malformed_phase_state_emits_single_structured_warning(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    (root / ".scratch/phase-state.json").write_text("{not json")
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    malformed = [w for w in data.warnings if w.code == "phase_state_malformed_json"]
+    assert len(malformed) == 1
+    # secondary checks must not pile on:
+    assert not any(w.code == "phase_state_missing_path_ref" for w in data.warnings)
+    assert not any(w.code == "state_checkpoint_drift" for w in data.warnings)
+
+
 if __name__ == "__main__":
     unittest.main()

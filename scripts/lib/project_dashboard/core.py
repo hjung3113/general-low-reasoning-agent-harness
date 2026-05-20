@@ -135,7 +135,10 @@ def load_dashboard_data(root: Path) -> DashboardData:
 
     state_text = read_optional_text(state_path, warnings)
     roadmap_text = read_optional_text(roadmap_path, warnings)
-    phase_state = load_phase_state(phase_state_path)
+    phase_state, ps_warning = load_phase_state(phase_state_path)
+    phase_state_usable = ps_warning is None
+    if ps_warning is not None:
+        warnings.append(ps_warning)
 
     state = parse_state_summary(state_text)
     roadmap_phases = parse_roadmap_phases(roadmap_text)
@@ -157,7 +160,7 @@ def load_dashboard_data(root: Path) -> DashboardData:
             )
         )
 
-    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents, roadmap_text))
+    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents, roadmap_text, phase_state_usable=phase_state_usable))
     if projection is not None:
         warnings.extend(format_projection_warnings(projection))
 
@@ -477,15 +480,26 @@ def parse_verification(text: str) -> list[VerificationRecord]:
     return records
 
 
-def load_phase_state(path: Path) -> dict[str, object]:
+def load_phase_state(path: Path) -> tuple[dict[str, object], DashboardWarning | None]:
     if not path.exists():
-        return {}
+        return {}, None
     try:
-        with path.open(encoding="utf-8") as handle:
-            loaded = json.load(handle)
-    except json.JSONDecodeError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, DashboardWarning(
+            code="phase_state_malformed_json",
+            severity="blocking",
+            message=f"phase-state.json is malformed JSON: {exc.msg} (line {exc.lineno}, col {exc.colno})",
+            paths=[".scratch/phase-state.json"],
+        )
+    if not isinstance(loaded, dict):
+        return {}, DashboardWarning(
+            code="phase_state_not_object",
+            severity="blocking",
+            message="phase-state.json must contain a JSON object",
+            paths=[".scratch/phase-state.json"],
+        )
+    return loaded, None
 
 
 def format_projection_warnings(projection: dict[str, object]) -> list[DashboardWarning]:
@@ -583,30 +597,34 @@ def check_consistency(
     issues: list[IssueCard],
     documents: list[DocumentLink],
     roadmap_text: str = "",
+    *,
+    phase_state_usable: bool = True,
 ) -> list[DashboardWarning]:
     warnings: list[DashboardWarning] = []
-    for key in ("state_path", "plan_path", "checkpoint_path"):
-        value = phase_state.get(key)
-        if isinstance(value, str) and not (root / value).exists():
+
+    if phase_state_usable:
+        for key in ("state_path", "plan_path", "checkpoint_path"):
+            value = phase_state.get(key)
+            if isinstance(value, str) and not (root / value).exists():
+                warnings.append(
+                    DashboardWarning(
+                        code="phase_state_missing_path_ref",
+                        severity="blocking",
+                        message=f"phase-state references missing {key}: {value}",
+                        paths=[value],
+                    )
+                )
+
+        checkpoint = phase_state.get("current_checkpoint")
+        if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
             warnings.append(
                 DashboardWarning(
-                    code="phase_state_missing_path_ref",
+                    code="state_checkpoint_drift",
                     severity="blocking",
-                    message=f"phase-state references missing {key}: {value}",
-                    paths=[value],
+                    message=f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}",
+                    paths=[],
                 )
             )
-
-    checkpoint = phase_state.get("current_checkpoint")
-    if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
-        warnings.append(
-            DashboardWarning(
-                code="state_checkpoint_drift",
-                severity="blocking",
-                message=f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}",
-                paths=[],
-            )
-        )
 
     if roadmap_phases and state.total_phases and len(roadmap_phases) != state.total_phases:
         warnings.append(
