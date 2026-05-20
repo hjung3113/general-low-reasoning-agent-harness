@@ -1158,4 +1158,25 @@ def run(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    import traceback as _traceback
+
+    try:
+        raise SystemExit(run())
+    except SystemExit:
+        raise
+    except Exception as _exc:
+        if os.environ.get("HARNESS_DEBUG") == "1":
+            _traceback.print_exc(file=sys.stderr)
+        else:
+            _tb = _traceback.extract_tb(_exc.__traceback__)
+            if _tb:
+                _first = _tb[0]
+                print(
+                    f"error: {type(_exc).__name__} at "
+                    f"{_first.filename}:{_first.lineno}: {_exc}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"error: {type(_exc).__name__}: {_exc}", file=sys.stderr)
+            print("Set HARNESS_DEBUG=1 for full traceback.", file=sys.stderr)
+        sys.exit(1)
