@@ -47,12 +47,13 @@ def test_release_flag_exits_zero(evidence_dir):
 
 def test_release_flag_writes_evidence_dirs(evidence_dir):
     """--release writes per-case subdirs in the evidence dir."""
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(RELEASE_SMOKE_SCRIPT), "--release", "--evidence-dir", str(evidence_dir)],
         capture_output=True,
         text=True,
         check=False,
     )
+    assert result.returncode == 0, f"Smoke runner exited {result.returncode}:\n{result.stderr[-1000:]!r}"
     # At least one case dir must exist
     case_dirs = [d for d in evidence_dir.iterdir() if d.is_dir()]
     assert len(case_dirs) > 0, "Expected per-case subdirs in evidence dir, found none"
@@ -60,12 +61,13 @@ def test_release_flag_writes_evidence_dirs(evidence_dir):
 
 def test_release_flag_each_case_has_result_json(evidence_dir):
     """Each per-case subdir must contain result.json."""
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(RELEASE_SMOKE_SCRIPT), "--release", "--evidence-dir", str(evidence_dir)],
         capture_output=True,
         text=True,
         check=False,
     )
+    assert result.returncode == 0, f"Smoke runner exited {result.returncode}:\n{result.stderr[-1000:]!r}"
     case_dirs = [d for d in evidence_dir.iterdir() if d.is_dir()]
     assert len(case_dirs) > 0, "No case evidence dirs found"
     for case_dir in case_dirs:
@@ -85,6 +87,7 @@ def test_release_flag_summary_line_in_stdout(evidence_dir):
         text=True,
         check=False,
     )
+    assert result.returncode == 0, f"Smoke runner exited {result.returncode}:\n{result.stderr[-1000:]!r}"
     assert "passed" in result.stdout and "failed" in result.stdout and "skipped" in result.stdout, (
         f"Expected summary line in stdout, got:\n{result.stdout[-1000:]!r}"
     )
@@ -97,12 +100,13 @@ def test_release_flag_summary_line_in_stdout(evidence_dir):
 
 def test_release_flag_result_json_fields_valid(evidence_dir):
     """Each result.json must have valid structure (case_name, passed, assertions list)."""
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(RELEASE_SMOKE_SCRIPT), "--release", "--evidence-dir", str(evidence_dir)],
         capture_output=True,
         text=True,
         check=False,
     )
+    assert result.returncode == 0, f"Smoke runner exited {result.returncode}:\n{result.stderr[-1000:]!r}"
     case_dirs = [d for d in evidence_dir.iterdir() if d.is_dir()]
     for case_dir in case_dirs:
         result_json = case_dir / "result.json"
@@ -119,12 +123,13 @@ def test_release_flag_result_json_fields_valid(evidence_dir):
 
 def test_release_flag_known_cases_have_evidence(evidence_dir):
     """Core cases from §12.10 must have evidence dirs when they run on this platform."""
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(RELEASE_SMOKE_SCRIPT), "--release", "--evidence-dir", str(evidence_dir)],
         capture_output=True,
         text=True,
         check=False,
     )
+    assert result.returncode == 0, f"Smoke runner exited {result.returncode}:\n{result.stderr[-1000:]!r}"
     # These cases run on all platforms (no platform restriction)
     always_run_cases = [
         "run-phase",

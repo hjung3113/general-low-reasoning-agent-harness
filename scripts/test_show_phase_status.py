@@ -238,7 +238,7 @@ class ShowPhaseStatusCliTests(unittest.TestCase):
 def run_cli(root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), "--root", str(root)],
-        check=False,
+        check=False,  # smoke-contract: allow helper returns result; callers assert returncode
         capture_output=True,
         text=True,
     )

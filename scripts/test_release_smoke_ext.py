@@ -611,7 +611,7 @@ class TestReleaseSmokeRegression(unittest.TestCase):
             [sys.executable, "scripts/release_smoke_test.py",
              "--skip-lifecycle-smoke", "--release",
              "--expected-version", "v0.99.99"],
-            cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False,  # smoke-contract: allow test only needs banner in output, not exit code
         )
         # Under --release this hard-fails (covered above). Without
         # --release we'd need to actually run cases. Verify the
