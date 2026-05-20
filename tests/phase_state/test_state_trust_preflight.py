@@ -446,6 +446,93 @@ def test_preflight_walk_back_finds_txn_entry_past_telemetry(
 
 
 # ---------------------------------------------------------------------------
+# Rotated audit-log walk-back (slice3-fix: P1 regression test)
+# ---------------------------------------------------------------------------
+
+
+def test_preflight_walks_into_rotated_audit_file_for_txn_evidence(
+    scratch: Path, audit_path: Path, lock
+):
+    """Rotated audit: TXN entry with matching after_sha256 lives in
+    audit.log.1; current audit.log holds only telemetry.
+
+    Walk-back MUST reuse audit_rotation.enumerate_rotated_files to walk
+    into audit.log.1 newest-first and find the TXN oracle. Without the
+    rotation walk, the user gets a spurious
+    state_advanced_without_audit_evidence rejection.
+    """
+    advanced = dict(_BASELINE_STATE, approved=True, plan_id="01-foo")
+    state_bytes = json.dumps(advanced, sort_keys=True, indent=2).encode("utf-8") + b"\n"
+    canonical = phase_txn._canonical_bytes(json.loads(state_bytes.decode("utf-8")))
+    expected_sha = hashlib.sha256(canonical).hexdigest()
+    (scratch / "phase-state.json").write_bytes(state_bytes)
+
+    rotated = audit_path.parent / (audit_path.name + ".1")
+    rotated.write_text(
+        json.dumps(
+            {
+                "verb": "phase.approve",
+                "by": "t@example.com",
+                "after_sha256": expected_sha,
+                "entry_hash": "a" * 64,
+                "txn_id": "txn-1",
+                "seq_global": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    audit_path.write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in (
+                {"verb": "cli.deprecated_flag", "by": "t@x"},
+                {"verb": "approve_nonce.mint", "by": "t@x"},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _ok(scratch, audit_path, lock)
+
+
+def test_preflight_raises_when_all_rotated_files_lack_txn_evidence(
+    scratch: Path, audit_path: Path, lock
+):
+    """Advanced state + telemetry-only across current AND all rotated
+    audit files → state_advanced_without_audit_evidence.
+
+    Exhausting the rotated walk without finding a TXN entry must still
+    raise the existing operational-integrity error.
+    """
+    advanced = dict(_BASELINE_STATE, approved=True, plan_id="01-foo")
+    _write_state(scratch, advanced)
+    telemetry_lines = (
+        "\n".join(
+            json.dumps(e)
+            for e in (
+                {"verb": "cli.deprecated_flag", "by": "t@x"},
+                {"verb": "approve_nonce.mint", "by": "t@x"},
+            )
+        )
+        + "\n"
+    )
+    audit_path.write_text(telemetry_lines, encoding="utf-8")
+    (audit_path.parent / (audit_path.name + ".1")).write_text(
+        telemetry_lines, encoding="utf-8"
+    )
+    (audit_path.parent / (audit_path.name + ".2")).write_text(
+        telemetry_lines, encoding="utf-8"
+    )
+
+    with pytest.raises(state_trust.StateAuditMismatchError) as excinfo:
+        _ok(scratch, audit_path, lock)
+    assert excinfo.value.exit_code == 10
+    assert "state_advanced_without_audit_evidence" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
 # Round-trip across consecutive commits
 # ---------------------------------------------------------------------------
 

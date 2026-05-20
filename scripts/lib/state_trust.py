@@ -155,30 +155,14 @@ def _canonicalize_state_bytes(state_bytes: bytes) -> bytes:
     return _phase_txn._canonical_bytes(parsed)
 
 
-def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
-    """Return the most recent audit entry that carries an
-    ``after_sha256`` field — i.e. the most recent state-mutation
-    commit, regardless of verb.
-
-    Telemetry-only verbs (``cli.deprecated_flag``,
-    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``, etc.) do not
-    carry ``after_sha256`` and are skipped so they don't shadow the
-    last legitimate state-commit oracle.
-
-    A TXN-verb entry (verbs in ``phase_txn._TXN_VERBS``) with a
-    missing/empty/null ``after_sha256`` is a disk-corruption signal
-    (torn write, truncation mid-flush). We surface that as
-    ``StateAuditMismatchError`` rather than silently walking past it,
-    since skipping would hide real integrity damage.
-
-    Returns ``None`` when the audit log is absent, empty, or contains
-    no entries with ``after_sha256`` (clean fresh-install or
-    telemetry-only history).
+def _scan_file_for_recent_txn_entry(path: Path) -> Optional[dict]:
+    """Scan one audit file in reverse for the most recent entry with
+    ``after_sha256``. Raises ``StateAuditMismatchError`` if a TXN-verb
+    entry is found without ``after_sha256`` (torn-write corruption).
+    Returns ``None`` if no usable entry is found in this file.
     """
-    if not audit_path.exists():
-        return None
     try:
-        text = audit_path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return None
     for line in reversed(text.splitlines()):
@@ -193,8 +177,6 @@ def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
         after_sha = entry.get("after_sha256")
         if after_sha:
             return entry
-        # No after_sha256. If this is a TXN-verb entry, that's a
-        # torn-write corruption signal — raise instead of skipping.
         verb = entry.get("verb")
         if verb in _phase_txn._TXN_VERBS:
             raise StateAuditMismatchError(
@@ -203,7 +185,47 @@ def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
                 f"likely torn write or truncation; "
                 f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
             )
-        # Otherwise non-TXN telemetry without after_sha256: skip.
+        # Non-TXN telemetry without after_sha256: skip.
+    return None
+
+
+def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
+    """Return the most recent audit entry that carries an
+    ``after_sha256`` field — i.e. the most recent state-mutation
+    commit, regardless of verb.
+
+    Walks rotated audit files (``audit.log``, ``audit.log.1``,
+    ``audit.log.2``, …) in newest-first order so that legitimate state
+    progression preserved in a rotated-out file is still found when the
+    current ``audit.log`` contains only telemetry. Reuses
+    ``audit_rotation.enumerate_rotated_files`` (which ``audit_chain``
+    also uses, via ``audit_chain._enumerate_rotated_files``) for
+    consistent file enumeration.
+
+    Telemetry-only verbs (``cli.deprecated_flag``,
+    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``, etc.) do not
+    carry ``after_sha256`` and are skipped so they don't shadow the
+    last legitimate state-commit oracle.
+
+    A TXN-verb entry (verbs in ``phase_txn._TXN_VERBS``) with a
+    missing/empty/null ``after_sha256`` is a disk-corruption signal
+    (torn write, truncation mid-flush). Surfaced as
+    ``StateAuditMismatchError`` rather than silently walking past it.
+
+    Returns ``None`` when the audit log (across all rotations) is
+    absent, empty, or contains no entries with ``after_sha256`` (clean
+    fresh-install or telemetry-only history).
+    """
+    from .audit_rotation import enumerate_rotated_files
+    # enumerate returns oldest-first ([log.N, …, log.1, log]); reverse
+    # to walk newest-first (current log, then log.1, log.2, …).
+    files = list(reversed(enumerate_rotated_files(audit_path)))
+    for path in files:
+        if not path.exists():
+            continue
+        entry = _scan_file_for_recent_txn_entry(path)
+        if entry is not None:
+            return entry
     return None
 
 
