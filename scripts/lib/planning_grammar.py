@@ -64,3 +64,86 @@ def display_phase_id(phase_id: str) -> str:
     digits = digits_match.group(0)
     suffix = phase_id[len(digits):]
     return str(int(digits)) + suffix
+
+
+# ---------------------------------------------------------------------------
+# STATE / ROADMAP regex primitives
+# ---------------------------------------------------------------------------
+
+STATE_PHASE_RE = re.compile(
+    r"-\s*\*\*Phase\*\*:\s*(?P<number>\d+[a-z]?)\s*-\s*(?P<title>[^\n]+?)\.?\s*$",
+    re.MULTILINE,
+)
+
+STATE_CHECKPOINT_RE = re.compile(
+    r"-\s*\*\*Checkpoint\*\*:\s*(?P<id>CP-\d+[a-z]?(?:-\d+)?)\s*(?:-\s*(?P<title>[^\n]+?))?\.?\s*$",
+    re.MULTILINE,
+)
+
+ROADMAP_BULLET_RE = re.compile(
+    r"^- \[(?P<mark>[ xX])\] \*\*Phase\s+(?P<number>\d+[a-z]?):\s*(?P<title>[^*]+)\*\*"
+    r"(?:\s*-\s*(?P<summary>.*))?$",
+    re.MULTILINE,
+)
+
+_TRAILING_BOLD_RE = re.compile(r"\s+\*\*[^*]+\*\*\s*$")
+_HEADING_SEPARATORS = (" ", " -", " —", " /", " (", " {")
+
+
+@dataclass(frozen=True)
+class RoadmapBullet:
+    phase_id: str
+    title: str
+    summary: str
+    completed: bool
+    raw_line: str
+
+
+def _zero_pad(raw: str) -> str:
+    digits_match = re.match(r"\d+", raw)
+    if not digits_match:
+        return raw
+    digits = digits_match.group(0)
+    return digits.zfill(2) + raw[len(digits):]
+
+
+def parse_state_phase_line(text: str) -> tuple[str, str]:
+    match = STATE_PHASE_RE.search(text)
+    if not match:
+        return "", ""
+    title = _TRAILING_BOLD_RE.sub("", match.group("title").strip())
+    return _zero_pad(match.group("number")), title.strip()
+
+
+def parse_state_checkpoint_line(text: str) -> tuple[str, str]:
+    match = STATE_CHECKPOINT_RE.search(text)
+    if not match:
+        return "", ""
+    return match.group("id"), (match.group("title") or "").strip()
+
+
+def parse_roadmap_phase_bullets(text: str) -> list[RoadmapBullet]:
+    rows: list[RoadmapBullet] = []
+    for m in ROADMAP_BULLET_RE.finditer(text):
+        rows.append(
+            RoadmapBullet(
+                phase_id=_zero_pad(m.group("number")),
+                title=m.group("title").strip(),
+                summary=(m.group("summary") or "").strip(),
+                completed=m.group("mark").lower() == "x",
+                raw_line=m.group(0),
+            )
+        )
+    return rows
+
+
+def heading_matches(heading: str, target: str) -> bool:
+    """True if `heading` exactly equals `target` or begins with `target<separator>...` (case-insensitive)."""
+    h = heading.strip().lower()
+    t = target.strip().lower()
+    if h == t:
+        return True
+    if not h.startswith(t):
+        return False
+    rest = h[len(t):]
+    return any(rest.startswith(sep) for sep in _HEADING_SEPARATORS)
