@@ -1,4 +1,4 @@
-"""Shared preflight helpers for TTY-only phase verbs (design §3.1, §3.2, §12.1, §2.6).
+"""Shared preflight helpers for TTY-only phase verbs (design §3.1, §3.2, §2.6).
 
 Extracted from `phase_approve.py` + `phase_reopen.py` during the S04+S05
 review-fix (P2-3) so the upcoming `phase set` rewrite (S07-prep) does not
@@ -10,13 +10,10 @@ Public surface
 * `default_gitconfig_email_lookup()`         — read `git config user.email`
 * `load_install_record(path)`                — JSON-parse install record
 * `approvers_emails(install_record)`         — extract lower-cased emails
-* `FIX_GITCONFIG / FIX_APPROVER_MEMBERSHIP / FIX_STATE_TRUST /
-   FIX_ANCHOR_MISSING / FIX_ANCHOR_MISMATCH / FIX_ANCHOR_UNVERIFIABLE`
+* `FIX_GITCONFIG / FIX_APPROVER_MEMBERSHIP / FIX_STATE_TRUST`
    — fix-line constants (§3.9)
-* `AnchorPreflightError`                     — raised by `run_anchor_preflight`
-* `run_anchor_preflight(...)`                — fail-closed anchor check
 * `StateTrustPreflightError`                 — raised by `run_state_trust_preflight`
-* `run_state_trust_preflight(...)`           — §2.6 state-audit-tip cross-check
+* `run_state_trust_preflight(...)`           — §2.6 state-audit cross-check
 
 The helpers do NOT print/log; callers map the raised errors to their own
 verb-specific result types. This keeps the module test-friendly and lets
@@ -34,7 +31,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from . import audit_anchor as _audit_anchor
 from . import state_trust as _state_trust
 
 
@@ -54,19 +50,6 @@ FIX_STATE_TRUST = (
     "Fix: run `harness verify --audit`; "
     "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
     "or re-run `harness install`"
-)
-FIX_ANCHOR_MISSING = (
-    "Fix: run `harness anchor repair` from a TTY to mint the "
-    "out-of-repo audit-tip anchor (design §12.1)"
-)
-FIX_ANCHOR_MISMATCH = (
-    "Fix: investigate audit/install-record tampering, then "
-    "`harness anchor repair` from a TTY (design §12.1)"
-)
-FIX_ANCHOR_UNVERIFIABLE = (
-    "Fix: caller must pass `repo_root=` so the §12.1 trust chain can "
-    "verify the out-of-repo audit-tip anchor before reading state; "
-    "or pass `skip_anchor_preflight=True` ONLY from controlled test paths"
 )
 
 
@@ -119,70 +102,6 @@ def approvers_emails(install_record: Mapping) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Anchor preflight (§12.1)
-# ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass(frozen=True)
-class AnchorPreflightError(Exception):
-    """Raised when anchor preflight fails. Callers map `sub_reason` to a
-    verb-specific result type. `fix_line` is the user-facing remediation
-    string from `FIX_ANCHOR_*`."""
-
-    sub_reason: str
-    fix_line: str
-    message: str
-
-    def __str__(self) -> str:  # pragma: no cover — trivial
-        return f"{self.sub_reason}: {self.message}"
-
-
-def run_anchor_preflight(
-    *,
-    skip_anchor_preflight: bool,
-    repo_root: Optional[Path],
-) -> bool:
-    """Run the §12.1 anchor preflight. Returns `anchor_verified` (always
-    True on success). Raises `AnchorPreflightError` on failure.
-
-    Fail-closed default: `repo_root=None` + `skip_anchor_preflight=False`
-    raises with `sub_reason="anchor_preflight_unwired"` (design §12.1 +
-    S02-approve P1-1 review-fix).
-    """
-    if skip_anchor_preflight:
-        return True
-    if repo_root is None:
-        raise AnchorPreflightError(
-            sub_reason="anchor_preflight_unwired",
-            fix_line=FIX_ANCHOR_UNVERIFIABLE,
-            message="anchor preflight cannot run without repo_root",
-        )
-    try:
-        _audit_anchor.verify_existing_anchor_for_repo(repo_root)
-        return True
-    except _audit_anchor.AnchorMissingError as exc:
-        raise AnchorPreflightError(
-            sub_reason="anchor_missing",
-            fix_line=FIX_ANCHOR_MISSING,
-            message=f"audit-tip anchor not found ({exc})",
-        ) from exc
-    except _audit_anchor.AnchorMismatchError as exc:
-        sub = exc.sub_reason or "anchor_verification_failed"
-        raise AnchorPreflightError(
-            sub_reason=sub,
-            fix_line=FIX_ANCHOR_MISMATCH,
-            message=f"audit-tip anchor verification failed ({sub}: {exc})",
-        ) from exc
-    except _audit_anchor.AnchorError as exc:
-        sub = exc.sub_reason or "anchor_error"
-        raise AnchorPreflightError(
-            sub_reason=sub,
-            fix_line=FIX_ANCHOR_MISMATCH,
-            message=f"audit-tip anchor unreadable ({sub}: {exc})",
-        ) from exc
-
-
-# ---------------------------------------------------------------------------
 # State-trust preflight (§2.6)
 # ---------------------------------------------------------------------------
 
@@ -192,7 +111,7 @@ class StateTrustPreflightError(Exception):
     """Raised when state-trust preflight fails.
 
     `exit_code` maps to design §3.4:
-      * 10 -> `state_audit_tip_mismatch`
+      * 10 -> `state_audit_mismatch`
       * 14 -> `state_empty_crash_artefact`
       *  5 -> `state_unparseable` (BOM/CRLF/malformed JSON)
     """
@@ -226,7 +145,7 @@ def run_state_trust_preflight(
     except _state_trust.StateAuditMismatchError as exc:
         raise StateTrustPreflightError(
             exit_code=10,
-            sub_reason="state_audit_tip_mismatch",
+            sub_reason="state_audit_mismatch",
             message=f"state trust preflight failed: {exc}",
         ) from exc
     except _state_trust.StateEmptyError as exc:
@@ -253,15 +172,10 @@ __all__ = [
     "FIX_GITCONFIG",
     "FIX_APPROVER_MEMBERSHIP",
     "FIX_STATE_TRUST",
-    "FIX_ANCHOR_MISSING",
-    "FIX_ANCHOR_MISMATCH",
-    "FIX_ANCHOR_UNVERIFIABLE",
     "now_iso_z",
     "default_gitconfig_email_lookup",
     "load_install_record",
     "approvers_emails",
-    "AnchorPreflightError",
-    "run_anchor_preflight",
     "StateTrustPreflightError",
     "run_state_trust_preflight",
 ]
