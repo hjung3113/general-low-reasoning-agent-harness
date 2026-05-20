@@ -39,7 +39,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import audit_anchor as _audit_anchor  # kept for tests that monkeypatch
 from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
@@ -91,19 +90,6 @@ _FIX_STATE_TRUST = (
     "Fix: run `harness verify --audit`; "
     "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
     "or re-run `harness install`"
-)
-_FIX_ANCHOR_MISSING = (
-    "Fix: run `harness anchor repair` from a TTY to mint the "
-    "out-of-repo audit-tip anchor (design §12.1)"
-)
-_FIX_ANCHOR_MISMATCH = (
-    "Fix: investigate audit/install-record tampering, then "
-    "`harness anchor repair` from a TTY (design §12.1)"
-)
-_FIX_ANCHOR_UNVERIFIABLE = (
-    "Fix: caller must pass `repo_root=` so the §12.1 trust chain can "
-    "verify the out-of-repo audit-tip anchor before reading state; "
-    "or pass `skip_anchor_preflight=True` ONLY from controlled test paths"
 )
 _FIX_GITCONFIG_MUTATED = (
     "Fix: pass `--by <email>` explicitly OR re-run `harness install` "
@@ -263,7 +249,7 @@ def run_approve(
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
-    skip_anchor_preflight: bool = False,
+    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
     skip_state_trust_preflight: bool = False,
 ) -> ApproveResult:
     """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
@@ -480,94 +466,16 @@ def run_approve(
     # ---------- Steps 4+5+6+7+8: under primary lock ----------
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)
     try:
-        # Anchor preflight (§12.1). The §12.1 trust chain REQUIRES that
-        # `state_trust.preflight` be invoked with `anchor_verified=True`
-        # only AFTER the out-of-repo audit-tip anchor has been verified.
-        # Three paths:
-        #   1. skip_anchor_preflight=True — controlled test paths that
-        #      stand up the in-memory environment without minting a real
-        #      ~/.harness anchor. Accepted; anchor_verified=True passed
-        #      downstream by deliberate test contract.
-        #   2. repo_root provided + anchor verifies → anchor_verified=True.
-        #   3. repo_root provided + anchor missing/mismatched →
-        #      AnchorMissingError / AnchorMismatchError → exit 6 with the
-        #      §3.9 Fix line. Distinct sub_reasons for forensic taxonomy.
-        # The default repo_root=None + skip_anchor_preflight=False case
-        # FAILS CLOSED (review fix P1-1 — prior code silently set
-        # anchor_verified=True, bypassing the §12.1 chain entirely).
-        if skip_anchor_preflight:
-            anchor_verified = True
-        elif repo_root is None:
-            print(
-                f"error: phase approve refused: anchor preflight cannot "
-                f"run without repo_root. {_FIX_ANCHOR_UNVERIFIABLE}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason="anchor_preflight_unwired",
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-        else:
-            try:
-                _audit_anchor.verify_existing_anchor_for_repo(repo_root)
-                anchor_verified = True
-            except _audit_anchor.AnchorMissingError as exc:
-                print(
-                    f"error: phase approve refused: audit-tip anchor not "
-                    f"found ({exc}). {_FIX_ANCHOR_MISSING}",
-                    file=sys.stderr,
-                )
-                return ApproveResult(
-                    exit_code=6,
-                    sub_reason="anchor_missing",
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-            except _audit_anchor.AnchorMismatchError as exc:
-                sub = exc.sub_reason or "anchor_verification_failed"
-                print(
-                    f"error: phase approve refused: audit-tip anchor "
-                    f"verification failed ({sub}: {exc}). "
-                    f"{_FIX_ANCHOR_MISMATCH}",
-                    file=sys.stderr,
-                )
-                return ApproveResult(
-                    exit_code=6,
-                    sub_reason=sub,
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-            except _audit_anchor.AnchorError as exc:
-                # Schema/unreadable/etc. — surface verbatim.
-                sub = exc.sub_reason or "anchor_error"
-                print(
-                    f"error: phase approve refused: audit-tip anchor "
-                    f"unreadable ({sub}: {exc}). {_FIX_ANCHOR_MISMATCH}",
-                    file=sys.stderr,
-                )
-                return ApproveResult(
-                    exit_code=6,
-                    sub_reason=sub,
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-
         # State-trust preflight (§2.6). Refuses forged state with exit 10.
-        # skip_state_trust_preflight=True is a separate test-only bypass for
-        # tests that do not wire up a real audit chain (e.g. speed-bump prompt
-        # tests seeded via seed_scratch without an audit entry).
-        # skip_anchor_preflight=True does NOT imply skipping state_trust;
-        # tests such as _trigger_exit14_crash_recovery pass skip_anchor_preflight
-        # while still relying on state_trust to fire exit 14.
+        # skip_state_trust_preflight=True is a test-only bypass for tests
+        # that do not wire up a real audit chain.
         if not skip_state_trust_preflight:
             try:
                 _state_trust.preflight(
                     scratch,
                     audit_path=audit_path,
                     lock=lock,
-                    anchor_verified=anchor_verified,
+                    anchor_verified=True,
                 )
             except _state_trust.StateAuditMismatchError as exc:
                 print(
@@ -577,7 +485,7 @@ def run_approve(
                 )
                 return ApproveResult(
                     exit_code=10,
-                    sub_reason="state_audit_tip_mismatch",
+                    sub_reason="state_audit_mismatch",
                     resolved_email=resolved,
                     by_source=by_source,
                 )

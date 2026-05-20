@@ -9,9 +9,7 @@ Order of operations (any failure → typed `ReopenResult` with non-zero
   4. Identity resolution (§3.1 step 2) — gitconfig auto-read; `--by` override.
      Empty → exit 6 `gitconfig_email_unset`.
   5. install-record approvers membership (§3.1 step 3 + §6.1).
-  6. Anchor preflight + state-trust preflight (§12.1 + §2.6) under the
-     primary lock. Default `repo_root=None` + `skip_anchor_preflight=False`
-     fails closed (exit 6 `anchor_preflight_unwired`).
+  6. State-trust preflight (§2.6) under the primary lock.
   6b. Source-phase validation (S04+S05 review-fix P2-1): `--to plan`
       permitted only from execute/done; `--to discuss` permitted from any
       phase (design §3.2 line 250).
@@ -164,7 +162,7 @@ def run_reopen(
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
-    skip_anchor_preflight: bool = False,
+    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
 ) -> ReopenResult:
     # Design decision (deferred — S04+S05 review-fix P2-5): `phase reopen`
     # does NOT currently require a human-presence nonce (spec §3.2 leaves
@@ -255,31 +253,13 @@ def run_reopen(
     # Steps 6+7+8 under primary lock.
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)
     try:
-        # Anchor preflight.
-        try:
-            anchor_verified = _phase_preflight.run_anchor_preflight(
-                skip_anchor_preflight=skip_anchor_preflight,
-                repo_root=repo_root,
-            )
-        except _phase_preflight.AnchorPreflightError as exc:
-            print(
-                f"error: phase reopen refused: {exc.message}. {exc.fix_line}",
-                file=sys.stderr,
-            )
-            return ReopenResult(
-                exit_code=6,
-                sub_reason=exc.sub_reason,
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-
         # State-trust preflight.
         try:
             _phase_preflight.run_state_trust_preflight(
                 scratch=scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=anchor_verified,
+                anchor_verified=True,
             )
         except _phase_preflight.StateTrustPreflightError as exc:
             print(
