@@ -269,6 +269,7 @@ def write_fixture_repository(
 
     (root / ".planning/STATE.md").write_text(
         """---
+planning_doc_schema_version: 1
 progress:
   total_phases: 2
   completed_phases: 1

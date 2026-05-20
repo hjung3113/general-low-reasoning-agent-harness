@@ -1,4 +1,5 @@
 ---
+planning_doc_schema_version: "1"
 gsd_state_version: 1.0
 milestone: m0
 milestone_name: harness adoption

@@ -814,6 +814,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/planning_grammar.py",
+      "source": "scripts/lib/planning_grammar.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/planning_status.py",
       "source": "scripts/lib/planning_status.py",
       "policy": "harness-owned"

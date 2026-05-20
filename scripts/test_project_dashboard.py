@@ -86,8 +86,8 @@ progress:
             self.assertEqual(1, len(data.issues))
             self.assertEqual(5, len(data.documents))
             self.assertEqual("CP-01", data.active_checkpoint)
-            self.assertFalse(any("not listed in ROADMAP" in warning for warning in data.warnings))
-            self.assertTrue(any("phase-status blocking stale_execute_approval" in warning for warning in data.warnings))
+            self.assertFalse(any(w.code == "phase_folder_not_in_roadmap" for w in data.warnings))
+            self.assertTrue(any(w.code == "stale_execute_approval" and w.severity == "blocking" for w in data.warnings))
 
     def test_dashboard_uses_shared_active_checkpoint_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -109,7 +109,7 @@ progress:
 
             data = project_dashboard.load_dashboard_data(root)
 
-            self.assertTrue(any("phase status projection failed" in warning for warning in data.warnings))
+            self.assertTrue(any(w.code == "projection_failed" for w in data.warnings))
 
     def test_generate_dashboard_writes_self_contained_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -246,6 +246,7 @@ def write_fixture_repository(root: Path) -> None:
 
     (root / ".planning/STATE.md").write_text(
         """---
+planning_doc_schema_version: 1
 milestone: m1
 milestone_name: Example milestone
 status: ready for PR
@@ -340,6 +341,86 @@ Open a PR.
         "# CONCERNS\n\n- Core docs can drift.\n",
         encoding="utf-8",
     )
+
+
+def test_dashboard_warning_dataclass_round_trip():
+    from lib.project_dashboard.models import DashboardWarning
+    w = DashboardWarning(code="x", severity="warning", message="hello", paths=[".planning/STATE.md"])
+    assert w.code == "x"
+    assert w.severity == "warning"
+
+
+def test_roadmap_phase_has_phase_id_field():
+    from lib.project_dashboard.models import RoadmapPhase
+    p = RoadmapPhase(title="Phase 1: x", summary="", completed=False, raw_line="...")
+    assert p.phase_id == ""
+    p2 = RoadmapPhase(title="Phase 2b: y", summary="", completed=False, raw_line="...", phase_id="02b")
+    assert p2.phase_id == "02b"
+
+
+def test_dashboard_recognises_letter_suffix_phase_no_phantom_warning(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    # 02b is now declared in the ROADMAP fixture, so no "not in ROADMAP" warning:
+    assert not any(w.code == "phase_folder_not_in_roadmap" for w in data.warnings)
+    # And no grammar-invalid warning:
+    assert not any(w.code == "phase_folder_grammar_invalid" for w in data.warnings)
+
+
+def test_dashboard_emits_actionable_warning_when_phase_folder_missing_from_roadmap(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    # Add an extra phase folder NOT declared in ROADMAP — simulating 02b-hardening on the live repo today:
+    (root / ".planning/phases/02c-followup").mkdir()
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    matched = [w for w in data.warnings if w.code == "phase_folder_not_in_roadmap"]
+    assert len(matched) == 1
+    assert "02c-followup" in matched[0].message
+    assert "ROADMAP" in matched[0].message
+    assert matched[0].severity == "warning"
+
+
+def test_load_phase_documents_includes_nested_plan_files(tmp_path):
+    phase = tmp_path / ".planning/phases/02b-hardening"
+    (phase / "plans").mkdir(parents=True)
+    (phase / "README.md").write_text("# README\n")
+    (phase / "plans" / "02b-01-T0-A-PLAN.md").write_text("# T0-A\n")
+    (phase / "plans" / "02b-02-T0-1-PLAN.md").write_text("# T0-1\n")
+    (phase / "plans" / "scratch.md").write_text("# not a plan\n")  # excluded
+    from lib.project_dashboard.core import load_phase_documents
+    docs = load_phase_documents(tmp_path)
+    files = docs[0].files
+    assert "02b-01-T0-A-PLAN.md" in files
+    assert "02b-02-T0-1-PLAN.md" in files
+    assert "scratch.md" not in files  # only *-PLAN.md included
+    assert files["02b-01-T0-A-PLAN.md"].endswith("plans/02b-01-T0-A-PLAN.md")
+
+
+def test_load_phase_documents_top_level_wins_on_name_collision(tmp_path):
+    phase = tmp_path / ".planning/phases/02b-hardening"
+    (phase / "plans").mkdir(parents=True)
+    (phase / "duplicate.md").write_text("# top\n")
+    (phase / "plans" / "duplicate.md").write_text("# nested\n")
+    from lib.project_dashboard.core import load_phase_documents
+    docs = load_phase_documents(tmp_path)
+    files = docs[0].files
+    assert files["duplicate.md"].endswith(".planning/phases/02b-hardening/duplicate.md")
+
+
+def test_malformed_phase_state_emits_single_structured_warning(tmp_path):
+    from tests._helpers.planning_repo import make_minimal_planning_repo
+    root = make_minimal_planning_repo(tmp_path)
+    (root / ".scratch/phase-state.json").write_text("{not json")
+    from lib.project_dashboard.core import load_dashboard_data
+    data = load_dashboard_data(root)
+    malformed = [w for w in data.warnings if w.code == "phase_state_malformed_json"]
+    assert len(malformed) == 1
+    # secondary checks must not pile on:
+    assert not any(w.code == "phase_state_missing_path_ref" for w in data.warnings)
+    assert not any(w.code == "state_checkpoint_drift" for w in data.warnings)
 
 
 if __name__ == "__main__":

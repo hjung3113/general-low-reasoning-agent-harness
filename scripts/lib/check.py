@@ -238,6 +238,7 @@ def check(
         if worktree:
             check_worktree_paths(root)
         check_drift(root)
+        _check_planning_drift(root)
         return
 
     manifest = load_manifest_data(root)
@@ -281,6 +282,43 @@ def check(
         check_worktree_paths(check_target)
     # G2-D drift detection (T0-3 Task 8) — always non-fatal.
     check_drift(root)
+    _check_planning_drift(root)
+
+
+def _check_planning_drift(root: Path) -> None:
+    """Sub-check: call dashboard --check in-process and propagate blocking warnings as SystemExit.
+
+    Non-blocking dashboard warnings (severity="warning") do not fail harness check;
+    only blocking warnings (EXIT_PLANNING_DRIFT) are propagated.
+    If the .planning directory does not exist, skip silently (not a planning repo).
+    """
+    if not (root / ".planning").exists():
+        return
+    # Skip if canonical planning files are absent — fixture or partial install.
+    if not (root / ".planning" / "STATE.md").exists() or not (root / ".planning" / "ROADMAP.md").exists():
+        return
+    # Skip if no installed-manifest (not an installed harness target — fixture or dev environment).
+    if not (root / INSTALL_STATE).exists():
+        return
+    # Lazy dual import to avoid module-level circular import risk.
+    try:
+        from scripts.lib.project_dashboard.core import run as _dashboard_run
+        from scripts.lib.exitcodes import EXIT_OK
+    except ModuleNotFoundError:
+        from lib.project_dashboard.core import run as _dashboard_run  # type: ignore[no-redef]
+        from lib.exitcodes import EXIT_OK  # type: ignore[no-redef]
+    import contextlib
+    import io
+    # Capture dashboard JSON output so it doesn't pollute harness check stdout.
+    # On failure, print a single-line summary pointing to the dedicated command.
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        drift_exit = _dashboard_run(["--check", "--root", str(root)])
+    if drift_exit != EXIT_OK:
+        raise SystemExit(
+            "planning-drift: dashboard --check detected blocking drift; "
+            "run `python3 scripts/project_dashboard.py --check` for details"
+        )
 
 
 def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.0-dev+unknown") -> bool:

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Dashboard</title>
+  <style>
+:root {
+  color-scheme: light;
+  --ink: #17202a;
+  --muted: #5f6b7a;
+  --line: #d8dee8;
+  --soft: #f5f7fa;
+  --panel: #ffffff;
+  --accent: #2563eb;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: #eef2f6;
+}
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  padding: 32px;
+  background: #111827;
+  color: white;
+}
+.eyebrow { margin: 0 0 8px; color: #93c5fd; font-weight: 700; text-transform: uppercase; font-size: 12px; }
+h1 { margin: 0; font-size: 34px; line-height: 1.1; letter-spacing: 0; }
+.status { max-width: 900px; color: #d1d5db; font-size: 16px; }
+.progress-card { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); padding: 18px; border-radius: 8px; }
+.progress-value { font-size: 42px; font-weight: 800; }
+.progress-bar { height: 10px; background: rgba(255,255,255,.18); border-radius: 999px; overflow: hidden; }
+.progress-bar span { display: block; height: 100%; background: #60a5fa; }
+.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 20px; padding: 20px; }
+.rail, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.rail { padding: 18px; align-self: start; position: sticky; top: 20px; }
+.rail section + section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+h2 { margin: 0 0 12px; font-size: 20px; }
+h3 { margin: 0 0 10px; font-size: 15px; }
+dt { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 12px; }
+dd { margin: 4px 0 0; }
+.pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font-size: 12px; background: var(--soft); margin: 2px 4px 2px 0; }
+.content { display: grid; gap: 20px; }
+.panel { padding: 20px; }
+.section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: start; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 16px; }
+.section-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.kanban { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kanban-column { border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; padding: 12px; min-height: 180px; }
+.kanban-column.done { background: #f0fdf4; border-color: #9bd4ae; }
+.kanban-column.active { background: #eff6ff; border-color: #93c5fd; }
+.kanban-column.remaining { background: #f8fafc; }
+.kanban-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.kanban-header h3 { margin: 0; font-size: 16px; }
+.kanban-count { min-width: 28px; text-align: center; border-radius: 999px; padding: 3px 8px; background: white; border: 1px solid var(--line); font-weight: 700; font-size: 12px; }
+.kanban-stack { display: grid; gap: 10px; }
+.phase-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: var(--soft); }
+.phase-card.done { border-color: #9bd4ae; background: #effaf3; }
+.phase-card.active { border-color: #93c5fd; background: #eff6ff; }
+.phase-card.remaining { background: white; }
+.phase-card h3 { font-size: 16px; }
+.phase-card p { color: var(--muted); font-size: 13px; }
+.grid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.span-two { grid-column: 1 / -1; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; margin: 0; }
+.detail-grid div { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--soft); min-width: 0; }
+.detail-grid dd { overflow-wrap: anywhere; }
+ul { margin: 0; padding-left: 20px; }
+li + li { margin-top: 6px; }
+code { background: #edf2f7; border: 1px solid #dbe3ec; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+.phase-doc { border-top: 1px solid var(--line); padding: 14px 0; }
+.phase-doc:first-of-type { border-top: 0; }
+.doc-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.doc-links a { color: var(--accent); text-decoration: none; border: 1px solid var(--line); padding: 5px 8px; border-radius: 6px; }
+.issue-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.issue-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: var(--soft); }
+.warning { border: 1px solid #f59e0b; background: #fffbeb; color: #78350f; }
+@media (max-width: 900px) {
+  .hero, .layout, .grid-two, .kanban { grid-template-columns: 1fr; }
+  .rail { position: static; }
+}
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Unknown milestone</p>
+      <h1>Unknown milestone</h1>
+      <p class="status">Unknown status</p>
+    </div>
+    <div class="progress-card">
+      <div class="progress-value">50%</div>
+      <div class="progress-bar"><span style="width:50%"></span></div>
+      <p>1/2 phases complete</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="rail">
+      <section>
+        <h2>Current</h2>
+        <dl>
+          <dt>Checkpoint</dt><dd>CP-02-02 - contract and behavior.</dd>
+          <dt>Gate</dt><dd><span class="pill">execute</span> <span class="pill">approved</span></dd>
+          <dt>Updated</dt><dd>Unknown</dd>
+          <dt>Generated</dt><dd>2026-05-20 10:30:35 UTC</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Next Action</h2>
+        <p>Finish Phase 2 execute gate setup, then start implementation Task 1: high-level `HARNESS_MACHINE=1 harness next/run/check` JSON contract goldens.</p>
+      </section>
+      <section>
+        <h2>Blockers</h2>
+        <ul><li>No blockers recorded.</li></ul>
+      </section>
+    </aside>
+
+    <div class="content">
+      <section class="panel warning"><h2>Warnings</h2><ul><li>Phase folder is present but not listed in ROADMAP: .planning/phases/02b-hardening</li></ul></section>
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Gate Details</h2>
+          <p>Current discuss/plan/execute/done state and approval metadata from .scratch/phase-state.json</p>
+        </div>
+        <dl class="detail-grid"><div><dt>Phase</dt><dd>execute</dd></div><div><dt>Plan ID</dt><dd>v0.8.0-minimal-workflow</dd></div><div><dt>Approved</dt><dd>true</dd></div><div><dt>Approved By</dt><dd>user</dd></div><div><dt>Approved At</dt><dd>2026-05-18T16:20:23.000000000Z</dd></div><div><dt>Current Checkpoint</dt><dd>CP-02-02</dd></div><div><dt>Automation</dt><dd>manual</dd></div><div><dt>Plan</dt><dd>.planning/phases/02-v0.8.0-minimal-workflow/02-01-PLAN.md</dd></div><div><dt>State</dt><dd>.planning/STATE.md</dd></div><div><dt>Checkpoint</dt><dd>.planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md</dd></div><div><dt>Next Action</dt><dd>Execute Phase 2 v0.8.0 minimal workflow implementation plan.</dd></div></dl>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Roadmap Kanban</h2>
+          <p>Done, in-progress, and remaining phases from .planning/ROADMAP.md</p>
+        </div>
+        <div class="kanban"><section class="kanban-column done"><div class="kanban-header"><h3>Done</h3><span class="kanban-count">1</span></div><div class="kanban-stack"><article class="phase-card done"><span class="pill">done</span><h3>Phase 1: Generalized Harness Release</h3><p>Publish the stack-neutral harness with OpenCode compatibility and composable workflow skill packs.</p></article></div></section><section class="kanban-column active"><div class="kanban-header"><h3>In Progress</h3><span class="kanban-count">1</span></div><div class="kanban-stack"><article class="phase-card active"><span class="pill">active</span><h3>Phase 2: v0.8.0 Minimal Workflow Release</h3><p>Ship the four-command navigator workflow while preserving approval, adapter, JSON, release, and security boundaries.</p></article></div></section><section class="kanban-column remaining"><div class="kanban-header"><h3>Remaining</h3><span class="kanban-count">0</span></div><div class="kanban-stack"><p class="muted">No phases.</p></div></section></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Project Memory</h2>
+          <p>Purpose, scope, and requirements from .planning/PROJECT.md and .planning/REQUIREMENTS.md</p>
+        </div>
+        <div class="grid-two"><div><h3>One-Liner</h3><p>Client-neutral workflow harness that keeps low-reasoning agents inside a concrete, resumable `discuss -&gt; plan -&gt; execute -&gt; done` protocol.</p></div><div><h3>Scope</h3><ul><li>Core planning protocol.</li><li>Phase gate schema and validation.</li><li>Roo and OpenCode adapters.</li><li>Generic profiles.</li><li>Composable workflow skill packs.</li><li>Target init, check, and upgrade tooling.</li></ul></div><div class="span-two"><h3>Requirements</h3><div class="issue-grid"><article class="issue-card"><h3>REQ-core-protocol</h3><p>The harness must preserve `discuss -&gt; plan -&gt; execute -&gt; done`, durable planning memory, active checkpoints, approval-gated execute, and verification evidence.</p></article><article class="issue-card"><h3>REQ-adapter-compatibility</h3><p>The harness must support core-only, Roo-only, OpenCode-only, and Roo+OpenCode target installs.</p></article><article class="issue-card"><h3>REQ-skill-plugins</h3><p>The harness must install reusable workflow skills as composable plugins. Skills must be selected according to the request and repository evidence, not by hard-coded technology presets.</p></article><article class="issue-card"><h3>REQ-portability</h3><p>Core files must not assume a programming language, database, test framework, deployment target, or project domain.</p></article><article class="issue-card"><h3>REQ-release-verification</h3><p>Before push, run unit tests, source check, and target install/check smoke tests for the supported adapter matrix.</p></article></div></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Decision Ledger</h2>
+          <p>Accepted project decisions from .planning/DECISIONS.md</p>
+        </div>
+        <div class="issue-grid"><article class="issue-card"><h3>DEC-0001</h3><span class="pill">Accepted</span> <span class="pill">All phases</span><p>.planning/ is canonical project memory.</p><p><code>.planning/PROJECT.md</code></p></article><article class="issue-card"><h3>DEC-0002</h3><span class="pill">Accepted</span> <span class="pill">Phase gate</span><p>.scratch/phase-state.json is a gate, not the plan.</p><p><code>.planning/PROJECT.md, docs/phase-gate-harness.md</code></p></article><article class="issue-card"><h3>DEC-0003</h3><span class="pill">Accepted</span> <span class="pill">All phases</span><p>Every phase closes with summary and verification evidence.</p><p><code>.planning/PROJECT.md, .planning/phases/01-document-centered-phase-continuity/01-CHECKPOINTS.md</code></p></article><article class="issue-card"><h3>DEC-0004</h3><span class="pill">Accepted</span> <span class="pill">Continuity</span><p>New sessions start at .planning/STATE.md, then read live phase state.</p><p><code>.planning/HANDOFF-PROTOCOL.md, AGENTS.md</code></p></article><article class="issue-card"><h3>DEC-0005</h3><span class="pill">Accepted</span> <span class="pill">Enforcement</span><p>Phase 3 adds mechanical checks for phase-state validity, allowed-path drift, harness ownership, and clean-skeleton contamination.</p><p><code>.planning/ROADMAP.md, scripts/harness.py</code></p></article><article class="issue-card"><h3>DEC-0006</h3><span class="pill">Accepted</span> <span class="pill">Distribution</span><p>Target projects consume the harness through a clean skeleton plus manifest-based init/upgrade; live project planning state is project-owned and not overwritten by upgrade.</p><p><code>harness/manifest.json, harness/skeleton/clean/</code></p></article><article class="issue-card"><h3>DEC-0007</h3><span class="pill">Accepted</span> <span class="pill">Distribution</span><p>AGENTS.md and README.md should use managed-block merge semantics for harness-owned sections: initial install creates the full files, while upgrade refreshes only marked harness blocks and preserves target-repo edits outside those blocks. Until the merge algorithm exists, managed remains file-level conflict behavior and docs must not claim automatic block merging is implemented.</p><p><code>harness/manifest.json, README.md, Issue #16 design review</code></p></article></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Verification Ledger</h2>
+          <p>Recent verification evidence from .planning/VERIFICATION.md</p>
+        </div>
+        <div class="issue-grid"><article class="issue-card"><h3>Remote push</h3><span class="pill">PASS</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>Final release candidate pushed to origin/main; final audit command git status --short --branch reports a clean synchronized branch.</p></article><article class="issue-card"><h3>Release commit</h3><span class="pill">PASS</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>Final broadened release candidate committed after git diff --check, unit tests, source checks, worktree check, and release smoke matrix passed.</p></article><article class="issue-card"><h3>Three expert adversarial reviews</h3><span class="pill">BLOCKED THEN ADDRESSED</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>Subagents 019e278f-cc4e-79f0-8d76-139ebaf19231, 019e278f-cc82-7450-a9e9-a289b726da27, and 019e278f-ccb6-7be2-b8eb-d534c66f70fa returned NO-PASS findings; fixes addressed missing categories, shallow skills, research evidence, core leakage, upgrade-memory behavior, and stale audit requirements.</p></article><article class="issue-card"><h3>Skill ecosystem broadening</h3><span class="pill">PASS</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>Added research ledger, core research/review/audit skills, workflow quality packs, README example, and remembered init scope for upgrade.</p></article><article class="issue-card"><h3>Target release smoke matrix</h3><span class="pill">PASS</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>python3 scripts/release_smoke_test.py covers core, OpenCode, Roo, both, python-analysis, dotnet-etl, web, workflow-quality, and all-packs.</p></article><article class="issue-card"><h3>Source checks</h3><span class="pill">PASS</span> <span class="pill">2026-05-15</span><p>Phase 1 release</p><p>python3 scripts/harness.py check and python3 scripts/harness.py check --worktree -&gt; exit 0.</p></article></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Known Concerns</h2>
+          <p>Static risk register from .planning/codebase/CONCERNS.md</p>
+        </div>
+        <ul><li>Core docs can accidentally drift back into client-specific or stack-specific guidance.</li><li>Adapter examples can be mistaken for required target shape.</li><li>Skill packs can become hidden technology presets if not kept generic.</li><li>Upgrade logic must preserve project-owned planning state.</li><li>OpenCode-only targets must remain valid without Roo files.</li></ul>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Live Gate</h2>
+          <p>Allowed paths, blocked paths, acceptance criteria, and verification from .scratch/phase-state.json</p>
+        </div>
+        <div class="grid-two">
+          <div><h3>Acceptance Criteria</h3><ul><li>Reviewer P1 findings for adapter alias, gate enforcement, release evidence, and core neutrality are addressed.</li><li>README documents post-install commands and ready-to-use prompts.</li><li>Release verification evidence records source checks, target matrix smoke, adversarial review, commit, and push.</li></ul></div>
+          <div><h3>Verification</h3><ul><li><code>python3 -m unittest scripts/test_harness.py</code></li><li><code>python3 scripts/harness.py check</code></li><li><code>python3 scripts/harness.py check --worktree</code></li><li><code>python3 scripts/release_smoke_test.py</code></li></ul></div>
+          <div><h3>Allowed Paths</h3><ul><li><code>README.md</code></li><li><code>CHANGELOG.md</code></li><li><code>AGENTS.md</code></li><li><code>.planning/</code></li><li><code>.scratch/phase-state.json</code></li><li><code>.opencode/</code></li><li><code>.roo/</code></li><li><code>.github/</code></li><li><code>docs/</code></li><li><code>harness/</code></li><li><code>pyproject.toml</code></li><li><code>scripts/</code></li></ul></div>
+          <div><h3>Blocked Paths</h3><p>None recorded.</p></div>
+          <div><h3>Notes</h3><ul><li>This is a new repository copy created from the previous harness project.</li><li>Core must remain stack-neutral and client-neutral.</li><li>Skill packs are generic composable plugins.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Phase Details</h2>
+          <p>Available phase documents and headings under .planning/phases/</p>
+        </div>
+        <article class="phase-doc"><h3>.planning/phases/01-generalized-harness-release</h3><ul><li>Phase 1 Plan - Generalized Harness Release</li><li>Plan ID</li><li>Phase 1 Summary</li><li>Phase 1 Checkpoints - Generalized Harness Release</li><li>CP-01-01 - Expert review incorporated</li><li>Phase 1 Context - Generalized Harness Release</li></ul><div class="doc-links"><a href="../../.planning/phases/01-generalized-harness-release/01-01-PLAN.md">01-01-PLAN.md</a><a href="../../.planning/phases/01-generalized-harness-release/01-01-SUMMARY.md">01-01-SUMMARY.md</a><a href="../../.planning/phases/01-generalized-harness-release/01-CHECKPOINTS.md">01-CHECKPOINTS.md</a><a href="../../.planning/phases/01-generalized-harness-release/01-CONTEXT.md">01-CONTEXT.md</a><a href="../../.planning/phases/01-generalized-harness-release/01-REVIEW.md">01-REVIEW.md</a><a href="../../.planning/phases/01-generalized-harness-release/01-VERIFICATION.md">01-VERIFICATION.md</a></div></article><article class="phase-doc"><h3>.planning/phases/02-v0.8.0-minimal-workflow</h3><ul><li>Phase 2 Plan - v0.8.0 Minimal Workflow Release</li><li>Status</li><li>Phase 2 Summary - v0.8.0 Minimal Workflow Release</li><li>Status</li><li>v0.8.2 Adversarial Review Record</li><li>Specialist Delegation</li></ul><div class="doc-links"><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-01-PLAN.md">02-01-PLAN.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-01-SUMMARY.md">02-01-SUMMARY.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-ADVERSARIAL-REVIEW-v0.8.2.md">02-ADVERSARIAL-REVIEW-v0.8.2.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md">02-CHECKPOINTS.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-CONTEXT.md">02-CONTEXT.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-REVIEW.md">02-REVIEW.md</a><a href="../../.planning/phases/02-v0.8.0-minimal-workflow/02-VERIFICATION.md">02-VERIFICATION.md</a></div></article><article class="phase-doc"><h3>.planning/phases/02b-hardening</h3><ul><li>CONTRACT-PIN: 02b-hardening Cross-Plan Interface Contracts</li><li>0. Purpose</li><li>Phase 02b — Hardening</li><li>Plan inventory</li></ul><div class="doc-links"><a href="../../.planning/phases/02b-hardening/CONTRACT-PIN.md">CONTRACT-PIN.md</a><a href="../../.planning/phases/02b-hardening/README.md">README.md</a></div></article>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Issues</h2>
+          <p>Local issue cards under .scratch/**/issues/*.md</p>
+        </div>
+        <div class="issue-grid"><p>No local issue cards found.</p></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>Documents</h2>
+          <p>Inventory from README.md, AGENTS.md, docs/**, and .planning/codebase/**</p>
+        </div>
+        <div class="issue-grid"><article class="issue-card"><h3>범용 저추론 에이전트 하네스 (harness source)</h3><p><code>README.md</code></p><span class="pill">root</span></article><article class="issue-card"><h3>Agent Skills</h3><p><code>AGENTS.md</code></p><span class="pill">root</span></article><article class="issue-card"><h3>하네스 사용자 설명서 (v0.9.3)</h3><p><code>docs/USER_MANUAL.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Hardening Bundle ADR — 2026-05-16</h3><p><code>docs/adr/2026-05-16-hardening-bundle.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ADR: Approver Provenance and `execution_mode` Promotion — 2026-05-17</h3><p><code>docs/adr/2026-05-17-approver-provenance-and-execution-mode.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ADR: Audit Canonicalization, Locking, and State Trust — 2026-05-17</h3><p><code>docs/adr/2026-05-17-audit-canonicalization-locking-and-state-trust.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ADR: Autopilot Guards and Model B Manual Handoff — 2026-05-17</h3><p><code>docs/adr/2026-05-17-autopilot-guards-and-manual-handoff.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ADR: phase.approve Speed Bump Model (v0.9.0)</h3><p><code>docs/adr/2026-05-19-phase-approve-speed-bump.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ADR: Remove Out-of-Repo Audit-Tip Anchor — 2026-05-20</h3><p><code>docs/adr/2026-05-20-remove-audit-tip-anchor.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>하네스 설정 Flag (Harness Flags)</h3><p><code>docs/advanced/harness-flags.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Domain Docs Placeholder</h3><p><code>docs/agents/domain.md</code></p><span class="pill">agent docs</span></article><article class="issue-card"><h3>Issue Tracker Placeholder</h3><p><code>docs/agents/issue-tracker.md</code></p><span class="pill">agent docs</span></article><article class="issue-card"><h3>Triage Labels Placeholder</h3><p><code>docs/agents/triage-labels.md</code></p><span class="pill">agent docs</span></article><article class="issue-card"><h3>Codex Cloud Setup</h3><p><code>docs/codex-cloud-setup.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8 최소 워크플로 시퀀스</h3><p><code>docs/minimal-workflow-sequence.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8 최소 워크플로 상태 머신</h3><p><code>docs/minimal-workflow-state-machine.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Phase Gate Harness</h3><p><code>docs/phase-gate-harness.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>General Low-Reasoning Agent Harness Protocol</h3><p><code>docs/protocol-spec.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Release Version Unification</h3><p><code>docs/release-version-unification.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Skill Ecosystem Review</h3><p><code>docs/research/skill-ecosystem-review.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Script-Oriented Harness Workflow Design</h3><p><code>docs/script-oriented-harness-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Adopt Existing Harness Install Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-15-adopt-existing-harness-install.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Harness CLI Role Split Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-15-harness-cli-role-split.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Long Document Reading Workflow Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-15-long-document-reading-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Remote Source Provenance Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-15-remote-source-provenance.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Script-Oriented Preflight Projection Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-15-script-oriented-preflight-projection.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>`scripts/harness.py` Refactor Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-16-harness-refactor.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Mid-Stream Phase Addition Workflow Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-16-mid-stream-phase-addition-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Profile Unification, Per-Profile Roo Modes, and Adapter-Scoped Augment Rules — Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-16-profile-modes-rules.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8.0 Minimal Workflow Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-19-v0.8.0-minimal-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.9.0 phase.approve Speed Bump Implementation Plan</h3><p><code>docs/superpowers/plans/2026-05-19-v0.9.0-phase-approve-speed-bump.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Planning Parser Unification Implementation Plan (v1)</h3><p><code>docs/superpowers/plans/2026-05-20-planning-parser-unification.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Adopt Existing Harness Install Design</h3><p><code>docs/superpowers/specs/2026-05-15-adopt-existing-harness-install-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Hardening Slice Design Spec</h3><p><code>docs/superpowers/specs/2026-05-16-hardening-slice-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>`scripts/harness.py` Refactor: Role-Based Module Split</h3><p><code>docs/superpowers/specs/2026-05-16-harness-refactor-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Profile Unification, Per-Profile Roo Modes, and Adapter-Scoped Augment Rules</h3><p><code>docs/superpowers/specs/2026-05-16-profile-modes-rules-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Phase Gate Hardening — Design (2026-05-17)</h3><p><code>docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Phase Gate Hardening Round-6 Review Notes</h3><p><code>docs/superpowers/specs/2026-05-17-phase-gate-hardening-round6-review-notes.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Friendly Workflow CLI Minimization Design</h3><p><code>docs/superpowers/specs/2026-05-18-friendly-workflow-cli-minimization-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>UX Discovery — 부작용 0 개선 발굴 (INDEX)</h3><p><code>docs/superpowers/specs/2026-05-18-ux-improvements-discovery.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Spec — v0.9.0: phase.approve Speed Bump + Terminology Cleanup</h3><p><code>docs/superpowers/specs/2026-05-19-phase-approve-speed-bump-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8.0 Minimal Workflow Design</h3><p><code>docs/superpowers/specs/2026-05-19-v0.8.0-minimal-workflow-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>MCP Server — undecided / future</h3><p><code>docs/superpowers/specs/future_undecided/2026-05-17-mcp-server.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Future — undecided / undated</h3><p><code>docs/superpowers/specs/future_undecided/README.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.7.2 Group C — `phase reopen --reason` placeholder patch</h3><p><code>docs/superpowers/specs/v0.7.2_todo/2026-05-18-group-c-reopen-placeholder.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.7.2 UX Quick Wins — 부작용 0 문구/문서/prompt 패치</h3><p><code>docs/superpowers/specs/v0.7.2_todo/2026-05-18-ux-quick-wins.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8.0 — UX Polish (deferred from v0.7 phase-gate-hardening)</h3><p><code>docs/superpowers/specs/v0.8.0_todo/2026-05-17-ux-polish.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8.0 UX Design Touch — 명령 surface / JSON shape / structural</h3><p><code>docs/superpowers/specs/v0.8.0_todo/2026-05-18-ux-design-touch.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.8.0 — UX Polish</h3><p><code>docs/superpowers/specs/v0.8.0_todo/README.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.9.0 — Browser Dashboard Design</h3><p><code>docs/superpowers/specs/v0.9.0_todo/2026-05-17-browser-dashboard-design.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>v0.9.0 — Browser Dashboard (dynamic + interactive)</h3><p><code>docs/superpowers/specs/v0.9.0_todo/README.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Release Trust Root</h3><p><code>docs/trust/README.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>유즈케이스별 사용 안내</h3><p><code>docs/use-cases/README.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>Roo/OpenCode 어댑터로 작업하기</h3><p><code>docs/use-cases/adapter-agent-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>계획 승인 후 구현하기</h3><p><code>docs/use-cases/approval-and-execute.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>매일 쓰는 기본 작업 흐름</h3><p><code>docs/use-cases/daily-workflow.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>처음 설치하고 시작하기</h3><p><code>docs/use-cases/first-install.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>문제가 생겼을 때 점검하기</h3><p><code>docs/use-cases/troubleshooting.md</code></p><span class="pill">docs</span></article><article class="issue-card"><h3>ARCHITECTURE - General Harness</h3><p><code>.planning/codebase/ARCHITECTURE.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>CONCERNS - General Harness</h3><p><code>.planning/codebase/CONCERNS.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>CONVENTIONS - General Harness</h3><p><code>.planning/codebase/CONVENTIONS.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>INTEGRATIONS - General Harness</h3><p><code>.planning/codebase/INTEGRATIONS.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>STACK - Harness Source</h3><p><code>.planning/codebase/STACK.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>STRUCTURE - General Harness</h3><p><code>.planning/codebase/STRUCTURE.md</code></p><span class="pill">codebase</span></article><article class="issue-card"><h3>TESTING - General Harness</h3><p><code>.planning/codebase/TESTING.md</code></p><span class="pill">codebase</span></article></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

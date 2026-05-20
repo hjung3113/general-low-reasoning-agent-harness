@@ -10,21 +10,62 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-from lib.planning_status import ProjectionError, load_projection, projection_to_dict
-from lib.project_dashboard.renderer import render_html
-from lib.project_dashboard.models import (
-    DashboardData,
-    DashboardAction,
-    DecisionRecord,
-    DocumentLink,
-    IssueCard,
-    PhaseDocument,
-    ProjectMemory,
-    RequirementCard,
-    RoadmapPhase,
-    StateSummary,
-    VerificationRecord,
-)
+# dual import: callers use either 'lib.X' (scripts/ via sys.path injection) or 'scripts.lib.X' (pytest from repo root)
+try:
+    from scripts.lib.planning_grammar import (
+        canonical_phase_id,
+        display_phase_id,
+        heading_matches,
+        parse_frontmatter as _parse_frontmatter_grammar,
+        parse_roadmap_phase_bullets,
+    )
+except ModuleNotFoundError:
+    from lib.planning_grammar import (  # type: ignore[no-redef]
+        canonical_phase_id,
+        display_phase_id,
+        heading_matches,
+        parse_frontmatter as _parse_frontmatter_grammar,
+        parse_roadmap_phase_bullets,
+    )
+
+try:
+    from scripts.lib.planning_status import ProjectionError, load_projection, projection_to_dict
+except ModuleNotFoundError:
+    from lib.planning_status import ProjectionError, load_projection, projection_to_dict  # type: ignore[no-redef]
+try:
+    from scripts.lib.project_dashboard.renderer import render_html
+except ModuleNotFoundError:
+    from lib.project_dashboard.renderer import render_html  # type: ignore[no-redef]
+try:
+    from scripts.lib.project_dashboard.models import (
+        DashboardData,
+        DashboardAction,
+        DashboardWarning,
+        DecisionRecord,
+        DocumentLink,
+        IssueCard,
+        PhaseDocument,
+        ProjectMemory,
+        RequirementCard,
+        RoadmapPhase,
+        StateSummary,
+        VerificationRecord,
+    )
+except ModuleNotFoundError:
+    from lib.project_dashboard.models import (  # type: ignore[no-redef]
+        DashboardData,
+        DashboardAction,
+        DashboardWarning,
+        DecisionRecord,
+        DocumentLink,
+        IssueCard,
+        PhaseDocument,
+        ProjectMemory,
+        RequirementCard,
+        RoadmapPhase,
+        StateSummary,
+        VerificationRecord,
+    )
 
 
 DEFAULT_OUTPUT = Path(".scratch/reports/project-dashboard.html")
@@ -71,48 +112,21 @@ DASHBOARD_ACTIONS = [
 ]
 
 
-def parse_frontmatter(text: str) -> dict[str, str]:
-    if not text.startswith("---"):
-        return {}
-    lines = text.splitlines()
-    values: dict[str, str] = {}
-    parents: list[tuple[int, str]] = []
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        key, sep, value = line.strip().partition(":")
-        if not sep:
-            continue
-        while parents and parents[-1][0] >= indent:
-            parents.pop()
-        clean_value = value.strip().strip('"').strip("'")
-        full_key = ".".join([item[1] for item in parents] + [key.strip()])
-        if clean_value:
-            values[full_key] = clean_value
-        else:
-            parents.append((indent, key.strip()))
-    return values
+# Re-export from planning_grammar so existing callers of core.parse_frontmatter keep working.
+parse_frontmatter = _parse_frontmatter_grammar
 
 
 def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
-    phases: list[RoadmapPhase] = []
-    pattern = re.compile(r"^- \[(?P<mark>[ xX])\] \*\*(?P<title>[^*]+)\*\*(?: - (?P<summary>.*))?$")
-    for line in text.splitlines():
-        match = pattern.match(line.strip())
-        if not match:
-            continue
-        phases.append(
-            RoadmapPhase(
-                title=match.group("title").strip(),
-                summary=(match.group("summary") or "").strip(),
-                completed=match.group("mark").lower() == "x",
-                raw_line=line.strip(),
-            )
+    return [
+        RoadmapPhase(
+            title=f"Phase {display_phase_id(b.phase_id)}: {b.title}",
+            summary=b.summary,
+            completed=b.completed,
+            raw_line=b.raw_line,
+            phase_id=b.phase_id,
         )
-    return phases
+        for b in parse_roadmap_phase_bullets(text)
+    ]
 
 
 def parse_headings(text: str) -> list[str]:
@@ -136,14 +150,17 @@ def checkpoint_id(value: str) -> str:
 
 
 def load_dashboard_data(root: Path) -> DashboardData:
-    warnings: list[str] = []
+    warnings: list[DashboardWarning] = []
     state_path = root / ".planning/STATE.md"
     roadmap_path = root / ".planning/ROADMAP.md"
     phase_state_path = root / ".scratch/phase-state.json"
 
     state_text = read_optional_text(state_path, warnings)
     roadmap_text = read_optional_text(roadmap_path, warnings)
-    phase_state = load_phase_state(phase_state_path)
+    phase_state, ps_warning = load_phase_state(phase_state_path)
+    phase_state_usable = ps_warning is None
+    if ps_warning is not None:
+        warnings.append(ps_warning)
 
     state = parse_state_summary(state_text)
     roadmap_phases = parse_roadmap_phases(roadmap_text)
@@ -156,9 +173,16 @@ def load_dashboard_data(root: Path) -> DashboardData:
     try:
         projection = projection_to_dict(load_projection(root))
     except ProjectionError as exc:
-        warnings.append(f"phase status projection failed: {exc}")
+        warnings.append(
+            DashboardWarning(
+                code="projection_failed",
+                severity="blocking",
+                message=f"phase status projection failed: {exc}",
+                paths=[],
+            )
+        )
 
-    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents))
+    warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents, roadmap_text, phase_state_usable=phase_state_usable))
     if projection is not None:
         warnings.extend(format_projection_warnings(projection))
 
@@ -258,7 +282,10 @@ def dashboard_data_to_json(data: DashboardData) -> dict[str, object]:
             {"title": item.title, "path": item.path, "category": item.category}
             for item in data.documents
         ],
-        "warnings": data.warnings,
+        "warnings": [
+            {"code": w.code, "severity": w.severity, "message": w.message, "paths": w.paths}
+            for w in data.warnings
+        ],
         "actions": [
             {
                 "id": action.action_id,
@@ -281,9 +308,16 @@ def string_list(value: object) -> list[str]:
     return []
 
 
-def read_optional_text(path: Path, warnings: list[str]) -> str:
+def read_optional_text(path: Path, warnings: list[DashboardWarning]) -> str:
     if not path.exists():
-        warnings.append(f"Missing optional file: {path}")
+        warnings.append(
+            DashboardWarning(
+                code="missing_optional_file",
+                severity="warning",
+                message=f"Missing optional file: {path}",
+                paths=[str(path)],
+            )
+        )
         return ""
     return path.read_text(encoding="utf-8")
 
@@ -332,11 +366,15 @@ def parse_section_bullets(text: str, heading: str) -> list[str]:
     in_section = False
     bullets: list[str] = []
     for line in lines:
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
+                # different heading, not yet in section
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section and line.strip().startswith("- "):
             bullets.append(line.strip()[2:].strip())
     return bullets
@@ -348,11 +386,14 @@ def parse_section_paragraph(text: str, heading: str) -> str:
     paragraph: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section and stripped:
             paragraph.append(stripped)
     return " ".join(paragraph)
@@ -363,11 +404,14 @@ def parse_section_until_heading(text: str, heading: str) -> list[str]:
     in_section = False
     section: list[str] = []
     for line in lines:
-        if line.startswith("#") and heading.lower() in line.lower():
-            in_section = True
+        if line.startswith("#"):
+            head_text = line.lstrip("#").strip()
+            if heading_matches(head_text, heading):
+                in_section = True
+            else:
+                if in_section:
+                    break
             continue
-        if in_section and line.startswith("#"):
-            break
         if in_section:
             section.append(line)
     return section
@@ -458,33 +502,42 @@ def parse_verification(text: str) -> list[VerificationRecord]:
     return records
 
 
-def load_phase_state(path: Path) -> dict[str, object]:
+def load_phase_state(path: Path) -> tuple[dict[str, object], DashboardWarning | None]:
     if not path.exists():
-        return {}
+        return {}, None
     try:
-        with path.open(encoding="utf-8") as handle:
-            loaded = json.load(handle)
-    except json.JSONDecodeError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, DashboardWarning(
+            code="phase_state_malformed_json",
+            severity="blocking",
+            message=f"phase-state.json is malformed JSON: {exc.msg} (line {exc.lineno}, col {exc.colno})",
+            paths=[".scratch/phase-state.json"],
+        )
+    if not isinstance(loaded, dict):
+        return {}, DashboardWarning(
+            code="phase_state_not_object",
+            severity="blocking",
+            message="phase-state.json must contain a JSON object",
+            paths=[".scratch/phase-state.json"],
+        )
+    return loaded, None
 
 
-def format_projection_warnings(projection: dict[str, object]) -> list[str]:
-    warnings = projection.get("warnings")
-    if not isinstance(warnings, list):
-        return []
-    result: list[str] = []
-    for warning in warnings:
-        if not isinstance(warning, dict):
+def format_projection_warnings(projection: dict[str, object]) -> list[DashboardWarning]:
+    out: list[DashboardWarning] = []
+    for w in projection.get("warnings") or []:
+        if not isinstance(w, dict):
             continue
-        code = str(warning.get("code", "unknown_projection_warning"))
-        severity = str(warning.get("severity", "warning"))
-        message = str(warning.get("message", "Planning projection warning."))
-        paths = warning.get("paths")
-        path_text = ", ".join(str(path) for path in paths) if isinstance(paths, list) else ""
-        suffix = f" ({path_text})" if path_text else ""
-        result.append(f"phase-status {severity} {code}: {message}{suffix}")
-    return result
+        out.append(
+            DashboardWarning(
+                code=str(w.get("code", "unknown_projection_warning")),
+                severity=str(w.get("severity", "warning")),
+                message=str(w.get("message", "Planning projection warning.")),
+                paths=[str(p) for p in (w.get("paths") or [])],
+            )
+        )
+    return out
 
 
 def load_phase_documents(root: Path) -> list[PhaseDocument]:
@@ -497,6 +550,12 @@ def load_phase_documents(root: Path) -> list[PhaseDocument]:
         headings: list[str] = []
         for path in sorted(phase_dir.glob("*.md")):
             relative = path.relative_to(root).as_posix()
+            files[path.name] = relative
+            headings.extend(parse_headings(path.read_text(encoding="utf-8"))[:2])
+        for path in sorted(phase_dir.glob("plans/*-PLAN.md")):
+            relative = path.relative_to(root).as_posix()
+            if path.name in files:
+                continue  # top-level dominant
             files[path.name] = relative
             headings.extend(parse_headings(path.read_text(encoding="utf-8"))[:2])
         documents.append(PhaseDocument(phase_dir=phase_dir.relative_to(root).as_posix(), files=files, headings=headings))
@@ -559,42 +618,100 @@ def check_consistency(
     phase_state: dict[str, object],
     issues: list[IssueCard],
     documents: list[DocumentLink],
-) -> list[str]:
-    warnings: list[str] = []
-    for key in ("state_path", "plan_path", "checkpoint_path"):
-        value = phase_state.get(key)
-        if isinstance(value, str) and not (root / value).exists():
-            warnings.append(f"phase-state references missing {key}: {value}")
+    roadmap_text: str = "",
+    *,
+    phase_state_usable: bool = True,
+) -> list[DashboardWarning]:
+    warnings: list[DashboardWarning] = []
 
-    checkpoint = phase_state.get("current_checkpoint")
-    if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
-        warnings.append(
-            f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}"
-        )
+    if phase_state_usable:
+        for key in ("state_path", "plan_path", "checkpoint_path"):
+            value = phase_state.get(key)
+            if isinstance(value, str) and not (root / value).exists():
+                warnings.append(
+                    DashboardWarning(
+                        code="phase_state_missing_path_ref",
+                        severity="blocking",
+                        message=f"phase-state references missing {key}: {value}",
+                        paths=[value],
+                    )
+                )
+
+        checkpoint = phase_state.get("current_checkpoint")
+        if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
+            warnings.append(
+                DashboardWarning(
+                    code="state_checkpoint_drift",
+                    severity="blocking",
+                    message=f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}",
+                    paths=[],
+                )
+            )
 
     if roadmap_phases and state.total_phases and len(roadmap_phases) != state.total_phases:
-        warnings.append(f"STATE progress total_phases={state.total_phases} but ROADMAP lists {len(roadmap_phases)} phases")
+        warnings.append(
+            DashboardWarning(
+                code="roadmap_total_phases_drift",
+                severity="blocking",
+                message=f"STATE progress total_phases={state.total_phases} but ROADMAP lists {len(roadmap_phases)} phases",
+                paths=[],
+            )
+        )
 
     completed_count = sum(1 for phase in roadmap_phases if phase.completed)
     if roadmap_phases and state.completed_phases and completed_count != state.completed_phases:
         warnings.append(
-            f"STATE progress completed_phases={state.completed_phases} but ROADMAP marks {completed_count} phases complete"
+            DashboardWarning(
+                code="roadmap_completed_phases_drift",
+                severity="blocking",
+                message=f"STATE progress completed_phases={state.completed_phases} but ROADMAP marks {completed_count} phases complete",
+                paths=[],
+            )
         )
 
-    roadmap_text = " ".join(phase.title for phase in roadmap_phases)
+    roadmap_phase_ids = {b.phase_id for b in parse_roadmap_phase_bullets(roadmap_text)}
     for document in phase_documents:
-        phase_slug = Path(document.phase_dir).name
-        phase_number = phase_slug.split("-", 1)[0].lstrip("0")
-        if phase_number and f"Phase {phase_number}" not in roadmap_text:
-            warnings.append(f"Phase folder is present but not listed in ROADMAP: {document.phase_dir}")
+        pid = canonical_phase_id(document.phase_dir)
+        if not pid:
+            warnings.append(DashboardWarning(
+                code="phase_folder_grammar_invalid",
+                severity="blocking",
+                message=f"Phase folder name does not match grammar (expected NN[a-z]?-slug): {document.phase_dir}",
+                paths=[document.phase_dir],
+            ))
+            continue
+        if pid not in roadmap_phase_ids:
+            warnings.append(DashboardWarning(
+                code="phase_folder_not_in_roadmap",
+                severity="warning",
+                message=(
+                    f"Phase folder {document.phase_dir} (id={pid}) is not listed in ROADMAP.md. "
+                    "Add a corresponding Phase entry to ROADMAP, or move the folder to .planning/archive/ if the phase has already shipped."
+                ),
+                paths=[document.phase_dir, ".planning/ROADMAP.md"],
+            ))
 
     if issues and not phase_documents:
-        warnings.append("Issue files are present but no phase documents were found.")
+        warnings.append(
+            DashboardWarning(
+                code="issues_without_phase_docs",
+                severity="warning",
+                message="Issue files are present but no phase documents were found.",
+                paths=[],
+            )
+        )
 
     document_paths = {document.path for document in documents}
     for required in ("README.md", "AGENTS.md", "docs/phase-gate-harness.md"):
         if required not in document_paths:
-            warnings.append(f"Referenced core document is missing from inventory: {required}")
+            warnings.append(
+                DashboardWarning(
+                    code="core_document_missing",
+                    severity="warning",
+                    message=f"Referenced core document is missing from inventory: {required}",
+                    paths=[required],
+                )
+            )
 
     return warnings
 
@@ -603,8 +720,8 @@ def generate_dashboard(*, root: Path, output: Path) -> Path:
     data = load_dashboard_data(root)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html(data), encoding="utf-8")
-    for warning in data.warnings:
-        print(f"warning: {warning}")
+    for w in data.warnings:
+        print(f"warning: {w.code}: {w.message}")
     print(f"wrote {output}")
     return output
 
@@ -614,24 +731,53 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path("."), help="Repository root to read.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="HTML file to write.")
     parser.add_argument("--serve", action="store_true", help="Start the interactive dashboard server.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate planning docs; print JSON; exit EXIT_PLANNING_DRIFT on any blocking warning.",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="Dashboard server host.")
     parser.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT, help="Dashboard server port.")
     return parser.parse_args(argv)
 
 
 def run(argv: Iterable[str] | None = None) -> int:
+    # dual import for EXIT_* constants
+    try:
+        from scripts.lib.exitcodes import EXIT_OK, EXIT_PLANNING_DRIFT
+    except ModuleNotFoundError:
+        from lib.exitcodes import EXIT_OK, EXIT_PLANNING_DRIFT  # type: ignore[no-redef]
+
     args = parse_args(argv)
     root = args.root.resolve()
+
+    if args.check:
+        data = load_dashboard_data(root)
+        blocking = [w for w in data.warnings if w.severity == "blocking"]
+        payload = {
+            "status": "drift" if blocking else "ok",
+            "warnings": [
+                {"code": w.code, "severity": w.severity, "message": w.message, "paths": w.paths}
+                for w in data.warnings
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return EXIT_PLANNING_DRIFT if blocking else EXIT_OK
+
     if args.serve:
-        from lib.project_dashboard.server import serve_dashboard
+        try:
+            from scripts.lib.project_dashboard.server import serve_dashboard
+        except ModuleNotFoundError:
+            from lib.project_dashboard.server import serve_dashboard  # type: ignore[no-redef]
 
         serve_dashboard(root=root, host=args.host, port=args.port)
-        return 0
+        return EXIT_OK
+
     output = args.output
     if not output.is_absolute():
         output = root / output
     generate_dashboard(root=root, output=output)
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":

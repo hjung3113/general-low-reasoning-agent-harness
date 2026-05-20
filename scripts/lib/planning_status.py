@@ -8,6 +8,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# dual import: callers use either 'lib.X' (scripts/ via sys.path injection) or 'scripts.lib.X' (pytest from repo root)
+try:
+    from scripts.lib.planning_grammar import (
+        canonical_phase_id,
+        extract_planning_doc_schema_version,
+        parse_frontmatter,
+        parse_roadmap_phase_bullets,
+        parse_state_checkpoint_line,
+        parse_state_phase_line,
+        PlanningDocSchemaVersionError,
+    )
+except ModuleNotFoundError:
+    from lib.planning_grammar import (  # type: ignore[no-redef]
+        canonical_phase_id,
+        extract_planning_doc_schema_version,
+        parse_frontmatter,
+        parse_roadmap_phase_bullets,
+        parse_state_checkpoint_line,
+        parse_state_phase_line,
+        PlanningDocSchemaVersionError,
+    )
+
 
 CONTRACT_VERSION = "phase-status.v1"
 LEGACY_READ_ORDER = [
@@ -132,6 +154,7 @@ def load_projection(root: Path) -> PlanningProjection:
         root=root,
         phase_state=phase_state,
         state_path=state_path,
+        state_text=state_text,
         roadmap_path=roadmap_path,
         checkpoint_path=checkpoint_path,
         plan_path=plan_path,
@@ -263,24 +286,16 @@ def _read_text_if_exists(root: Path, rel_path: str) -> str:
 
 
 def _parse_state_metadata(text: str) -> StateMetadata:
-    phase_id = ""
-    phase_title = ""
-    phase_match = re.search(r"- \*\*Phase\*\*:\s*(?P<number>\d+)\s*-\s*(?P<title>.+?)(?:\s+\*\*.*)?\.", text)
-    if phase_match:
-        phase_id = phase_match.group("number").zfill(2)
-        phase_title = phase_match.group("title").strip()
+    phase_id, phase_title = parse_state_phase_line(text)
 
-    checkpoint_id = ""
-    checkpoint_match = re.search(r"- \*\*Checkpoint\*\*:\s*(?P<id>CP-[0-9]+(?:-[0-9]+)?)(?:\s*-\s*.+)?", text)
-    if checkpoint_match:
-        checkpoint_id = checkpoint_match.group("id")
+    checkpoint_id, _ = parse_state_checkpoint_line(text)
 
     checkpoint_path = ""
     path_match = re.search(r"- \*\*Checkpoint file\*\*:\s*`(?P<path>[^`]+)`", text)
     if path_match:
         checkpoint_path = path_match.group("path")
 
-    frontmatter = _frontmatter_values(text)
+    frontmatter = parse_frontmatter(text)
     return StateMetadata(
         phase_id=phase_id,
         phase_title=phase_title,
@@ -298,7 +313,7 @@ def _parse_checkpoint_metadata(text: str, fallback_id: str) -> CheckpointMetadat
         pattern = re.compile(rf"^##\s+({re.escape(fallback_id)})\s*(?:-\s*(.+))?$", re.MULTILINE)
         heading = pattern.search(text)
     if heading is None:
-        heading = re.search(r"^##\s+(CP-[0-9]+(?:-[0-9]+)?)\s*(?:-\s*(.+))?$", text, re.MULTILINE)
+        heading = re.search(r"^##\s+(CP-\d+[a-z]?(?:-\d+)?)\s*(?:-\s*(.+))?$", text, re.MULTILINE)
 
     checkpoint_id = heading.group(1) if heading else ""
     title = (heading.group(2) or "").strip().rstrip(".") if heading else ""
@@ -310,19 +325,17 @@ def _parse_checkpoint_metadata(text: str, fallback_id: str) -> CheckpointMetadat
 def _roadmap_phase_title(text: str, phase_id: str) -> str:
     if not phase_id:
         return ""
-    phase_number = str(int(phase_id)) if phase_id.isdigit() else phase_id
-    pattern = re.compile(rf"^- \[[ xX]\] \*\*Phase {re.escape(phase_number)}:\s*(?P<title>[^*]+)\*\*", re.MULTILINE)
-    match = pattern.search(text)
-    return match.group("title").strip() if match else ""
+    bullets = parse_roadmap_phase_bullets(text)
+    for bullet in bullets:
+        if bullet.phase_id == phase_id:
+            return bullet.title
+    return ""
 
 
 def _parse_roadmap_metadata(text: str) -> RoadmapMetadata:
-    phase_ids: list[str] = []
-    completed = 0
-    for match in re.finditer(r"^- \[(?P<mark>[ xX])\] \*\*Phase (?P<number>[0-9]+):", text, re.MULTILINE):
-        phase_ids.append(match.group("number").zfill(2))
-        if match.group("mark").lower() == "x":
-            completed += 1
+    bullets = parse_roadmap_phase_bullets(text)
+    phase_ids = [b.phase_id for b in bullets]
+    completed = sum(1 for b in bullets if b.completed)
     return RoadmapMetadata(total_phases=len(phase_ids), completed_phases=completed, phase_ids=phase_ids)
 
 
@@ -331,6 +344,7 @@ def _warnings(
     root: Path,
     phase_state: dict[str, object],
     state_path: str,
+    state_text: str,
     roadmap_path: str,
     checkpoint_path: str,
     plan_path: str,
@@ -346,6 +360,31 @@ def _warnings(
     verification: list[str],
 ) -> list[PlanningWarning]:
     warnings: list[PlanningWarning] = []
+
+    try:
+        version = extract_planning_doc_schema_version(state_text)
+    except PlanningDocSchemaVersionError as exc:
+        warnings.append(
+            PlanningWarning(
+                code="planning_doc_schema_version_unsupported",
+                severity="blocking",
+                message=str(exc),
+                paths=[state_path],
+                required_read=True,
+            )
+        )
+    else:
+        if version is None:
+            warnings.append(
+                PlanningWarning(
+                    code="planning_doc_schema_version_missing",
+                    severity="warning",
+                    message="STATE.md does not declare planning_doc_schema_version; assuming 1.",
+                    paths=[state_path],
+                    required_read=False,
+                )
+            )
+
     phase = _string_value(phase_state.get("phase"))
     active_files = [state_path, roadmap_path, checkpoint_path, plan_path, summary_path]
     if phase in {"plan", "execute", "done"}:
@@ -586,7 +625,7 @@ def _summary_doc_path(root: Path, active_phase_folder: str, phase_id: str, plan_
     candidates: list[str] = []
     if plan_path.endswith("-PLAN.md"):
         candidates.append(plan_path[: -len("-PLAN.md")] + "-SUMMARY.md")
-    checkpoint_match = re.fullmatch(r"CP-(\d+)-(\d+)", checkpoint_id)
+    checkpoint_match = re.fullmatch(r"CP-(\d+[a-z]?)-(\d+)", checkpoint_id)
     if active_phase_folder and checkpoint_match:
         candidates.append(f"{active_phase_folder}/{checkpoint_match.group(1)}-{checkpoint_match.group(2)}-SUMMARY.md")
     candidates.append(_phase_doc_path(active_phase_folder, phase_id, "SUMMARY"))
@@ -603,31 +642,6 @@ def _codebase_read_paths(root: Path) -> list[str]:
     return [path.relative_to(root).as_posix() for path in sorted(codebase_root.glob("*.md"))]
 
 
-def _frontmatter_values(text: str) -> dict[str, str]:
-    if not text.startswith("---"):
-        return {}
-    values: dict[str, str] = {}
-    parents: list[tuple[int, str]] = []
-    for line in text.splitlines()[1:]:
-        if line.strip() == "---":
-            break
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        key, sep, value = line.strip().partition(":")
-        if not sep:
-            continue
-        while parents and parents[-1][0] >= indent:
-            parents.pop()
-        clean_value = value.strip().strip('"').strip("'")
-        full_key = ".".join([item[1] for item in parents] + [key.strip()])
-        if clean_value:
-            values[full_key] = clean_value
-        else:
-            parents.append((indent, key.strip()))
-    return values
-
-
 def _optional_int(value: str | None) -> int | None:
     if value is None:
         return None
@@ -638,8 +652,7 @@ def _optional_int(value: str | None) -> int | None:
 
 
 def _phase_id_from_folder(folder: str) -> str:
-    match = re.search(r"(?:^|/)([0-9]+)-[^/]+$", folder)
-    return match.group(1).zfill(2) if match else ""
+    return canonical_phase_id(folder)
 
 
 def _parent_path(path: str) -> str:

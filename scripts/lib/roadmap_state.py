@@ -106,33 +106,56 @@ def parse_frontmatter(text: str) -> dict[str, object]:
 
 
 def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
+    try:
+        from scripts.lib.planning_grammar import parse_roadmap_phase_bullets
+    except ImportError:
+        from lib.planning_grammar import parse_roadmap_phase_bullets  # type: ignore[no-redef]
     section = markdown_section(text, "Phases")
+    bullets = parse_roadmap_phase_bullets(section)
     phases: list[RoadmapPhase] = []
-    pattern = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*Phase\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*")
-    for line in section.splitlines():
-        match = pattern.match(line.strip())
-        if match:
-            phases.append(
-                RoadmapPhase(
-                    number=int(match.group("number")),
-                    title=match.group("title").strip(),
-                    completed=match.group("mark").lower() == "x",
-                )
+    for bullet in bullets:
+        # phase_id is zero-padded e.g. "01b"; extract the leading integer for
+        # backward compat with RoadmapPhase.number: int consumers (state_repair,
+        # harness active-phase comparison).  Letter suffix is intentionally
+        # dropped here — callers that need full fidelity should use
+        # planning_grammar.parse_roadmap_phase_bullets directly.
+        digits = re.match(r"\d+", bullet.phase_id)
+        number = int(digits.group(0)) if digits else 0
+        phases.append(
+            RoadmapPhase(
+                number=number,
+                title=bullet.title,
+                completed=bullet.completed,
             )
+        )
     return phases
 
 
 def parse_state_snapshot(text: str) -> StateSnapshot:
+    try:
+        from scripts.lib.planning_grammar import parse_state_phase_line
+    except ImportError:
+        from lib.planning_grammar import parse_state_phase_line  # type: ignore[no-redef]
     frontmatter = parse_frontmatter(text)
     progress = frontmatter.get("progress", {})
     checkpoint_match = re.search(r"^-\s+\*\*Checkpoint\*\*:\s*([A-Za-z0-9_-]+)\b", text, re.MULTILINE)
     checkpoint_path_match = re.search(r"^-\s+\*\*Checkpoint file\*\*:\s*`([^`]+)`", text, re.MULTILINE)
-    active_phase_match = re.search(r"^-\s+\*\*Phase\*\*:\s*(\d+)\b", text, re.MULTILINE)
+    # Use planning_grammar primitive so that letter-suffix phase ids like "1b"
+    # are correctly captured.  The canonical form (e.g. "01b") is zero-padded;
+    # we extract the leading digits for backward-compat with the int field.
+    # Letter suffix is intentionally dropped on downcast — same limitation as
+    # parse_roadmap_phases (see comment there).
+    canonical_phase_id, _ = parse_state_phase_line(text)
+    if canonical_phase_id:
+        digits_match = re.match(r"\d+", canonical_phase_id)
+        active_phase: int | None = int(digits_match.group(0)) if digits_match else None
+    else:
+        active_phase = None
     return StateSnapshot(
         total_phases=int_value(progress.get("total_phases")),
         completed_phases=int_value(progress.get("completed_phases")),
         percent=int_value(progress.get("percent")),
-        active_phase=int(active_phase_match.group(1)) if active_phase_match else None,
+        active_phase=active_phase,
         checkpoint=checkpoint_match.group(1) if checkpoint_match else None,
         checkpoint_path=normalize_path(checkpoint_path_match.group(1)) if checkpoint_path_match else None,
     )
