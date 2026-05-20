@@ -709,24 +709,53 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path("."), help="Repository root to read.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="HTML file to write.")
     parser.add_argument("--serve", action="store_true", help="Start the interactive dashboard server.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate planning docs; print JSON; exit EXIT_PLANNING_DRIFT on any blocking warning.",
+    )
     parser.add_argument("--host", default="127.0.0.1", help="Dashboard server host.")
     parser.add_argument("--port", type=int, default=DEFAULT_DASHBOARD_PORT, help="Dashboard server port.")
     return parser.parse_args(argv)
 
 
 def run(argv: Iterable[str] | None = None) -> int:
+    # dual import for EXIT_* constants
+    try:
+        from scripts.lib.exitcodes import EXIT_OK, EXIT_PLANNING_DRIFT
+    except ModuleNotFoundError:
+        from lib.exitcodes import EXIT_OK, EXIT_PLANNING_DRIFT  # type: ignore[no-redef]
+
     args = parse_args(argv)
     root = args.root.resolve()
+
+    if args.check:
+        data = load_dashboard_data(root)
+        blocking = [w for w in data.warnings if w.severity == "blocking"]
+        payload = {
+            "status": "drift" if blocking else "ok",
+            "warnings": [
+                {"code": w.code, "severity": w.severity, "message": w.message, "paths": w.paths}
+                for w in data.warnings
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return EXIT_PLANNING_DRIFT if blocking else EXIT_OK
+
     if args.serve:
-        from lib.project_dashboard.server import serve_dashboard
+        try:
+            from scripts.lib.project_dashboard.server import serve_dashboard
+        except ModuleNotFoundError:
+            from lib.project_dashboard.server import serve_dashboard  # type: ignore[no-redef]
 
         serve_dashboard(root=root, host=args.host, port=args.port)
-        return 0
+        return EXIT_OK
+
     output = args.output
     if not output.is_absolute():
         output = root / output
     generate_dashboard(root=root, output=output)
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":
