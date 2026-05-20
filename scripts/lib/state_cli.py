@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import TextIO
@@ -9,6 +10,47 @@ from typing import TextIO
 from lib import state_repair
 from lib.exitcodes import EXIT_OPERATIONAL, EXIT_UNPARSEABLE_JSON
 from lib.planning_status import ProjectionError, load_projection
+
+# ---------------------------------------------------------------------------
+# Root resolution
+# ---------------------------------------------------------------------------
+# Project state MUST be resolved via cwd walk-up (or an explicit override).
+# Package-resource paths (skeleton files, manifest, hook bodies) may continue
+# to use __file__-relative resolution — see lib/version.py and lib/hooks.py.
+# ---------------------------------------------------------------------------
+
+
+def resolve_root(cli_root_arg: "Path | None" = None) -> Path:
+    """Resolve the harness project root.
+
+    Priority:
+    1. ``cli_root_arg`` (from ``--root <path>``)
+    2. ``HARNESS_STATE_ROOT`` environment variable
+    3. Walk up from ``Path.cwd()`` looking for ``.scratch/phase-state.json``
+       or ``.harness`` directory (either signals a harness project root).
+
+    Raises ``SystemExit`` with a clear error message when no project root is
+    found and no explicit override was supplied.
+    """
+    if cli_root_arg is not None:
+        return Path(cli_root_arg).resolve()
+
+    env_root = os.environ.get("HARNESS_STATE_ROOT")
+    if env_root:
+        return Path(env_root).resolve()
+
+    p = Path.cwd().resolve()
+    while True:
+        if (p / ".scratch" / "phase-state.json").exists() or (p / ".harness").exists():
+            return p
+        parent = p.parent
+        if parent == p:
+            # Reached filesystem root — no project found.
+            raise SystemExit(
+                "error: no harness project found in cwd ancestry "
+                "(set --root <path> or HARNESS_STATE_ROOT env var)"
+            )
+        p = parent
 
 
 def run_show(*, root: Path, stream: TextIO, fmt: str = "text") -> int:

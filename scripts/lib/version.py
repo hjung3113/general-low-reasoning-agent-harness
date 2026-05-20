@@ -12,6 +12,10 @@ README_RELEASE_VERSION = re.compile(r"\bv\d+\.\d+\.\d+\b")
 
 
 def repo_root() -> Path:
+    # Package-resource resolution: locates the harness SOURCE tree for
+    # release tooling (version strings, manifest, skeleton files).
+    # NOT for project state — callers that need a user's project root must
+    # use state_cli.resolve_root() (cwd walk-up) or accept --root / HARNESS_STATE_ROOT.
     return Path(__file__).resolve().parents[2]
 
 

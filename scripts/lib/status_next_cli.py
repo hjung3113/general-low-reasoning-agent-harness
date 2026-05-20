@@ -388,7 +388,12 @@ def cmd_run(args) -> int:
     phase = state.get("phase", "discuss")
 
     if phase == "discuss":
-        harness_py = str(Path(__file__).resolve().parents[1] / "harness.py")
+        # Use sys.argv[0] so that the installed copy of harness.py in the
+        # target project is invoked, not the harness source tree's copy.
+        # Falls back to __file__-relative resolution only when sys.argv[0]
+        # does not look like a Python script (e.g. pytest runner).
+        _argv0 = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0].endswith(".py") else None
+        harness_py = str(_argv0 if _argv0 and _argv0.name == "harness.py" else Path(__file__).resolve().parents[1] / "harness.py")
         commands = [
             [sys.executable, harness_py, "phase", "set", "discuss"],
             [sys.executable, harness_py, "phase", "set", "plan"],

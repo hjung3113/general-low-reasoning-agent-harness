@@ -25,7 +25,9 @@ import stat
 import subprocess
 from pathlib import Path
 
-# Public skeleton location — single source of truth for the hook body.
+# Package-resource resolution: locates the hook skeleton bundled with the
+# harness SOURCE tree.  NOT for project state — use state_cli.resolve_root()
+# (cwd walk-up) for that.
 _SKELETON_HOOK = (
     Path(__file__).resolve().parents[2]
     / "harness"

@@ -176,7 +176,7 @@ from lib.upgrade import (
     install_state_migration_report,
 )
 from lib.planning_status import ProjectionError, load_projection
-from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair
+from lib.state_cli import run_show as state_run_show, run_repair as state_run_repair, resolve_root as state_resolve_root
 from lib.state_repair import repair as state_repair_fn, RepairReport as StateRepairReport
 from lib.managed_block import (
     render_block as managed_render_block,
@@ -260,7 +260,7 @@ __all__ = [
     "installed_scope_issues", "optional_phase_pointer_keys",
     "verification_contract_issues", "verification_placeholder_reason",
     # state CLI
-    "state_run_show", "state_run_repair", "state_repair_fn", "StateRepairReport",
+    "state_run_show", "state_run_repair", "state_resolve_root", "state_repair_fn", "StateRepairReport",
     "managed_render_block", "managed_parse_blocks", "managed_replace_block",
     "managed_canonicalize",
     # local
@@ -1035,7 +1035,10 @@ def run(argv: list[str] | None = None) -> int:
         print(f"release-check PASS v{release_version}")
         return 0
     if args.command == "state":
-        state_root = Path(args.root) if args.root else root
+        # Use cwd walk-up resolution so `state show` always reflects the
+        # project the user is currently working in, not the harness source
+        # tree.  --root and HARNESS_STATE_ROOT override the walk-up.
+        state_root = state_resolve_root(args.root if hasattr(args, "root") else None)
         if args.state_command == "show":
             return state_run_show(root=state_root, stream=sys.stdout, fmt=args.state_format)
         if args.state_command == "repair":
