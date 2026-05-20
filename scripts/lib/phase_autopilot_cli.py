@@ -6,19 +6,6 @@ the same pattern as ``scripts/lib/phase_cli.py``: accept an
 ``argparse.Namespace``, delegate to the underlying module, map the result's
 ``exit_code`` to ``sys.exit``.
 
-Anchor wiring (§12.1 fail-closed pattern)
-------------------------------------------
-Each handler that calls ``run_start`` directly attempts to verify the
-out-of-repo audit-tip anchor via ``audit_anchor.verify_existing_anchor_for_repo``.
-On success ``anchor_verified=True`` is passed downstream. On any
-``AnchorError`` (missing / mismatch / unreadable) the handler prints the
-structured error to stderr and returns exit 6 — identical to the
-``phase_approve.run_approve`` pattern after the S02 review-fix.
-
-When the handler delegates to ``fsd_wrappers.run_fsd_run_phase`` or
-``run_fsd_run_all``, those wrappers pass ``skip_anchor_preflight=(repo_root is None)``
-internally; the CLI sets ``repo_root=cwd`` so the wrapper does the check.
-
 OIDC gap note
 --------------
 ``oidc_fetcher=None`` / ``oidc_verifier=None`` are passed to ``run_start``
@@ -157,46 +144,6 @@ def _parse_budgets(budget_list: Optional[list]) -> Optional[dict]:
     return result or None
 
 
-def _verify_anchor(cwd: Path) -> tuple[bool, int, str]:
-    """Verify the out-of-repo audit-tip anchor for *cwd*.
-
-    Returns ``(anchor_verified, exit_code, sub_reason)``.
-    On success: ``(True, 0, "")``.
-    On failure: ``(False, 6, "<sub_reason>")``.
-    """
-    from . import audit_anchor as _audit_anchor  # lazy import
-
-    try:
-        _audit_anchor.verify_existing_anchor_for_repo(cwd)
-        return True, 0, ""
-    except _audit_anchor.AnchorMissingError as exc:
-        print(
-            f"error: phase autopilot start refused: audit-tip anchor not found "
-            f"({exc}). "
-            "Fix: run 'harness anchor repair' to rebuild the anchor from current state.",
-            file=sys.stderr,
-        )
-        return False, 6, "anchor_missing"
-    except _audit_anchor.AnchorMismatchError as exc:
-        sub = exc.sub_reason or "anchor_verification_failed"
-        print(
-            f"error: phase autopilot start refused: audit-tip anchor "
-            f"verification failed ({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' and 'harness anchor repair'.",
-            file=sys.stderr,
-        )
-        return False, 6, sub
-    except Exception as exc:  # AnchorError or unexpected
-        sub = getattr(exc, "sub_reason", None) or "anchor_error"
-        print(
-            f"error: phase autopilot start refused: audit-tip anchor "
-            f"unreadable ({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' and 'harness anchor repair'.",
-            file=sys.stderr,
-        )
-        return False, 6, sub
-
-
 # ---------------------------------------------------------------------------
 # cmd_phase_autopilot_start
 # ---------------------------------------------------------------------------
@@ -205,7 +152,7 @@ def _verify_anchor(cwd: Path) -> tuple[bool, int, str]:
 def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
     """Handle ``harness phase autopilot start`` (§3.5).
 
-    Acquires lock, verifies anchor, resolves authorization inputs, calls
+    Acquires lock, resolves authorization inputs, calls
     ``phase_autopilot.run_start``, releases lock.
     """
     from . import phase_autopilot as _phase_autopilot
@@ -224,11 +171,6 @@ def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
 
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
-
-    # Anchor verification (fail-closed per §12.1 + S02 review-fix P1-1).
-    anchor_verified, anchor_exit, anchor_sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
 
     # Resolve --by email (fall back to gitconfig).
     by_email: Optional[str] = getattr(args, "by", None)
@@ -279,8 +221,6 @@ def cmd_phase_autopilot_start(args) -> int:  # type: ignore[no-untyped-def]
             mode=mode,
             budgets=budgets,
             allow_network=allow_network,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=False,  # anchor already verified above
             accept_degraded_windows_containment=accept_degraded,
             repo_root=cwd,
             roadmap_root=roadmap_root,
@@ -343,11 +283,6 @@ def cmd_phase_autopilot_stop(args) -> int:  # type: ignore[no-untyped-def]
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
-    # Anchor verification (fail-closed).
-    anchor_verified, anchor_exit, _sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
-
     reason: str = getattr(args, "reason", None) or ""
 
     lock = _phase_lock.acquire_primary(scratch, timeout_s=30.0, audit_path=audit_path)
@@ -371,8 +306,6 @@ def cmd_phase_autopilot_stop(args) -> int:  # type: ignore[no-untyped-def]
             audit_path=audit_path,
             lock_handle=lock,
             reason=reason,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=False,
             repo_root=cwd,
         )
     finally:
@@ -410,11 +343,6 @@ def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
-    # Anchor verification (fail-closed).
-    anchor_verified, anchor_exit, _sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
-
     roadmap_root: Optional[Path] = cwd / ".planning" / "phases"
     if not roadmap_root.is_dir():
         roadmap_root = None
@@ -439,8 +367,6 @@ def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
             scratch_root=scratch,
             audit_path=audit_path,
             lock_handle=lock,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=False,
             repo_root=cwd,
             roadmap_root=roadmap_root,
         )
@@ -488,15 +414,6 @@ def cmd_fsd_run_phase(args) -> int:  # type: ignore[no-untyped-def]
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
-    # Anchor: delegate verification to fsd_wrappers (via repo_root=cwd).
-    # run_fsd_run_phase passes skip_anchor_preflight=(repo_root is None)
-    # so by supplying repo_root=cwd we enable the anchor check inside run_start.
-    # We also pre-verify here and pass anchor_verified so the inner call
-    # doesn't double-fail.
-    anchor_verified, anchor_exit, _sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
-
     # nargs="?" positional: None if absent, str if supplied.
     argument: Optional[str] = getattr(args, "slug", None)
 
@@ -540,7 +457,6 @@ def cmd_fsd_run_phase(args) -> int:  # type: ignore[no-untyped-def]
         budgets=budgets,
         allow_network=allow_network,
         accept_degraded_windows_containment=accept_degraded,
-        anchor_verified=anchor_verified,
         roadmap_root=roadmap_root,
     )
 
@@ -589,11 +505,6 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
-    # Anchor verification (fail-closed).
-    anchor_verified, anchor_exit, _sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
-
     by_email: Optional[str] = getattr(args, "by", None)
     if by_email is None:
         try:
@@ -632,7 +543,6 @@ def cmd_fsd_run_all(args) -> int:  # type: ignore[no-untyped-def]
         budgets=budgets,
         allow_network=allow_network,
         accept_degraded_windows_containment=accept_degraded,
-        anchor_verified=anchor_verified,
         roadmap_root=roadmap_root,
     )
 
