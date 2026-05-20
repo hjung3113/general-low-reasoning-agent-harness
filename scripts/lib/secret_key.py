@@ -20,7 +20,7 @@ assumption). Adapter ``permissions.deny`` globs MUST cover
 ``~/.harness/**`` to claim ``approval_proof=supported``.
 
 KNOWN GAP (Windows): the design (§12.1, ADR-2 D-7) requires a per-user
-ACL on ``%LOCALAPPDATA%/Harness/secret.key`` and the anchor directory.
+ACL on ``%LOCALAPPDATA%/Harness/secret.key``.
 This module currently relies on the inherited ACL of ``%LOCALAPPDATA%``
 (which is per-user on a default install) but does not call
 ``win32security`` to explicitly tighten the file ACL. A later slice
