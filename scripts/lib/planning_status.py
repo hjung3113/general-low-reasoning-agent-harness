@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# dual import: callers use either 'lib.X' (scripts/ via sys.path injection) or 'scripts.lib.X' (pytest from repo root)
 try:
     from scripts.lib.planning_grammar import (
         canonical_phase_id,
@@ -43,10 +44,6 @@ LEGACY_READ_ORDER = [
 
 class ProjectionError(ValueError):
     """Raised when the projection cannot be produced at all."""
-
-
-class StateSchemaVersionError(ProjectionError):
-    """Raised when STATE.md declares an unsupported planning_doc_schema_version."""
 
 
 @dataclass(frozen=True)
@@ -365,7 +362,7 @@ def _warnings(
     warnings: list[PlanningWarning] = []
 
     try:
-        extract_planning_doc_schema_version(state_text)
+        version = extract_planning_doc_schema_version(state_text)
     except PlanningDocSchemaVersionError as exc:
         warnings.append(
             PlanningWarning(
@@ -377,7 +374,6 @@ def _warnings(
             )
         )
     else:
-        version = extract_planning_doc_schema_version(state_text)
         if version is None:
             warnings.append(
                 PlanningWarning(
@@ -644,10 +640,6 @@ def _codebase_read_paths(root: Path) -> list[str]:
     if not codebase_root.is_dir():
         return []
     return [path.relative_to(root).as_posix() for path in sorted(codebase_root.glob("*.md"))]
-
-
-def _frontmatter_values(text: str) -> dict[str, str]:
-    return parse_frontmatter(text)
 
 
 def _optional_int(value: str | None) -> int | None:

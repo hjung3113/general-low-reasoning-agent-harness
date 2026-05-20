@@ -18,3 +18,22 @@ def test_projection_phase_title_strips_trailing_bold(tmp_path):
     assert proj.phase_id == "02b"
     # Roadmap title is the source of truth here; STATE title parser strips trailing bold.
     assert "**" not in proj.phase_title
+
+
+def test_projection_warns_when_schema_version_missing(tmp_path):
+    root = make_minimal_planning_repo(tmp_path, schema_version_line="")
+    from scripts.lib.planning_status import load_projection
+    proj = load_projection(root)
+    codes = [w.code for w in proj.warnings]
+    assert "planning_doc_schema_version_missing" in codes
+    # missing is non-blocking; should NOT prevent projection
+    assert any(w.code == "planning_doc_schema_version_missing" and w.severity == "warning" for w in proj.warnings)
+
+
+def test_projection_blocks_when_schema_version_unsupported(tmp_path):
+    root = make_minimal_planning_repo(tmp_path, schema_version_line="planning_doc_schema_version: 99\n")
+    from scripts.lib.planning_status import load_projection
+    proj = load_projection(root)
+    blocking = [w for w in proj.warnings if w.code == "planning_doc_schema_version_unsupported"]
+    assert len(blocking) == 1
+    assert blocking[0].severity == "blocking"

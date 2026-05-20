@@ -246,6 +246,7 @@ def write_fixture_repository(root: Path) -> None:
 
     (root / ".planning/STATE.md").write_text(
         """---
+planning_doc_schema_version: 1
 milestone: m1
 milestone_name: Example milestone
 status: ready for PR
