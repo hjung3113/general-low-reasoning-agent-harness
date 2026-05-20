@@ -142,3 +142,33 @@ def test_heading_matches_rejects_superstring_without_separator():
 def test_heading_matches_rejects_substring_inside_phrase():
     assert not heading_matches("Known Blockers", "Blockers")
     assert not heading_matches("Concerns / Blockers", "Blockers")
+
+
+from scripts.lib.planning_grammar import (
+    PLANNING_DOC_SCHEMA_VERSION,
+    extract_planning_doc_schema_version,
+    PlanningDocSchemaVersionError,
+)
+
+
+def test_planning_doc_schema_constant_is_1():
+    assert PLANNING_DOC_SCHEMA_VERSION == 1
+
+
+def test_extract_planning_doc_schema_version_present():
+    text = "---\nplanning_doc_schema_version: 1\n---\n"
+    assert extract_planning_doc_schema_version(text) == 1
+
+
+def test_extract_planning_doc_schema_version_missing_returns_none():
+    assert extract_planning_doc_schema_version("---\nfoo: bar\n---\n") is None
+
+
+def test_extract_planning_doc_schema_version_wrong_raises():
+    with pytest.raises(PlanningDocSchemaVersionError):
+        extract_planning_doc_schema_version("---\nplanning_doc_schema_version: 99\n---\n")
+
+
+def test_extract_planning_doc_schema_version_non_integer_raises():
+    with pytest.raises(PlanningDocSchemaVersionError):
+        extract_planning_doc_schema_version("---\nplanning_doc_schema_version: oops\n---\n")

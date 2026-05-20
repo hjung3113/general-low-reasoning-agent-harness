@@ -147,3 +147,29 @@ def heading_matches(heading: str, target: str) -> bool:
         return False
     rest = h[len(t):]
     return any(rest.startswith(sep) for sep in _HEADING_SEPARATORS)
+
+
+PLANNING_DOC_SCHEMA_VERSION = 1
+
+
+class PlanningDocSchemaVersionError(ValueError):
+    """Raised when STATE.md (or other planning doc) declares an unsupported schema version."""
+
+
+def extract_planning_doc_schema_version(text: str) -> int | None:
+    fm = parse_frontmatter(text)
+    raw = fm.get("planning_doc_schema_version")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise PlanningDocSchemaVersionError(
+            f"planning_doc_schema_version is not an integer: {raw!r}"
+        ) from exc
+    if value != PLANNING_DOC_SCHEMA_VERSION:
+        raise PlanningDocSchemaVersionError(
+            f"planning_doc_schema_version={value} unsupported "
+            f"(this build expects {PLANNING_DOC_SCHEMA_VERSION})"
+        )
+    return value
