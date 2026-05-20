@@ -708,6 +708,16 @@ def run(argv: list[str] | None = None) -> int:
         dest="consumer_tty",
         help=argparse.SUPPRESS,  # deprecated alias for --consumer-tty
     )
+    reopen_parser.add_argument(
+        "--reset-approval",
+        dest="reset_approval",
+        action="store_true",
+        default=False,
+        help=(
+            "Required when the current state is approved=True (backward move). "
+            "Explicitly acknowledges that the prior approval will be revoked."
+        ),
+    )
 
     # ----- phase next-pending (design §3.5, Round-4) -----
     phase_sub.add_parser(

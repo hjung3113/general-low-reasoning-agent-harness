@@ -101,6 +101,11 @@ _FIX_PLAN_SOURCE = (
     "Fix: `--to plan` is permitted only from execute/done; "
     "use `--to discuss` to rewind further (design §3.2 line 250)"
 )
+_FIX_BACKWARD_RESET = (
+    "Fix: backward moves (to a phase earlier than the current approved phase) "
+    "require `--reset-approval` to explicitly acknowledge that the prior "
+    "approval will be revoked"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -177,11 +182,27 @@ def run_reopen(
     install_record_path = Path(install_record_path)
     if env_vars is None:
         env_vars = os.environ
+
+    # ---------- Smoke-test bypass (T12 — mirror phase_approve.py BLOCKER A-4) ----------
+    # ONLY active when BOTH env vars are set to "1". Production callers never
+    # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
+    # When active: TTY gate is skipped; ALL other checks (identity, approver
+    # allowlist, state_trust, audit) still run.
+    # Audit row records proof_class=smoke_bypass so forensics can distinguish
+    # smoke runs from real human reopens.
+    if (
+        env_vars.get("HARNESS_SMOKE_BYPASS_SPEED_BUMP") == "1"
+        and env_vars.get("HARNESS_SMOKE_TEST") == "1"
+    ):
+        _smoke_bypass_active = True
+    else:
+        _smoke_bypass_active = False
+
     # env_vars not consulted for identity resolution (mirror approve).
     del env_vars
 
     # Step 1: TTY gate
-    if not stdin_isatty:
+    if not _smoke_bypass_active and not stdin_isatty:
         print(
             f"error: phase reopen refused: non-TTY caller. {_FIX_TTY}",
             file=sys.stderr,
@@ -314,6 +335,30 @@ def run_reopen(
             return ReopenResult(
                 exit_code=6,
                 sub_reason="reopen_invalid_source_for_target",
+                resolved_email=resolved,
+                by_source=by_source,
+                from_phase=from_phase,
+                to_phase=target,
+            )
+
+        # Step 6c: backward-move guard (T12 / NEW-7).
+        # A "backward move" is any reopen where the current state carries
+        # approved=True.  The caller must pass `--reset-approval` to
+        # explicitly acknowledge that the prior approval is being revoked.
+        # This is a workflow speed-bump only (not a security gate); the TTY
+        # gate / identity / approver-membership checks are sufficient for
+        # security. Smoke-bypass does NOT skip this guard.
+        _is_backward = before_state.get("approved") is True
+        _reset_approval_flag = getattr(args, "reset_approval", False)
+        if _is_backward and not _reset_approval_flag:
+            print(
+                f"error: phase reopen refused: current state is approved=True "
+                f"(phase={from_phase!r}). {_FIX_BACKWARD_RESET}",
+                file=sys.stderr,
+            )
+            return ReopenResult(
+                exit_code=6,
+                sub_reason="reopen_backward_requires_reset_approval",
                 resolved_email=resolved,
                 by_source=by_source,
                 from_phase=from_phase,
@@ -468,6 +513,11 @@ def run_reopen(
                 "halted_autopilot_run_id": halted_run_id,
             },
         }
+        # T12: when smoke bypass is active, record proof_class so forensics
+        # can distinguish smoke runs from real human reopens (mirrors
+        # phase_approve.py convention — reuses proof_class=smoke_bypass).
+        if _smoke_bypass_active:
+            reopen_draft["proof_class"] = "smoke_bypass"
         # P1-3: when halting active autopilot, emit halt row FIRST then
         # reopen row (logical order: halt the prior thing, then the verb
         # that caused it). Both share the same txn_id.

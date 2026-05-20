@@ -141,6 +141,10 @@ def _make_args(**overrides):
         "reason": "mind-change mid-flow, need to revisit plan",
         "override_identity": False,
         "override_reason": None,
+        # T12: --reset-approval defaults True in existing tests because the
+        # seed state always has approved=True; the new T12 tests exercise
+        # the False (refused) path explicitly.
+        "reset_approval": True,
     }
     base.update(overrides)
 
