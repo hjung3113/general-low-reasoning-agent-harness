@@ -82,7 +82,7 @@ STATE_CHECKPOINT_RE = re.compile(
 
 ROADMAP_BULLET_RE = re.compile(
     r"^- \[(?P<mark>[ xX])\] \*\*Phase\s+(?P<number>\d+[a-z]?):\s*(?P<title>[^*]+)\*\*"
-    r"(?:\s*-\s*(?P<summary>.*))?$",
+    r"(?:[^\S\n]*-[^\S\n]*(?P<summary>[^\n]*))?$",
     re.MULTILINE,
 )
 

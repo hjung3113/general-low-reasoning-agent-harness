@@ -120,6 +120,30 @@ def test_parse_roadmap_phase_bullets_letter_suffix():
     assert bullets[0].title == "Hardening"
 
 
+def test_parse_roadmap_phase_bullets_two_adjacent_no_summary():
+    text = (
+        "- [ ] **Phase 0: First**\n"
+        "- [ ] **Phase 1: Second** - has summary\n"
+    )
+    bullets = parse_roadmap_phase_bullets(text)
+    assert len(bullets) == 2, [b.title for b in bullets]
+    assert bullets[0].title == "First"
+    assert bullets[0].summary == ""
+    assert bullets[1].title == "Second"
+    assert bullets[1].summary == "has summary"
+
+
+def test_parse_roadmap_phase_bullets_all_no_summary():
+    text = (
+        "- [ ] **Phase 0: A**\n"
+        "- [ ] **Phase 1: B**\n"
+        "- [ ] **Phase 2: C**\n"
+    )
+    bullets = parse_roadmap_phase_bullets(text)
+    assert [b.title for b in bullets] == ["A", "B", "C"]
+    assert all(b.summary == "" for b in bullets)
+
+
 def test_heading_matches_exact():
     assert heading_matches("Blockers", "Blockers")
 
@@ -142,6 +166,39 @@ def test_heading_matches_rejects_superstring_without_separator():
 def test_heading_matches_rejects_substring_inside_phrase():
     assert not heading_matches("Known Blockers", "Blockers")
     assert not heading_matches("Concerns / Blockers", "Blockers")
+
+
+from scripts.lib.roadmap_state import parse_roadmap_phases as roadmap_state_parse_roadmap_phases
+
+
+def test_roadmap_state_parse_roadmap_phases_letter_suffix_counted():
+    """Bug-2 regression: parse_roadmap_phases must count letter-suffix phases."""
+    text = (
+        "## Phases\n\n"
+        "- [x] **Phase 1: First** - done\n"
+        "- [ ] **Phase 1b: Hardening** - x\n"
+        "- [ ] **Phase 2: Next** - y\n"
+    )
+    phases = roadmap_state_parse_roadmap_phases(text)
+    assert len(phases) == 3
+    numbers = [p.number for p in phases]
+    assert 1 in numbers
+    assert 2 in numbers
+    # Phase 1b maps to number=1 (integer part only), appears twice
+    assert numbers.count(1) == 2
+
+
+def test_roadmap_state_parse_roadmap_phases_no_summary_adjacent():
+    """Bug-1 regression via roadmap_state path: adjacent no-summary bullets both parsed."""
+    text = (
+        "## Phases\n\n"
+        "- [ ] **Phase 0: Alpha**\n"
+        "- [ ] **Phase 1: Beta**\n"
+    )
+    phases = roadmap_state_parse_roadmap_phases(text)
+    assert len(phases) == 2
+    assert phases[0].number == 0
+    assert phases[1].number == 1
 
 
 from scripts.lib.planning_grammar import (
