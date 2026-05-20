@@ -7,14 +7,19 @@ ADR: docs/adr/2026-05-16-hardening-bundle.md (Artifact 2, G1-A, G1-D)
 Exports (skeleton — bodies filled in subsequent commits per plan task order):
 - atomic_write_text(path, content, *, mode=0o644)
 - atomic_append_log(path, line, *, max_bytes_per_line=512)
+- atomic_install_batch(staging_dir, target, journal_path, *, sort_key=None)
 """
 
 from __future__ import annotations
 
+import datetime
 import errno
+import json
 import os
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, List, Optional
 
 # Conditional import of platform-specific locking primitives so this module is
 # importable on Windows. POSIX uses fcntl; Windows uses msvcrt for byte-range
@@ -237,3 +242,246 @@ def atomic_append_log(path: Path, line: str, *, max_bytes_per_line: int = 512) -
             os.write(fd, encoded)
     finally:
         os.close(fd)
+
+
+# ---------------------------------------------------------------------------
+# atomic_install_batch — per-file atomic rename with journal (T14a)
+# ---------------------------------------------------------------------------
+
+
+class CrossFilesystemError(OSError):
+    """Raised when staging_dir and target reside on different filesystems.
+
+    ``os.replace`` is only atomic within a single filesystem. The caller is
+    responsible for co-locating the staging dir with the target (e.g. under
+    ``$TARGET/.harness/.staging-<pid>/``).
+    """
+
+
+@dataclass
+class AtomicInstallResult:
+    """Outcome of :func:`atomic_install_batch`.
+
+    ``completed``  — relative paths successfully renamed into ``target``.
+    ``failed_entry`` — relative path of the entry that raised, or ``None``.
+    ``aborted``    — ``True`` when a rename failed and ``.aborted`` sentinel
+                     was written into the staging dir.
+    """
+
+    completed: List[str] = field(default_factory=list)
+    failed_entry: Optional[str] = None
+    aborted: bool = False
+
+
+def atomic_install_batch(
+    staging_dir: Path,
+    target: Path,
+    journal_path: Path,
+    *,
+    sort_key: Optional[Callable[[str], object]] = None,
+) -> AtomicInstallResult:
+    """Rename files from ``staging_dir`` into ``target`` via ``os.replace``.
+
+    Per-file atomic, NOT whole-batch atomic
+    ----------------------------------------
+    Each ``os.replace`` call is atomic on POSIX (same filesystem).  The *batch
+    as a whole* is **not** atomic: a process kill between renames leaves some
+    files already installed and some still in the staging dir.
+
+    Recovery contract
+    -----------------
+    On partial failure the staging dir is left intact (not cleaned up) so that
+    ``install_recovery`` (T14b) can resume.  Callers must NOT delete the
+    staging dir on a non-zero result.
+
+    Journal format
+    --------------
+    One JSON-line per completed rename::
+
+        {"src_rel": "lib/foo.py", "dst_rel": "scripts/lib/foo.py", "rename_at_iso": "..."}
+
+    On failure an additional line records the error::
+
+        {"src_rel": "lib/bar.py", "error": "..."}
+
+    Idempotency
+    -----------
+    If a file appears in the journal as already completed AND the corresponding
+    source in ``staging_dir`` is absent (it was moved on a prior run), that
+    entry is skipped.  Re-running on a partially-completed staging dir resumes
+    from the first unprocessed entry.
+
+    Parameters
+    ----------
+    staging_dir:
+        Directory whose contents will be renamed into ``target``.  Must be on
+        the same filesystem as ``target``.
+    target:
+        Destination root.  Subdirectories are created as needed.
+    journal_path:
+        File that records completed renames.  May already exist (idempotent
+        resume from prior run).
+    sort_key:
+        Optional callable to derive the sort key from a relative-path string.
+        Defaults to identity (lexicographic order).
+
+    Returns
+    -------
+    AtomicInstallResult
+        ``completed`` lists every relative path successfully renamed.
+        ``failed_entry`` is set if any rename raised.  ``aborted`` is
+        ``True`` when a ``.aborted`` sentinel was written.
+
+    Raises
+    ------
+    CrossFilesystemError
+        If ``staging_dir`` and ``target`` are on different filesystems.
+    """
+    staging_dir = Path(staging_dir)
+    target = Path(target)
+    journal_path = Path(journal_path)
+
+    # Same-filesystem requirement: verify before any work.
+    staging_dev = os.stat(str(staging_dir)).st_dev
+    target_dev = os.stat(str(target)).st_dev
+    if staging_dev != target_dev:
+        raise CrossFilesystemError(
+            errno.EXDEV,
+            (
+                f"atomic_install_batch: staging_dir st_dev={staging_dev} differs "
+                f"from target st_dev={target_dev}; cross-filesystem rename is not "
+                f"atomic.  Co-locate staging_dir under target "
+                f"(e.g. $TARGET/.harness/.staging-<pid>/)."
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Collect all relative paths in staging_dir.
+    # ------------------------------------------------------------------
+    rel_paths: List[str] = []
+    for dirpath, _dirs, filenames in os.walk(str(staging_dir)):
+        for fname in filenames:
+            abs_src = Path(dirpath) / fname
+            rel = str(abs_src.relative_to(staging_dir))
+            rel_paths.append(rel)
+
+    # Deterministic order.
+    rel_paths.sort(key=sort_key)
+
+    # ------------------------------------------------------------------
+    # Load already-completed entries from an existing journal (idempotent).
+    # ------------------------------------------------------------------
+    already_completed: set[str] = set()
+    if journal_path.exists():
+        with open(str(journal_path), encoding="utf-8") as jf:
+            for raw_line in jf:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    rec = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                if "error" not in rec and "src_rel" in rec:
+                    already_completed.add(rec["src_rel"])
+
+    # ------------------------------------------------------------------
+    # Open journal for appending (create if absent).
+    # ------------------------------------------------------------------
+    result = AtomicInstallResult()
+    result.completed = list(already_completed)  # carry forward prior completions
+
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(str(journal_path), "a", encoding="utf-8") as jf:
+        for rel in rel_paths:
+            src = staging_dir / rel
+            dst = target / rel
+
+            # Skip entries already handled in a prior (or earlier) run.
+            if rel in already_completed:
+                continue
+
+            # Source may have already been moved if we are re-entering after a
+            # crash mid-loop.
+            if not src.exists():
+                # Treat as completed if dst already exists.
+                if dst.exists():
+                    result.completed.append(rel)
+                    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    jf.write(
+                        json.dumps(
+                            {"src_rel": rel, "dst_rel": rel, "rename_at_iso": ts}
+                        )
+                        + "\n"
+                    )
+                    jf.flush()
+                # If neither src nor dst exists, silently skip (entry vanished).
+                continue
+
+            # Ensure destination parent directory exists.
+            dst.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                os.replace(str(src), str(dst))
+            except OSError as exc:
+                # Record the failure in the journal.
+                jf.write(
+                    json.dumps({"src_rel": rel, "error": str(exc)}) + "\n"
+                )
+                jf.flush()
+
+                # Write .aborted sentinel into staging_dir.
+                sentinel = staging_dir / ".aborted"
+                try:
+                    sentinel.write_text(
+                        json.dumps(
+                            {
+                                "failed_rel": rel,
+                                "error": str(exc),
+                                "aborted_at_iso": datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat(),
+                            }
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass  # Best-effort sentinel; don't mask the real error.
+
+                result.failed_entry = rel
+                result.aborted = True
+                return result
+
+            # Rename succeeded — append to journal BEFORE moving on.
+            ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            jf.write(
+                json.dumps({"src_rel": rel, "dst_rel": rel, "rename_at_iso": ts}) + "\n"
+            )
+            jf.flush()
+            result.completed.append(rel)
+
+    # Clean up staging dir on full success.
+    try:
+        _rmdir_recursive(staging_dir)
+    except OSError:
+        pass  # Best-effort cleanup; not a hard failure.
+
+    # Remove the journal on clean completion (no partial state to recover).
+    try:
+        journal_path.unlink()
+    except FileNotFoundError:
+        pass
+
+    return result
+
+
+def _rmdir_recursive(path: Path) -> None:
+    """Remove ``path`` and all its contents (best-effort helper)."""
+    for child in path.iterdir():
+        if child.is_dir():
+            _rmdir_recursive(child)
+        else:
+            child.unlink()
+    path.rmdir()
