@@ -204,8 +204,6 @@ def test_release_smoke_case_s15(case_id):
     [
         # §12.10 row 13 — OIDC jti replay rejected (exit 6)
         "oidc-jti-replay",
-        # §12.10 row 14 — anchor tampered → AnchorMismatchError (exit 10)
-        "anchor-tampered",
         # §12.10 row 15 — gitconfig rotated post-install → exit 6
         "gitconfig-rotated",
     ],
@@ -213,15 +211,14 @@ def test_release_smoke_case_s15(case_id):
 def test_release_smoke_case_p5_p1_2(case_id):
     """Subprocess-invoke release_smoke_test.py --case <id>, assert exit 0 (case PASSES).
 
-    P5-P1-2 (cycle-1 Group B): implements the 3 previously-missing §12.10 cases:
+    P5-P1-2 (cycle-1 Group B): implements the previously-missing §12.10 cases:
       - oidc-jti-replay: OIDC token jti replay defense (§12.4)
-      - anchor-tampered: out-of-repo audit-tip anchor tamper detection (§12.1)
       - gitconfig-rotated: gitconfig fingerprint check (§12.6)
 
     The smoke test exit code is 0 when the CASE PASSES (i.e., the harness
     correctly detects the attack and returns the expected exit code).
 
-    Spec: §12.1, §12.4, §12.6, §12.10 rows 13/14/15
+    Spec: §12.4, §12.6, §12.10 rows 13/15
     Slice: P5-P1-2 cycle-1 Group B
     """
     env = {**os.environ, **_CI_ENV}

@@ -735,8 +735,7 @@ result = _pa.run_approve(
     nonce_dir=Path({str(tmp / "nonces")!r}),
     stdin_isatty=True,      # pretend TTY to bypass step 1
     consumer_tty="/dev/pts/0",
-    repo_root=None,
-    skip_anchor_preflight=True,  # bypass anchor for test
+    repo_root=None,  # bypass anchor for test
 )
 sys.exit(result.exit_code)
 """,
@@ -876,8 +875,6 @@ try:
         mode="chain",
         budgets=None,
         allow_network=False,
-        anchor_verified=True,
-        skip_anchor_preflight=True,
         accept_degraded_windows_containment=False,
         repo_root=cwd,  # no .git here → exit 12
         roadmap_root=None,
@@ -965,8 +962,7 @@ result = _pa.run_approve(
     nonce_dir=Path({str(tmp / "nonces")!r}),
     stdin_isatty=True,      # pretend TTY to bypass step 1
     consumer_tty="/dev/pts/0",
-    repo_root=None,
-    skip_anchor_preflight=True,  # bypass anchor for test
+    repo_root=None,  # bypass anchor for test
 )
 sys.exit(result.exit_code)
 """,
@@ -1033,8 +1029,6 @@ try:
         mode="chain",
         budgets=None,
         allow_network=False,
-        anchor_verified=True,
-        skip_anchor_preflight=True,
         accept_degraded_windows_containment=False,
         repo_root=cwd,
         roadmap_root=None,
