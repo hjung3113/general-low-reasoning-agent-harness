@@ -21,6 +21,7 @@ EXIT_WRONG_PHASE_FOR_VERB = 6
 # Exit 6 multi-meaning per §12.6 — sub_reason disambiguates
 EXIT_STALE_UNCERTAIN = 7
 EXIT_TIMESTAMP_OUT_OF_RANGE = 8
+EXIT_PLANNING_DRIFT = 12  # dashboard --check detected drift between planning docs and live gate
 # §12.6 line 1322: nonce HMAC consumers reject invalid/missing signatures with
 # exit 6 `nonce_signature_invalid`.  sub_reason distinguishes from
 # EXIT_WRONG_PHASE_FOR_VERB.  Budget-exhausted uses 9 operationally
@@ -52,6 +53,7 @@ __all__ = [
     "EXIT_WRONG_PHASE_FOR_VERB",
     "EXIT_STALE_UNCERTAIN",
     "EXIT_TIMESTAMP_OUT_OF_RANGE",
+    "EXIT_PLANNING_DRIFT",
     "EXIT_NONCE_SIGNATURE_INVALID",
     "EXIT_PATH_REPARSE_REFUSED",
     "EXIT_WINDOWS_CONTAINMENT_DEGRADED",
