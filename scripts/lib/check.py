@@ -1,6 +1,7 @@
 """Source/target validation: structure, JSON, phase-state, manifest scopes."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -54,6 +55,111 @@ from lib.manifest_reconciler import (
     verify_install_record_integrity as _verify_install_record_integrity,
     verify_manifest_chain as _verify_manifest_chain,
 )
+
+
+# ---------------------------------------------------------------------------
+# T8a — Import smoke (BUG-2)
+# ---------------------------------------------------------------------------
+
+def _collect_lib_imports_from_file(path: Path) -> list[str]:
+    """AST-walk *path*; return unique dotted lib module names referenced.
+
+    Collects:
+      - ``from lib.X import ...``  → ``lib.X``
+      - ``from lib.X.Y import ...`` → ``lib.X.Y``
+      - ``import lib.X``            → ``lib.X``
+
+    Skips:
+      - Relative imports (``from . import ...``)
+      - ``from lib import X`` bare form (package-level; always present)
+    """
+    try:
+        src = path.read_text(encoding="utf-8", errors="replace")
+        tree = ast.parse(src, filename=str(path))
+    except (OSError, SyntaxError):
+        return []
+
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level and node.level > 0:
+                continue  # relative import — skip
+            mod = node.module or ""
+            if mod.startswith("lib."):
+                modules.add(mod)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("lib."):
+                    modules.add(alias.name)
+    return sorted(modules)
+
+
+def _module_to_path(scripts_dir: Path, module: str) -> Path:
+    """Convert a dotted module name to the expected .py path under scripts_dir.
+
+    Examples::
+
+        lib.state          → scripts_dir/lib/state.py
+        lib.project_dashboard.core → scripts_dir/lib/project_dashboard/core.py
+    """
+    parts = module.split(".")
+    return scripts_dir / Path(*parts).with_suffix(".py")
+
+
+def run_import_smoke(scripts_dir: Path) -> list[str]:
+    """Check that every ``lib.*`` module referenced in *scripts_dir* is present.
+
+    Scans ``scripts_dir/harness.py`` and ``scripts_dir/lib/**/*.py`` via AST
+    to collect all ``from lib.X`` / ``import lib.X`` references, then verifies
+    that the corresponding ``lib/X.py`` (or ``lib/X/__init__.py``) exists inside
+    *scripts_dir*.
+
+    This file-existence check (rather than a live import) is correct because:
+    - The caller is an INSTALLED TARGET whose ``scripts/`` dir is separate from
+      the harness source repo.
+    - ``sys.modules`` may already contain harness-source copies of the same
+      modules; a live import would silently succeed even if the target file is
+      absent (exactly the BUG-2 class we are catching).
+
+    Returns a sorted list of dotted module names whose file is missing.
+    Empty list means success.
+    """
+    scripts_dir = scripts_dir.resolve()
+
+    # Collect all .py files to scan
+    source_files: list[Path] = []
+    harness_py = scripts_dir / "harness.py"
+    if harness_py.is_file():
+        source_files.append(harness_py)
+    lib_root = scripts_dir / "lib"
+    if lib_root.is_dir():
+        for py_file in sorted(lib_root.rglob("*.py")):
+            if "__pycache__" in py_file.parts:
+                continue
+            source_files.append(py_file)
+
+    # Collect unique module names across all scanned files
+    all_modules: set[str] = set()
+    for sf in source_files:
+        all_modules.update(_collect_lib_imports_from_file(sf))
+
+    if not all_modules:
+        return []
+
+    failures: list[str] = []
+    for mod in sorted(all_modules):
+        # Accept either lib/X.py  OR  lib/X/__init__.py (package form)
+        mod_file = _module_to_path(scripts_dir, mod)
+        init_file = scripts_dir / Path(*mod.split(".")) / "__init__.py"
+        if not mod_file.is_file() and not init_file.is_file():
+            failures.append(mod)
+
+    return failures
+
+
+# ---------------------------------------------------------------------------
+# End T8a
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -333,6 +439,23 @@ def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.
 
 
 def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
+    # T8a early gate: smoke-check that every lib.* referenced in the target's
+    # scripts/ directory actually exists as a file there.  Must run before any
+    # other check so a broken install (BUG-2: manifest-gap) surfaces immediately
+    # with an actionable error instead of a confusing ModuleNotFoundError later.
+    _scripts_dir = target / "scripts"
+    if _scripts_dir.is_dir():
+        _smoke_failures = run_import_smoke(_scripts_dir)
+        if _smoke_failures:
+            missing_names = ", ".join(
+                mod.split(".", 1)[1] if mod.startswith("lib.") else mod
+                for mod in _smoke_failures
+            )
+            raise SystemExit(
+                f"error: import smoke detected missing module(s): {missing_names}. "
+                f"Fix: run `harness upgrade --target {target}` to restore missing lib files."
+            )
+
     installed_path = target / INSTALL_STATE
     if not installed_path.exists():
         raise SystemExit(f"Target is missing {INSTALL_STATE}")
