@@ -115,6 +115,13 @@ def install(
         print("adapters=" + ",".join(sorted(adapters)))
         print("profiles=" + ",".join(sorted(profiles)))
         print("packs=" + ",".join(sorted(packs)))
+        # STALE-1 sync: on fresh init ALL non-exclude entries are written
+        # (project-owned scaffold files don't exist yet; managed-append blocks
+        # are always injected on first install).  upgrade.py uses a narrower
+        # counter that skips project-owned and managed-append-with-no-change.
+        # The two numbers are intentionally different: init counts "files
+        # touched in this operation" while upgrade counts "harness-managed
+        # files overwritten".  See stale1-trace.md §3 for the full analysis.
         print(f"planned_writes={len(destinations)}")
         print("no mutation performed")
         return

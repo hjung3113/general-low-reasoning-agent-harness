@@ -635,6 +635,18 @@ def upgrade(
                     write_copy(source, conflict_path)
                 continue
 
+            # STALE-1 sync: short-circuit when source is unchanged since install.
+            # If the installed source_sha256 matches the current source file hash,
+            # the harness-owned file is already up-to-date — skip write + counter.
+            # This aligns upgrade's planned_writes with install's: a fresh init
+            # followed by upgrade --dry-run (same version, no source changes) must
+            # report planned_writes=0.
+            installed_info = installed_paths.get(str(entry.path), {})
+            installed_src_sha = installed_info.get("source_sha256")
+            if installed_src_sha and installed_src_sha == new_hash:
+                # Source unchanged since install — no write needed.
+                continue
+
         planned_writes += 1
         if not dry_run:
             write_copy(source, destination)
