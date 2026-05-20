@@ -284,7 +284,7 @@ def run_approve(
     # ONLY active when BOTH env vars are set to "1". Production callers never
     # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
     # When active: TTY gate + [y/N] prompt are skipped; ALL other checks
-    # (identity, approver allowlist, anchor, state_trust, audit) still run.
+    # (identity, approver allowlist, state_trust, audit) still run.
     # Audit row records proof_class=smoke_bypass so forensics can distinguish
     # smoke runs from real human approves.
     if (

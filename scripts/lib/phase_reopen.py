@@ -72,7 +72,7 @@ class ReopenResult:
 
 
 # ---------------------------------------------------------------------------
-# Fix-line messages (verb-specific; shared anchor/state-trust messages
+# Fix-line messages (verb-specific; shared state-trust messages
 # come from `phase_preflight`).
 # ---------------------------------------------------------------------------
 
