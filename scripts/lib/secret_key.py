@@ -3,7 +3,6 @@
 ADR ``docs/adr/2026-05-17-audit-canonicalization-locking-and-state-trust.md``
 D-7. The key is a 256-bit random value used to:
 
-  - Sign the out-of-repo audit-tip anchor (§12.1).
   - HMAC the human-presence nonce files (§3.1.1 / §12.6).
 
 Storage:

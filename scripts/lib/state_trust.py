@@ -10,14 +10,12 @@ edits (e.g. hand-flipping `approved: false` → `true` or switching
 
 Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
 §2.6 "State trust preflight", §2.3 (canonicalization + CRLF→LF on
-Windows), §2.4 (BOM = exit 5), §12.1/§12.6 (out-of-repo audit-tip
-anchor — caller's responsibility upstream of this preflight).
+Windows), §2.4 (BOM = exit 5).
 
 Public surface
 --------------
     StateTrustError                       -- base OSError subclass
     StateTrustLockMissingError            -- caller did not hold a live lock
-    StateAnchorNotVerifiedError           -- caller did not chain through anchor
     StateBomError                         -- exit 5 (§2.4)
     StateCrlfError                        -- exit 5 (§2.3 line-ending)
     StateMalformedJsonError               -- exit 5 (cannot parse state)
@@ -27,23 +25,6 @@ Public surface
 
 `preflight()` does NOT mutate state, does NOT append to the audit log,
 and does NOT release the lock; it only inspects.
-
-Trust chain (top-down)
-----------------------
-1. Out-of-repo audit-tip anchor (`scripts/lib/audit_anchor.py`, S00.7) —
-   caller MUST verify the anchor BEFORE invoking this preflight and
-   pass `anchor_verified=True`. Without that the on-disk audit.log is
-   itself untrusted and the §2.6 check degenerates to "state matches a
-   self-consistent forgery". `preflight()` enforces the flag at the
-   API boundary; it does not re-verify the anchor (single-source-of-
-   truth: `audit_anchor`).
-2. State-byte well-formedness (§2.3/§2.4) — BOM, CRLF, JSON-parse.
-3. Audit-tip oracle (current `audit.log` tail) — last well-formed
-   entry's `after_sha256`. **Rotation seam handling and per-entry
-   hash-chain validation are S06 scope.** If rotation happened
-   mid-startup and the current `audit.log` is empty/seed-only, this
-   preflight will (correctly) refuse — S06 will widen the walk into
-   `audit.log.1`.
 
 Out of scope for S01-E
 ----------------------
@@ -92,12 +73,6 @@ class StateTrustLockMissingError(StateTrustError):
     """Caller invoked preflight without an acquired LockHandle."""
 
 
-class StateAnchorNotVerifiedError(StateTrustError):
-    """Caller invoked preflight without first verifying the out-of-repo
-    audit-tip anchor (`audit_anchor.preflight`). The §2.6 chain is only
-    sound when the anchor has been validated upstream — see §12.1."""
-
-
 class StateBomError(StateTrustError):
     """Exit 5 — state file begins with UTF-8 BOM (§2.4)."""
 
@@ -124,7 +99,7 @@ class StateEmptyError(StateTrustError):
 
 
 class StateAuditMismatchError(StateTrustError):
-    """Exit 10 — `state_audit_tip_mismatch`. The canonical state bytes
+    """Exit 10 — `state_audit_mismatch`. The canonical state bytes
     do not hash to the latest audit tail's `after_sha256`, OR the audit
     tail has no `after_sha256` to compare against while a state file is
     present. The CLI MUST emit no mutation."""
@@ -185,7 +160,7 @@ def preflight(
     *,
     audit_path: Union[str, "os.PathLike[str]"],
     lock: Optional[_phase_lock.LockHandle],
-    anchor_verified: bool = False,
+    anchor_verified: bool = True,
 ) -> None:
     """Verify on-disk state bytes canonically hash to the audit tail's
     `after_sha256`.
@@ -194,10 +169,6 @@ def preflight(
 
     Raises:
         StateTrustLockMissingError  -- caller missing/released lock.
-        StateAnchorNotVerifiedError -- `anchor_verified=False` (default);
-                                        callers MUST chain through
-                                        `audit_anchor.preflight` first
-                                        and explicitly pass True.
         StateBomError / StateCrlfError / StateMalformedJsonError
                                     -- exit 5, state bytes ill-formed.
         StateEmptyError             -- exit 14, state file is 0 bytes
@@ -208,16 +179,13 @@ def preflight(
 
     No-op when the state file does not exist (nothing to trust →
     nothing to refuse).
+
+    The `anchor_verified` parameter is retained for backward compatibility
+    with callers; it is a no-op (the out-of-repo anchor feature has been removed).
     """
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
-    if not anchor_verified:
-        raise StateAnchorNotVerifiedError(
-            "preflight requires anchor_verified=True; caller must run "
-            "audit_anchor.preflight() before trusting the on-disk audit log "
-            "(see design §12.1)"
-        )
 
     state_path = scratch / STATE_NAME
     if not state_path.exists():
@@ -280,7 +248,6 @@ def preflight(
 __all__ = [
     "StateTrustError",
     "StateTrustLockMissingError",
-    "StateAnchorNotVerifiedError",
     "StateBomError",
     "StateCrlfError",
     "StateMalformedJsonError",
