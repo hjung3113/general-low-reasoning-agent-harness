@@ -13,6 +13,26 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.4 — 2026-05-20
+
+### Added
+- **Planning-parser unification.** Single `scripts/lib/planning_grammar.py` module owns all planning-doc parsing (frontmatter, STATE phase/checkpoint, ROADMAP bullet, phase-folder, heading matcher, schema-version). Both `scripts/lib/planning_status.py` and `scripts/lib/project_dashboard/core.py` consume the shared grammar; the legacy duplicate parsers were collapsed.
+- **`planning_doc_schema_version: 1`** frontmatter field on `.planning/STATE.md`. Distinct namespace from `.scratch/phase-state.json`'s `state_schema_version` (the latter unchanged at 2; see ADR-001).
+- **Letter-suffix phase IDs** (`02b`, `1c`, etc.) are now first-class across ROADMAP bullets, STATE phase line, STATE checkpoint line, phase-folder names, and the planning_status / roadmap_state / dashboard parsers.
+- **`DashboardWarning(code, severity, message, paths)`** structured warning type replaces free-text strings throughout the dashboard. JSON output of `scripts/show_phase_status.py` and dashboard `--check` both carry stable codes.
+- **`EXIT_PLANNING_DRIFT = 12`** in `scripts/lib/exitcodes.py`. New `python3 scripts/project_dashboard.py --check` exits with this code on blocking drift; `harness check` consumes it too.
+- **Nested `plans/*-PLAN.md`** inventoried by the dashboard for phases that organise plan files under a `plans/` subdir (matches 02b-hardening layout).
+- **`docs/planning-grammar.md`** documents the dialect formally with positive + negative examples.
+
+### Fixed
+- Malformed `.scratch/phase-state.json` now emits a single `phase_state_malformed_json` blocking warning instead of silently cascading missing-path-ref + checkpoint-drift warnings.
+- ROADMAP bullets without trailing `- summary` are no longer silently merged (regex newline-consumption bug in `ROADMAP_BULLET_RE`).
+- `roadmap_state.parse_roadmap_phases` and `roadmap_state.parse_state_snapshot` accept letter-suffix phase numbers consistently with the dashboard parser.
+- Phase folders that don't match the `NN[a-z]?-slug` grammar emit a `phase_folder_grammar_invalid` blocking warning instead of silent skip.
+
+### Deferred (tracked separately)
+- ROADMAP/STATE.md reconciliation for v0.9.x shipped phases. The new `phase_folder_not_in_roadmap` warning flags `02b-hardening` as actionable rather than silencing it; the planning-doc content edit is its own plan.
+
 ## v0.9.3 — 2026-05-20
 
 ### Removed
