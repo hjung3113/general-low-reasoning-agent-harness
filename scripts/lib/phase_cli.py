@@ -258,6 +258,74 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
     approved = bool(state.get("approved"))
     reset_approval = bool(getattr(args, "reset_approval", False))
 
+    # NEW-5: done → done special handling.
+    # When re-invoking `phase set done` from an already-done state:
+    #   - If the on-disk state is a valid done shape (all required fields present)
+    #     AND no extra mutations requested: emit idempotent-noop audit row, print
+    #     advisory, return rc=0 WITHOUT writing state.
+    #   - If the on-disk state is divergent (required done fields missing — e.g.
+    #     manually edited): refuse with rc!=0 and a named error.
+    _DONE_REQUIRED_FIELDS = (
+        "plan_id",
+        "state_path",
+        "plan_path",
+        "checkpoint_path",
+        "current_checkpoint",
+        "next_action",
+    )
+    if current == "done" and target == "done" and not reset_approval:
+        # Check for divergent done state (missing required fields)
+        missing_done = [f for f in _DONE_REQUIRED_FIELDS if not state.get(f)]
+        if missing_done:
+            print(
+                f"error: phase set done refused: state is in 'done' phase but is "
+                f"divergent (missing required fields: {', '.join(missing_done)}). "
+                f"Fix: run 'harness state repair' to reconcile the state file.",
+                file=sys.stderr,
+            )
+            return EXIT_OPERATIONAL
+
+        # Valid done shape: check whether caller requested mutations
+        has_mutations = (
+            getattr(args, "plan_id", None) is not None
+            or getattr(args, "summary", None) is not None
+            or getattr(args, "stdin_json", False)
+        )
+        if not has_mutations:
+            # Pure idempotent-noop: do NOT write state; emit advisory + audit row.
+            actor = _identify()
+            now = now_iso_nanos()
+            idx = audit_append(
+                {
+                    "verb": "phase.set.idempotent-noop",
+                    "args": {"phase": "done", "noop": True},
+                    "before_sha256": before_hash,
+                    "after_sha256": before_hash,  # state unchanged
+                    "at": now,
+                    "by": actor,
+                },
+                audit_path=AUDIT_PATH,
+            )
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "verb": "phase.set",
+                        "previous_phase": "done",
+                        "phase": "done",
+                        "noop": True,
+                        "advisory": "(already done; no change)",
+                        "state_path": str(STATE_PATH),
+                        "audit_entry_index": idx,
+                        "updated_at": now,
+                        "updated_by": actor,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return EXIT_OK
+
     # No-op restamp short-circuit: phase=X → phase=X without flags is OK.
     if current == target and not reset_approval:
         # We still write an audit entry recording the no-op and update timestamps.

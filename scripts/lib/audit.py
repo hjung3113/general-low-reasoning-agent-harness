@@ -318,6 +318,7 @@ KNOWN_VERBS: frozenset = frozenset([
     # Phase lifecycle verbs
     "phase.set",
     "phase.set.noop",
+    "phase.set.idempotent-noop",  # T13 NEW-5: done→done byte-identical noop
     "phase.approve",
     "phase.reopen",
     # Autopilot verbs

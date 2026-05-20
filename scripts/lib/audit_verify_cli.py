@@ -86,11 +86,19 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
                 )
                 return 14
 
-        # BUG-1 fix: if .harness/ is entirely absent, check whether the
-        # state file has progressed beyond baseline.  A genuinely fresh
-        # install (state missing or at baseline) is fine; advanced state
-        # without an audit log is an operator error.
-        if rotation_dir is None and state_path.exists():
+        # NEW-8: disambiguate three distinct audit failure modes so operators
+        # get actionable messages instead of the generic "audit_log_missing".
+        #
+        # Case 1 — audit log absent: .harness/ exists but audit.log is not there.
+        # Case 2 — audit log unreachable: file exists but is not readable
+        #   (permission error, corrupt header, etc.).
+        # Case 3 — chain tail mismatch: chain verifies but the last entry's
+        #   after_sha256 does not match the live state file hash.
+        #
+        # BUG-1 original fix also preserved below: if .harness/ is entirely
+        # absent (rotation_dir is None), advanced state → absent error.
+        _state_advanced = False
+        if state_path.exists():
             try:
                 raw = state_path.read_bytes()
                 if len(raw) > 0:
@@ -99,18 +107,50 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         parsed_state = None
                     if parsed_state is not None and not _is_baseline_state(parsed_state):
-                        print(
-                            "Error (exit 10): state file shows progression beyond "
-                            "the fresh-install baseline but .harness/audit.log does "
-                            "not exist; sub_reason=audit_log_missing.\n"
-                            "Fix: run 'harness verify --audit' after restoring "
-                            ".harness/audit.log, or run 'harness install' to "
-                            "re-initialise from scratch.",
-                            file=sys.stderr,
-                        )
-                        return 10
+                        _state_advanced = True
             except OSError:
-                pass  # state file unreadable — let chain check handle it
+                pass
+
+        if rotation_dir is None:
+            # .harness/ entirely absent — same as audit log absent
+            if _state_advanced:
+                print(
+                    f"Error (exit 10): audit log absent — .harness/audit.log does not "
+                    f"exist and state has progressed beyond baseline; "
+                    f"sub_reason=audit_log_absent.\n"
+                    f"Fix: run 'harness verify --audit' after restoring "
+                    f".harness/audit.log, or run 'harness install' to "
+                    f"re-initialise from scratch.",
+                    file=sys.stderr,
+                )
+                return 10
+        else:
+            # .harness/ exists — check audit.log specifically.
+            if not audit_path.exists():
+                # Case 1: file absent
+                if _state_advanced:
+                    print(
+                        f"Error (exit 10): audit log absent — {audit_path} does not exist "
+                        f"but state has progressed beyond baseline; "
+                        f"sub_reason=audit_log_absent.\n"
+                        f"Fix: run 'harness verify --audit' after restoring "
+                        f"{audit_path}, or run 'harness install' to re-initialise.",
+                        file=sys.stderr,
+                    )
+                    return 10
+            else:
+                # Case 2: file exists — check readability before handing to chain verifier.
+                try:
+                    audit_path.read_bytes()
+                except OSError as _oe:
+                    print(
+                        f"Error (exit 10): audit log unreachable at {audit_path} "
+                        f"({_oe}); sub_reason=audit_log_unreachable.\n"
+                        f"Fix: check file permissions and re-run "
+                        f"'harness verify --audit'.",
+                        file=sys.stderr,
+                    )
+                    return 10
 
     try:
         result = verify_chain(audit_path, rotation_dir=rotation_dir)
@@ -128,6 +168,15 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
             file=sys.stderr,
         )
         return 10
+    except OSError as exc:
+        # Catch any remaining OS errors (e.g. permission denied on rotated files).
+        print(
+            f"Error (exit 10): audit log unreachable at {audit_path} "
+            f"({exc}); sub_reason=audit_log_unreachable.\n"
+            f"Fix: check file permissions and re-run 'harness verify --audit'.",
+            file=sys.stderr,
+        )
+        return 10
 
     if not result.ok:
         # Chain failure
@@ -141,6 +190,32 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
             file=sys.stderr,
         )
         return 10
+
+    # Case 3 (live installed-target only): chain passed — verify tail's
+    # after_sha256 matches the live state file hash so tampered-state-file
+    # divergence is detected.
+    # Gate: only applies when the root is an INSTALLED target
+    # (has .harness/installed-manifest.json), not the harness source repo.
+    # The source repo's state is modified during development and would
+    # trivially fail this check after any `phase set`.
+    _installed_manifest = root / ".harness" / "installed-manifest.json"
+    if fixture_dir is None and result.final_tip_hash and _installed_manifest.exists():
+        state_path_check = root / _SCRATCH_ROOT / _STATE_NAME
+        if state_path_check.exists() and state_path_check.stat().st_size > 0:
+            import hashlib as _hashlib
+            _state_bytes = state_path_check.read_bytes()
+            _actual_state_hash = _hashlib.sha256(_state_bytes).hexdigest()
+            if result.final_tip_hash != _actual_state_hash:
+                print(
+                    f"Error (exit 10): audit chain tail does not match state — "
+                    f"last audit entry after_sha256 ({result.final_tip_hash[:16]}…) "
+                    f"differs from {_STATE_NAME} sha256 ({_actual_state_hash[:16]}…); "
+                    f"sub_reason=audit_chain_tail_mismatch.\n"
+                    f"Fix: run 'harness phase set <phase>' to re-establish the audit "
+                    f"baseline, or investigate manual edits to {_STATE_NAME}.",
+                    file=sys.stderr,
+                )
+                return 10
 
     # Human-readable summary on stdout
     lines = [
