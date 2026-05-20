@@ -138,7 +138,6 @@ class TestRunClearFaultClasses:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
                 stdin_is_tty=False,
             )
         finally:
@@ -146,27 +145,6 @@ class TestRunClearFaultClasses:
 
         assert result.exit_code == 6
         assert result.sub_reason == "non_tty_halt_diary_clear_blocked"
-        assert result.cleared is False
-
-    def test_anchor_fail_closed(self, tmp_path: Path):
-        """anchor_verified=False → exit 6 sub=anchor_preflight_unwired (fail-closed)."""
-        env = _seed_env(tmp_path, state=_make_seed_state())
-        scratch = env["scratch"]
-        audit_path = env["audit_path"]
-        lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
-        try:
-            result = run_clear(
-                scratch_root=scratch,
-                audit_path=audit_path,
-                lock_handle=lock,
-                anchor_verified=False,  # <-- fail-closed
-                stdin_is_tty=True,
-            )
-        finally:
-            phase_lock.release_primary(lock)
-
-        assert result.exit_code == 6
-        assert result.sub_reason == "anchor_preflight_unwired"
         assert result.cleared is False
 
     def test_nothing_to_clear_no_diary(self, tmp_path: Path):
@@ -188,7 +166,6 @@ class TestRunClearFaultClasses:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
                 stdin_is_tty=True,
             )
         finally:
@@ -220,7 +197,6 @@ class TestRunClearFaultClasses:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=None,
-                anchor_verified=True,
                 stdin_is_tty=True,
             )
 
@@ -247,7 +223,6 @@ class TestRunClearHappyPath:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
                 stdin_is_tty=True,
                 by="alice@example.com",
             )
@@ -289,7 +264,6 @@ class TestRunClearHappyPath:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
                 stdin_is_tty=True,
             )
         finally:
@@ -328,7 +302,6 @@ class TestRunClearHappyPath:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
                 stdin_is_tty=True,
             )
         finally:
@@ -550,8 +523,6 @@ class TestRunStartRotatesLastHalt:
                 mode="phase",
                 budgets=None,
                 allow_network=False,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 repo_root=None,
                 roadmap_root=roadmap_root,
                 env=self._ci_env(),
@@ -710,11 +681,6 @@ class TestArgparseRouting:
             halt_diary_cli,
             "_cwd_repo_root",
             lambda: tmp_path,
-        )
-        monkeypatch.setattr(
-            halt_diary_cli,
-            "_verify_anchor",
-            lambda cwd: (True, 0, ""),
         )
 
         # Also patch phase_lock and phase_preflight to avoid real disk access.

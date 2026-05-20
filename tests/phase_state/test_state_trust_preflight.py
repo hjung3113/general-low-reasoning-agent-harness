@@ -1,10 +1,8 @@
 """S01-E: state-trust preflight (design §2.6).
 
-`preflight(scratch, *, audit_path, lock, anchor_verified)` MUST refuse
-to trust the on-disk `.scratch/phase-state.json` unless every step in
-§2.6 holds:
+`preflight(scratch, *, audit_path, lock)` MUST refuse to trust the
+on-disk `.scratch/phase-state.json` unless every step in §2.6 holds:
 
-  * caller chained through the out-of-repo audit-tip anchor (§12.1)
   * state bytes are well-formed: no BOM (§2.4), no CRLF (§2.3),
     parseable JSON
   * `sha256(canonical(state_bytes))` matches the latest audit tail
@@ -75,9 +73,9 @@ def _make_request(*, before: dict | None, after: dict) -> phase_txn.TxnRequest:
 
 
 def _ok(scratch: Path, audit_path: Path, lock) -> None:
-    """Shorthand: preflight under the verified-anchor contract."""
+    """Shorthand: preflight call."""
     state_trust.preflight(
-        scratch, audit_path=audit_path, lock=lock, anchor_verified=True
+        scratch, audit_path=audit_path, lock=lock
     )
 
 
@@ -245,28 +243,6 @@ def test_preflight_accepts_cosmetic_whitespace_reformatted_state_if_json_equival
 
 
 # ---------------------------------------------------------------------------
-# §12.1: anchor must have been verified upstream
-# ---------------------------------------------------------------------------
-
-
-def test_preflight_rejects_unverified_anchor(
-    scratch: Path, audit_path: Path, lock
-):
-    audit_path.write_text("", encoding="utf-8")
-    # Default anchor_verified=False → rejected before any byte read.
-    with pytest.raises(state_trust.StateAnchorNotVerifiedError):
-        state_trust.preflight(scratch, audit_path=audit_path, lock=lock)
-
-
-def test_preflight_anchor_gate_runs_even_with_state_file_absent(
-    scratch: Path, audit_path: Path, lock
-):
-    # No state, no audit — anchor check still gates: fail-closed.
-    with pytest.raises(state_trust.StateAnchorNotVerifiedError):
-        state_trust.preflight(scratch, audit_path=audit_path, lock=lock)
-
-
-# ---------------------------------------------------------------------------
 # Lock contract — including symlinked scratch dir (macOS /var → /private/var)
 # ---------------------------------------------------------------------------
 
@@ -275,7 +251,7 @@ def test_preflight_requires_lock(scratch: Path, audit_path: Path):
     audit_path.write_text("", encoding="utf-8")
     with pytest.raises(state_trust.StateTrustLockMissingError):
         state_trust.preflight(
-            scratch, audit_path=audit_path, lock=None, anchor_verified=True
+            scratch, audit_path=audit_path, lock=None
         )
 
 
@@ -285,7 +261,7 @@ def test_preflight_rejects_released_lock(scratch: Path, audit_path: Path):
     phase_lock.release_primary(handle)
     with pytest.raises(state_trust.StateTrustLockMissingError):
         state_trust.preflight(
-            scratch, audit_path=audit_path, lock=handle, anchor_verified=True
+            scratch, audit_path=audit_path, lock=handle
         )
 
 
@@ -305,7 +281,7 @@ def test_preflight_accepts_symlinked_scratch_path(
     try:
         # Pass the symlink path; preflight must accept (resolve-equal).
         state_trust.preflight(
-            link, audit_path=audit_path, lock=handle, anchor_verified=True
+            link, audit_path=audit_path, lock=handle
         )
     finally:
         phase_lock.release_primary(handle)
@@ -319,7 +295,6 @@ def test_preflight_accepts_symlinked_scratch_path(
 def test_error_classes_have_correct_exit_codes():
     assert issubclass(state_trust.StateAuditMismatchError, OSError)
     assert issubclass(state_trust.StateTrustLockMissingError, OSError)
-    assert issubclass(state_trust.StateAnchorNotVerifiedError, OSError)
     assert state_trust.StateBomError.exit_code == 5
     assert state_trust.StateCrlfError.exit_code == 5
     assert state_trust.StateMalformedJsonError.exit_code == 5

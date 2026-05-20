@@ -12,7 +12,6 @@ Design refs:
   - §3.1.1 — TTY human proof (nonce)
 
 Fault classes asserted:
-  - anchor_preflight_unwired                   exit 6
   - autopilot_already_active                   exit 15
   - windows_containment_degraded               exit 11
   - phase_slug_not_in_roadmap                  exit 2
@@ -23,10 +22,6 @@ Fault classes asserted:
   - ci_provider_ambiguous                      exit 6 (CI path, two providers)
   - run_stop idempotent                        exit 0
   - run_next_pending pure read                 exit 0, no audit row, no state mutation
-
-All tests use dependency injection: `skip_anchor_preflight=True` skips §12.1
-trust chain (tested by dedicated anchor tests); `anchor_verified=True` is
-passed to state_trust via the autopilot helpers.
 """
 
 from __future__ import annotations
@@ -197,8 +192,6 @@ def _start(
     mode: str = "phase",
     budgets: dict | None = None,
     allow_network: bool = False,
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = True,
     accept_degraded_windows_containment: bool = False,
     repo_root: Path | None = None,
     # TTY path kwargs (defaults: alice + fresh nonce).
@@ -236,8 +229,6 @@ def _start(
             mode=mode,
             budgets=budgets,
             allow_network=allow_network,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=skip_anchor_preflight,
             accept_degraded_windows_containment=accept_degraded_windows_containment,
             repo_root=repo_root,
             roadmap_root=env["roadmap_root"],
@@ -259,8 +250,6 @@ def _stop(
     env: dict,
     *,
     reason: str = "stopping for test",
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = True,
 ) -> phase_autopilot.AutopilotResult:
     lock = phase_lock.acquire_primary(env["scratch"], timeout_s=2.0)
     try:
@@ -269,8 +258,6 @@ def _stop(
             audit_path=env["audit_path"],
             lock_handle=lock,
             reason=reason,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=skip_anchor_preflight,
         )
     finally:
         phase_lock.release_primary(lock)
@@ -278,9 +265,6 @@ def _stop(
 
 def _next_pending(
     env: dict,
-    *,
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = True,
 ) -> phase_autopilot.NextPendingResult:
     lock = phase_lock.acquire_primary(env["scratch"], timeout_s=2.0)
     try:
@@ -288,8 +272,6 @@ def _next_pending(
             scratch_root=env["scratch"],
             audit_path=env["audit_path"],
             lock_handle=lock,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=skip_anchor_preflight,
             roadmap_root=env["roadmap_root"],
         )
     finally:
@@ -481,41 +463,7 @@ def test_run_start_rejects_none_slug(env):
 
 
 # ---------------------------------------------------------------------------
-# 5. run_start — anchor_preflight_unwired (exit 6)
-# ---------------------------------------------------------------------------
-
-
-def test_run_start_rejects_without_anchor_when_not_skipped(env):
-    """Default anchor_verified=False + skip_anchor_preflight=False → exit 6."""
-    lock = phase_lock.acquire_primary(env["scratch"], timeout_s=2.0)
-    try:
-        nonce = _mint_nonce(env["nonce_dir"])
-        rc = phase_autopilot.run_start(
-            scratch_root=env["scratch"],
-            audit_path=env["audit_path"],
-            lock_handle=lock,
-            phase_slug="phase-alpha",
-            mode="phase",
-            budgets=None,
-            allow_network=False,
-            anchor_verified=False,
-            skip_anchor_preflight=False,
-            roadmap_root=env["roadmap_root"],
-            stdin_is_tty=True,
-            by_email="alice@example.com",
-            consumer_tty="/dev/ttys002",
-            nonce_audience="phase.autopilot.start",
-            nonce_dir=env["nonce_dir"],
-            install_record_root=env["install_record_root"],
-        )
-    finally:
-        phase_lock.release_primary(lock)
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "anchor_preflight_unwired"
-
-
-# ---------------------------------------------------------------------------
-# 6. run_start — git_repo_required (exit 12) chain mode without .git
+# 5. run_start — git_repo_required (exit 12) chain mode without .git
 # ---------------------------------------------------------------------------
 
 
@@ -698,8 +646,6 @@ def test_run_start_raises_if_lock_is_none(env):
             mode="phase",
             budgets=None,
             allow_network=False,
-            anchor_verified=True,
-            skip_anchor_preflight=True,
             roadmap_root=env["roadmap_root"],
             stdin_is_tty=True,
             by_email="alice@example.com",
@@ -720,8 +666,6 @@ def test_run_stop_raises_if_lock_is_released(env):
             audit_path=env["audit_path"],
             lock_handle=lock,
             reason="test",
-            anchor_verified=True,
-            skip_anchor_preflight=True,
         )
 
 
@@ -738,7 +682,7 @@ def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
     Asserts:
       - spy called exactly once
       - kwargs include required fields: phase_slug, mode, lock_handle,
-        audit_path, scratch_root, anchor_verified=True, env, stdin_is_tty
+        audit_path, scratch_root, env, stdin_is_tty
       - exit_code == 0 (not "in (0, 6)")
     """
     import argparse
@@ -755,10 +699,7 @@ def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
     assert callable(_parse_budgets), "_parse_budgets must be importable"
     assert _parse_budgets(["shell_invocations=50"]) == {"shell_invocations": 50}
 
-    # Patch anchor + cwd so the handler operates against the fixture dir.
-    monkeypatch.setattr(
-        _cli_mod, "_verify_anchor", lambda cwd: (True, 0, "")
-    )
+    # Patch cwd so the handler operates against the fixture dir.
     monkeypatch.setattr(_cli_mod, "_cwd_repo_root", lambda: env["tmp_path"])
 
     # Spy on run_start: record kwargs, return known success result.
@@ -810,7 +751,6 @@ def test_live_cli_routes_through_phase_autopilot_run_start(env, monkeypatch):
     assert "lock_handle" in kwargs, "run_start must receive lock_handle"
     assert "audit_path" in kwargs
     assert "scratch_root" in kwargs
-    assert "anchor_verified" in kwargs and kwargs["anchor_verified"] is True
     assert "env" in kwargs
     assert "stdin_is_tty" in kwargs
 
@@ -894,8 +834,6 @@ def test_tty_path_no_nonce_dir(env):
             mode="phase",
             budgets=None,
             allow_network=False,
-            anchor_verified=True,
-            skip_anchor_preflight=True,
             roadmap_root=env["roadmap_root"],
             stdin_is_tty=True,
             by_email="alice@example.com",
@@ -1015,7 +953,6 @@ def test_cli_handler_refuses_oidc_in_production_mode(env, monkeypatch):
     import lib.phase_autopilot_cli as _cli_mod
 
     monkeypatch.delenv("HARNESS_OIDC_TEST_MODE", raising=False)
-    monkeypatch.setattr(_cli_mod, "_verify_anchor", lambda cwd: (True, 0, ""))
     monkeypatch.setattr(_cli_mod, "_cwd_repo_root", lambda: env["tmp_path"])
 
     import argparse
@@ -1187,8 +1124,6 @@ def test_run_start_rejects_empty_approvers_with_by_email(env):
                 mode="phase",
                 budgets=None,
                 allow_network=False,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 roadmap_root=planning,
                 stdin_is_tty=True,
                 by_email="anyone@example.com",  # any email — must be rejected
@@ -1239,8 +1174,6 @@ def test_nonce_id_deprecation_alias_works_and_warns(env):
                 mode="phase",
                 budgets=None,
                 allow_network=False,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 roadmap_root=env["roadmap_root"],
                 stdin_is_tty=True,
                 by_email="alice@example.com",

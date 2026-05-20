@@ -10,9 +10,6 @@ Fault classes asserted:
   - all_phases_done            exit 0   — next-pending returned all_done
   - started                    exit 0   — happy path (forwarded from run_start)
   - windows_containment_degraded exit 11 — forwarded from run_start (run_fsd_run_all)
-
-All tests use `skip_anchor_preflight` semantics via `anchor_verified=True` +
-`repo_root=None` (same pattern as phase_autopilot tests).
 """
 
 from __future__ import annotations
@@ -333,10 +330,7 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
     assert callable(cmd_fsd_run_phase), "cmd_fsd_run_phase must be callable"
     assert callable(cmd_fsd_run_all), "cmd_fsd_run_all must be callable"
 
-    # Patch anchor + cwd.
-    monkeypatch.setattr(
-        _cli_mod, "_verify_anchor", lambda cwd: (True, 0, "")
-    )
+    # Patch cwd.
     monkeypatch.setattr(
         _cli_mod, "_cwd_repo_root", lambda: harness_env["tmp_path"]
     )
@@ -388,7 +382,6 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
     assert "scratch_root" in pk
     assert "audit_path" in pk
     assert "repo_root" in pk
-    assert "anchor_verified" in pk and pk["anchor_verified"] is True
     assert "env" in pk
     assert "stdin_is_tty" in pk
     # Assert exit_code == 0.
@@ -413,7 +406,6 @@ def test_live_cli_routes_through_fsd_wrappers(harness_env, monkeypatch):
     ak = spy_all_calls[0]
     assert "scratch_root" in ak
     assert "audit_path" in ak
-    assert "anchor_verified" in ak and ak["anchor_verified"] is True
     assert exit_fsd_all == 0, (
         f"cmd_fsd_run_all returned exit {exit_fsd_all}; expected 0 from spy."
     )

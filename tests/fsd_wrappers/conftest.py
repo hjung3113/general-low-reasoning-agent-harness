@@ -190,6 +190,5 @@ def common_kwargs(env: dict, *, stdin_is_tty: bool = True, mint: bool = True) ->
         "budgets": None,
         "allow_network": False,
         "accept_degraded_windows_containment": False,
-        "anchor_verified": True,
         "roadmap_root": env["roadmap_root"],
     }

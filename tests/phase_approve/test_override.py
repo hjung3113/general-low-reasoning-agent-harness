@@ -152,7 +152,6 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
         consumer_tty=consumer_tty,
         gitconfig_email_lookup=lambda: gitconfig_email,
         env_vars={},
-        skip_anchor_preflight=True,
     )
 
 

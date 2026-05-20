@@ -266,7 +266,7 @@ class TestPendingSentinelPreflight:
 
         with pytest.raises(state_trust.StateAuditMismatchError) as exc_info:
             state_trust.preflight(
-                scratch, audit_path=audit_path, lock=lock, anchor_verified=True
+                scratch, audit_path=audit_path, lock=lock
             )
         assert "autopilot_start_hash_pending_after_crash" in str(exc_info.value)
 
@@ -293,7 +293,7 @@ class TestPendingSentinelPreflight:
 
         # Should not raise
         state_trust.preflight(
-            scratch, audit_path=audit_path, lock=lock, anchor_verified=True
+            scratch, audit_path=audit_path, lock=lock
         )
 
 

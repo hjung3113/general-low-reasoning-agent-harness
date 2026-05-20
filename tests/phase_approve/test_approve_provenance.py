@@ -127,14 +127,10 @@ def _make_args(**overrides):
 
 def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
          gitconfig_email="alice@example.com", env_vars=None,
-         skip_anchor_preflight=True, repo_root=None,
+         repo_root=None,
          monkeypatch=None, input_response="y",
          **arg_overrides):
     """Invoke run_approve with the test-controlled environment.
-
-    Defaults to `skip_anchor_preflight=True` because in-memory tests do
-    NOT mint a real ~/.harness audit-tip anchor; the §12.1 trust chain
-    is verified in the dedicated `test_anchor_*` block below.
 
     `monkeypatch` + `input_response`: when the call is expected to reach
     the Step 7 speed-bump prompt, pass the pytest `monkeypatch` fixture
@@ -156,7 +152,6 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
         gitconfig_email_lookup=lambda: gitconfig_email,
         env_vars={} if env_vars is None else env_vars,
         repo_root=repo_root,
-        skip_anchor_preflight=skip_anchor_preflight,
     )
 
 
@@ -247,7 +242,6 @@ def test_harness_by_trust_env_does_not_influence_approve(env):
             "HARNESS_BY_TRUST": "alice@example.com",
             "HARNESS_HUMAN": "alice@example.com",
         },
-        skip_anchor_preflight=True,
     )
     # gitconfig empty + env IGNORED ⇒ exit 6 gitconfig_email_unset (NOT
     # silently approved via env).
@@ -343,15 +337,14 @@ def test_state_mutation_sets_approved_fields(env, monkeypatch):
 
 def test_state_trust_preflight_invoked(env, monkeypatch):
     """Spy on state_trust.preflight to ensure run_approve chains through
-    it before mutating. Anchor preflight is the upstream prerequisite —
-    we mock both."""
+    it before mutating."""
     from lib import state_trust
 
     calls = []
     real = state_trust.preflight
 
     def spy(*a, **kw):
-        calls.append({"anchor_verified": kw.get("anchor_verified")})
+        calls.append(kw)
         return real(*a, **kw)
 
     monkeypatch.setattr(state_trust, "preflight", spy)
@@ -359,7 +352,7 @@ def test_state_trust_preflight_invoked(env, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _prompt="": "y")
     rc = _run(env)
     assert rc.exit_code == 0
-    assert calls and calls[0]["anchor_verified"] is True
+    assert len(calls) > 0
 
 
 def test_tampered_state_rejected_via_state_trust(env):
@@ -370,7 +363,7 @@ def test_tampered_state_rejected_via_state_trust(env):
     # state_trust raises before Step 7 prompt; no input monkeypatch needed
     rc = _run(env)
     assert rc.exit_code == 10
-    assert rc.sub_reason == "state_audit_tip_mismatch"
+    assert rc.sub_reason == "state_audit_mismatch"
 
 
 # ---------------------------------------------------------------------------
@@ -404,83 +397,6 @@ def test_lock_held_during_run_approve(env, monkeypatch):
 # ---------------------------------------------------------------------------
 # 10. Idempotency: already approved → defined no-op behavior
 # ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 11. §12.1 anchor trust chain — review-fix P1-1
-#
-# The default `skip_anchor_preflight=False` path MUST chain through the
-# out-of-repo audit-tip anchor before trusting `state_trust.preflight`'s
-# `anchor_verified=True` flag. Prior to this commit the bare-except in
-# `run_approve` silently swallowed an AttributeError from a typo'd call
-# and hardcoded `anchor_verified=True`, defeating S01-E.
-# ---------------------------------------------------------------------------
-
-
-def test_anchor_preflight_unwired_when_repo_root_none(env):
-    """Default `skip_anchor_preflight=False` + `repo_root=None` must
-    fail closed with exit 6, NOT silently proceed with
-    `anchor_verified=True`."""
-    # fails before Step 7 prompt; no input monkeypatch needed
-    rc = _run(env, skip_anchor_preflight=False, repo_root=None)
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "anchor_preflight_unwired"
-
-
-def test_anchor_missing_rejected(env, monkeypatch, tmp_path):
-    """`repo_root` provided + anchor file absent → AnchorMissingError →
-    exit 6 sub_reason='anchor_missing'. The §12.1 trust chain must NOT
-    proceed without the anchor."""
-    from lib import audit_anchor
-
-    # Redirect ~/.harness/audit-tip/ to a tmp dir so no anchor exists.
-    fake_home = tmp_path / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(
-        audit_anchor._secret_key, "home_dir", lambda: fake_home
-    )
-    # fails before Step 7 prompt; no input monkeypatch needed
-    rc = _run(env, skip_anchor_preflight=False, repo_root=env["tmp_path"])
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "anchor_missing"
-
-
-def test_anchor_mismatch_rejected(env, monkeypatch, tmp_path):
-    """Anchor file present but verification fails (we forge a stale
-    anchor whose `install_record_sha256` does not match live install
-    record). Caller must NOT proceed."""
-    from lib import audit_anchor, secret_key
-
-    fake_home = tmp_path / "fake-home"
-    fake_home.mkdir()
-    monkeypatch.setattr(audit_anchor._secret_key, "home_dir", lambda: fake_home)
-    monkeypatch.setattr(secret_key, "home_dir", lambda: fake_home)
-    audit_anchor.reset_seen_for_testing()
-
-    # Mint a fresh secret key into the fake home.
-    secret_key.ensure_secret_key()
-
-    # Write an anchor whose install_record_sha256 is bogus.
-    audit_anchor.write_anchor(
-        env["tmp_path"],
-        harness_version="v0.7.0",
-        install_id="00000000-0000-0000-0000-000000000000",
-        install_record_sha256="ff" * 32,  # will never match live record
-        audit_tip_entry_hash="0" * 64,
-        audit_tip_seq_global=0,
-    )
-
-    # fails before Step 7 prompt; no input monkeypatch needed
-    rc = _run(env, skip_anchor_preflight=False, repo_root=env["tmp_path"])
-    assert rc.exit_code == 6
-    # Any of the mismatch sub_reasons is acceptable; we lock in the
-    # `install_record_mutated_post_install` discriminator since that's
-    # what the forged input drives.
-    assert rc.sub_reason in (
-        "install_record_mutated_post_install",
-        "audit_tail_diverged_from_anchor",
-        "anchor_signature_invalid",
-    )
 
 
 def test_env_vars_byte_identical_to_empty_env(env, capsys, monkeypatch):
