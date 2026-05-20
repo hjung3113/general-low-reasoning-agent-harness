@@ -164,6 +164,11 @@ def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
     without state-mutation fields and must be skipped so they don't
     shadow the last legitimate state-commit oracle.
 
+    A TXN-verb entry with a missing/empty/null ``after_sha256`` is a
+    disk-corruption signal (torn write, truncation mid-flush). We
+    surface that as ``StateAuditMismatchError`` rather than silently
+    walking past it, since skipping would hide real integrity damage.
+
     Returns ``None`` when the audit log is absent, empty, or contains
     only non-TXN entries (clean fresh-install or telemetry-only history).
     """
@@ -183,8 +188,18 @@ def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
         if not isinstance(entry, dict):
             continue
         verb = entry.get("verb")
-        if verb in _phase_txn._TXN_VERBS and entry.get("after_sha256"):
-            return entry
+        if verb not in _phase_txn._TXN_VERBS:
+            continue
+        after_sha = entry.get("after_sha256")
+        if not after_sha:
+            # TXN-verb entry with missing/empty after_sha256 = corruption.
+            raise StateAuditMismatchError(
+                f"audit TXN-verb entry (verb={verb!r}) is missing after_sha256; "
+                f"sub_reason=txn_entry_missing_after_sha256; "
+                f"likely torn write or truncation; "
+                f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
+            )
+        return entry
     return None
 
 
