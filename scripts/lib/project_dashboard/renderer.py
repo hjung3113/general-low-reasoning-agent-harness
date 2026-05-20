@@ -8,6 +8,7 @@ from typing import Iterable
 
 from lib.project_dashboard.models import (
     DashboardData,
+    DashboardWarning,
     DecisionRecord,
     PhaseDocument,
     ProjectMemory,
@@ -273,10 +274,14 @@ code { background: #edf2f7; border: 1px solid #dbe3ec; padding: 2px 5px; border-
 """
 
 
-def render_warnings(warnings: list[str]) -> str:
+def render_warnings(warnings: list[DashboardWarning]) -> str:
     if not warnings:
         return ""
-    return f'<section class="panel warning"><h2>Warnings</h2>{render_list(warnings)}</section>'
+    items = "".join(
+        f'<li><span class="pill">{escape(w.severity)}</span> <code>{escape(w.code)}</code> {escape(w.message)}</li>'
+        for w in warnings
+    )
+    return f'<section class="panel warning"><h2>Warnings</h2><ul>{items}</ul></section>'
 
 
 def render_phase_kanban(phases: list[RoadmapPhase], gate_phase: str) -> str:

@@ -86,8 +86,8 @@ progress:
             self.assertEqual(1, len(data.issues))
             self.assertEqual(5, len(data.documents))
             self.assertEqual("CP-01", data.active_checkpoint)
-            self.assertFalse(any("not listed in ROADMAP" in warning for warning in data.warnings))
-            self.assertTrue(any("phase-status blocking stale_execute_approval" in warning for warning in data.warnings))
+            self.assertFalse(any(w.code == "phase_folder_not_in_roadmap" for w in data.warnings))
+            self.assertTrue(any(w.code == "stale_execute_approval" and w.severity == "blocking" for w in data.warnings))
 
     def test_dashboard_uses_shared_active_checkpoint_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -109,7 +109,7 @@ progress:
 
             data = project_dashboard.load_dashboard_data(root)
 
-            self.assertTrue(any("phase status projection failed" in warning for warning in data.warnings))
+            self.assertTrue(any(w.code == "projection_failed" for w in data.warnings))
 
     def test_generate_dashboard_writes_self_contained_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -341,6 +341,21 @@ Open a PR.
         "# CONCERNS\n\n- Core docs can drift.\n",
         encoding="utf-8",
     )
+
+
+def test_dashboard_warning_dataclass_round_trip():
+    from lib.project_dashboard.models import DashboardWarning
+    w = DashboardWarning(code="x", severity="warning", message="hello", paths=[".planning/STATE.md"])
+    assert w.code == "x"
+    assert w.severity == "warning"
+
+
+def test_roadmap_phase_has_phase_id_field():
+    from lib.project_dashboard.models import RoadmapPhase
+    p = RoadmapPhase(title="Phase 1: x", summary="", completed=False, raw_line="...")
+    assert p.phase_id == ""
+    p2 = RoadmapPhase(title="Phase 2b: y", summary="", completed=False, raw_line="...", phase_id="02b")
+    assert p2.phase_id == "02b"
 
 
 if __name__ == "__main__":

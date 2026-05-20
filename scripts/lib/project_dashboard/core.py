@@ -15,6 +15,7 @@ from lib.project_dashboard.renderer import render_html
 from lib.project_dashboard.models import (
     DashboardData,
     DashboardAction,
+    DashboardWarning,
     DecisionRecord,
     DocumentLink,
     IssueCard,
@@ -136,7 +137,7 @@ def checkpoint_id(value: str) -> str:
 
 
 def load_dashboard_data(root: Path) -> DashboardData:
-    warnings: list[str] = []
+    warnings: list[DashboardWarning] = []
     state_path = root / ".planning/STATE.md"
     roadmap_path = root / ".planning/ROADMAP.md"
     phase_state_path = root / ".scratch/phase-state.json"
@@ -156,7 +157,14 @@ def load_dashboard_data(root: Path) -> DashboardData:
     try:
         projection = projection_to_dict(load_projection(root))
     except ProjectionError as exc:
-        warnings.append(f"phase status projection failed: {exc}")
+        warnings.append(
+            DashboardWarning(
+                code="projection_failed",
+                severity="blocking",
+                message=f"phase status projection failed: {exc}",
+                paths=[],
+            )
+        )
 
     warnings.extend(check_consistency(root, state, roadmap_phases, phase_documents, phase_state, issues, documents))
     if projection is not None:
@@ -258,7 +266,10 @@ def dashboard_data_to_json(data: DashboardData) -> dict[str, object]:
             {"title": item.title, "path": item.path, "category": item.category}
             for item in data.documents
         ],
-        "warnings": data.warnings,
+        "warnings": [
+            {"code": w.code, "severity": w.severity, "message": w.message, "paths": w.paths}
+            for w in data.warnings
+        ],
         "actions": [
             {
                 "id": action.action_id,
@@ -281,9 +292,16 @@ def string_list(value: object) -> list[str]:
     return []
 
 
-def read_optional_text(path: Path, warnings: list[str]) -> str:
+def read_optional_text(path: Path, warnings: list[DashboardWarning]) -> str:
     if not path.exists():
-        warnings.append(f"Missing optional file: {path}")
+        warnings.append(
+            DashboardWarning(
+                code="missing_optional_file",
+                severity="warning",
+                message=f"Missing optional file: {path}",
+                paths=[str(path)],
+            )
+        )
         return ""
     return path.read_text(encoding="utf-8")
 
@@ -469,22 +487,20 @@ def load_phase_state(path: Path) -> dict[str, object]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def format_projection_warnings(projection: dict[str, object]) -> list[str]:
-    warnings = projection.get("warnings")
-    if not isinstance(warnings, list):
-        return []
-    result: list[str] = []
-    for warning in warnings:
-        if not isinstance(warning, dict):
+def format_projection_warnings(projection: dict[str, object]) -> list[DashboardWarning]:
+    out: list[DashboardWarning] = []
+    for w in projection.get("warnings") or []:
+        if not isinstance(w, dict):
             continue
-        code = str(warning.get("code", "unknown_projection_warning"))
-        severity = str(warning.get("severity", "warning"))
-        message = str(warning.get("message", "Planning projection warning."))
-        paths = warning.get("paths")
-        path_text = ", ".join(str(path) for path in paths) if isinstance(paths, list) else ""
-        suffix = f" ({path_text})" if path_text else ""
-        result.append(f"phase-status {severity} {code}: {message}{suffix}")
-    return result
+        out.append(
+            DashboardWarning(
+                code=str(w.get("code", "unknown_projection_warning")),
+                severity=str(w.get("severity", "warning")),
+                message=str(w.get("message", "Planning projection warning.")),
+                paths=[str(p) for p in (w.get("paths") or [])],
+            )
+        )
+    return out
 
 
 def load_phase_documents(root: Path) -> list[PhaseDocument]:
@@ -559,26 +575,50 @@ def check_consistency(
     phase_state: dict[str, object],
     issues: list[IssueCard],
     documents: list[DocumentLink],
-) -> list[str]:
-    warnings: list[str] = []
+) -> list[DashboardWarning]:
+    warnings: list[DashboardWarning] = []
     for key in ("state_path", "plan_path", "checkpoint_path"):
         value = phase_state.get(key)
         if isinstance(value, str) and not (root / value).exists():
-            warnings.append(f"phase-state references missing {key}: {value}")
+            warnings.append(
+                DashboardWarning(
+                    code="phase_state_missing_path_ref",
+                    severity="blocking",
+                    message=f"phase-state references missing {key}: {value}",
+                    paths=[value],
+                )
+            )
 
     checkpoint = phase_state.get("current_checkpoint")
     if isinstance(checkpoint, str) and checkpoint and checkpoint not in state.active_checkpoint:
         warnings.append(
-            f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}"
+            DashboardWarning(
+                code="state_checkpoint_drift",
+                severity="blocking",
+                message=f"STATE active checkpoint differs from phase-state current_checkpoint: {state.active_checkpoint} vs {checkpoint}",
+                paths=[],
+            )
         )
 
     if roadmap_phases and state.total_phases and len(roadmap_phases) != state.total_phases:
-        warnings.append(f"STATE progress total_phases={state.total_phases} but ROADMAP lists {len(roadmap_phases)} phases")
+        warnings.append(
+            DashboardWarning(
+                code="roadmap_total_phases_drift",
+                severity="blocking",
+                message=f"STATE progress total_phases={state.total_phases} but ROADMAP lists {len(roadmap_phases)} phases",
+                paths=[],
+            )
+        )
 
     completed_count = sum(1 for phase in roadmap_phases if phase.completed)
     if roadmap_phases and state.completed_phases and completed_count != state.completed_phases:
         warnings.append(
-            f"STATE progress completed_phases={state.completed_phases} but ROADMAP marks {completed_count} phases complete"
+            DashboardWarning(
+                code="roadmap_completed_phases_drift",
+                severity="blocking",
+                message=f"STATE progress completed_phases={state.completed_phases} but ROADMAP marks {completed_count} phases complete",
+                paths=[],
+            )
         )
 
     roadmap_text = " ".join(phase.title for phase in roadmap_phases)
@@ -586,15 +626,36 @@ def check_consistency(
         phase_slug = Path(document.phase_dir).name
         phase_number = phase_slug.split("-", 1)[0].lstrip("0")
         if phase_number and f"Phase {phase_number}" not in roadmap_text:
-            warnings.append(f"Phase folder is present but not listed in ROADMAP: {document.phase_dir}")
+            warnings.append(
+                DashboardWarning(
+                    code="phase_folder_not_in_roadmap",
+                    severity="warning",
+                    message=f"Phase folder is present but not listed in ROADMAP: {document.phase_dir}",
+                    paths=[document.phase_dir],
+                )
+            )
 
     if issues and not phase_documents:
-        warnings.append("Issue files are present but no phase documents were found.")
+        warnings.append(
+            DashboardWarning(
+                code="issues_without_phase_docs",
+                severity="warning",
+                message="Issue files are present but no phase documents were found.",
+                paths=[],
+            )
+        )
 
     document_paths = {document.path for document in documents}
     for required in ("README.md", "AGENTS.md", "docs/phase-gate-harness.md"):
         if required not in document_paths:
-            warnings.append(f"Referenced core document is missing from inventory: {required}")
+            warnings.append(
+                DashboardWarning(
+                    code="core_document_missing",
+                    severity="warning",
+                    message=f"Referenced core document is missing from inventory: {required}",
+                    paths=[required],
+                )
+            )
 
     return warnings
 
@@ -603,8 +664,8 @@ def generate_dashboard(*, root: Path, output: Path) -> Path:
     data = load_dashboard_data(root)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_html(data), encoding="utf-8")
-    for warning in data.warnings:
-        print(f"warning: {warning}")
+    for w in data.warnings:
+        print(f"warning: {w.code}: {w.message}")
     print(f"wrote {output}")
     return output
 

@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class DashboardWarning:
+    code: str
+    severity: str  # "blocking" | "warning"
+    message: str
+    paths: list[str]
+
+
 @dataclass
 class StateSummary:
     milestone: str = "Unknown milestone"
@@ -27,6 +35,7 @@ class RoadmapPhase:
     summary: str
     completed: bool
     raw_line: str
+    phase_id: str = ""
 
 
 @dataclass
@@ -94,7 +103,7 @@ class DashboardData:
     issues: list[IssueCard]
     documents: list[DocumentLink]
     memory: ProjectMemory
-    warnings: list[str]
+    warnings: list[DashboardWarning]
     active_checkpoint: str
 
 
