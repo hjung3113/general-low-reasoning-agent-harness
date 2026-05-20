@@ -1342,9 +1342,8 @@ python3 scripts/harness.py phase reopen --to plan --reason &quot;scope 추가&qu
 <pre><code class="language-bash">python3 scripts/harness.py fsd-run-phase --slug discuss
 python3 scripts/harness.py fsd-run-all</code></pre>
 <p>사용자는 일반적으로 <code>.roo/commands/</code> 또는 <code>.opencode/commands/</code>를 통해 간접 호출합니다.</p>
-<h3 id="b27-anchor">B2.7 Anchor<a class="anchor" href="#b27-anchor" aria-label="Link to this section">§</a></h3>
-<p>Out-of-repo audit-tip anchor 관리 (TTY-only):</p>
-<pre><code class="language-bash">python3 scripts/harness.py anchor &lt;subcommand&gt;</code></pre>
+<h3 id="b27-anchor">B2.7 Anchor (removed in v0.9.3)<a class="anchor" href="#b27-anchor" aria-label="Link to this section">§</a></h3>
+<p><code>harness anchor</code> 서브커맨드는 v0.9.3에서 제거되었습니다. Out-of-repo audit-tip anchor 기능 전체가 삭제되었으며, 기존 <code>~/.harness/audit-tip/&lt;id&gt;.json</code> 파일은 무시됩니다(자동 삭제 없음; 원하는 경우 수동 삭제 가능). 자세한 내용은 ADR <code>docs/adr/2026-05-20-remove-audit-tip-anchor.md</code> 참고.</p>
 <h3 id="b28-halt-diary-admin">B2.8 Halt Diary Admin<a class="anchor" href="#b28-halt-diary-admin" aria-label="Link to this section">§</a></h3>
 <pre><code class="language-bash">python3 scripts/harness.py halt-diary clear   # 현재 halt 기록을 acknowledged 처리</code></pre>
 <p>Halt 상세 내용 확인은 <code>python3 scripts/harness.py state show</code>의 <code>last_halt</code> 섹션을 참고하세요. (<code>halt-diary show</code> 서브명령은 v0.7.0에 없습니다 — v0.8.0 검토.)</p>

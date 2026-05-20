@@ -23,5 +23,5 @@ harness next
 
 ## 고급 복구
 
-저수준 phase, audit, anchor, state repair 명령은 고급/디버그/CI용입니다. 일반 작업 중에는 먼저 `harness check`와 `harness next`의 안내를 따르고, 그래도 복구가 필요할 때만 고급 명령을 검토합니다.
+저수준 phase, audit, state repair 명령은 고급/디버그/CI용입니다. 일반 작업 중에는 먼저 `harness check`와 `harness next`의 안내를 따르고, 그래도 복구가 필요할 때만 고급 명령을 검토합니다.
 

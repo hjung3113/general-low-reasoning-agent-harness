@@ -25,7 +25,7 @@ HARNESS_MACHINE=1 harness next
 
 - 사용자를 대신해 스스로 승인하지 않습니다.
 - `requires_user_approval=true`이면 `next_user_prompt`를 그대로 사용자에게 보여주고 멈춥니다.
-- `phase approve`, anchor, repair 같은 저수준 명령을 정상 경로로 실행하지 않습니다.
+- `phase approve`, repair 같은 저수준 명령을 정상 경로로 실행하지 않습니다.
 - 하네스가 `[y/N]` 프롬프트를 출력하면 직접 답하지 마세요. 멈추고 사용자에게 본인 터미널에서 확인해달라고 요청하세요.
 - `allowed_paths` 밖 파일을 수정하지 않습니다.
 - JSON이 깨졌거나 알 수 없는 계약이면 구현을 멈춥니다.

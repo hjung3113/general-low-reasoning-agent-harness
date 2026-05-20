@@ -1,5 +1,7 @@
 # ADR: Audit Canonicalization, Locking, and State Trust — 2026-05-17
 
+> **Status update (v0.9.3, 2026-05-20):** §D-7 (Out-of-repo audit-tip anchor) was REMOVED. See ADR `2026-05-20-remove-audit-tip-anchor.md`. The rest of this ADR remains in force.
+
 ## Status
 
 Accepted. Bound to **phase 02c-phase-gate-hardening**, design baseline `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md` (Round-7).
