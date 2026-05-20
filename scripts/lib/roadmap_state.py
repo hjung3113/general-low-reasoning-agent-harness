@@ -106,19 +106,28 @@ def parse_frontmatter(text: str) -> dict[str, object]:
 
 
 def parse_roadmap_phases(text: str) -> list[RoadmapPhase]:
+    try:
+        from scripts.lib.planning_grammar import parse_roadmap_phase_bullets
+    except ImportError:
+        from lib.planning_grammar import parse_roadmap_phase_bullets  # type: ignore[no-redef]
     section = markdown_section(text, "Phases")
+    bullets = parse_roadmap_phase_bullets(section)
     phases: list[RoadmapPhase] = []
-    pattern = re.compile(r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*Phase\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*")
-    for line in section.splitlines():
-        match = pattern.match(line.strip())
-        if match:
-            phases.append(
-                RoadmapPhase(
-                    number=int(match.group("number")),
-                    title=match.group("title").strip(),
-                    completed=match.group("mark").lower() == "x",
-                )
+    for bullet in bullets:
+        # phase_id is zero-padded e.g. "01b"; extract the leading integer for
+        # backward compat with RoadmapPhase.number: int consumers (state_repair,
+        # harness active-phase comparison).  Letter suffix is intentionally
+        # dropped here — callers that need full fidelity should use
+        # planning_grammar.parse_roadmap_phase_bullets directly.
+        digits = re.match(r"\d+", bullet.phase_id)
+        number = int(digits.group(0)) if digits else 0
+        phases.append(
+            RoadmapPhase(
+                number=number,
+                title=bullet.title,
+                completed=bullet.completed,
             )
+        )
     return phases
 
 
