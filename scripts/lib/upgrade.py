@@ -481,9 +481,17 @@ def _stamp_installed_manifest_v2(
         if rr is not None and rr.decision == ReconcileDecision.USER_MODIFIED_QUARANTINE:
             qp = rr.quarantine_path or ""
             entry_info["quarantine_path"] = qp
-            quarantined_paths.append((path_str, qp))
+            # Only record when a real file move happened.  classify_only=True
+            # (used during --dry-run and the upgrade conflict-handling pass)
+            # leaves quarantine_path=None — no file was moved, so suppress
+            # the warning (STALE-2 false quarantine on dry-run).
+            if rr.quarantine_path:
+                quarantined_paths.append((path_str, qp))
 
-    # P2-3: loud quarantine summary block so users notice their files were moved
+    # P2-3: loud quarantine summary block so users notice their files were moved.
+    # Guard: only emit when at least one path was actually quarantined (non-None
+    # quarantine_path).  Entries from classify_only=True reconcile passes have
+    # quarantine_path=None and are excluded above, so this check is sufficient.
     if quarantined_paths:
         n = len(quarantined_paths)
         print("====================================================================", file=_sys.stderr)
