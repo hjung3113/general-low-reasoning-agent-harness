@@ -1966,7 +1966,6 @@ def case_gitconfig_rotated(args) -> "CaseResult":
             stdin_isatty=True,  # bypass TTY gate
             consumer_tty="/dev/pts/99",
             gitconfig_email_lookup=lambda: rotated_email,
-            skip_anchor_preflight=True,
         )
 
         assertions = []
@@ -1995,6 +1994,104 @@ def case_gitconfig_rotated(args) -> "CaseResult":
     finally:
         if repo is not None:
             shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("upgrade-from-v091-with-vestigial-anchor")
+def case_upgrade_from_v091_with_vestigial_anchor(args) -> "CaseResult":
+    """Upgrade-compat smoke: v0.9.1 → v0.9.3 state with vestigial anchor file.
+
+    Simulates the state left by v0.9.1 (which wrote out-of-repo audit-tip
+    anchors). The new harness must:
+      - Run status/next/verify without error.
+      - Leave the vestigial anchor file untouched (we don't clean up ~/.harness).
+      - Produce no reference to 'anchor' in stdout/stderr.
+
+    Spec: Slice-2 Part D upgrade-compat coverage.
+    """
+    repo = None
+    fake_home = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo"])
+        harness_dir = repo / ".harness"
+        scratch_dir = repo / ".scratch"
+
+        # Create a fake ~/.harness/audit-tip/<repo-id>.json (vestigial anchor
+        # that v0.9.1 would have written to the user's home directory).
+        fake_home = Path(tempfile.mkdtemp(prefix="harness-smoke-fake-home."))
+        audit_tip_dir = fake_home / ".harness" / "audit-tip"
+        audit_tip_dir.mkdir(parents=True)
+        repo_id = "smoke-test-repo-id-12345"
+        vestigial_anchor = audit_tip_dir / f"{repo_id}.json"
+        vestigial_content = json.dumps({
+            "repo_id": repo_id,
+            "harness_version": "v0.9.1",
+            "install_record_sha256": "a" * 64,
+            "audit_tip_entry_hash": "b" * 64,
+            "audit_tip_seq_global": 1,
+            "anchored_at": "2026-05-20T00:00:00Z",
+        }, indent=2) + "\n"
+        vestigial_anchor.write_text(vestigial_content, encoding="utf-8")
+
+        assertions: list = []
+
+        # Run `harness status` — must exit 0
+        proc_status = _run_harness("status", cwd=repo)
+        assertions.append((
+            "status exits 0",
+            proc_status.returncode == 0,
+            f"exit={proc_status.returncode}; stderr={proc_status.stderr!r}",
+        ))
+        assertions.append((
+            "status stdout has no 'anchor' reference",
+            "anchor" not in proc_status.stdout.lower(),
+            f"stdout contained 'anchor': {proc_status.stdout!r}",
+        ))
+
+        # Run `harness next` — must exit 0
+        proc_next = _run_harness("next", cwd=repo)
+        assertions.append((
+            "next exits 0",
+            proc_next.returncode == 0,
+            f"exit={proc_next.returncode}; stderr={proc_next.stderr!r}",
+        ))
+
+        # Run `harness verify --audit` — must exit 0
+        proc_verify = _run_harness("verify", "--audit", cwd=repo)
+        assertions.append((
+            "verify exits 0",
+            proc_verify.returncode == 0,
+            f"exit={proc_verify.returncode}; stderr={proc_verify.stderr!r}",
+        ))
+
+        # Vestigial anchor file must be untouched (not deleted, not modified)
+        assertions.append((
+            "vestigial anchor file left intact",
+            vestigial_anchor.exists()
+            and vestigial_anchor.read_text(encoding="utf-8") == vestigial_content,
+            "vestigial anchor file was modified or deleted",
+        ))
+
+        passed = all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="upgrade-from-v091-with-vestigial-anchor",
+            exit_code=0 if passed else 1,
+            expected_exit_code=0,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "status_stdout.txt": proc_status.stdout,
+                "status_stderr.txt": proc_status.stderr,
+                "next_stdout.txt": proc_next.stdout,
+                "next_stderr.txt": proc_next.stderr,
+                "verify_stdout.txt": proc_verify.stdout,
+                "verify_stderr.txt": proc_verify.stderr,
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+        if fake_home is not None:
+            shutil.rmtree(fake_home, ignore_errors=True)
 
 
 CASES = [
@@ -2195,6 +2292,8 @@ _RELEASE_CASE_ORDER = [
     # §12.10 rows 13/15 — P5-P1-2 cycle-1 Group B (row 14 anchor-tampered retired)
     "oidc-jti-replay",
     "gitconfig-rotated",
+    # Slice-2 upgrade-compat: v0.9.1 → v0.9.3 with vestigial anchor file
+    "upgrade-from-v091-with-vestigial-anchor",
 ]
 
 
