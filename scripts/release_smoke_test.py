@@ -2017,10 +2017,14 @@ def case_upgrade_from_v091_with_vestigial_anchor(args) -> "CaseResult":
 
         # Create a fake ~/.harness/audit-tip/<repo-id>.json (vestigial anchor
         # that v0.9.1 would have written to the user's home directory).
+        # repo-id derivation matches the (now-deleted) audit_anchor.repo_id:
+        # sha256(canonical_absolute_path_of_repo_root)[:16].
         fake_home = Path(tempfile.mkdtemp(prefix="harness-smoke-fake-home."))
         audit_tip_dir = fake_home / ".harness" / "audit-tip"
         audit_tip_dir.mkdir(parents=True)
-        repo_id = "smoke-test-repo-id-12345"
+        repo_id = hashlib.sha256(
+            str(repo.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
         vestigial_anchor = audit_tip_dir / f"{repo_id}.json"
         vestigial_content = json.dumps({
             "repo_id": repo_id,
@@ -2054,6 +2058,11 @@ def case_upgrade_from_v091_with_vestigial_anchor(args) -> "CaseResult":
             proc_next.returncode == 0,
             f"exit={proc_next.returncode}; stderr={proc_next.stderr!r}",
         ))
+        assertions.append((
+            "next stdout has no 'anchor' reference",
+            "anchor" not in proc_next.stdout.lower(),
+            f"stdout contained 'anchor': {proc_next.stdout!r}",
+        ))
 
         # Run `harness verify --audit` — must exit 0
         proc_verify = _run_harness("verify", "--audit", cwd=repo)
@@ -2061,6 +2070,11 @@ def case_upgrade_from_v091_with_vestigial_anchor(args) -> "CaseResult":
             "verify exits 0",
             proc_verify.returncode == 0,
             f"exit={proc_verify.returncode}; stderr={proc_verify.stderr!r}",
+        ))
+        assertions.append((
+            "verify stdout has no 'anchor' reference",
+            "anchor" not in proc_verify.stdout.lower(),
+            f"stdout contained 'anchor': {proc_verify.stdout!r}",
         ))
 
         # Vestigial anchor file must be untouched (not deleted, not modified)
