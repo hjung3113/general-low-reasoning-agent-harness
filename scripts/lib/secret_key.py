@@ -43,7 +43,7 @@ KEY_BYTES = 32  # 256-bit
 
 
 def _fsync_parent_dir(path: Path) -> None:
-    """Minimal cross-platform parent-dir fsync (shared with audit_anchor).
+    """Minimal cross-platform parent-dir fsync helper.
 
     POSIX: ``os.fsync(O_DIRECTORY fd)``. Windows: best-effort via
     ``FlushFileBuffers`` on a directory handle.
@@ -128,7 +128,8 @@ def ensure_secret_key(*, mint_if_missing: bool = True) -> Path:
     if not mint_if_missing:
         raise SecretKeyError(
             f"secret key not found at {path}. "
-            "Fix: run `harness anchor repair` to mint it."
+            "Fix: call ensure_secret_key() with mint_if_missing=True (default), "
+            "or re-run `harness install`."
         )
 
     parent = path.parent
@@ -188,8 +189,8 @@ def load_secret_key() -> bytes:
     if len(data) != KEY_BYTES:
         raise SecretKeyError(
             f"secret key at {path} has {len(data)} bytes; expected {KEY_BYTES}. "
-            "Fix: delete the file and run `harness anchor repair` (this invalidates "
-            "every anchor signed with the old key)."
+            f"Fix: delete {path} and re-run `harness install` (or call "
+            "ensure_secret_key() to re-mint)."
         )
     return data
 
@@ -202,5 +203,5 @@ def _check_permissions(path: Path) -> None:
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise SecretKeyError(
             f"secret key at {path} has insecure permissions (mode={oct(mode & 0o777)}). "
-            "Fix: chmod 600 the file or delete and re-run `harness anchor repair`."
+            f"Fix: chmod 600 {path} (or delete it and re-run `harness install`)."
         )
