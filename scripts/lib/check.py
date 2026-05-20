@@ -294,6 +294,12 @@ def _check_planning_drift(root: Path) -> None:
     """
     if not (root / ".planning").exists():
         return
+    # Skip if canonical planning files are absent — fixture or partial install.
+    if not (root / ".planning" / "STATE.md").exists() or not (root / ".planning" / "ROADMAP.md").exists():
+        return
+    # Skip if no installed-manifest (not an installed harness target — fixture or dev environment).
+    if not (root / INSTALL_STATE).exists():
+        return
     # Lazy dual import to avoid module-level circular import risk.
     try:
         from scripts.lib.project_dashboard.core import run as _dashboard_run

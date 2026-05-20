@@ -28,22 +28,44 @@ except ModuleNotFoundError:
         parse_roadmap_phase_bullets,
     )
 
-from lib.planning_status import ProjectionError, load_projection, projection_to_dict
-from lib.project_dashboard.renderer import render_html
-from lib.project_dashboard.models import (
-    DashboardData,
-    DashboardAction,
-    DashboardWarning,
-    DecisionRecord,
-    DocumentLink,
-    IssueCard,
-    PhaseDocument,
-    ProjectMemory,
-    RequirementCard,
-    RoadmapPhase,
-    StateSummary,
-    VerificationRecord,
-)
+try:
+    from scripts.lib.planning_status import ProjectionError, load_projection, projection_to_dict
+except ModuleNotFoundError:
+    from lib.planning_status import ProjectionError, load_projection, projection_to_dict  # type: ignore[no-redef]
+try:
+    from scripts.lib.project_dashboard.renderer import render_html
+except ModuleNotFoundError:
+    from lib.project_dashboard.renderer import render_html  # type: ignore[no-redef]
+try:
+    from scripts.lib.project_dashboard.models import (
+        DashboardData,
+        DashboardAction,
+        DashboardWarning,
+        DecisionRecord,
+        DocumentLink,
+        IssueCard,
+        PhaseDocument,
+        ProjectMemory,
+        RequirementCard,
+        RoadmapPhase,
+        StateSummary,
+        VerificationRecord,
+    )
+except ModuleNotFoundError:
+    from lib.project_dashboard.models import (  # type: ignore[no-redef]
+        DashboardData,
+        DashboardAction,
+        DashboardWarning,
+        DecisionRecord,
+        DocumentLink,
+        IssueCard,
+        PhaseDocument,
+        ProjectMemory,
+        RequirementCard,
+        RoadmapPhase,
+        StateSummary,
+        VerificationRecord,
+    )
 
 
 DEFAULT_OUTPUT = Path(".scratch/reports/project-dashboard.html")
