@@ -149,8 +149,17 @@ def _phase_entered_at(state: dict, phase: str) -> Optional[str]:
     return None
 
 
-def _next_action_for_state(state: dict) -> Optional[str]:
-    """Determine the recommended next action command string."""
+def compute_next_action(state: dict) -> Optional[str]:
+    """Single canonical projection: recommended next-action command string.
+
+    Both ``compute_status`` and ``compute_next`` (and the CLI handler
+    ``cmd_next``) delegate here, guaranteeing identical output for
+    identical input (NEW-4 parity fix).
+
+    Returns a CLI command string (e.g. ``"harness phase set plan"``) or
+    ``None`` when no action is appropriate (autopilot active, phase done,
+    unknown phase).
+    """
     execution_mode = state.get("execution_mode", "manual")
     phase = state.get("phase", "discuss")
     last_halt = state.get("last_halt")
@@ -181,6 +190,11 @@ def _next_action_for_state(state: dict) -> Optional[str]:
     elif phase == "done":
         return None
     return None
+
+
+# Keep the private alias so that internal callers written before the rename
+# continue to work without breakage.
+_next_action_for_state = compute_next_action
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +234,8 @@ def compute_status(*, state: dict, audit_path) -> StatusResult:
     projected_execute_gate_valid = _compute_projected_execute_gate_valid(state)
     can_enter_execute = _compute_can_enter_execute(state)
 
-    # Next action recommendation
-    next_action = _next_action_for_state(state)
+    # Next action recommendation — single canonical projection (NEW-4).
+    next_action = compute_next_action(state)
 
     return StatusResult(
         phase=phase,
@@ -243,11 +257,19 @@ def compute_status(*, state: dict, audit_path) -> StatusResult:
 
 def compute_next(*, state: dict, audit_path) -> NextResult:
     """Pure: decide next action based on current state.
+
     Returns NextResult with exit_code per §3.4 (0/17/18).
+
+    The ``command`` field is always sourced from ``compute_next_action``
+    (the single canonical projection, NEW-4) so that it is byte-identical
+    to the ``next_action`` field produced by ``compute_status``.
     """
     execution_mode = state.get("execution_mode", "manual")
     phase = state.get("phase", "discuss")
     last_halt = state.get("last_halt")
+
+    # Canonical command from the shared projection.
+    command = compute_next_action(state)
 
     # Rule 1: Autopilot active → no manual action
     if execution_mode != "manual":
@@ -261,10 +283,8 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
 
     # Rule 2: Unacknowledged halt → consult diary
     if last_halt is not None and last_halt.get("acknowledged_at") is None:
-        suggested = last_halt.get("suggested_next_command")
         requires_human = bool(last_halt.get("suggested_next_command_requires_human", True))
         halt_reason = last_halt.get("halt_reason", "unknown")
-        command = suggested if suggested else "harness halt-diary clear"
         exit_code = 17 if requires_human else 0
         return NextResult(
             requires_human=requires_human,
@@ -274,12 +294,12 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
             exit_code=exit_code,
         )
 
-    # Rule 3: Phase-based decision
+    # Rule 3: Phase-based decision — command already resolved above.
     if phase == "discuss":
         return NextResult(
             requires_human=False,
             agent_safe=True,
-            command="harness phase set plan",
+            command=command,
             reason="in discuss phase; ready to move to plan",
             exit_code=0,
         )
@@ -288,16 +308,11 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
             return NextResult(
                 requires_human=False,
                 agent_safe=True,
-                command="harness phase set execute",
+                command=command,
                 reason="plan approved and fresh; ready to execute",
                 exit_code=0,
             )
         else:
-            approved_by = state.get("approved_by")
-            if approved_by:
-                command = f"harness phase approve --by {approved_by}"
-            else:
-                command = "harness phase approve"
             return NextResult(
                 requires_human=True,
                 agent_safe=False,
@@ -310,7 +325,7 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
             return NextResult(
                 requires_human=False,
                 agent_safe=True,
-                command="harness phase set done",
+                command=command,
                 reason="execute approved and fresh; ready to mark done",
                 exit_code=0,
             )
@@ -318,7 +333,7 @@ def compute_next(*, state: dict, audit_path) -> NextResult:
             return NextResult(
                 requires_human=True,
                 agent_safe=False,
-                command=f'harness phase reopen --to plan --reason "{REOPEN_REASON_PLACEHOLDER}"',
+                command=command,
                 reason="execute requires fresh approval; reopen to plan first",
                 exit_code=17,
             )
@@ -492,6 +507,7 @@ __all__ = [
     "NextResult",
     "compute_status",
     "compute_next",
+    "compute_next_action",
     "format_status_human",
     "format_status_json",
     "format_next_human",

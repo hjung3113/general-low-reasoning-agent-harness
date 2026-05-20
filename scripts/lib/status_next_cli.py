@@ -305,13 +305,19 @@ def cmd_next(args) -> int:
         return 0
 
     if os.environ.get("HARNESS_ADVANCED") != "1" and not use_json and not use_shell:
-        phase = state.get("phase", "discuss")
-        if phase in ("plan", "execute") and not _may_edit(state):
-            sys.stdout.write(_approval_prompt(state) + "\n")
-        elif phase == "done":
-            sys.stdout.write("No action: workflow complete.\n")
+        # Delegate to the shared canonical projection so this path and the
+        # status "Next action:" line are always identical (NEW-4 fix).
+        action = _sn.compute_next_action(state)
+        if action is not None:
+            sys.stdout.write(action + "\n")
         else:
-            sys.stdout.write("harness run\n")
+            phase = state.get("phase", "discuss")
+            if phase == "done":
+                sys.stdout.write("No action: workflow complete.\n")
+            elif state.get("execution_mode", "manual") != "manual":
+                sys.stdout.write("No action: autopilot active.\n")
+            else:
+                sys.stdout.write("No action: no action determined.\n")
         return 0
 
     if use_json:
