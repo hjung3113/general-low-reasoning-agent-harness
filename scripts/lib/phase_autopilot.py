@@ -4,10 +4,8 @@ Order of operations for `run_start` (any failure → `AutopilotResult` with
 non-zero `exit_code`; the CLI dispatcher maps to `sys.exit`):
 
   1. Lock contract check (TxnLockMissingError raised if lock missing/released).
-  2. Anchor preflight (§12.1). Default `repo_root=None` + `skip_anchor_preflight=False`
-     → exit 6 `anchor_preflight_unwired` (fail-closed).
-  3. State-trust preflight (§2.6). Refuses forged state with exit 10.
-  3b. Authorization algorithm (§3.5 + §3.5.1):
+  2. State-trust preflight (§2.6). Refuses forged state with exit 10.
+  2b. Authorization algorithm (§3.5 + §3.5.1):
      TTY path: validate by_email ∈ approvers, consume nonce → authorization_source="cli_tty_human".
      CI path: run ci_predicate_satisfied → authorization_source from result.
   4. Windows containment check (§3.5 Round-3 BLOCK): Windows + chain mode
@@ -460,13 +458,13 @@ def run_start(
     allow_network : bool
         Whether to allow network (echoed to state + audit).
     anchor_verified : bool
-        True when §12.1 anchor already verified externally.
+        Retained for test compatibility; no-op (anchor feature retired).
     skip_anchor_preflight : bool
-        True ONLY in controlled test paths (skips §12.1 chain).
+        Retained for test compatibility; no-op (anchor feature retired).
     accept_degraded_windows_containment : bool
         Bypasses Windows exit 11 (§3.5 Round-3 escape hatch).
     repo_root : Path | None
-        Repo root for git check (chain mode) and anchor preflight.
+        Repo root for git check (chain mode).
     roadmap_root : Path | None
         `.planning/phases/` root for slug validation. None → no check.
     env : Mapping | None
