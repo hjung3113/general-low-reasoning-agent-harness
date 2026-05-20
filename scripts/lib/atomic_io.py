@@ -485,3 +485,32 @@ def _rmdir_recursive(path: Path) -> None:
         else:
             child.unlink()
     path.rmdir()
+
+
+# ---------------------------------------------------------------------------
+# Journal reader helper (T14b — used by install_recovery)
+# ---------------------------------------------------------------------------
+
+
+def read_install_journal(journal_path: Path) -> List[dict]:
+    """Parse an install journal file into a list of record dicts.
+
+    Each JSONL line is returned as a dict; malformed lines are silently
+    skipped (journal may be partially-written after a crash).
+
+    Returns an empty list when the journal does not exist.
+    """
+    journal_path = Path(journal_path)
+    if not journal_path.exists():
+        return []
+    records: List[dict] = []
+    with open(str(journal_path), encoding="utf-8") as jf:
+        for raw in jf:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                records.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+    return records

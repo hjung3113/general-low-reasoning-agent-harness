@@ -23,6 +23,12 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--adapter", default=None)
     parser.add_argument("--base", default=None)
     parser.add_argument("--worktree", action="store_true")
+    parser.add_argument(
+        "--verify-hashes",
+        action="store_true",
+        default=False,
+        help="Verify per-policy file hashes against installed-manifest.json (opt-in; always-on in doctor).",
+    )
     args = parser.parse_args(argv)
     harness.check(
         root=harness.repo_root(),
@@ -30,6 +36,7 @@ def run(argv: list[str] | None = None) -> int:
         base=args.base,
         worktree=args.worktree,
         adapter=args.adapter,
+        verify_hashes=args.verify_hashes,
     )
     return 0
 

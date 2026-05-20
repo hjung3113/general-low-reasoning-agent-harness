@@ -208,6 +208,21 @@ def _phase_title_lookup(phases: list[RoadmapPhase], number: int | None) -> str:
 
 def repair(root: Path) -> RepairReport:
     report = RepairReport()
+
+    # T14b: recover any aborted install staging dirs before touching STATE.md /
+    # ROADMAP.md so that a mid-install crash cannot leave the project in a
+    # half-written state.  Delegates entirely to install_recovery; no logic
+    # absorbed here.
+    from lib import install_recovery as _ir
+    recovery = _ir.recover_aborted_install(root)
+    if recovery.found_staging_dirs:
+        report.warnings.append(
+            f"install_recovery: found {recovery.found_staging_dirs} stale staging "
+            f"dir(s); finished={len(recovery.finished)}, "
+            f"rolled_back={len(recovery.rolled_back)}, "
+            f"quarantined={len(recovery.quarantined)}"
+        )
+
     roadmap_path = root / ROADMAP_PATH
     state_path = root / STATE_PATH
     phase_state_path = root / PHASE_STATE_PATH

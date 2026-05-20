@@ -361,6 +361,11 @@ KNOWN_VERBS: frozenset = frozenset([
     "release.trust.rechained",  # T16: chain hash changed during upgrade; cause classified
     # Install bootstrap verbs (T7 / NEW-1)
     "install_record.bootstrap", # fresh init wrote .harness/install-record.json
+    # Install recovery verbs (T14b)
+    "install.recovery.finished",   # pending renames completed; staging dir removed
+    "install.recovery.rolled_back",  # aborted install renames undone via backups
+    "install.recovery.quarantined",  # aborted install displaced files moved to conflicts/
+    "install.recovery.noop",       # no staging dirs found; nothing to do
 ])
 
 

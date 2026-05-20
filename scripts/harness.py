@@ -138,7 +138,10 @@ from lib.check import (
     REQUIRED_TARGET_PHRASES,
     CONTAMINATION_PATTERNS,
     ManagedBlockWarning,
+    HashDriftFinding,
     managed_block_warnings,
+    verify_hashes,
+    format_hash_drift_errors,
     check_installed_target,
     _check_roomodes_profile_sync,
     check_clean_skeleton,
@@ -162,6 +165,7 @@ from lib.doctor import (
     command_mode_doctor_findings,
     db_context_doctor_findings,
     opencode_profile_rules_doctor_findings,
+    hash_drift_doctor_findings,
     render_doctor_report,
 )
 from lib.install import (
@@ -329,6 +333,7 @@ def check(
     base: str | None = None,
     worktree: bool = False,
     adapter: str | None = None,
+    verify_hashes: bool = False,
 ) -> None:
     _check_mod.check(
         root=root,
@@ -337,6 +342,7 @@ def check(
         worktree=worktree,
         adapter=adapter,
         harness_version=HARNESS_VERSION,
+        verify_hashes=verify_hashes,
     )
 
 
@@ -516,6 +522,12 @@ def run(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--adapter", default=None, help="Validate a specific adapter in addition to installed adapters.")
     check_parser.add_argument("--base", default=None, help="Optional git base ref for changed-path checks.")
     check_parser.add_argument("--worktree", action="store_true", help="Check staged and unstaged paths against allowed_paths.")
+    check_parser.add_argument(
+        "--verify-hashes",
+        action="store_true",
+        default=False,
+        help="Verify per-policy file hashes against installed-manifest.json (opt-in; always-on in doctor).",
+    )
 
     doctor_parser = subparsers.add_parser("doctor", help="Diagnose planning, Roo, and harness environment drift.")
     doctor_parser.add_argument("--target", type=Path, default=None)
@@ -1017,6 +1029,8 @@ def run(argv: list[str] | None = None) -> int:
             command.extend(["--base", args.base])
         if args.worktree:
             command.append("--worktree")
+        if getattr(args, "verify_hashes", False):
+            command.append("--verify-hashes")
         if os.environ.get("HARNESS_MACHINE") == "1":
             result = subprocess.run(command, cwd=root, text=True, capture_output=True)
             warnings = []

@@ -168,7 +168,7 @@ def run_release(
     runner.run(["git", "pull", "--ff-only", "origin", "main"])
     runner.run(["git", "merge", "--no-ff", "develop", "-m", f"merge: release {selected_version}"])
     runner.run(["python3", "-m", "unittest", "scripts/test_harness.py", "scripts/test_release.py"])
-    runner.run(["python3", "scripts/harness.py", "check"])
+    runner.run(["python3", "scripts/harness.py", "check", "--verify-hashes"])
     runner.run(["python3", "scripts/release_smoke_test.py"])
     runner.run(["git", "push", "origin", "main"])
     runner.run(["git", "tag", "-s", selected_version, "-m", selected_version])

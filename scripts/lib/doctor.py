@@ -74,6 +74,7 @@ def collect_doctor_findings(root: Path) -> list[DoctorFinding]:
     findings.extend(db_context_doctor_findings(root))
     findings.extend(opencode_profile_rules_doctor_findings(root))
     findings.extend(scope_double_star_doctor_findings(root))
+    findings.extend(hash_drift_doctor_findings(root))
     findings.append(
         DoctorFinding(
             severity="P3",
@@ -472,6 +473,49 @@ def scope_double_star_doctor_findings(root: Path) -> list[DoctorFinding]:
                     evidence=f"{field}[{index}]={entry}",
                 )
             )
+    return findings
+
+
+def hash_drift_doctor_findings(root: Path) -> list[DoctorFinding]:
+    """T8b: always-on per-policy hash drift detection for harness doctor.
+
+    Calls ``verify_hashes(root)`` unconditionally (no ``--verify-hashes`` flag
+    needed — doctor is a diagnostic command that is expected to be slower).
+    Each drift finding surfaces as a P1 DoctorFinding.
+    """
+    try:
+        from lib.check import verify_hashes as _verify_hashes, format_hash_drift_errors
+    except ImportError:
+        return []
+
+    installed_state = root / INSTALL_STATE
+    if not installed_state.exists():
+        return []
+
+    try:
+        drift_list = _verify_hashes(root)
+    except Exception:
+        return []
+
+    findings: list[DoctorFinding] = []
+    for f in drift_list:
+        findings.append(
+            DoctorFinding(
+                severity="P1",
+                code=f.error_code,
+                path=f.path,
+                cause=(
+                    f"On-disk hash ({f.found[:12]}…) does not match installed hash "
+                    f"({f.expected[:12]}…) for policy={f.policy!r}."
+                ),
+                impact=(
+                    "Harness-managed file has been modified outside of `harness upgrade`. "
+                    "Agents may run against a tampered or stale file."
+                ),
+                fix="Run `harness upgrade --target <target>` to restore the file to its installed state.",
+                evidence=f"{f.error_code}: {f.path}",
+            )
+        )
     return findings
 
 

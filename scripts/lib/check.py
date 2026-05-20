@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import re
@@ -159,6 +160,127 @@ def run_import_smoke(scripts_dir: Path) -> list[str]:
 
 # ---------------------------------------------------------------------------
 # End T8a
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# T8b — Per-policy hash verification matrix (STALE-3)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class HashDriftFinding:
+    """One per-file hash mismatch from verify_hashes()."""
+
+    path: str          # relative path as stored in installed-manifest.json
+    policy: str        # harness-owned | managed | managed-append
+    error_code: str    # harness-owned-drift | managed-drift | managed-append-drift
+    expected: str      # hash recorded in installed-manifest.json
+    found: str         # hash computed from on-disk file
+
+
+def _sha256_file(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def verify_hashes(target: Path) -> list[HashDriftFinding]:
+    """Iterate installed-manifest.json:files[] and detect per-policy hash drift.
+
+    Per-policy matrix
+    -----------------
+    ``harness-owned``   : sha256(on-disk) vs ``installed_sha256``  → ``harness-owned-drift``
+    ``managed``         : sha256(on-disk) vs ``installed_sha256``  → ``managed-drift``
+    ``managed-append``  : sha256 of managed block (between markers) vs
+                          ``applied_sha256``                        → ``managed-append-drift``
+    ``project-owned``   : SKIP — not a drift signal
+    ``exclude``         : not iterated
+
+    Returns a (possibly empty) list of HashDriftFinding.  Does NOT raise on
+    mismatch; callers decide whether to exit.
+    """
+    from lib.append_block import parse_append_block, sha256_text  # local import: avoids cycle
+
+    installed_path = target / INSTALL_STATE
+    if not installed_path.exists():
+        return []
+    try:
+        installed = json.loads(installed_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    files: dict = installed.get("files", {}) or {}
+    findings: list[HashDriftFinding] = []
+
+    for path_text, info in files.items():
+        if not isinstance(info, dict):
+            continue
+        policy = info.get("policy", "")
+        if policy in ("project-owned", "exclude", ""):
+            continue
+
+        on_disk = target / normalize_path(path_text)
+        if not on_disk.exists():
+            # Missing files are caught by check_installed_target; skip here.
+            continue
+
+        if policy in ("harness-owned", "managed"):
+            expected = info.get("installed_sha256", "")
+            if not expected:
+                continue
+            found = _sha256_file(on_disk)
+            if found != expected:
+                error_code = (
+                    "harness-owned-drift" if policy == "harness-owned" else "managed-drift"
+                )
+                findings.append(
+                    HashDriftFinding(
+                        path=path_text,
+                        policy=policy,
+                        error_code=error_code,
+                        expected=expected,
+                        found=found,
+                    )
+                )
+
+        elif policy == "managed-append":
+            expected = info.get("applied_sha256", "")
+            if not expected:
+                continue
+            try:
+                text = on_disk.read_text(encoding="utf-8")
+                parsed = parse_append_block(text, path_text)
+            except (OSError, ValueError):
+                continue
+            if parsed is None:
+                # Block absent — validate_installed_managed_append already reports this.
+                continue
+            found = sha256_text(parsed.text)
+            if found != expected:
+                findings.append(
+                    HashDriftFinding(
+                        path=path_text,
+                        policy=policy,
+                        error_code="managed-append-drift",
+                        expected=expected,
+                        found=found,
+                    )
+                )
+
+    return findings
+
+
+def format_hash_drift_errors(findings: list[HashDriftFinding]) -> str:
+    """Return a human-readable multi-line summary of drift findings."""
+    lines = []
+    for f in findings:
+        lines.append(
+            f"error: {f.error_code}: {f.path} "
+            f"(expected {f.expected[:12]}… found {f.found[:12]}…)"
+        )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# End T8b
 # ---------------------------------------------------------------------------
 
 
@@ -335,10 +457,11 @@ def check(
     worktree: bool = False,
     adapter: str | None = None,
     harness_version: str = "0.0.0-dev+unknown",
+    verify_hashes: bool = False,
 ) -> None:
     root = root.resolve()
     if not (root / MANIFEST_PATH).exists() or should_check_as_installed_target(root, harness_version=harness_version):
-        check_installed_target(root)
+        check_installed_target(root, verify_hashes=verify_hashes)
         if base:
             check_changed_paths(root, base)
         if worktree:
@@ -438,7 +561,12 @@ def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.
     return version not in {MANIFEST_SOURCE_VERSION, harness_version}
 
 
-def check_installed_target(target: Path, expected_entries: list[ManifestEntry] | None = None) -> None:
+def check_installed_target(
+    target: Path,
+    expected_entries: list[ManifestEntry] | None = None,
+    *,
+    verify_hashes: bool = False,
+) -> None:
     # T8a early gate: smoke-check that every lib.* referenced in the target's
     # scripts/ directory actually exists as a file there.  Must run before any
     # other check so a broken install (BUG-2: manifest-gap) surfaces immediately
@@ -562,6 +690,12 @@ def check_installed_target(target: Path, expected_entries: list[ManifestEntry] |
         check_roadmap_state_sync(target)
     for warning in managed_block_warnings(target):
         print(f"warning: {warning.code} in {warning.path}: {warning.message}")
+    if verify_hashes:
+        import lib.check as _self
+        drift = _self.verify_hashes(target)
+        if drift:
+            msg = format_hash_drift_errors(drift)
+            raise SystemExit(msg)
 
 
 def _check_roomodes_profile_sync(target: Path, installed: dict) -> list[str]:
