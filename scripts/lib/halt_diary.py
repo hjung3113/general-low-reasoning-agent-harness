@@ -4,10 +4,8 @@ Order of operations for `run_clear` (any failure → `ClearResult` with non-zero
 `exit_code`; the CLI dispatcher maps to `sys.exit`):
 
   1. TTY gate (§12.7). `stdin_is_tty=False` → exit 6 `non_tty_halt_diary_clear_blocked`.
-  2. Anchor preflight guard: `anchor_verified=False` → exit 6 `anchor_preflight_unwired`
-     (fail-closed default, mirrors §12.1 pattern).
-  3. Load state. `last_halt is None` → exit 0 `nothing_to_clear` (no-op success, no audit).
-  4. `last_halt` non-null:
+  2. Load state. `last_halt is None` → exit 0 `nothing_to_clear` (no-op success, no audit).
+  3. `last_halt` non-null:
      a. Stamp `acknowledged_at` on the diary (if not already set).
      b. Rotate prior `last_halt` onto `last_halt_history` (cap=5 via _rotate helper).
      c. Set `last_halt = None`.
@@ -64,11 +62,6 @@ _FIX_TTY = (
     "Fix: run `harness halt-diary clear` from a real terminal "
     "(not via a piped or agent-spawned subprocess)."
 )
-_FIX_ANCHOR = (
-    "Fix: caller must pass anchor_verified=True (or skip_anchor_preflight=True "
-    "in controlled test paths) so the §12.1 trust chain is satisfied before "
-    "mutating state via an admin verb."
-)
 
 
 def run_clear(
@@ -76,7 +69,7 @@ def run_clear(
     scratch_root: Path,
     audit_path: Path,
     lock_handle: Any,
-    anchor_verified: bool,
+    anchor_verified: bool = True,  # retained for test compatibility; no-op
     stdin_is_tty: bool,
     by: Optional[str] = None,
 ) -> ClearResult:
@@ -91,8 +84,7 @@ def run_clear(
     lock_handle : LockHandle
         Must be an acquired, un-released LockHandle. None → TxnLockMissingError.
     anchor_verified : bool
-        True when §12.1 anchor has been verified externally. Default False
-        fails closed with exit 6 `anchor_preflight_unwired`.
+        Retained for backward compatibility; no-op (anchor feature removed).
     stdin_is_tty : bool
         Whether stdin is a real TTY. False → exit 6 `non_tty_halt_diary_clear_blocked`.
     by : str | None
@@ -112,21 +104,10 @@ def run_clear(
             cleared=False,
         )
 
-    # Step 2: Anchor preflight guard (fail-closed).
-    if not anchor_verified:
-        return ClearResult(
-            exit_code=6,
-            sub_reason="anchor_preflight_unwired",
-            message=(
-                f"halt-diary clear refused: anchor not verified. {_FIX_ANCHOR}"
-            ),
-            cleared=False,
-        )
-
-    # Step 3: Lock contract check.
+    # Step 2: Lock contract check.
     _phase_txn._check_lock(lock_handle, scratch)
 
-    # Step 4: Load state.
+    # Step 3: Load state.
     state_path = scratch / _phase_txn.STATE_NAME
     if not state_path.exists():
         return ClearResult(

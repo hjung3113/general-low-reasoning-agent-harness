@@ -4,12 +4,11 @@ Wired from ``scripts/harness.py`` argparse dispatch. Follows the standard
 pattern from ``scripts/lib/phase_autopilot_cli.py``:
 
   1. Walk-up for repo root.
-  2. Verify audit-tip anchor (fail-closed §12.1).
-  3. State-trust preflight.
-  4. Acquire primary lock.
-  5. Call `halt_diary.run_clear`.
-  6. Release lock.
-  7. Print result + sys.exit.
+  2. State-trust preflight.
+  3. Acquire primary lock.
+  4. Call `halt_diary.run_clear`.
+  5. Release lock.
+  6. Print result + sys.exit.
 
 Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md
 Sections: §5.3, §12.7, §1.1
@@ -33,7 +32,7 @@ HARNESS_DIR = Path(".harness")
 
 
 # ---------------------------------------------------------------------------
-# Re-use walk-up + anchor helpers from phase_autopilot_cli
+# Re-use walk-up helper from phase_autopilot_cli
 # ---------------------------------------------------------------------------
 
 
@@ -41,40 +40,6 @@ def _cwd_repo_root() -> Path:
     """Walk up from CWD to the first .git/.harness ancestor."""
     from .phase_autopilot_cli import _walk_up_for_repo_root
     return _walk_up_for_repo_root(Path.cwd())
-
-
-def _verify_anchor(cwd: Path) -> tuple[bool, int, str]:
-    """Verify the out-of-repo audit-tip anchor. Returns (ok, exit_code, sub_reason)."""
-    from . import audit_anchor as _audit_anchor
-
-    try:
-        _audit_anchor.verify_existing_anchor_for_repo(cwd)
-        return True, 0, ""
-    except _audit_anchor.AnchorMissingError as exc:
-        print(
-            f"error: halt-diary clear refused: audit-tip anchor not found ({exc}). "
-            "Fix: run 'harness anchor repair' to rebuild the anchor from current state.",
-            file=sys.stderr,
-        )
-        return False, 6, "anchor_missing"
-    except _audit_anchor.AnchorMismatchError as exc:
-        sub = exc.sub_reason or "anchor_verification_failed"
-        print(
-            f"error: halt-diary clear refused: audit-tip anchor verification failed "
-            f"({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' and 'harness anchor repair'.",
-            file=sys.stderr,
-        )
-        return False, 6, sub
-    except Exception as exc:
-        sub = getattr(exc, "sub_reason", None) or "anchor_error"
-        print(
-            f"error: halt-diary clear refused: audit-tip anchor unreadable "
-            f"({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' and 'harness anchor repair'.",
-            file=sys.stderr,
-        )
-        return False, 6, sub
 
 
 # ---------------------------------------------------------------------------
@@ -105,11 +70,6 @@ def cmd_halt_diary_clear(args) -> int:  # type: ignore[no-untyped-def]
     scratch = cwd / SCRATCH_ROOT
     audit_path = cwd / AUDIT_PATH
 
-    # Anchor verification (fail-closed per §12.1).
-    anchor_verified, anchor_exit, _sub = _verify_anchor(cwd)
-    if not anchor_verified:
-        return anchor_exit
-
     # Resolve identity (--by flag or gitconfig fallback).
     by: Optional[str] = getattr(args, "by", None)
     if by is None:
@@ -130,7 +90,7 @@ def cmd_halt_diary_clear(args) -> int:  # type: ignore[no-untyped-def]
                 scratch=scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=anchor_verified,
+                anchor_verified=True,
             )
         except _phase_preflight.StateTrustPreflightError as exc:
             print(
@@ -143,7 +103,6 @@ def cmd_halt_diary_clear(args) -> int:  # type: ignore[no-untyped-def]
             scratch_root=scratch,
             audit_path=audit_path,
             lock_handle=lock,
-            anchor_verified=anchor_verified,
             stdin_is_tty=stdin_is_tty,
             by=by,
         )
