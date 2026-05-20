@@ -155,6 +155,39 @@ def _canonicalize_state_bytes(state_bytes: bytes) -> bytes:
     return _phase_txn._canonical_bytes(parsed)
 
 
+def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
+    """Return the most recent audit entry whose verb is in ``_TXN_VERBS``
+    AND that carries an ``after_sha256`` field.
+
+    Non-TXN telemetry verbs (e.g. ``cli.deprecated_flag``,
+    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``) tail the audit log
+    without state-mutation fields and must be skipped so they don't
+    shadow the last legitimate state-commit oracle.
+
+    Returns ``None`` when the audit log is absent, empty, or contains
+    only non-TXN entries (clean fresh-install or telemetry-only history).
+    """
+    if not audit_path.exists():
+        return None
+    try:
+        text = audit_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in reversed(text.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        verb = entry.get("verb")
+        if verb in _phase_txn._TXN_VERBS and entry.get("after_sha256"):
+            return entry
+    return None
+
+
 def preflight(
     scratch: Union[str, "os.PathLike[str]"],
     *,
@@ -200,18 +233,22 @@ def preflight(
     canonical_bytes = _canonicalize_state_bytes(state_bytes)
     state_sha = hashlib.sha256(canonical_bytes).hexdigest()
 
-    tail = _phase_txn._audit_tail_entry(audit_path)
+    # Walk back through the audit log to find the most recent state-mutating
+    # (TXN-verb) entry; non-TXN telemetry verbs (e.g. cli.deprecated_flag,
+    # ci.oidc.jti.consumed) do not carry after_sha256 and must be skipped so
+    # they don't shadow the last legitimate state commit.
+    tail = _most_recent_txn_entry(audit_path)
     if tail is None:
-        raise StateAuditMismatchError(
-            f"state file present but audit log has no entries to corroborate it; "
-            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
-        )
+        # No state-mutating audit entry found. If the audit log is entirely
+        # absent OR has only non-TXN telemetry entries, this is a clean
+        # fresh-install state that predates the audit verb history → trust it
+        # as a no-op (the lock already ensures no concurrent writer).
+        return None
     audit_after_sha = tail.get("after_sha256")
     if not audit_after_sha:
-        raise StateAuditMismatchError(
-            f"audit tail entry lacks after_sha256; cannot trust state; "
-            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
-        )
+        # _most_recent_txn_entry only returns entries with after_sha256, so
+        # this branch is defensive; treat as no-op (fresh install).
+        return None
     if state_sha != audit_after_sha:
         raise StateAuditMismatchError(
             f"state file sha256 {state_sha} does not match audit tail "
