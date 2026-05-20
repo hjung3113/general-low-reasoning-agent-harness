@@ -383,5 +383,32 @@ def test_dashboard_emits_actionable_warning_when_phase_folder_missing_from_roadm
     assert matched[0].severity == "warning"
 
 
+def test_load_phase_documents_includes_nested_plan_files(tmp_path):
+    phase = tmp_path / ".planning/phases/02b-hardening"
+    (phase / "plans").mkdir(parents=True)
+    (phase / "README.md").write_text("# README\n")
+    (phase / "plans" / "02b-01-T0-A-PLAN.md").write_text("# T0-A\n")
+    (phase / "plans" / "02b-02-T0-1-PLAN.md").write_text("# T0-1\n")
+    (phase / "plans" / "scratch.md").write_text("# not a plan\n")  # excluded
+    from lib.project_dashboard.core import load_phase_documents
+    docs = load_phase_documents(tmp_path)
+    files = docs[0].files
+    assert "02b-01-T0-A-PLAN.md" in files
+    assert "02b-02-T0-1-PLAN.md" in files
+    assert "scratch.md" not in files  # only *-PLAN.md included
+    assert files["02b-01-T0-A-PLAN.md"].endswith("plans/02b-01-T0-A-PLAN.md")
+
+
+def test_load_phase_documents_top_level_wins_on_name_collision(tmp_path):
+    phase = tmp_path / ".planning/phases/02b-hardening"
+    (phase / "plans").mkdir(parents=True)
+    (phase / "duplicate.md").write_text("# top\n")
+    (phase / "plans" / "duplicate.md").write_text("# nested\n")
+    from lib.project_dashboard.core import load_phase_documents
+    docs = load_phase_documents(tmp_path)
+    files = docs[0].files
+    assert files["duplicate.md"].endswith(".planning/phases/02b-hardening/duplicate.md")
+
+
 if __name__ == "__main__":
     unittest.main()

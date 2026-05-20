@@ -516,6 +516,12 @@ def load_phase_documents(root: Path) -> list[PhaseDocument]:
             relative = path.relative_to(root).as_posix()
             files[path.name] = relative
             headings.extend(parse_headings(path.read_text(encoding="utf-8"))[:2])
+        for path in sorted(phase_dir.glob("plans/*-PLAN.md")):
+            relative = path.relative_to(root).as_posix()
+            if path.name in files:
+                continue  # top-level dominant
+            files[path.name] = relative
+            headings.extend(parse_headings(path.read_text(encoding="utf-8"))[:2])
         documents.append(PhaseDocument(phase_dir=phase_dir.relative_to(root).as_posix(), files=files, headings=headings))
     return documents
 
