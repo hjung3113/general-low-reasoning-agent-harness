@@ -1,6 +1,6 @@
 # ADR: Audit Canonicalization, Locking, and State Trust — 2026-05-17
 
-> **Status update (v0.9.3, 2026-05-20):** §D-7 (Out-of-repo audit-tip anchor) was REMOVED. See ADR `2026-05-20-remove-audit-tip-anchor.md`. The rest of this ADR remains in force.
+> **Status update (v0.9.3, 2026-05-20):** §D-7 (Out-of-repo audit-tip anchor), §D-8 steps 4–5 (anchor verification within state-trust preflight), and §D-9 (recovery + anchor ordering) were REMOVED. See ADR `2026-05-20-remove-audit-tip-anchor.md`. The rest of this ADR (D-1 through D-6, D-8 steps 1–3) remains in force.
 
 ## Status
 

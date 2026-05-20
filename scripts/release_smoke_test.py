@@ -148,8 +148,9 @@ def _setup_fixture_repo(
       - ``.harness/installed-manifest.json`` (schema_version=2, entries=[])
       - ``.scratch/`` dir (phase-state will be seeded via commit_transaction)
       - ``.planning/phases/<slug>/`` dirs if phase_slugs non-empty
-      - Out-of-repo audit-tip anchor written to ~/.harness/audit-tip/<repo-id>.json
-        so that ``harness fsd-run-phase`` anchor-verify passes.
+
+    (Audit-tip anchor fixture removed in v0.9.3; see ADR
+    docs/adr/2026-05-20-remove-audit-tip-anchor.md.)
 
     Returns the repo root Path (caller must clean up if not using
     tmp_path fixture — use `shutil.rmtree`).

@@ -14,7 +14,7 @@
 > - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Release Confirmation 상세.
 > - **Troubleshooting / Advanced CLI**: **부록 B** — 오류 해결 레시피, 전체 CLI 레퍼런스, Exit Codes.
 > - **CI / 자동화 엔지니어**: **부록 C** — 환경 변수, Phase Gate 상세(autopilot), 업그레이드, Windows 지원.
-> - **기타**: **부록 D** — v0.9.0 Carryover, 참고 자료.
+> - **기타**: **부록 D** — Carryover, 참고 자료.
 
 ---
 
@@ -62,7 +62,7 @@
 
 ### 부록 D — 기타
 
-- [D1. v0.9.0 Carryover](#d1-v09-carryover)
+- [D1. Carryover](#d1-carryover)
 - [D2. 참고 자료](#d2-참고-자료)
 
 ---
@@ -1341,7 +1341,7 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 
 ## 부록 D — 기타
 
-## D1. v0.9.0 Carryover
+## D1. Carryover
 
 다음 메이저 버전에 deferred된 항목:
 
