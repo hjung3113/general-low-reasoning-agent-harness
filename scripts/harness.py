@@ -280,6 +280,8 @@ def install(
     adapters: set[str] | None = None,
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
+    approver_email: str | None = None,
+    approver_bootstrap_source: str | None = None,
 ) -> None:
     from lib.install import install as _install
     return _install(
@@ -290,6 +292,8 @@ def install(
         profiles=profiles,
         packs=packs,
         harness_version=HARNESS_VERSION,
+        approver_email=approver_email,
+        approver_bootstrap_source=approver_bootstrap_source,
     )
 
 
@@ -473,6 +477,15 @@ def run(argv: list[str] | None = None) -> int:
         choices=("mssql", "postgresql", "none"),
         default=None,
         help="Optional database axis. Ignored when profile is 'generic'.",
+    )
+    init_parser.add_argument(
+        "--approver-email",
+        default=None,
+        metavar="ADDR",
+        help=(
+            "Bootstrap approver email for .harness/install-record.json. "
+            "Falls back to HARNESS_INSTALL_APPROVER env, then git config user.email."
+        ),
     )
 
     upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
@@ -950,6 +963,16 @@ def run(argv: list[str] | None = None) -> int:
                 else:
                     auto_packs.update(db_packs(db))
             final_packs = auto_packs
+        # T7 / NEW-1: resolve bootstrap approver email before install.
+        # Skip for --dry-run (no files are written).
+        _approver_email: str | None = None
+        _approver_bootstrap_source: str | None = None
+        if not args.dry_run:
+            from lib.install import resolve_approver_email as _rae
+            _approver_email, _approver_bootstrap_source = _rae(
+                cli_flag=getattr(args, "approver_email", None),
+                root=root,
+            )
         install(
             root=root,
             target=args.target,
@@ -957,6 +980,8 @@ def run(argv: list[str] | None = None) -> int:
             adapters=parse_scope(args.adapters, default={"roo"}),
             profiles=set(profiles_resolved),
             packs=final_packs,
+            approver_email=_approver_email,
+            approver_bootstrap_source=_approver_bootstrap_source,
         )
         return 0
     if args.command == "upgrade":

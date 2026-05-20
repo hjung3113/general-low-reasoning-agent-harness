@@ -1,8 +1,12 @@
 """Install flow: copy files, plan managed appends, sync roomodes, write install state."""
 from __future__ import annotations
 
+import datetime
 import json
+import os
+import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -43,6 +47,170 @@ from lib.version import (
     source_provenance,
 )
 
+# ---------------------------------------------------------------------------
+# Install-record bootstrap (T7 / NEW-1)
+# ---------------------------------------------------------------------------
+
+INSTALL_RECORD_NAME = "install-record.json"
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_approver_email(raw: str) -> str:
+    """Sanitize a candidate approver email (codex M-6).
+
+    - Trim ASCII whitespace; reject empty; reject control chars; lowercase.
+    """
+    trimmed = raw.strip()
+    if not trimmed:
+        raise ValueError("approver email is empty after whitespace trim")
+    if len(trimmed.splitlines()) > 1:
+        raise ValueError(f"approver email contains multiple lines: {raw!r}")
+    if _CONTROL_CHAR_RE.search(trimmed):
+        raise ValueError(f"approver email contains control characters: {raw!r}")
+    return trimmed.lower()
+
+
+def resolve_approver_email(
+    *,
+    cli_flag: "str | None" = None,
+    env: "dict | None" = None,
+    root: "Path | None" = None,
+) -> "tuple[str, str]":
+    """Resolve bootstrap approver email using priority chain.
+
+    Priority: (1) cli_flag, (2) HARNESS_INSTALL_APPROVER env, (3) git config user.email.
+    Returns ``(lowercased_email, bootstrap_source)``.
+    Raises ``SystemExit`` if all sources empty/invalid.
+    """
+    _env = env if env is not None else os.environ
+
+    if cli_flag is not None:
+        try:
+            return _sanitize_approver_email(cli_flag), "cli-flag"
+        except ValueError as exc:
+            raise SystemExit(
+                f"error: --approver-email invalid: {exc}\n"
+                "Fix: provide a valid email address with --approver-email."
+            ) from exc
+
+    env_val = _env.get("HARNESS_INSTALL_APPROVER", "")
+    if env_val:
+        try:
+            return _sanitize_approver_email(env_val), "env"
+        except ValueError as exc:
+            raise SystemExit(
+                f"error: HARNESS_INSTALL_APPROVER invalid: {exc}\n"
+                "Fix: set HARNESS_INSTALL_APPROVER to a valid email address."
+            ) from exc
+
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            capture_output=True, text=True, timeout=2.0,
+            cwd=str(root) if root else None,
+        )
+        if result.returncode == 0:
+            git_email = result.stdout.strip()
+            if git_email:
+                try:
+                    return _sanitize_approver_email(git_email), "git-config"
+                except ValueError:
+                    pass
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    raise SystemExit(
+        "error: harness init refused: cannot determine approver email.\n"
+        "Provide one of:\n"
+        "  --approver-email <addr>          (CLI flag)\n"
+        "  HARNESS_INSTALL_APPROVER=<addr>  (environment variable)\n"
+        "  git config user.email            (git config)"
+    )
+
+
+def write_install_record(
+    *,
+    target: Path,
+    approver_email: str,
+    bootstrap_source: str,
+    harness_version: str,
+    root: Path,
+) -> None:
+    """Write .harness/install-record.json and append audit row.
+
+    Idempotent: if the file already exists, logs advisory and returns.
+    """
+    from lib.atomic_io import atomic_write_text
+    from lib.audit import audit_append
+
+    harness_dir = target / ".harness"
+    record_path = harness_dir / INSTALL_RECORD_NAME
+    audit_path = harness_dir / "audit.log"
+
+    if record_path.exists():
+        sys.stderr.write(
+            f"advisory: install-record already exists at {record_path}; "
+            "preserving existing approvers (install_record.preexisting).\n"
+        )
+        return
+
+    commit_sha, tag_val, is_dirty = "", "", False
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=2.0, cwd=str(root),
+        )
+        if r.returncode == 0:
+            commit_sha = r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        r = subprocess.run(
+            ["git", "describe", "--exact-match", "--tags", "HEAD"],
+            capture_output=True, text=True, timeout=2.0, cwd=str(root),
+        )
+        if r.returncode == 0:
+            tag_val = r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        r = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=2.0, cwd=str(root),
+        )
+        if r.returncode == 0:
+            is_dirty = bool(r.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    record: dict = {
+        "schema_version": 1,
+        "harness_version": harness_version,
+        "installed_at_iso": now_iso,
+        "bootstrap_source": bootstrap_source,
+        "approvers": [
+            {"email": approver_email, "added_at": now_iso, "source": "bootstrap"},
+        ],
+        "source_provenance": {"commit": commit_sha, "tag": tag_val, "dirty": is_dirty},
+    }
+
+    harness_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(record_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+
+    try:
+        audit_append(
+            {
+                "verb": "install_record.bootstrap",
+                "at": now_iso,
+                "actor": approver_email,
+                "args": {"bootstrap_source": bootstrap_source, "approver_count": 1},
+            },
+            audit_path=audit_path,
+        )
+    except Exception:
+        pass  # audit failure is non-fatal
+
 
 def sync_roomodes_profile_modes(target: Path, profiles: Iterable[str], source_root: Path) -> None:
     """Replace the profile-modes section of target/.roomodes with the modes
@@ -72,10 +240,12 @@ def install(
     root: Path,
     target: Path,
     dry_run: bool = False,
-    adapters: set[str] | None = None,
-    profiles: set[str] | None = None,
-    packs: set[str] | None = None,
+    adapters: "set[str] | None" = None,
+    profiles: "set[str] | None" = None,
+    packs: "set[str] | None" = None,
     harness_version: str = "0.0.0-dev+unknown",
+    approver_email: "str | None" = None,
+    approver_bootstrap_source: "str | None" = None,
 ) -> None:
     # P5-P1-3: verify prior installed-manifest chain hash before any install
     # decision (§6 integrity). Raises ManifestChainTamperedError (exit 5) if
@@ -147,6 +317,16 @@ def install(
         target=target,
         harness_version=harness_version,
     )
+
+    # T7 / NEW-1: write .harness/install-record.json so `phase approve` works immediately.
+    if approver_email is not None and approver_bootstrap_source is not None:
+        write_install_record(
+            target=target,
+            approver_email=approver_email,
+            bootstrap_source=approver_bootstrap_source,
+            harness_version=harness_version,
+            root=root,
+        )
 
     print(f"installed harness v{harness_version} → {target} ({len(destinations)} planned writes). Next: cd {target} && python3 scripts/harness.py check")
 
