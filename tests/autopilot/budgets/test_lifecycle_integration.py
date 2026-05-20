@@ -180,7 +180,6 @@ def _do_start(
             mode="phase",
             budgets=budgets,
             allow_network=False,
-            skip_anchor_preflight=True,
             roadmap_root=roadmap_root,
             env=_ci_env(),
             stdin_is_tty=False,
@@ -202,8 +201,6 @@ def _do_stop(harness_env: dict) -> phase_autopilot.AutopilotResult:
             audit_path=audit_path,
             lock_handle=lock,
             reason="test stop",
-            anchor_verified=True,
-            skip_anchor_preflight=True,
         )
     finally:
         phase_lock.release_primary(lock)
@@ -646,7 +643,6 @@ def test_autopilot_start_then_3_commits_with_budget_3_halts_at_4th(tmp_path):
             mode="phase",
             budgets={"file_mutation_ops": 3, "wall_seconds": 300},
             allow_network=False,
-            skip_anchor_preflight=True,
             roadmap_root=planning,
             env=_ci_env(),
             stdin_is_tty=False,

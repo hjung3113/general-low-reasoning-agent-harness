@@ -461,7 +461,7 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     (use ``phase set <next>`` to advance). Delegates to
     ``phase_approve.run_approve`` which enforces the TTY gate (exit 17
     ``non_tty_approval_blocked`` on non-TTY), identity resolution,
-    install-record membership, anchor + state-trust preflight, and audit
+    install-record membership, state-trust preflight, and audit
     provenance (``proof_class: soft_tty``).
     """
     _probe_harness_writable()
@@ -509,7 +509,6 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
         stdin_isatty=stdin_isatty,
         consumer_tty=consumer_tty,
         repo_root=cwd,
-        skip_anchor_preflight=False,
     )
     return result.exit_code
 
@@ -704,7 +703,7 @@ def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
     """Handle ``harness phase reopen`` (design §3.2).
 
     Delegates to ``phase_reopen.run_reopen`` which enforces the §3.2
-    TTY gate, identity resolution, install-record membership, anchor +
+    TTY gate, identity resolution, install-record membership,
     state-trust preflight, and the halt-diary / reset-matrix mutation.
     """
     _probe_harness_writable()
@@ -725,7 +724,6 @@ def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
         install_record_path=install_record_path,
         stdin_isatty=stdin_isatty,
         repo_root=cwd,
-        skip_anchor_preflight=False,
     )
     return result.exit_code
 

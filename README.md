@@ -35,7 +35,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.9.2의 일상 CLI 표면은 네 개입니다:
+v0.9.3의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -46,7 +46,7 @@ harness check
 
 `harness`는 짧은 가이드를 보여줍니다. `harness next`는 다음 안전 행동을 설명하고, `harness run`은 자동으로 해도 안전한 workflow 단계만 진행하다가 사람 승인이 필요하면 멈춥니다. `harness check`는 현재 하네스/계획 상태를 검증합니다.
 
-`phase`, nonce, audit anchor, state repair, autopilot 같은 저수준 명령은 advanced/debug/CI 표면입니다. 보통 사용자와 어댑터는 이를 직접 실행하지 않습니다.
+`phase`, nonce, state repair, autopilot 같은 저수준 명령은 advanced/debug/CI 표면입니다. 보통 사용자와 어댑터는 이를 직접 실행하지 않습니다.
 
 유즈케이스별 한글 안내는 [docs/use-cases/README.md](docs/use-cases/README.md)에서 시작하세요. UML 흐름은 [docs/minimal-workflow-sequence.md](docs/minimal-workflow-sequence.md), 상태 머신은 [docs/minimal-workflow-state-machine.md](docs/minimal-workflow-state-machine.md)에 있습니다.
 
@@ -70,7 +70,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.9.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -116,14 +116,14 @@ python3 scripts/project_dashboard.py --serve
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.9.2 --dry-run` |
+| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.9.3 --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.9.2 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.3 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -222,13 +222,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.9.2
+python3 scripts/harness.py release-check --expected-version v0.9.3
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.2 -m "Release v0.9.2"
-git push origin v0.9.2
+git tag -s v0.9.3 -m "Release v0.9.3"
+git push origin v0.9.3
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -249,8 +249,8 @@ git push origin v0.9.2
 
 ```bash
 # 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.9.2 --dry-run
-python3 scripts/upgrade_harness.py --version v0.9.2
+python3 scripts/upgrade_harness.py --version v0.9.3 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.3
 
 # 제거
 python3 scripts/uninstall_harness.py --interactive
@@ -268,7 +268,7 @@ python3 scripts/uninstall_harness.py --interactive
 
 **Known Limitations** — to be fully addressed in the next minor release:
 - The current release tag is **not** SSH-signed; `docs/trust/allowed-signers` ships as a placeholder. Treat the trust root as scaffold-only until a maintainer key is published and tags are signed. Do not rely on `git verify-tag` until the next minor release.
-- Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. The out-of-repo anchor mitigates but is keyed in the same user's home — defense-in-depth only. Full integrity hardening lands in the next minor release.
+- Audit-chain `previous_entry_hash` GENESIS fallback (`audit_chain.compute_entry_hash`) permits suffix-rewrite by a local writer with code execution as the user. Repo-local attacker (audit log forgery/replay) is intentionally out of threat model for this internal-only tool (out-of-repo audit-tip anchor removed in v0.9.3; see ADR `docs/adr/2026-05-20-remove-audit-tip-anchor.md`).
 - Release-path approval-nonce TTY-isolation still accepts `--consumer-tty` from argv rather than server-verifying `os.ttyname(0)` + `st_rdev` (phase.approve no longer uses this path). A same-TTY agent can pass a fake distinct value.
 - Audit-rotation path (`audit.py`) uses `os.rename` which is non-atomic over existing target on Windows; rotation correctness on native Windows is unverified at this release.
 

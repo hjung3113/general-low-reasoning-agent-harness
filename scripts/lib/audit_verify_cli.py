@@ -1,19 +1,19 @@
 """harness verify --audit CLI verb implementation (design §12.7, §12.9, S06).
 
 Runs the full audit chain verification against the live repo or a fixture
-directory. Exits 0 on success, 10 on chain failure, 5 on BOM error.
+directory. Exits 0 on success, 10 on chain failure, 5 on BOM error,
+14 on crash-artefact (0-byte state file).
 
 Grammar (§12.9):
   harness verify --audit [--fixture <dir>]
 
   --fixture <dir>: override source to <dir>/audit.log + <dir>/audit.log.N
     State file read from <dir>/state.json if present (audit-only otherwise).
-    Anchor file read from <dir>/.audit-tip.json if present; otherwise
-    anchor checks are skipped (anchor_skipped=true in report).
     Implies no-network; refuses --release.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,24 +21,32 @@ from typing import Any
 from .audit_chain import (
     AuditBomError,
     AuditChainError,
-    AuditChainTruncationError,
     verify_chain,
 )
+from .state_trust import StateEmptyError, _is_baseline_state
+
+
+_SCRATCH_ROOT = ".scratch"
+_STATE_NAME = "phase-state.json"
 
 
 def cmd_verify_audit(args: Any, root: Path) -> int:
     """Entry point for `harness verify --audit [--fixture <dir>]`.
 
-    Returns exit code (0 = ok, 5 = BOM error, 10 = chain failure).
-
-    P1-5: After a successful chain walk, compare the live audit tail's
-    entry_hash to the out-of-repo anchor's recorded tip (if present).
-    Mismatch → AuditChainTruncationError (exit 10 audit_chain_truncation).
-    Anchor absent → warn but proceed (acceptable for fresh repos and all
-    --fixture invocations).
+    Returns exit code (0 = ok, 5 = BOM error, 10 = chain failure,
+    14 = crash-artefact state file).
 
     P2-4: If --fixture <dir> is given but the directory or audit.log does
     not exist, exit 10 immediately with a clear Fix: hint.
+
+    BUG-1 fix: live-repo only — if .harness/audit.log is missing AND the
+    state file shows progression beyond baseline, exit 10 with
+    sub_reason=audit_log_missing (mirrors state_trust
+    state_advanced_without_audit_evidence).
+
+    BUG-2 fix: live-repo only — if .scratch/phase-state.json is 0 bytes,
+    exit 14 (crash artefact, run recover).  Mirrors the StateEmptyError
+    path in next/status.
     """
     fixture_dir: Path | None = None
     if args.verify_fixture is not None:
@@ -65,6 +73,44 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
         # Live repo: default to .harness/audit.log
         audit_path = root / ".harness" / "audit.log"
         rotation_dir = audit_path.parent if audit_path.parent.exists() else None
+
+        # BUG-2 fix: detect 0-byte state file before running chain check.
+        state_path = root / _SCRATCH_ROOT / _STATE_NAME
+        if state_path.exists():
+            if state_path.stat().st_size == 0:
+                print(
+                    "Error (exit 14): state file is present but empty "
+                    "(likely crash artefact).\n"
+                    "Fix: run 'harness recover' before any state-mutating verb.",
+                    file=sys.stderr,
+                )
+                return 14
+
+        # BUG-1 fix: if .harness/ is entirely absent, check whether the
+        # state file has progressed beyond baseline.  A genuinely fresh
+        # install (state missing or at baseline) is fine; advanced state
+        # without an audit log is an operator error.
+        if rotation_dir is None and state_path.exists():
+            try:
+                raw = state_path.read_bytes()
+                if len(raw) > 0:
+                    try:
+                        parsed_state = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        parsed_state = None
+                    if parsed_state is not None and not _is_baseline_state(parsed_state):
+                        print(
+                            "Error (exit 10): state file shows progression beyond "
+                            "the fresh-install baseline but .harness/audit.log does "
+                            "not exist; sub_reason=audit_log_missing.\n"
+                            "Fix: run 'harness verify --audit' after restoring "
+                            ".harness/audit.log, or run 'harness install' to "
+                            "re-initialise from scratch.",
+                            file=sys.stderr,
+                        )
+                        return 10
+            except OSError:
+                pass  # state file unreadable — let chain check handle it
 
     try:
         result = verify_chain(audit_path, rotation_dir=rotation_dir)
@@ -96,45 +142,6 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
         )
         return 10
 
-    # P1-5: anchor integration — compare live tail to out-of-repo anchor
-    anchor_skipped = False
-    if fixture_dir is None:
-        # Live repo mode: attempt anchor check
-        try:
-            from .audit_anchor import (
-                AnchorError,
-                AnchorMissingError,
-                read_anchor,
-                anchor_path,
-            )
-            repo_root = root
-            a_path = anchor_path(repo_root)
-            if a_path.exists():
-                anchor = read_anchor(repo_root)
-                if result.final_tip_hash is not None:
-                    if anchor.audit_tip_entry_hash != result.final_tip_hash:
-                        raise AuditChainTruncationError(
-                            f"Anchor tip mismatch: anchor.audit_tip_entry_hash="
-                            f"{anchor.audit_tip_entry_hash!r} but live audit tail "
-                            f"entry_hash={result.final_tip_hash!r}. "
-                            f"The audit log may have been truncated or replayed. "
-                            f"Fix: run 'harness anchor repair' to re-anchor the "
-                            f"current state, or investigate the log history."
-                        )
-            else:
-                # Anchor absent — warn but proceed (fresh repo)
-                anchor_skipped = True
-        except AuditChainTruncationError:
-            raise
-        except AnchorMissingError:
-            anchor_skipped = True
-        except Exception:
-            # Anchor subsystem unavailable — degrade gracefully
-            anchor_skipped = True
-    else:
-        # --fixture mode: anchor not expected
-        anchor_skipped = True
-
     # Human-readable summary on stdout
     lines = [
         f"audit chain: OK",
@@ -145,10 +152,6 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
         lines.append(f"  final tip hash:           {result.final_tip_hash}")
     else:
         lines.append(f"  final tip hash:           (empty log)")
-    if anchor_skipped:
-        lines.append(f"  anchor check:             skipped (anchor absent or fixture mode)")
-    else:
-        lines.append(f"  anchor check:             OK")
     print("\n".join(lines))
     return 0
 

@@ -36,7 +36,7 @@
 | `HARNESS_TEST_OIDC_CLAIMS_GITHUB_ACTIONS` | JSON | GitHub Actions OIDC claim 주입 (test stub) | `HARNESS_OIDC_TEST_MODE=1` 필수; test fixture용 |
 | `HARNESS_TEST_OIDC_TOKEN_` | prefix | OIDC token 주입 (test stub) | 위와 동일 |
 | `HARNESS_TEST_OIDC_TOKEN_GITHUB_ACTIONS` | JWT | GitHub Actions OIDC token 주입 (test stub) | `HARNESS_OIDC_TEST_MODE=1` 필수; test fixture용 |
-| `HARNESS_VERSION_OVERRIDE` | semver | anchor CLI에서 harness version override | 테스트 또는 디버깅 목적; production에서 권장하지 않음 |
+| `HARNESS_VERSION_OVERRIDE` | semver | harness version override (테스트·디버깅용) | 테스트 또는 디버깅 목적; production에서 권장하지 않음 |
 
 ### 내부 전용 (직접 설정 불가)
 

@@ -3,7 +3,6 @@
 Design refs:
   - §3.1 / §3.2 — shared preflight helpers used by `phase approve` and
                    `phase reopen` (and future §S07 verbs).
-  - §12.1        — anchor preflight fail-closed semantics.
   - §2.6         — state-trust preflight taxonomy.
   - §3.9         — every error MUST carry a Fix: line.
 
@@ -116,48 +115,11 @@ def test_approvers_emails_skips_entries_with_empty_email():
     "FIX_GITCONFIG",
     "FIX_APPROVER_MEMBERSHIP",
     "FIX_STATE_TRUST",
-    "FIX_ANCHOR_MISSING",
-    "FIX_ANCHOR_MISMATCH",
-    "FIX_ANCHOR_UNVERIFIABLE",
 ])
 def test_fix_line_constant_present_and_non_empty(const_name):
     val = getattr(phase_preflight, const_name)
     assert isinstance(val, str) and val.strip(), f"{const_name} must be a non-empty string"
     assert "Fix:" in val, f"{const_name} must contain 'Fix:' per §3.9"
-
-
-# ---------------------------------------------------------------------------
-# run_anchor_preflight — fail-closed semantics
-# ---------------------------------------------------------------------------
-
-
-def test_run_anchor_preflight_skip_returns_true():
-    result = phase_preflight.run_anchor_preflight(
-        skip_anchor_preflight=True, repo_root=None
-    )
-    assert result is True
-
-
-def test_run_anchor_preflight_unwired_raises_when_repo_root_none():
-    with pytest.raises(phase_preflight.AnchorPreflightError) as exc_info:
-        phase_preflight.run_anchor_preflight(
-            skip_anchor_preflight=False, repo_root=None
-        )
-    err = exc_info.value
-    assert err.sub_reason == "anchor_preflight_unwired"
-    assert err.fix_line  # must carry a Fix: line
-
-
-def test_run_anchor_preflight_raises_anchor_missing_for_unknown_repo(tmp_path: Path):
-    """A temp dir with no git repo → anchor missing."""
-    with pytest.raises(phase_preflight.AnchorPreflightError) as exc_info:
-        phase_preflight.run_anchor_preflight(
-            skip_anchor_preflight=False, repo_root=tmp_path
-        )
-    err = exc_info.value
-    # The sub_reason is implementation-defined but must not be the
-    # "unwired" reason (which means the codepath was actually reached).
-    assert err.sub_reason != "anchor_preflight_unwired"
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +143,6 @@ def test_run_state_trust_preflight_ok_with_no_state_file(tmp_path: Path):
             scratch=scratch,
             audit_path=audit_path,
             lock=lock,
-            anchor_verified=True,
         )
         assert result is None  # successful preflight → None
     finally:
@@ -226,22 +187,17 @@ def test_run_state_trust_preflight_raises_on_tampered_state(tmp_path: Path):
                 scratch=scratch,
                 audit_path=audit_path,
                 lock=lock2,
-                anchor_verified=True,
             )
         err = exc_info.value
         assert err.exit_code == 10
-        assert err.sub_reason == "state_audit_tip_mismatch"
+        assert err.sub_reason == "state_audit_mismatch"
     finally:
         phase_lock.release_primary(lock2)
 
 
 # ---------------------------------------------------------------------------
-# AnchorPreflightError and StateTrustPreflightError are Exception subclasses
+# StateTrustPreflightError is an Exception subclass
 # ---------------------------------------------------------------------------
-
-
-def test_anchor_preflight_error_is_exception():
-    assert issubclass(phase_preflight.AnchorPreflightError, Exception)
 
 
 def test_state_trust_preflight_error_is_exception():
@@ -258,15 +214,10 @@ def test_all_exports_present():
         "FIX_GITCONFIG",
         "FIX_APPROVER_MEMBERSHIP",
         "FIX_STATE_TRUST",
-        "FIX_ANCHOR_MISSING",
-        "FIX_ANCHOR_MISMATCH",
-        "FIX_ANCHOR_UNVERIFIABLE",
         "now_iso_z",
         "default_gitconfig_email_lookup",
         "load_install_record",
         "approvers_emails",
-        "AnchorPreflightError",
-        "run_anchor_preflight",
         "StateTrustPreflightError",
         "run_state_trust_preflight",
     }

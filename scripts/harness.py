@@ -867,41 +867,6 @@ def run(argv: list[str] | None = None) -> int:
         help="Nonce lifetime in seconds (1..3600, default: 120).",
     )
 
-    # Audit-tip anchor admin verbs (design doc §12.1, S00.7-anchor).
-    anchor_parser = subparsers.add_parser(
-        "anchor",
-        help="Out-of-repo audit-tip anchor admin verbs (TTY-only).",
-    )
-    anchor_sub = anchor_parser.add_subparsers(dest="anchor_command", required=True)
-    a_repair = anchor_sub.add_parser(
-        "repair",
-        help="Rebuild ~/.harness/audit-tip/<repo-id>.json from current live state.",
-    )
-    a_repair.add_argument(
-        "--by",
-        dest="anchor_by",
-        default=None,
-        help="Acting user email (recorded in the future audit entry that wraps repair).",
-    )
-    a_repair.add_argument(
-        "--accept-no-audit",
-        action="store_true",
-        help=(
-            "Allow repair before any audit entries exist (S00.7 boot path). "
-            "Without this flag, repair refuses when no audit tail is found."
-        ),
-    )
-    a_repair.add_argument(
-        "--accept-no-install-record",
-        action="store_true",
-        help=(
-            "Allow repair before .harness/install-record.json exists, OR when "
-            "its install_id field is missing. Mints a fresh UUID. Use only "
-            "during first install bootstrap (S00.7) — otherwise repair refuses "
-            "to silently invent an install_id."
-        ),
-    )
-
     # ----- harness status (§3.9) -----
     status_parser = subparsers.add_parser(
         "status",
@@ -1142,11 +1107,6 @@ def run(argv: list[str] | None = None) -> int:
                 parser.error(f"--ttl must be between 1 and 3600; got {args.ttl}")
             return run_mint(args, stdout=sys.stdout, stderr=sys.stderr)
         raise AssertionError(f"Unhandled approve-nonce subcommand: {args.approve_nonce_command}")
-    if args.command == "anchor":
-        from lib.anchor_cli import cmd_anchor_repair
-        if args.anchor_command == "repair":
-            return cmd_anchor_repair(args, root)
-        raise AssertionError(f"Unhandled anchor subcommand: {args.anchor_command}")
     if args.command == "status":
         from lib.status_next_cli import cmd_status
         return cmd_status(args)

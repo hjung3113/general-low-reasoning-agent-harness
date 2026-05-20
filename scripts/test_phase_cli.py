@@ -79,7 +79,6 @@ def do_approve_direct(cwd: Path, *, by: str = "t@e", response: str = "y",
             consumer_tty="/dev/ttys000",
             gitconfig_email_lookup=lambda: by,
             env_vars={},
-            skip_anchor_preflight=True,
             skip_state_trust_preflight=True,
             **run_approve_kwargs,
         )

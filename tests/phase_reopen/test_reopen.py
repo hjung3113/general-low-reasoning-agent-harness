@@ -154,7 +154,7 @@ def _make_args(**overrides):
 
 
 def _run(env, *, stdin_isatty=True, gitconfig_email="alice@example.com",
-         skip_anchor_preflight=True, repo_root=None, **arg_overrides):
+         repo_root=None, **arg_overrides):
     args = _make_args(**arg_overrides)
     return phase_reopen.run_reopen(
         args,
@@ -166,7 +166,6 @@ def _run(env, *, stdin_isatty=True, gitconfig_email="alice@example.com",
         gitconfig_email_lookup=lambda: gitconfig_email,
         env_vars={},
         repo_root=repo_root,
-        skip_anchor_preflight=skip_anchor_preflight,
     )
 
 
@@ -188,18 +187,7 @@ def test_non_tty_message_includes_fix_line(env, capsys):
 
 
 # ---------------------------------------------------------------------------
-# 2. Anchor preflight fail-closed (§12.1, mirrors run_approve pattern)
-# ---------------------------------------------------------------------------
-
-
-def test_anchor_preflight_unwired_when_repo_root_none(env):
-    rc = _run(env, skip_anchor_preflight=False, repo_root=None)
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "anchor_preflight_unwired"
-
-
-# ---------------------------------------------------------------------------
-# 3. Identity resolution mirrors approve
+# 2. Identity resolution mirrors approve
 # ---------------------------------------------------------------------------
 
 
@@ -462,14 +450,14 @@ def test_state_trust_preflight_invoked(env, monkeypatch):
     real = state_trust.preflight
 
     def spy(*a, **kw):
-        calls.append({"anchor_verified": kw.get("anchor_verified")})
+        calls.append(kw)
         return real(*a, **kw)
 
     monkeypatch.setattr(state_trust, "preflight", spy)
     monkeypatch.setattr(phase_reopen, "_state_trust", state_trust)
     rc = _run(env, to="plan")
     assert rc.exit_code == 0
-    assert calls and calls[0]["anchor_verified"] is True
+    assert len(calls) > 0
 
 
 def test_tampered_state_rejected(env):
@@ -478,7 +466,7 @@ def test_tampered_state_rejected(env):
     state_path.write_text(txt.replace('"phase": "execute"', '"phase": "discuss"'))
     rc = _run(env, to="plan")
     assert rc.exit_code == 10
-    assert rc.sub_reason == "state_audit_tip_mismatch"
+    assert rc.sub_reason == "state_audit_mismatch"
 
 
 # ---------------------------------------------------------------------------

@@ -4,10 +4,8 @@ Order of operations for `run_start` (any failure → `AutopilotResult` with
 non-zero `exit_code`; the CLI dispatcher maps to `sys.exit`):
 
   1. Lock contract check (TxnLockMissingError raised if lock missing/released).
-  2. Anchor preflight (§12.1). Default `repo_root=None` + `skip_anchor_preflight=False`
-     → exit 6 `anchor_preflight_unwired` (fail-closed).
-  3. State-trust preflight (§2.6). Refuses forged state with exit 10.
-  3b. Authorization algorithm (§3.5 + §3.5.1):
+  2. State-trust preflight (§2.6). Refuses forged state with exit 10.
+  2b. Authorization algorithm (§3.5 + §3.5.1):
      TTY path: validate by_email ∈ approvers, consume nonce → authorization_source="cli_tty_human".
      CI path: run ci_predicate_satisfied → authorization_source from result.
   4. Windows containment check (§3.5 Round-3 BLOCK): Windows + chain mode
@@ -97,11 +95,6 @@ class NextPendingResult:
 # ---------------------------------------------------------------------------
 
 
-_FIX_ANCHOR_UNWIRED = (
-    "Fix: caller must pass `repo_root=` so the §12.1 trust chain can "
-    "verify the out-of-repo audit-tip anchor before reading state; "
-    "or pass `skip_anchor_preflight=True` ONLY from controlled test paths"
-)
 _FIX_WINDOWS_CHAIN = (
     "Fix: pass `--accept-degraded-windows-containment` to allow chain mode "
     "on Windows without network isolation, or pass `--allow-network` to "
@@ -204,37 +197,11 @@ def _is_phase_done(roadmap_root: Optional[Path], slug: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _run_anchor_preflight_for_autopilot(
-    *,
-    skip_anchor_preflight: bool,
-    repo_root: Optional[Path],
-) -> Optional[AutopilotResult]:
-    """Run anchor preflight. Returns an AutopilotResult on failure, None on success."""
-    try:
-        _phase_preflight.run_anchor_preflight(
-            skip_anchor_preflight=skip_anchor_preflight,
-            repo_root=repo_root,
-        )
-        return None
-    except _phase_preflight.AnchorPreflightError as exc:
-        print(
-            f"error: phase autopilot start refused: {exc.message}. "
-            f"{exc.fix_line}",
-            file=sys.stderr,
-        )
-        return AutopilotResult(
-            exit_code=6,
-            sub_reason=exc.sub_reason,
-            message=exc.message,
-        )
-
-
 def _run_state_trust_preflight_for_autopilot(
     *,
     scratch: Path,
     audit_path: Path,
     lock: Any,
-    anchor_verified: bool,
 ) -> Optional[AutopilotResult]:
     """Run state-trust preflight. Returns AutopilotResult on failure, None on success."""
     try:
@@ -242,7 +209,6 @@ def _run_state_trust_preflight_for_autopilot(
             scratch=scratch,
             audit_path=audit_path,
             lock=lock,
-            anchor_verified=anchor_verified,
         )
         return None
     except _phase_preflight.StateTrustPreflightError as exc:
@@ -279,8 +245,7 @@ def _run_crash_recovery(
             msg = (
                 f"crash recovery undecidable (row={recovery.row}, "
                 f"decision={recovery.decision!r}); "
-                "Fix: run `harness verify --audit` to inspect audit chain, "
-                "then `harness anchor repair` if the anchor is stale."
+                "Fix: run `harness verify --audit` to inspect audit chain."
             )
             print(f"error: {msg}", file=sys.stderr)
             return AutopilotResult(
@@ -453,8 +418,6 @@ def run_start(
     mode: str,
     budgets: Optional[Mapping[str, int]],
     allow_network: bool,
-    anchor_verified: bool = False,
-    skip_anchor_preflight: bool = False,
     accept_degraded_windows_containment: bool = False,
     repo_root: Optional[Path] = None,
     roadmap_root: Optional[Path] = None,
@@ -490,14 +453,10 @@ def run_start(
         Budget overrides. None → defaults.
     allow_network : bool
         Whether to allow network (echoed to state + audit).
-    anchor_verified : bool
-        True when §12.1 anchor already verified externally.
-    skip_anchor_preflight : bool
-        True ONLY in controlled test paths (skips §12.1 chain).
     accept_degraded_windows_containment : bool
         Bypasses Windows exit 11 (§3.5 Round-3 escape hatch).
     repo_root : Path | None
-        Repo root for git check (chain mode) and anchor preflight.
+        Repo root for git check (chain mode).
     roadmap_root : Path | None
         `.planning/phases/` root for slug validation. None → no check.
     env : Mapping | None
@@ -548,23 +507,11 @@ def run_start(
     if fail is not None:
         return fail
 
-    # Step 2: anchor preflight.
-    fail = _run_anchor_preflight_for_autopilot(
-        skip_anchor_preflight=skip_anchor_preflight,
-        repo_root=repo_root,
-    )
-    if fail is not None:
-        return fail
-
-    # Determine anchor_verified flag for state-trust preflight.
-    av = anchor_verified if not skip_anchor_preflight else True
-
     # Step 3: state-trust preflight.
     fail = _run_state_trust_preflight_for_autopilot(
         scratch=scratch,
         audit_path=audit_path,
         lock=lock_handle,
-        anchor_verified=av,
     )
     if fail is not None:
         return fail
@@ -1118,8 +1065,6 @@ def run_stop(
     audit_path: Path,
     lock_handle: Any,
     reason: str,
-    anchor_verified: bool,
-    skip_anchor_preflight: bool = False,
     repo_root: Optional[Path] = None,
 ) -> AutopilotResult:
     """Execute the §3.5 `phase autopilot stop` sequence.
@@ -1141,22 +1086,11 @@ def run_stop(
     if fail is not None:
         return fail
 
-    # Anchor preflight.
-    fail = _run_anchor_preflight_for_autopilot(
-        skip_anchor_preflight=skip_anchor_preflight,
-        repo_root=repo_root,
-    )
-    if fail is not None:
-        return fail
-
-    av = anchor_verified if not skip_anchor_preflight else True
-
     # State-trust preflight.
     fail = _run_state_trust_preflight_for_autopilot(
         scratch=scratch,
         audit_path=audit_path,
         lock=lock_handle,
-        anchor_verified=av,
     )
     if fail is not None:
         return fail
@@ -1246,8 +1180,6 @@ def run_next_pending(
     scratch_root: Path,
     audit_path: Path,
     lock_handle: Any,
-    anchor_verified: bool,
-    skip_anchor_preflight: bool = False,
     repo_root: Optional[Path] = None,
     roadmap_root: Optional[Path] = None,
 ) -> NextPendingResult:
@@ -1276,23 +1208,11 @@ def run_next_pending(
             all_done=False,
         )
 
-    # Anchor preflight.
-    fail = _run_anchor_preflight_for_autopilot(
-        skip_anchor_preflight=skip_anchor_preflight,
-        repo_root=repo_root,
-    )
-    if fail is not None:
-        # Translate anchor failure to a NextPendingResult.
-        return NextPendingResult(exit_code=fail.exit_code, next_slug="", all_done=False)
-
-    av = anchor_verified if not skip_anchor_preflight else True
-
     # State-trust preflight.
     fail = _run_state_trust_preflight_for_autopilot(
         scratch=scratch,
         audit_path=audit_path_p,
         lock=lock_handle,
-        anchor_verified=av,
     )
     if fail is not None:
         return NextPendingResult(exit_code=fail.exit_code, next_slug="", all_done=False)

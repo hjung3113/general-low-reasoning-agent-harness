@@ -106,7 +106,6 @@ class TestNewlineRejectedPerSpecAmendment:
             nonce_dir=nonce_dir,
             stdin_isatty=True,
             consumer_tty="/dev/ttys099",
-            skip_anchor_preflight=True,
         )
         assert result.exit_code == 6
         assert result.sub_reason == "override_reason_invalid_chars"
@@ -297,7 +296,6 @@ class TestUnicodeConfusables:
             nonce_dir=nonce_dir,
             stdin_isatty=True,
             consumer_tty="/dev/ttys099",
-            skip_anchor_preflight=True,
         )
         # After NFKC normalization the reason becomes plain ASCII, which passes
         # charset check.  It then fails at state_missing (no state) or

@@ -325,7 +325,6 @@ def test_status_preflight_rejects_tampered_state(tmp_path: Path):
                 scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=True,
             )
     finally:
         _phase_lock.release_primary(lock)
@@ -416,85 +415,12 @@ def test_status_phase_discuss_no_approval():
 
 
 # ---------------------------------------------------------------------------
-# P1-1: anchor fail-closed tests
+# P1-1: bootstrap + state-trust tests
 # ---------------------------------------------------------------------------
 
 
-def test_status_fails_closed_when_anchor_missing_and_state_present(tmp_path: Path):
-    """status returns exit 6 when anchor is missing but state file exists (P1-1)."""
-    import json
-    from lib import status_next_cli as cli
-
-    # Set up .git, .harness, .scratch so walk-up finds the tmp_path as repo root.
-    (tmp_path / ".git").mkdir()
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness_dir = tmp_path / ".harness"
-    harness_dir.mkdir()
-
-    # Write a state file (so anchor check is triggered).
-    state_path = scratch / "phase-state.json"
-    state_path.write_text(
-        json.dumps({"phase": "discuss", "approved": False, "execution_mode": "manual",
-                    "state_schema_version": 2}) + "\n",
-        encoding="utf-8",
-    )
-
-    # NO anchor file present — should fail-closed.
-    result_state, exit_code = cli._read_state_with_preflight(
-        scratch=scratch,
-        audit_path=harness_dir / "audit.log",
-        cwd=tmp_path,
-    )
-    assert result_state is None, "Expected None state on anchor_missing"
-    assert exit_code == 6, f"Expected exit 6, got {exit_code}"
-
-
-def test_status_fails_closed_when_anchor_mismatch(tmp_path: Path):
-    """status returns exit 6 when anchor exists but mismatches the audit log (P1-1)."""
-    import json
-    from lib import status_next_cli as cli
-    from lib import audit_anchor as _aa
-
-    (tmp_path / ".git").mkdir()
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness_dir = tmp_path / ".harness"
-    harness_dir.mkdir()
-    audit_path = harness_dir / "audit.log"
-
-    # Write minimal audit log.
-    audit_path.write_text(
-        json.dumps({"seq": 1, "verb": "phase.set", "after_sha256": "a" * 64}) + "\n",
-        encoding="utf-8",
-    )
-
-    # Write a state file.
-    state_path = scratch / "phase-state.json"
-    state_path.write_text(
-        json.dumps({"phase": "discuss", "approved": False, "execution_mode": "manual",
-                    "state_schema_version": 2}) + "\n",
-        encoding="utf-8",
-    )
-
-    # Write an anchor with a MISMATCHING hash.
-    anchor_path = harness_dir / "audit.tip-anchor.json"
-    anchor_path.write_text(
-        json.dumps({"tip_sha256": "b" * 64, "tip_seq": 1, "anchored_at": "2026-05-18T00:00:00Z"}) + "\n",
-        encoding="utf-8",
-    )
-
-    result_state, exit_code = cli._read_state_with_preflight(
-        scratch=scratch,
-        audit_path=audit_path,
-        cwd=tmp_path,
-    )
-    assert result_state is None, "Expected None state on anchor_mismatch"
-    assert exit_code == 6, f"Expected exit 6, got {exit_code}"
-
-
-def test_status_bootstrap_succeeds_no_state_no_anchor(tmp_path: Path):
-    """Bootstrap repo: no state file and no anchor → exit 0, default state (P1-1)."""
+def test_status_bootstrap_succeeds_no_state(tmp_path: Path):
+    """Bootstrap repo: no state file → exit 0, default state."""
     import json
     from lib import status_next_cli as cli
 
@@ -504,7 +430,7 @@ def test_status_bootstrap_succeeds_no_state_no_anchor(tmp_path: Path):
     harness_dir = tmp_path / ".harness"
     harness_dir.mkdir()
 
-    # Neither state nor anchor present.
+    # No state present.
     result_state, exit_code = cli._read_state_with_preflight(
         scratch=scratch,
         audit_path=harness_dir / "audit.log",
@@ -513,6 +439,41 @@ def test_status_bootstrap_succeeds_no_state_no_anchor(tmp_path: Path):
     assert exit_code == 0, f"Bootstrap should exit 0, got {exit_code}"
     assert result_state is not None
     assert result_state.get("phase") == "discuss"
+
+
+def test_status_fails_closed_when_state_audit_mismatch(tmp_path: Path):
+    """status returns exit 10 when state file hash mismatches the audit tail."""
+    import json
+    from lib import status_next_cli as cli
+
+    (tmp_path / ".git").mkdir()
+    scratch = tmp_path / ".scratch"
+    scratch.mkdir()
+    harness_dir = tmp_path / ".harness"
+    harness_dir.mkdir()
+    audit_path = harness_dir / "audit.log"
+
+    # Write minimal audit log with a hash that won't match state.
+    audit_path.write_text(
+        json.dumps({"seq": 1, "verb": "phase.set", "after_sha256": "a" * 64}) + "\n",
+        encoding="utf-8",
+    )
+
+    # Write a state file with content that hashes to something different.
+    state_path = scratch / "phase-state.json"
+    state_path.write_text(
+        json.dumps({"phase": "discuss", "approved": False, "execution_mode": "manual",
+                    "state_schema_version": 2}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    result_state, exit_code = cli._read_state_with_preflight(
+        scratch=scratch,
+        audit_path=audit_path,
+        cwd=tmp_path,
+    )
+    assert result_state is None, "Expected None state on mismatch"
+    assert exit_code == 10, f"Expected exit 10, got {exit_code}"
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +487,6 @@ def test_status_no_audit_row_after_stale_lock_recovery(tmp_path: Path):
     import time
     from lib import status_next_cli as cli
     from lib import phase_lock as _phase_lock
-    from lib import audit_anchor as _aa
 
     (tmp_path / ".git").mkdir()
     scratch = tmp_path / ".scratch"
@@ -535,16 +495,9 @@ def test_status_no_audit_row_after_stale_lock_recovery(tmp_path: Path):
     harness_dir.mkdir()
     audit_path = harness_dir / "audit.log"
 
-    # Write a valid audit log entry so anchor can be written.
+    # Write a valid audit log entry.
     audit_path.write_text(
         json.dumps({"seq": 1, "verb": "init", "after_sha256": "c" * 64}) + "\n",
-        encoding="utf-8",
-    )
-
-    # Write matching anchor.
-    anchor_path = harness_dir / "audit.tip-anchor.json"
-    anchor_path.write_text(
-        json.dumps({"tip_sha256": "c" * 64, "tip_seq": 1, "anchored_at": "2026-05-18T00:00:00Z"}) + "\n",
         encoding="utf-8",
     )
 
@@ -571,13 +524,9 @@ def test_status_no_audit_row_after_stale_lock_recovery(tmp_path: Path):
     # Record audit log size before.
     audit_size_before = audit_path.stat().st_size
 
-    # Invoke _read_state_with_preflight — anchor verify will fail (hash mismatch), but
-    # the important assertion is that even if we get past anchor, the lock acquire
-    # uses audit_path=None. Since anchor verify may fail here (state hash != audit),
-    # we only care that audit_path is unchanged.
-    # The lock itself should be acquired without writing a recovery audit row.
-    # We cannot guarantee preflight success here (no real state trust), so just
-    # check audit_path size is unchanged.
+    # Invoke _read_state_with_preflight — preflight may fail (hash mismatch), but
+    # the important assertion is that the lock acquire uses audit_path=None so
+    # stale-lock recovery does not write an audit row.
     try:
         cli._read_state_with_preflight(
             scratch=scratch,

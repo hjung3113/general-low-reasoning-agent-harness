@@ -13,6 +13,23 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.3 — 2026-05-20
+
+### Removed
+- **Audit-tip anchor (BREAKING)**: The out-of-repo audit-tip anchor (`~/.harness/audit-tip/<id>.json`) and the `harness anchor` subcommand have been removed. Internal-only threat model retires the repo-local attacker class the anchor defended against.
+
+### Fixed
+- Fresh-install regression: `harness next` no longer errors with "audit-tip anchor not found" on first use.
+- Operational integrity: `state_trust.preflight` now refuses to trust state when audit log is empty/missing but state file has been advanced past the install baseline (sub_reason: `state_advanced_without_audit_evidence`).
+- Torn-write detection: TXN-verb audit entries missing `after_sha256` now raise (`txn_entry_missing_after_sha256`) instead of being silently walked past.
+
+### Compatibility
+- Existing v0.9.x installs upgrade in place. Vestigial `~/.harness/audit-tip/<id>.json` files are ignored (left intact; user may delete manually).
+- New smoke case `upgrade-from-v091-with-vestigial-anchor` covers this path.
+
+### Note
+Internal tool. Repo-local attacker (audit log forgery/replay) is intentionally out of threat model.
+
 ## v0.9.2 — 2026-05-20 (installed dashboard)
 
 ### Added

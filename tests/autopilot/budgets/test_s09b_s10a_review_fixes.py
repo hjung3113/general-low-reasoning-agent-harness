@@ -169,7 +169,6 @@ def _do_start(env: dict, *, budgets: Optional[dict] = None, phase_slug: str = "p
             mode="phase",
             budgets=budgets,
             allow_network=False,
-            skip_anchor_preflight=True,
             roadmap_root=roadmap_root,
             env=_ci_env(),
             stdin_is_tty=False,

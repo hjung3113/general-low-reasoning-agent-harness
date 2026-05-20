@@ -7,8 +7,7 @@ Two tests:
      to stderr.
 
 Bootstrap approach: `commit_transaction` seeds state + audit so that
-`state_trust.preflight` passes; `audit_anchor.write_anchor` mints the
-out-of-repo audit-tip anchor so the §12.1 trust chain passes.
+`state_trust.preflight` passes.
 """
 from __future__ import annotations
 
@@ -28,7 +27,7 @@ SCRIPTS = REPO_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from lib import audit_anchor, phase_lock, phase_txn  # noqa: E402
+from lib import phase_lock, phase_txn  # noqa: E402
 
 
 _TEST_EMAIL = "test@example.com"
@@ -65,7 +64,6 @@ def _bootstrap_design_phase(harness_root: Path) -> None:
       2. Create .scratch/ and seed phase-state via commit_transaction
          (so audit.log has an entry with after_sha256 matching the state —
          required by state_trust.preflight).
-      3. Mint the out-of-repo audit-tip anchor so §12.1 verify passes.
     """
     harness_dir = harness_root / ".harness"
     harness_dir.mkdir(parents=True, exist_ok=True)
@@ -96,18 +94,6 @@ def _bootstrap_design_phase(harness_root: Path) -> None:
         )
     finally:
         phase_lock.release_primary(lock)
-
-    # Step 3 — mint anchor for harness_root
-    ir_sha = audit_anchor._live_install_record_sha256(harness_root)
-    tip_hash, tip_seq = audit_anchor._live_audit_tail(harness_root)
-    audit_anchor.write_anchor(
-        harness_root,
-        harness_version="v0.8.3",
-        install_id="test-install-id",
-        install_record_sha256=ir_sha,
-        audit_tip_entry_hash=tip_hash,
-        audit_tip_seq_global=tip_seq,
-    )
 
 
 # ── tests ─────────────────────────────────────────────────────────────────

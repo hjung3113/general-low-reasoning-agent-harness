@@ -148,8 +148,9 @@ def _setup_fixture_repo(
       - ``.harness/installed-manifest.json`` (schema_version=2, entries=[])
       - ``.scratch/`` dir (phase-state will be seeded via commit_transaction)
       - ``.planning/phases/<slug>/`` dirs if phase_slugs non-empty
-      - Out-of-repo audit-tip anchor written to ~/.harness/audit-tip/<repo-id>.json
-        so that ``harness fsd-run-phase`` anchor-verify passes.
+
+    (Audit-tip anchor fixture removed in v0.9.3; see ADR
+    docs/adr/2026-05-20-remove-audit-tip-anchor.md.)
 
     Returns the repo root Path (caller must clean up if not using
     tmp_path fixture — use `shutil.rmtree`).
@@ -260,45 +261,9 @@ def _setup_fixture_repo(
         for slug in phase_slugs:
             (phases_dir / slug).mkdir()
 
-    # Write out-of-repo audit-tip anchor so harness verify passes.
-    # Reads the real ~/.harness/secret.key (minting it if absent).
-    _write_fixture_anchor(tmp, install_id=install_id, install_record_sha256=ir_sha256)
+    # Anchor feature retired (slice-1 audit-tip removal); no anchor fixture needed.
 
     return tmp
-
-
-def _write_fixture_anchor(
-    repo_root: Path,
-    *,
-    install_id: str,
-    install_record_sha256: str,
-) -> None:
-    """Write a fresh audit-tip anchor for the fixture repo.
-
-    The anchor verifier (``verify_existing_anchor_for_repo``) reads its
-    live audit tail from ``.scratch/audit.log``.  In boot state (no harness
-    commands yet run against the fixture), ``.scratch/audit.log`` is absent,
-    so ``_live_audit_tail`` returns ``(_ZERO_HASH, 0)``.  We write the anchor
-    with those same zero values; they will match on verification.
-
-    Requires ``~/.harness/secret.key`` (minted if absent).
-    """
-    from lib import audit_anchor, secret_key  # noqa: E402
-
-    # Ensure secret key exists (idempotent; mints 32-byte random key if absent)
-    secret_key.ensure_secret_key()
-
-    # Boot anchor — zero audit tail because .scratch/audit.log absent at fixture init
-    _ZERO_HASH = "0" * 64
-
-    audit_anchor.write_anchor(
-        repo_root,
-        harness_version="v0.7.0",
-        install_id=install_id,
-        install_record_sha256=install_record_sha256,
-        audit_tip_entry_hash=_ZERO_HASH,
-        audit_tip_seq_global=0,
-    )
 
 
 def _run_harness(
@@ -1830,7 +1795,7 @@ def case_fsd_status_opencode(args) -> "CaseResult":
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# §12.10 Cases — cycle-1 Group B (P5-P1-2): oidc-jti-replay, anchor-tampered,
+# §12.10 Cases — cycle-1 Group B (P5-P1-2): oidc-jti-replay,
 # gitconfig-rotated
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1932,124 +1897,7 @@ def case_oidc_jti_replay(args) -> "CaseResult":
             shutil.rmtree(repo, ignore_errors=True)
 
 
-@register_case("anchor-tampered")
-def case_anchor_tampered(args) -> "CaseResult":
-    """§12.10 row 14 — anchor-tampered: tampered anchor detected → exit 10.
-
-    Preconditions:
-      - Fresh fixture repo with audit entries (so audit tail is non-empty).
-      - Anchor written for the fixture repo.
-    Steps:
-      1. Emit an audit entry (so live tip is non-None).
-      2. Write a valid anchor for the fixture repo.
-      3. Tamper the anchor's audit_tip_entry_hash (mutate one hex digit).
-      4. Call verify_existing_anchor_for_repo(repo) → AnchorMismatchError
-         sub_reason=anchor_signature_invalid (HMAC does not match after tamper).
-         This maps to exit code 10 per §3.4.
-    Assert:
-      - AnchorMismatchError raised (tamper detected).
-      - sub_reason is anchor_signature_invalid or audit_tail_diverged_from_anchor.
-
-    Spec: §12.1, §12.10 row 14
-    Slice: P5-P1-2 cycle-1 Group B
-    """
-    repo = None
-    try:
-        repo = _setup_fixture_repo(phase_slugs=["01-foo"])
-
-        # Emit a second audit entry so live tip is non-zero
-        sys.path.insert(0, str(_REPO_ROOT / "scripts"))
-        from lib import audit as _audit_lib  # type: ignore[import]
-        audit_path = repo / ".harness" / "audit.log"
-        _audit_lib.audit_append(
-            {"verb": "phase.approve", "at": "2026-05-18T00:01:00Z", "by": "alice@smoke.example.com"},
-            audit_path=audit_path,
-        )
-
-        # Read the live audit tail
-        from lib.audit import read_last_entry  # type: ignore[import]
-        last_entry = read_last_entry(audit_path)
-        live_tip = last_entry.get("entry_hash", "0" * 64) if last_entry else "0" * 64
-        live_seq = last_entry.get("seq_global", 0) if last_entry else 0
-
-        # Read install-record for anchor wiring
-        ir_path = repo / ".harness" / "install-record.json"
-        ir_bytes = ir_path.read_bytes()
-        import hashlib as _hl
-        ir_sha256 = _hl.sha256(ir_bytes).hexdigest()
-        ir_data = json.loads(ir_bytes.decode("utf-8"))
-        install_id = ir_data.get("install_id", "no-id")
-
-        # Write a valid anchor
-        from lib import secret_key as _sk  # type: ignore[import]
-        from lib import audit_anchor as _aa  # type: ignore[import]
-        _sk.ensure_secret_key()
-        _aa.write_anchor(
-            repo,
-            harness_version="v0.7.0",
-            install_id=install_id,
-            install_record_sha256=ir_sha256,
-            audit_tip_entry_hash=live_tip,
-            audit_tip_seq_global=live_seq,
-        )
-
-        # Tamper: mutate audit_tip_entry_hash in the anchor file (one hex digit)
-        apath = _aa.anchor_path(repo)
-        anchor_data = json.loads(apath.read_text(encoding="utf-8"))
-        orig_hash = anchor_data["audit_tip_entry_hash"]
-        tampered_hash = orig_hash[:-1] + ("0" if orig_hash[-1] != "0" else "1")
-        anchor_data["audit_tip_entry_hash"] = tampered_hash
-        apath.write_text(
-            json.dumps(anchor_data, sort_keys=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
-
-        # Verify: call verify_existing_anchor_for_repo — must raise AnchorMismatchError
-        # (the HMAC signature will be invalid after the tamper since we didn't recompute it)
-        detected_mismatch = False
-        mismatch_reason = ""
-        try:
-            _aa.verify_existing_anchor_for_repo(repo)
-            actual_exit = 0  # no error — fail
-        except _aa.AnchorMismatchError as exc:
-            detected_mismatch = True
-            mismatch_reason = getattr(exc, "sub_reason", "") or str(exc)
-            actual_exit = 10  # maps to exit 10 per §3.4
-        except _aa.AnchorMissingError:
-            actual_exit = 0
-            mismatch_reason = "anchor_missing (unexpected)"
-        except Exception as exc:
-            actual_exit = 0
-            mismatch_reason = f"unexpected: {exc}"
-
-        assertions = []
-        assertions.append((
-            "AnchorMismatchError raised (tamper detected → exit 10)",
-            detected_mismatch,
-            f"mismatch_reason={mismatch_reason!r}",
-        ))
-        _VALID_REASONS = {"anchor_signature_invalid", "audit_tail_diverged_from_anchor"}
-        assertions.append((
-            "sub_reason is anchor_signature_invalid or audit_tail_diverged_from_anchor",
-            mismatch_reason in _VALID_REASONS,
-            f"sub_reason={mismatch_reason!r} not in {_VALID_REASONS}",
-        ))
-
-        passed = detected_mismatch and all(ok for _, ok, _ in assertions)
-        return CaseResult(
-            case_name="anchor-tampered",
-            exit_code=actual_exit,
-            expected_exit_code=10,
-            passed=passed,
-            assertions=assertions,
-            artifacts={
-                "anchor_path.txt": str(apath),
-                "audit_tail.json": json.dumps(_read_audit_tail(repo), indent=2),
-            },
-        )
-    finally:
-        if repo is not None:
-            shutil.rmtree(repo, ignore_errors=True)
+# Row 14 anchor-tampered case retired (slice-1 audit-tip removal).
 
 
 @register_case("gitconfig-rotated")
@@ -2119,7 +1967,6 @@ def case_gitconfig_rotated(args) -> "CaseResult":
             stdin_isatty=True,  # bypass TTY gate
             consumer_tty="/dev/pts/99",
             gitconfig_email_lookup=lambda: rotated_email,
-            skip_anchor_preflight=True,
         )
 
         assertions = []
@@ -2148,6 +1995,118 @@ def case_gitconfig_rotated(args) -> "CaseResult":
     finally:
         if repo is not None:
             shutil.rmtree(repo, ignore_errors=True)
+
+
+@register_case("upgrade-from-v091-with-vestigial-anchor")
+def case_upgrade_from_v091_with_vestigial_anchor(args) -> "CaseResult":
+    """Upgrade-compat smoke: v0.9.1 → v0.9.3 state with vestigial anchor file.
+
+    Simulates the state left by v0.9.1 (which wrote out-of-repo audit-tip
+    anchors). The new harness must:
+      - Run status/next/verify without error.
+      - Leave the vestigial anchor file untouched (we don't clean up ~/.harness).
+      - Produce no reference to 'anchor' in stdout/stderr.
+
+    Spec: Slice-2 Part D upgrade-compat coverage.
+    """
+    repo = None
+    fake_home = None
+    try:
+        repo = _setup_fixture_repo(phase_slugs=["01-foo"])
+        harness_dir = repo / ".harness"
+        scratch_dir = repo / ".scratch"
+
+        # Create a fake ~/.harness/audit-tip/<repo-id>.json (vestigial anchor
+        # that v0.9.1 would have written to the user's home directory).
+        # repo-id derivation matches the (now-deleted) audit_anchor.repo_id:
+        # sha256(canonical_absolute_path_of_repo_root)[:16].
+        fake_home = Path(tempfile.mkdtemp(prefix="harness-smoke-fake-home."))
+        audit_tip_dir = fake_home / ".harness" / "audit-tip"
+        audit_tip_dir.mkdir(parents=True)
+        repo_id = hashlib.sha256(
+            str(repo.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
+        vestigial_anchor = audit_tip_dir / f"{repo_id}.json"
+        vestigial_content = json.dumps({
+            "repo_id": repo_id,
+            "harness_version": "v0.9.1",
+            "install_record_sha256": "a" * 64,
+            "audit_tip_entry_hash": "b" * 64,
+            "audit_tip_seq_global": 1,
+            "anchored_at": "2026-05-20T00:00:00Z",
+        }, indent=2) + "\n"
+        vestigial_anchor.write_text(vestigial_content, encoding="utf-8")
+
+        assertions: list = []
+
+        # Run `harness status` — must exit 0
+        proc_status = _run_harness("status", cwd=repo)
+        assertions.append((
+            "status exits 0",
+            proc_status.returncode == 0,
+            f"exit={proc_status.returncode}; stderr={proc_status.stderr!r}",
+        ))
+        assertions.append((
+            "status stdout has no 'anchor' reference",
+            "anchor" not in proc_status.stdout.lower(),
+            f"stdout contained 'anchor': {proc_status.stdout!r}",
+        ))
+
+        # Run `harness next` — must exit 0
+        proc_next = _run_harness("next", cwd=repo)
+        assertions.append((
+            "next exits 0",
+            proc_next.returncode == 0,
+            f"exit={proc_next.returncode}; stderr={proc_next.stderr!r}",
+        ))
+        assertions.append((
+            "next stdout has no 'anchor' reference",
+            "anchor" not in proc_next.stdout.lower(),
+            f"stdout contained 'anchor': {proc_next.stdout!r}",
+        ))
+
+        # Run `harness verify --audit` — must exit 0
+        proc_verify = _run_harness("verify", "--audit", cwd=repo)
+        assertions.append((
+            "verify exits 0",
+            proc_verify.returncode == 0,
+            f"exit={proc_verify.returncode}; stderr={proc_verify.stderr!r}",
+        ))
+        assertions.append((
+            "verify stdout has no 'anchor' reference",
+            "anchor" not in proc_verify.stdout.lower(),
+            f"stdout contained 'anchor': {proc_verify.stdout!r}",
+        ))
+
+        # Vestigial anchor file must be untouched (not deleted, not modified)
+        assertions.append((
+            "vestigial anchor file left intact",
+            vestigial_anchor.exists()
+            and vestigial_anchor.read_text(encoding="utf-8") == vestigial_content,
+            "vestigial anchor file was modified or deleted",
+        ))
+
+        passed = all(ok for _, ok, _ in assertions)
+        return CaseResult(
+            case_name="upgrade-from-v091-with-vestigial-anchor",
+            exit_code=0 if passed else 1,
+            expected_exit_code=0,
+            passed=passed,
+            assertions=assertions,
+            artifacts={
+                "status_stdout.txt": proc_status.stdout,
+                "status_stderr.txt": proc_status.stderr,
+                "next_stdout.txt": proc_next.stdout,
+                "next_stderr.txt": proc_next.stderr,
+                "verify_stdout.txt": proc_verify.stdout,
+                "verify_stderr.txt": proc_verify.stderr,
+            },
+        )
+    finally:
+        if repo is not None:
+            shutil.rmtree(repo, ignore_errors=True)
+        if fake_home is not None:
+            shutil.rmtree(fake_home, ignore_errors=True)
 
 
 CASES = [
@@ -2345,10 +2304,11 @@ _RELEASE_CASE_ORDER = [
     "deny-listed-verb-via-shim",
     "manifest-init-idempotency",
     "windows-exit-11",
-    # §12.10 rows 13/14/15 — P5-P1-2 cycle-1 Group B
+    # §12.10 rows 13/15 — P5-P1-2 cycle-1 Group B (row 14 anchor-tampered retired)
     "oidc-jti-replay",
-    "anchor-tampered",
     "gitconfig-rotated",
+    # Slice-2 upgrade-compat: v0.9.1 → v0.9.3 with vestigial anchor file
+    "upgrade-from-v091-with-vestigial-anchor",
 ]
 
 

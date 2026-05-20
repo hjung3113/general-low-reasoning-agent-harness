@@ -124,7 +124,6 @@ def _resolve_next_pending(
     lock_handle: Any,
     repo_root: Optional[Path],
     roadmap_root: Optional[Path],
-    anchor_verified: bool,
 ) -> tuple[Optional[str], Optional[FsdWrapperResult]]:
     """Call run_next_pending (lock already held) and resolve the slug.
 
@@ -135,8 +134,6 @@ def _resolve_next_pending(
         scratch_root=scratch_root,
         audit_path=audit_path,
         lock_handle=lock_handle,
-        anchor_verified=anchor_verified,
-        skip_anchor_preflight=True,  # anchor already handled by run_start below; here skip for pure read
         repo_root=repo_root,
         roadmap_root=roadmap_root,
     )
@@ -149,7 +146,7 @@ def _resolve_next_pending(
         )
 
     if np_result.exit_code != 0:
-        # Propagate error from next_pending (e.g. anchor preflight failure).
+        # Propagate error from next_pending.
         return None, FsdWrapperResult(
             exit_code=np_result.exit_code,
             sub_reason="next_pending_error",
@@ -185,7 +182,6 @@ def run_fsd_run_phase(
     budgets: Optional[dict] = None,
     allow_network: bool = False,
     accept_degraded_windows_containment: bool = False,
-    anchor_verified: bool = False,
     roadmap_root: Optional[Path] = None,
     # Deprecated alias (one release cycle): use consumer_tty instead.
     nonce_id: Optional[str] = None,
@@ -255,7 +251,6 @@ def run_fsd_run_phase(
                 lock_handle=lock,
                 repo_root=repo_root,
                 roadmap_root=roadmap_root,
-                anchor_verified=anchor_verified,
             )
             if err is not None:
                 if err.sub_reason != "all_phases_done":
@@ -271,8 +266,6 @@ def run_fsd_run_phase(
             mode="phase",
             budgets=budgets,
             allow_network=allow_network,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=(repo_root is None),
             accept_degraded_windows_containment=accept_degraded_windows_containment,
             repo_root=repo_root,
             roadmap_root=roadmap_root,
@@ -319,7 +312,6 @@ def run_fsd_run_all(
     budgets: Optional[dict] = None,
     allow_network: bool = False,
     accept_degraded_windows_containment: bool = False,
-    anchor_verified: bool = False,
     roadmap_root: Optional[Path] = None,
     # Deprecated alias (one release cycle): use consumer_tty instead.
     nonce_id: Optional[str] = None,
@@ -376,7 +368,6 @@ def run_fsd_run_all(
             lock_handle=lock,
             repo_root=repo_root,
             roadmap_root=roadmap_root,
-            anchor_verified=anchor_verified,
         )
         if err is not None:
             if err.sub_reason != "all_phases_done":
@@ -392,8 +383,6 @@ def run_fsd_run_all(
             mode="chain",
             budgets=budgets,
             allow_network=allow_network,
-            anchor_verified=anchor_verified,
-            skip_anchor_preflight=(repo_root is None),
             accept_degraded_windows_containment=accept_degraded_windows_containment,
             repo_root=repo_root,
             roadmap_root=roadmap_root,

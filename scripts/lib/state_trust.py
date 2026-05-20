@@ -10,40 +10,21 @@ edits (e.g. hand-flipping `approved: false` → `true` or switching
 
 Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
 §2.6 "State trust preflight", §2.3 (canonicalization + CRLF→LF on
-Windows), §2.4 (BOM = exit 5), §12.1/§12.6 (out-of-repo audit-tip
-anchor — caller's responsibility upstream of this preflight).
+Windows), §2.4 (BOM = exit 5).
 
 Public surface
 --------------
     StateTrustError                       -- base OSError subclass
     StateTrustLockMissingError            -- caller did not hold a live lock
-    StateAnchorNotVerifiedError           -- caller did not chain through anchor
     StateBomError                         -- exit 5 (§2.4)
     StateCrlfError                        -- exit 5 (§2.3 line-ending)
     StateMalformedJsonError               -- exit 5 (cannot parse state)
     StateEmptyError                       -- exit 14 (recover-territory)
     StateAuditMismatchError               -- exit 10 fault class
-    preflight(scratch, *, audit_path, lock, anchor_verified) -> None
+    preflight(scratch, *, audit_path, lock) -> None
 
 `preflight()` does NOT mutate state, does NOT append to the audit log,
 and does NOT release the lock; it only inspects.
-
-Trust chain (top-down)
-----------------------
-1. Out-of-repo audit-tip anchor (`scripts/lib/audit_anchor.py`, S00.7) —
-   caller MUST verify the anchor BEFORE invoking this preflight and
-   pass `anchor_verified=True`. Without that the on-disk audit.log is
-   itself untrusted and the §2.6 check degenerates to "state matches a
-   self-consistent forgery". `preflight()` enforces the flag at the
-   API boundary; it does not re-verify the anchor (single-source-of-
-   truth: `audit_anchor`).
-2. State-byte well-formedness (§2.3/§2.4) — BOM, CRLF, JSON-parse.
-3. Audit-tip oracle (current `audit.log` tail) — last well-formed
-   entry's `after_sha256`. **Rotation seam handling and per-entry
-   hash-chain validation are S06 scope.** If rotation happened
-   mid-startup and the current `audit.log` is empty/seed-only, this
-   preflight will (correctly) refuse — S06 will widen the walk into
-   `audit.log.1`.
 
 Out of scope for S01-E
 ----------------------
@@ -92,12 +73,6 @@ class StateTrustLockMissingError(StateTrustError):
     """Caller invoked preflight without an acquired LockHandle."""
 
 
-class StateAnchorNotVerifiedError(StateTrustError):
-    """Caller invoked preflight without first verifying the out-of-repo
-    audit-tip anchor (`audit_anchor.preflight`). The §2.6 chain is only
-    sound when the anchor has been validated upstream — see §12.1."""
-
-
 class StateBomError(StateTrustError):
     """Exit 5 — state file begins with UTF-8 BOM (§2.4)."""
 
@@ -124,7 +99,7 @@ class StateEmptyError(StateTrustError):
 
 
 class StateAuditMismatchError(StateTrustError):
-    """Exit 10 — `state_audit_tip_mismatch`. The canonical state bytes
+    """Exit 10 — `state_audit_mismatch`. The canonical state bytes
     do not hash to the latest audit tail's `after_sha256`, OR the audit
     tail has no `after_sha256` to compare against while a state file is
     present. The CLI MUST emit no mutation."""
@@ -180,12 +155,125 @@ def _canonicalize_state_bytes(state_bytes: bytes) -> bytes:
     return _phase_txn._canonical_bytes(parsed)
 
 
+def _scan_file_for_recent_txn_entry(path: Path) -> Optional[dict]:
+    """Scan one audit file in reverse for the most recent entry with
+    ``after_sha256``. Raises ``StateAuditMismatchError`` if a TXN-verb
+    entry is found without ``after_sha256`` (torn-write corruption).
+    Returns ``None`` if no usable entry is found in this file.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in reversed(text.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        after_sha = entry.get("after_sha256")
+        if after_sha:
+            return entry
+        verb = entry.get("verb")
+        if verb in _phase_txn._TXN_VERBS:
+            raise StateAuditMismatchError(
+                f"audit TXN-verb entry (verb={verb!r}) is missing after_sha256; "
+                f"sub_reason=txn_entry_missing_after_sha256; "
+                f"likely torn write or truncation; "
+                f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
+            )
+        # Non-TXN telemetry without after_sha256: skip.
+    return None
+
+
+def _most_recent_txn_entry(audit_path: Path) -> Optional[dict]:
+    """Return the most recent audit entry that carries an
+    ``after_sha256`` field — i.e. the most recent state-mutation
+    commit, regardless of verb.
+
+    Walks rotated audit files (``audit.log``, ``audit.log.1``,
+    ``audit.log.2``, …) in newest-first order so that legitimate state
+    progression preserved in a rotated-out file is still found when the
+    current ``audit.log`` contains only telemetry. Reuses
+    ``audit_rotation.enumerate_rotated_files`` (which ``audit_chain``
+    also uses, via ``audit_chain._enumerate_rotated_files``) for
+    consistent file enumeration.
+
+    Telemetry-only verbs (``cli.deprecated_flag``,
+    ``ci.oidc.jti.consumed``, ``approve_nonce.mint``, etc.) do not
+    carry ``after_sha256`` and are skipped so they don't shadow the
+    last legitimate state-commit oracle.
+
+    A TXN-verb entry (verbs in ``phase_txn._TXN_VERBS``) with a
+    missing/empty/null ``after_sha256`` is a disk-corruption signal
+    (torn write, truncation mid-flush). Surfaced as
+    ``StateAuditMismatchError`` rather than silently walking past it.
+
+    Returns ``None`` when the audit log (across all rotations) is
+    absent, empty, or contains no entries with ``after_sha256`` (clean
+    fresh-install or telemetry-only history).
+    """
+    from .audit_rotation import enumerate_rotated_files
+    # enumerate returns oldest-first ([log.N, …, log.1, log]); reverse
+    # to walk newest-first (current log, then log.1, log.2, …).
+    files = list(reversed(enumerate_rotated_files(audit_path)))
+    for path in files:
+        if not path.exists():
+            continue
+        entry = _scan_file_for_recent_txn_entry(path)
+        if entry is not None:
+            return entry
+    return None
+
+
+def _is_baseline_state(parsed_state: dict) -> bool:
+    """Return True iff ``parsed_state`` matches the fresh-install baseline
+    shape written by ``harness install`` (see
+    ``harness/skeleton/clean/.scratch/phase-state.json``).
+
+    A baseline state has not yet been approved/advanced/autopiloted, so
+    it is legitimate to trust without audit-log corroboration. Any
+    deviation (approved=true, plan_id set, advanced phase, autopilot
+    active, etc.) indicates real progression that must be backed by
+    audit-log TXN entries.
+    """
+    if not isinstance(parsed_state, dict):
+        return False
+    # Discriminating fields: each must match the skeleton.
+    if parsed_state.get("approved") is not False:
+        return False
+    if parsed_state.get("phase") != "discuss":
+        return False
+    if parsed_state.get("plan_id") is not None:
+        return False
+    if parsed_state.get("automation_mode", "manual") != "manual":
+        return False
+    if parsed_state.get("execution_mode", "manual") != "manual":
+        return False
+    # Any of these progression markers being present/set = not baseline.
+    progression_markers = (
+        "approved_at",
+        "approved_by",
+        "autopilot_started_at_iso",
+        "autopilot_start_entry_hash",
+        "autopilot_id",
+        "plan_finalized_at",
+        "halt_reason",
+    )
+    for key in progression_markers:
+        if parsed_state.get(key):
+            return False
+    return True
+
+
 def preflight(
     scratch: Union[str, "os.PathLike[str]"],
     *,
     audit_path: Union[str, "os.PathLike[str]"],
     lock: Optional[_phase_lock.LockHandle],
-    anchor_verified: bool = False,
 ) -> None:
     """Verify on-disk state bytes canonically hash to the audit tail's
     `after_sha256`.
@@ -194,10 +282,6 @@ def preflight(
 
     Raises:
         StateTrustLockMissingError  -- caller missing/released lock.
-        StateAnchorNotVerifiedError -- `anchor_verified=False` (default);
-                                        callers MUST chain through
-                                        `audit_anchor.preflight` first
-                                        and explicitly pass True.
         StateBomError / StateCrlfError / StateMalformedJsonError
                                     -- exit 5, state bytes ill-formed.
         StateEmptyError             -- exit 14, state file is 0 bytes
@@ -212,12 +296,6 @@ def preflight(
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
-    if not anchor_verified:
-        raise StateAnchorNotVerifiedError(
-            "preflight requires anchor_verified=True; caller must run "
-            "audit_anchor.preflight() before trusting the on-disk audit log "
-            "(see design §12.1)"
-        )
 
     state_path = scratch / STATE_NAME
     if not state_path.exists():
@@ -232,18 +310,39 @@ def preflight(
     canonical_bytes = _canonicalize_state_bytes(state_bytes)
     state_sha = hashlib.sha256(canonical_bytes).hexdigest()
 
-    tail = _phase_txn._audit_tail_entry(audit_path)
+    # Walk back through the audit log to find the most recent state-mutating
+    # (TXN-verb) entry; non-TXN telemetry verbs (e.g. cli.deprecated_flag,
+    # ci.oidc.jti.consumed) do not carry after_sha256 and must be skipped so
+    # they don't shadow the last legitimate state commit.
+    tail = _most_recent_txn_entry(audit_path)
     if tail is None:
-        raise StateAuditMismatchError(
-            f"state file present but audit log has no entries to corroborate it; "
-            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
-        )
+        # No state-mutating audit entry found. Two valid cases:
+        #   (a) State is at the fresh-install baseline shape (phase=discuss,
+        #       approved=false, no plan, updated_by=harness-init) — this is
+        #       the legitimate first-run path, trust it.
+        #   (b) State carries real progression (approved=true, advanced
+        #       phase, plan_id set, autopilot active, etc.) — the audit log
+        #       must corroborate that progression. Missing audit evidence
+        #       here means the audit log was deleted (e.g. `git clean -fd`)
+        #       or never existed, and prior approvals are unverifiable.
+        try:
+            parsed_state = json.loads(canonical_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed_state = None
+        if parsed_state is not None and not _is_baseline_state(parsed_state):
+            raise StateAuditMismatchError(
+                "state file shows progression beyond the fresh-install "
+                "baseline, but the audit log has no state-mutating "
+                "(TXN-verb) entries to corroborate it; "
+                "sub_reason=state_advanced_without_audit_evidence; "
+                f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
+            )
+        return None
     audit_after_sha = tail.get("after_sha256")
     if not audit_after_sha:
-        raise StateAuditMismatchError(
-            f"audit tail entry lacks after_sha256; cannot trust state; "
-            f"{_FIX_AUDIT}; {_FIX_REPAIR_MANUAL}"
-        )
+        # _most_recent_txn_entry only returns entries with after_sha256, so
+        # this branch is defensive; treat as no-op (fresh install).
+        return None
     if state_sha != audit_after_sha:
         raise StateAuditMismatchError(
             f"state file sha256 {state_sha} does not match audit tail "
@@ -280,7 +379,6 @@ def preflight(
 __all__ = [
     "StateTrustError",
     "StateTrustLockMissingError",
-    "StateAnchorNotVerifiedError",
     "StateBomError",
     "StateCrlfError",
     "StateMalformedJsonError",

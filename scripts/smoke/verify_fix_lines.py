@@ -362,11 +362,10 @@ def _make_harness_fixture_in_subprocess(
     *,
     approver: str = "tester@example.com",
 ) -> dict:
-    """Set up a harness fixture (state + anchor) in a subprocess with HOME=fake_home.
+    """Set up a harness fixture (state + secret key) in a subprocess with HOME=fake_home.
 
     Returns the env dict to use for subsequent CLI invocations (with HOME=fake_home).
-    The anchor is written to fake_home/.harness/audit-tip/<repo_id>.json.
-    This avoids contaminating the real ~/.harness/audit-tip/ directory.
+    Anchor feature retired (slice-1 audit-tip removal); only state + secret key are written.
     """
     env = {**os.environ, "HOME": str(fake_home), "PYTHONPATH": str(REPO_ROOT)}
     state_repr = repr(state)
@@ -403,18 +402,7 @@ key_path.write_bytes(key)
 if os.name != 'nt':
     os.chmod(key_path, 0o600)
 
-from lib import audit_anchor as _anchor
-install_sha = hashlib.sha256(record_path.read_bytes()).hexdigest()
-_ZERO_HASH = '0' * 64
-_anchor.write_anchor(
-    repo,
-    harness_version='0.7.0',
-    install_id='smoke-test',
-    install_record_sha256=install_sha,
-    audit_tip_entry_hash=_ZERO_HASH,  # v0.7 audit entries have no entry_hash field → live tail returns ZERO
-    audit_tip_seq_global=0,
-    key=key,
-)
+# Anchor feature retired (slice-1 audit-tip removal); secret.key minted above is sufficient.
 print('FIXTURE_OK')
 """
     env_with_pp = {**env, "PYTHONPATH": str(REPO_ROOT)}
@@ -747,8 +735,7 @@ result = _pa.run_approve(
     nonce_dir=Path({str(tmp / "nonces")!r}),
     stdin_isatty=True,      # pretend TTY to bypass step 1
     consumer_tty="/dev/pts/0",
-    repo_root=None,
-    skip_anchor_preflight=True,  # bypass anchor for test
+    repo_root=None,  # bypass anchor for test
 )
 sys.exit(result.exit_code)
 """,
@@ -888,8 +875,6 @@ try:
         mode="chain",
         budgets=None,
         allow_network=False,
-        anchor_verified=True,
-        skip_anchor_preflight=True,
         accept_degraded_windows_containment=False,
         repo_root=cwd,  # no .git here → exit 12
         roadmap_root=None,
@@ -977,8 +962,7 @@ result = _pa.run_approve(
     nonce_dir=Path({str(tmp / "nonces")!r}),
     stdin_isatty=True,      # pretend TTY to bypass step 1
     consumer_tty="/dev/pts/0",
-    repo_root=None,
-    skip_anchor_preflight=True,  # bypass anchor for test
+    repo_root=None,  # bypass anchor for test
 )
 sys.exit(result.exit_code)
 """,
@@ -1045,8 +1029,6 @@ try:
         mode="chain",
         budgets=None,
         allow_network=False,
-        anchor_verified=True,
-        skip_anchor_preflight=True,
         accept_degraded_windows_containment=False,
         repo_root=cwd,
         roadmap_root=None,

@@ -71,7 +71,6 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
 
@@ -105,7 +104,6 @@ def test_phase_approve_non_tty_halts_with_exit_17(tmp_path):
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_HUMAN_CONFIRMATION_REQUIRED
@@ -140,7 +138,6 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
 
@@ -186,7 +183,6 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
 
@@ -222,7 +218,6 @@ def test_phase_approve_in_discuss_phase_refuses(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
 
@@ -265,7 +260,6 @@ def test_cancel_prints_stderr_message(tmp_path, monkeypatch, capsys):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
     captured = capsys.readouterr()
@@ -301,7 +295,6 @@ def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_anchor_preflight=True,
         skip_state_trust_preflight=True,
     )
     assert result.exit_code == exitcodes.EXIT_OK

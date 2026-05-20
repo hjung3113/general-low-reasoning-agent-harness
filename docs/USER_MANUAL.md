@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.9.2)
+# 하네스 사용자 설명서 (v0.9.3)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -14,7 +14,7 @@
 > - **Maintainer / Security 담당**: **부록 A** — 보안 모델, Release Trust, 감사 로그, Release Confirmation 상세.
 > - **Troubleshooting / Advanced CLI**: **부록 B** — 오류 해결 레시피, 전체 CLI 레퍼런스, Exit Codes.
 > - **CI / 자동화 엔지니어**: **부록 C** — 환경 변수, Phase Gate 상세(autopilot), 업그레이드, Windows 지원.
-> - **기타**: **부록 D** — v0.9.0 Carryover, 참고 자료.
+> - **기타**: **부록 D** — Carryover, 참고 자료.
 
 ---
 
@@ -62,7 +62,7 @@
 
 ### 부록 D — 기타
 
-- [D1. v0.9.0 Carryover](#d1-v09-carryover)
+- [D1. Carryover](#d1-carryover)
 - [D2. 참고 자료](#d2-참고-자료)
 
 ---
@@ -225,7 +225,7 @@ Run harness check first.
 Then run HARNESS_MACHINE=1 harness next and read the JSON.
 Only edit files when may_edit is true.
 If requires_user_approval is true, show next_user_prompt to the user and stop.
-Do not self-approve or run low-level approval, nonce, anchor, repair, or phase commands.
+Do not self-approve or run low-level approval, nonce, repair, or phase commands.
 After edits, run the verification commands named by the current phase and report results.
 ```
 
@@ -741,7 +741,7 @@ Audit log는 두 가지 chain을 유지합니다:
 
 `harness verify --audit`는 전체 history(rotated files 포함)를 walk하여 chain integrity 검증. Partial edit, truncation, 또는 single-field rewrite를 감지합니다.
 
-**한계**: Repo-local attacker가 모든 `audit.log*` + `.scratch/phase-state.json`을 rewrite하고 모든 `entry_hash`를 recompute할 수 있으면 우회 가능합니다. Signed external anchor(v0.9.0 feature)가 이를 해결합니다.
+**한계**: Repo-local attacker가 모든 `audit.log*` + `.scratch/phase-state.json`을 rewrite하고 모든 `entry_hash`를 recompute할 수 있으면 우회 가능합니다. 이 threat class는 이 internal-only 도구의 threat model에서 명시적으로 제외됩니다 — out-of-repo audit-tip anchor는 v0.9.3에서 제거되었습니다 (ADR `2026-05-20-remove-audit-tip-anchor.md` 참고).
 
 ---
 
@@ -769,8 +769,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.2 -m "Release v0.9.2"
-git push origin v0.9.2
+git tag -s v0.9.3 -m "Release v0.9.3"
+git push origin v0.9.3
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -780,7 +780,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.2
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.3
 ```
 
 ### A2.5 Trust-Downgrade Refusal
@@ -1098,13 +1098,9 @@ python3 scripts/harness.py fsd-run-all
 
 사용자는 일반적으로 `.roo/commands/` 또는 `.opencode/commands/`를 통해 간접 호출합니다.
 
-### B2.7 Anchor
+### B2.7 Anchor (removed in v0.9.3)
 
-Out-of-repo audit-tip anchor 관리 (TTY-only):
-
-```bash
-python3 scripts/harness.py anchor <subcommand>
-```
+`harness anchor` 서브커맨드는 v0.9.3에서 제거되었습니다. Out-of-repo audit-tip anchor 기능 전체가 삭제되었으며, 기존 `~/.harness/audit-tip/<id>.json` 파일은 무시됩니다(자동 삭제 없음; 원하는 경우 수동 삭제 가능). 자세한 내용은 ADR `docs/adr/2026-05-20-remove-audit-tip-anchor.md` 참고.
 
 ### B2.8 Halt Diary Admin
 
@@ -1345,12 +1341,12 @@ py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 
 ## 부록 D — 기타
 
-## D1. v0.9.0 Carryover
+## D1. Carryover
 
 다음 메이저 버전에 deferred된 항목:
 
 1. **Explicit revoked_keys file**: v0.7 제약(propagation 지연). v0.9에서 revoked_keys 병렬 consulted, immediate revocation.
-2. **Signed external audit anchor**: Repo-local attacker 대항 (v0.7 honest defense-in-depth 한계).
+2. **Signed external audit anchor**: Repo-local attacker 대항 (v0.7 honest defense-in-depth 한계). — **v0.9.3에서 제거됨**: threat class가 internal-only 도구의 scope 밖으로 재분류됨. ADR `2026-05-20-remove-audit-tip-anchor.md` 참고.
 3. **Advisory raw-tool budget enforcement**: v0.7은 `cli_budgets_remaining` hard-stop(harness subprocesses만), raw tools(Bash, Edit) advisory-only. v0.9에서 hook enforcement.
 4. **Cross-machine collaboration**: v0.7은 single-user, single-machine. Multi-user lock contention, distributed state sync 미지원.
 

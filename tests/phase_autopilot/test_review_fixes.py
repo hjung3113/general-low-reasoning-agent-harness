@@ -143,8 +143,6 @@ def _start_ci(env: dict) -> phase_autopilot.AutopilotResult:
             mode="phase",
             budgets=None,
             allow_network=False,
-            anchor_verified=True,
-            skip_anchor_preflight=True,
             repo_root=None,
             roadmap_root=env["roadmap_root"],
             env=ci_env,
@@ -204,8 +202,6 @@ class TestCrashRecoveryRunsFirst:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 roadmap_root=env["roadmap_root"],
             )
         finally:
@@ -228,8 +224,6 @@ class TestCrashRecoveryRunsFirst:
                 scratch_root=env["scratch"],
                 audit_path=env["audit_path"],
                 lock_handle=lock,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 roadmap_root=env["roadmap_root"],
             )
         finally:
@@ -255,8 +249,6 @@ class TestCrashRecoveryRunsFirst:
                 scratch_root=scratch,
                 audit_path=audit_path,
                 lock_handle=lock,
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 roadmap_root=env["roadmap_root"],
             )
         finally:
@@ -381,8 +373,6 @@ class TestAllowNetworkSemantics:
                 mode="phase",
                 budgets=None,
                 allow_network=True,  # explicitly enabled
-                anchor_verified=True,
-                skip_anchor_preflight=True,
                 env=ci_env,
                 stdin_is_tty=False,
                 oidc_fetcher=fake_fetcher,

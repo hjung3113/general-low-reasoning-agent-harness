@@ -553,8 +553,8 @@ class TestTruncationDetection:
         with pytest.raises(AuditChainTruncationError):
             list(walk_chain(log))
 
-    def test_truncated_tail_detected_via_anchor(self, tmp_path):
-        """P1-5: anchor tip mismatch surfaces as AuditChainTruncationError in cmd_verify_audit."""
+    def test_single_valid_chain_entry_verify_ok(self, tmp_path):
+        """P1-5: a single valid chain entry passes cmd_verify_audit."""
         import types
         from lib.audit_verify_cli import cmd_verify_audit
         from lib.audit_chain import stamp_chain_fields, GENESIS_HASH
@@ -580,18 +580,9 @@ class TestTruncationDetection:
             _json.dumps(entries_data[0], separators=(",", ":"), sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        real_tip = entries_data[1]["entry_hash"]  # what anchor recorded before truncation
-
-        # Create a mock anchor file recording the second entry's hash
-        anchor_dir = tmp_path / ".harness" / "anchor"
-        anchor_dir.mkdir(parents=True, exist_ok=True)
 
         # Build a mock args object
         args = types.SimpleNamespace(verify_fixture=str(tmp_path))
-        # Create audit.log in fixture dir (already done above)
-        # For fixture mode, anchor check is skipped — so just verify chain fails
         rc = cmd_verify_audit(args, tmp_path)
-        # Chain itself is ok (single valid entry), but result ok=True
-        # The anchor-based truncation test would require live repo mode
-        # For now, verify that the partial-json path works (tested above)
-        assert rc == 0  # single valid entry is OK
+        # Single valid entry is OK
+        assert rc == 0
