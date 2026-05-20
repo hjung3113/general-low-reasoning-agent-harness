@@ -307,6 +307,149 @@ def test_error_classes_have_correct_exit_codes():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Slice-1-fix regression coverage: state_advanced_without_audit_evidence
+# and txn_entry_missing_after_sha256 sub_reasons (slice2-fix MAJOR-1).
+# ---------------------------------------------------------------------------
+
+
+_BASELINE_STATE = {
+    "phase": "discuss",
+    "approved": False,
+    "plan_id": None,
+    "automation_mode": "manual",
+    "execution_mode": "manual",
+}
+
+
+def _write_state(scratch: Path, data: dict) -> None:
+    body = json.dumps(data, sort_keys=True, indent=2) + "\n"
+    (scratch / "phase-state.json").write_text(body, encoding="utf-8")
+
+
+def test_preflight_baseline_state_with_empty_audit_passes(
+    scratch: Path, audit_path: Path, lock
+):
+    """Fresh-install baseline state + empty audit log → no raise.
+
+    This is the legitimate first-run path (a) in state_trust.preflight.
+    """
+    _write_state(scratch, dict(_BASELINE_STATE))
+    audit_path.write_text("", encoding="utf-8")
+    _ok(scratch, audit_path, lock)
+
+
+def test_preflight_advanced_state_with_empty_audit_raises_advanced_without_evidence(
+    scratch: Path, audit_path: Path, lock
+):
+    """Advanced state (approved=true) + empty audit log →
+    sub_reason=state_advanced_without_audit_evidence (exit 10)."""
+    advanced = dict(_BASELINE_STATE, approved=True, approved_by="hand@edit")
+    _write_state(scratch, advanced)
+    audit_path.write_text("", encoding="utf-8")
+
+    with pytest.raises(state_trust.StateAuditMismatchError) as excinfo:
+        _ok(scratch, audit_path, lock)
+    assert excinfo.value.exit_code == 10
+    assert "state_advanced_without_audit_evidence" in str(excinfo.value)
+
+
+def test_preflight_advanced_state_with_only_telemetry_raises_advanced_without_evidence(
+    scratch: Path, audit_path: Path, lock
+):
+    """Advanced state + audit log containing ONLY non-TXN telemetry entries
+    (e.g. cli.deprecated_flag, ci.oidc.jti.consumed) →
+    sub_reason=state_advanced_without_audit_evidence.
+
+    Telemetry verbs lack after_sha256 and must not shadow the missing
+    state-mutation oracle.
+    """
+    advanced = dict(_BASELINE_STATE, plan_id="01-foo")
+    _write_state(scratch, advanced)
+    telemetry = [
+        {"verb": "cli.deprecated_flag", "by": "t@example.com"},
+        {"verb": "ci.oidc.jti.consumed", "by": "t@example.com"},
+        {"verb": "approve_nonce.mint", "by": "t@example.com"},
+    ]
+    audit_path.write_text(
+        "\n".join(json.dumps(e) for e in telemetry) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(state_trust.StateAuditMismatchError) as excinfo:
+        _ok(scratch, audit_path, lock)
+    assert excinfo.value.exit_code == 10
+    assert "state_advanced_without_audit_evidence" in str(excinfo.value)
+
+
+def test_preflight_baseline_state_with_only_telemetry_passes(
+    scratch: Path, audit_path: Path, lock
+):
+    """Baseline state + telemetry-only audit log → no raise.
+
+    Telemetry entries are correctly skipped; baseline-state path
+    legitimately trusts without TXN corroboration.
+    """
+    _write_state(scratch, dict(_BASELINE_STATE))
+    telemetry = [
+        {"verb": "cli.deprecated_flag", "by": "t@example.com"},
+        {"verb": "approve_nonce.mint", "by": "t@example.com"},
+    ]
+    audit_path.write_text(
+        "\n".join(json.dumps(e) for e in telemetry) + "\n", encoding="utf-8"
+    )
+    _ok(scratch, audit_path, lock)
+
+
+def test_preflight_txn_entry_missing_after_sha256_raises_torn_write(
+    scratch: Path, audit_path: Path, lock
+):
+    """Most recent TXN-verb audit entry with missing after_sha256 (torn
+    write) + advanced state → sub_reason=txn_entry_missing_after_sha256.
+
+    Real TXN verbs MUST carry after_sha256; a missing value is a
+    disk-corruption signal that must be surfaced, not skipped.
+    """
+    # Pick a real TXN verb from phase_txn._TXN_VERBS.
+    txn_verb = "phase.approve"
+    assert txn_verb in phase_txn._TXN_VERBS  # guard against future renames
+
+    advanced = dict(_BASELINE_STATE, approved=True)
+    _write_state(scratch, advanced)
+    # TXN entry but after_sha256 is missing (torn write).
+    torn = {"verb": txn_verb, "by": "t@example.com", "args": {}}
+    audit_path.write_text(json.dumps(torn) + "\n", encoding="utf-8")
+
+    with pytest.raises(state_trust.StateAuditMismatchError) as excinfo:
+        _ok(scratch, audit_path, lock)
+    assert excinfo.value.exit_code == 10
+    assert "txn_entry_missing_after_sha256" in str(excinfo.value)
+
+
+def test_preflight_walk_back_finds_txn_entry_past_telemetry(
+    scratch: Path, audit_path: Path, lock
+):
+    """Audit log has a valid TXN entry whose after_sha256 matches the
+    state, followed by trailing non-TXN telemetry → preflight PASSES.
+
+    The walk-back must skip telemetry to find the legitimate oracle.
+    """
+    req = _make_request(before=None, after={"phase": "plan", "approved": True})
+    phase_txn.commit_transaction(
+        scratch, lock=lock, request=req, audit_path=audit_path
+    )
+    # Append telemetry entries AFTER the valid TXN entry.
+    with audit_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"verb": "cli.deprecated_flag", "by": "t@x"}) + "\n")
+        fh.write(json.dumps({"verb": "approve_nonce.mint", "by": "t@x"}) + "\n")
+
+    _ok(scratch, audit_path, lock)
+
+
+# ---------------------------------------------------------------------------
+# Round-trip across consecutive commits
+# ---------------------------------------------------------------------------
+
+
 def test_preflight_stays_valid_across_consecutive_commits(
     scratch: Path, audit_path: Path, lock
 ):
