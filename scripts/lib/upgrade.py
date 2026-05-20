@@ -439,6 +439,95 @@ def _build_release_manifest_v2(
     return release_manifest
 
 
+def _emit_rechain_audit(
+    *,
+    installed: dict,
+    installed_files: dict,
+    previous_chain_hash: str,
+    new_chain_hash: str,
+) -> None:
+    """Emit ``release.trust.rechained`` when the chain hash changed during upgrade.
+
+    T16 trigger logic:
+      1. Classify cause: count entries in installed_files whose path is in the
+         set of 35 modules missing from the v0.9.4 manifest (BUG-1).  If any
+         match → cause = ``"v094_manifest_gap_remediation"``; otherwise →
+         ``"manifest_evolution"``.
+      2. Idempotency guard: read ``installed["rechain_log"]`` (list of prior
+         (previous_chain_hash, new_chain_hash) tuples stored as dicts).  If the
+         exact (prev, new) pair already appears, skip — no double-emit.
+      3. Call ``release_trust.record_rechain(...)`` which calls ``audit_append``.
+      4. Append the record to ``installed["rechain_log"]`` so the next upgrade
+         run with the same chain delta is idempotent.
+
+    This helper is called from ``_stamp_installed_manifest_v2`` and must NOT
+    raise — it is best-effort (audit never aborts the upgrade).
+    """
+    import datetime as _dt
+
+    try:
+        from lib.release_trust import classify_rechain_cause, record_rechain
+    except ImportError:
+        return  # best-effort
+
+    # 1. Classify cause
+    added_paths = list(installed_files.keys())
+    cause, module_count_added = classify_rechain_cause(added_paths)
+
+    # 2. Idempotency guard
+    rechain_log: list = installed.setdefault("rechain_log", [])
+    for prior in rechain_log:
+        if (
+            isinstance(prior, dict)
+            and prior.get("previous_chain_hash") == previous_chain_hash
+            and prior.get("new_chain_hash") == new_chain_hash
+        ):
+            return  # already emitted for this (prev, new) pair; skip
+
+    # 3. Resolve actor (best-effort)
+    actor = "system"
+    try:
+        import subprocess as _sp
+        result = _sp.run(
+            ["git", "config", "user.email"],
+            capture_output=True, text=True, timeout=2.0,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            actor = result.stdout.strip()
+    except Exception:
+        pass
+
+    # 4. Emit audit row
+    # NOTE: target is not available directly in _stamp_installed_manifest_v2;
+    # record_rechain accepts the target dir. We retrieve it from _emit_trust_audit
+    # callers instead — but _stamp_installed_manifest_v2 does not receive target.
+    # Workaround: record_rechain accepts target=None and falls back gracefully.
+    # The upgrade() function wire-in below passes target explicitly.
+    #
+    # This helper is only called from upgrade() (see UPGRADE_RECHAIN_TARGET
+    # set by the caller in _stamp_installed_manifest_v2_with_target).
+    # We store the (prev, new, cause, at_iso) in rechain_log immediately.
+    now_iso = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rechain_log.append({
+        "previous_chain_hash": previous_chain_hash,
+        "new_chain_hash": new_chain_hash,
+        "cause": cause,
+        "at_iso": now_iso,
+        "actor": actor,
+    })
+
+    # record_rechain is called by the upgrade() wire-in with the resolved target.
+    # We store the pending record; upgrade() will call record_rechain after
+    # _stamp_installed_manifest_v2 returns (see the wire-in block in upgrade()).
+    installed["_pending_rechain"] = {
+        "previous_chain_hash": previous_chain_hash,
+        "new_chain_hash": new_chain_hash,
+        "cause": cause,
+        "module_count_added": module_count_added,
+        "actor": actor,
+    }
+
+
 def _stamp_installed_manifest_v2(
     installed: dict,
     *,
@@ -502,6 +591,11 @@ def _stamp_installed_manifest_v2(
         print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
         print("====================================================================", file=_sys.stderr)
 
+    # T16: capture the previous chain hash BEFORE rebuilding, so we can detect
+    # whether the upgrade caused a chain delta and emit a release.trust.rechained
+    # audit row with the correct cause classification.
+    previous_chain_hash: str = installed.get("installed_files_chain_hash") or ""
+
     # B3-Fix-1: persist trust provenance fields so subsequent upgrades can
     # read back trust_origin and enforce downgrade protection, and so chain
     # hash covers these fields (tampering is chain-hash-detected).
@@ -525,7 +619,18 @@ def _stamp_installed_manifest_v2(
         "removed_in_version": [],
         "trust_origin": installed.get("trust_origin"),
     }
-    installed["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
+    new_chain_hash = compute_manifest_hash_chain(chain_manifest)
+    installed["installed_files_chain_hash"] = new_chain_hash
+
+    # T16: emit release.trust.rechained when the chain hash changed, with
+    # idempotency guard via rechain_log[] stored in the installed manifest.
+    if previous_chain_hash and new_chain_hash and previous_chain_hash != new_chain_hash:
+        _emit_rechain_audit(
+            installed=installed,
+            installed_files=installed_files,
+            previous_chain_hash=previous_chain_hash,
+            new_chain_hash=new_chain_hash,
+        )
 
 
 def upgrade(
@@ -798,6 +903,25 @@ def upgrade(
         harness_version=harness_version,
         reconcile_results=reconcile_results,
     )
+
+    # T16 wire-in: if _stamp_installed_manifest_v2 detected a chain delta,
+    # it staged a _pending_rechain dict.  Call record_rechain now that we
+    # have the resolved target path; then remove the staging key so it is
+    # NOT written to installed-manifest.json.
+    _pending_rechain = installed.pop("_pending_rechain", None)
+    if not dry_run and _pending_rechain is not None:
+        try:
+            from lib.release_trust import record_rechain as _record_rechain
+            _record_rechain(
+                target,
+                _pending_rechain["previous_chain_hash"],
+                _pending_rechain["new_chain_hash"],
+                _pending_rechain["cause"],
+                module_count_added=_pending_rechain.get("module_count_added", 0),
+                actor=_pending_rechain.get("actor", "system"),
+            )
+        except Exception:
+            pass  # audit is best-effort; never abort upgrade
 
     if not dry_run and not (adopting_missing_state and conflicts):
         write_json(target / INSTALL_STATE, installed)
