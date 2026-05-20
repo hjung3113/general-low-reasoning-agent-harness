@@ -142,47 +142,11 @@ def _read_state_with_preflight(
     """
     from . import phase_lock as _phase_lock
     from . import state_trust as _state_trust
-    from . import audit_anchor as _audit_anchor
 
     state_path = scratch / STATE_NAME
     if not state_path.exists():
-        # Bootstrap case: no state file yet — anchor irrelevant, return defaults.
+        # Bootstrap case: no state file yet — return defaults.
         return ({"phase": "discuss", "execution_mode": "manual"}, 0)
-
-    # Anchor verification — fail-closed, same pattern as phase_approve.run_approve
-    # (S01-E review-fix reference: scripts/lib/phase_approve.py:411-422).
-    # A state file exists: we MUST verify the anchor before trusting the state.
-    anchor_verified = False
-    try:
-        _audit_anchor.verify_existing_anchor_for_repo(cwd)
-        anchor_verified = True
-    except _audit_anchor.AnchorMissingError as exc:
-        # Anchor absent but state exists → fail-closed (attacker path).
-        print(
-            f"error: harness status/next refused: audit-tip anchor not found ({exc}). "
-            "Fix: run 'harness anchor repair' to rebuild the anchor from current state.",
-            file=sys.stderr,
-        )
-        return None, 6  # sub_reason: anchor_missing
-    except _audit_anchor.AnchorMismatchError as exc:
-        sub = getattr(exc, "sub_reason", None) or "anchor_mismatch"
-        print(
-            f"error: harness status/next refused: audit-tip anchor verification "
-            f"failed ({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' to diagnose",
-            file=sys.stderr,
-        )
-        return None, 6  # sub_reason: anchor_mismatch
-    except _audit_anchor.AnchorError as exc:
-        # Schema/unreadable/etc. — surface verbatim; do not swallow.
-        sub = getattr(exc, "sub_reason", None) or "anchor_error"
-        print(
-            f"error: harness status/next refused: audit-tip anchor unreadable "
-            f"({sub}: {exc}). "
-            "Fix: run 'harness verify --audit' to diagnose",
-            file=sys.stderr,
-        )
-        return None, 6  # sub_reason: anchor_error
 
     # Brief lock acquire + preflight + release (option a, §3.9 line 554).
     # audit_path=None ensures stale-lock recovery does not write an audit row;
@@ -198,36 +162,35 @@ def _read_state_with_preflight(
         return None, 3
 
     try:
-        if anchor_verified:
-            try:
-                _state_trust.preflight(
-                    scratch,
-                    audit_path=audit_path,
-                    lock=lock,
-                    anchor_verified=anchor_verified,
-                )
-            except _state_trust.StateAuditMismatchError as exc:
-                print(
-                    f"error: harness status/next: state-trust mismatch: {exc}\n"
-                    f"Fix: run 'harness verify --audit'",
-                    file=sys.stderr,
-                )
-                return None, 10
-            except _state_trust.StateEmptyError as exc:
-                print(
-                    f"error: harness status/next: state file empty (crash artefact): {exc}\n"
-                    f"Fix: run 'harness recover' before any state-mutating verb.",
-                    file=sys.stderr,
-                )
-                return None, 14
-            except _state_trust.StateTrustError as exc:
-                exit_code = getattr(exc, "exit_code", 10)
-                print(
-                    f"error: harness status/next: state-trust preflight failed: {exc}\n"
-                    f"Fix: run 'harness verify --audit'",
-                    file=sys.stderr,
-                )
-                return None, exit_code
+        try:
+            _state_trust.preflight(
+                scratch,
+                audit_path=audit_path,
+                lock=lock,
+                anchor_verified=True,
+            )
+        except _state_trust.StateAuditMismatchError as exc:
+            print(
+                f"error: harness status/next: state-trust mismatch: {exc}\n"
+                f"Fix: run 'harness verify --audit'",
+                file=sys.stderr,
+            )
+            return None, 10
+        except _state_trust.StateEmptyError as exc:
+            print(
+                f"error: harness status/next: state file empty (crash artefact): {exc}\n"
+                f"Fix: run 'harness recover' before any state-mutating verb.",
+                file=sys.stderr,
+            )
+            return None, 14
+        except _state_trust.StateTrustError as exc:
+            exit_code = getattr(exc, "exit_code", 10)
+            print(
+                f"error: harness status/next: state-trust preflight failed: {exc}\n"
+                f"Fix: run 'harness verify --audit'",
+                file=sys.stderr,
+            )
+            return None, exit_code
 
         # Read state while lock is held
         state_bytes = state_path.read_bytes()
