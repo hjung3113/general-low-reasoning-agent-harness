@@ -602,7 +602,6 @@ __all__ = [
     "cmd_fsd_run_phase",
     "cmd_fsd_run_all",
     "_parse_budgets",
-    "_verify_anchor",
     "_walk_up_for_repo_root",
     "_cwd_repo_root",
     "_wall_seconds_check_and_maybe_halt",

@@ -162,7 +162,6 @@ def run_reopen(
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
-    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
 ) -> ReopenResult:
     # Design decision (deferred — S04+S05 review-fix P2-5): `phase reopen`
     # does NOT currently require a human-presence nonce (spec §3.2 leaves
@@ -259,7 +258,6 @@ def run_reopen(
                 scratch=scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=True,
             )
         except _phase_preflight.StateTrustPreflightError as exc:
             print(

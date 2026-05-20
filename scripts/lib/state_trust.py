@@ -21,7 +21,7 @@ Public surface
     StateMalformedJsonError               -- exit 5 (cannot parse state)
     StateEmptyError                       -- exit 14 (recover-territory)
     StateAuditMismatchError               -- exit 10 fault class
-    preflight(scratch, *, audit_path, lock, anchor_verified) -> None
+    preflight(scratch, *, audit_path, lock) -> None
 
 `preflight()` does NOT mutate state, does NOT append to the audit log,
 and does NOT release the lock; it only inspects.
@@ -252,7 +252,6 @@ def preflight(
     *,
     audit_path: Union[str, "os.PathLike[str]"],
     lock: Optional[_phase_lock.LockHandle],
-    anchor_verified: bool = True,
 ) -> None:
     """Verify on-disk state bytes canonically hash to the audit tail's
     `after_sha256`.
@@ -271,9 +270,6 @@ def preflight(
 
     No-op when the state file does not exist (nothing to trust →
     nothing to refuse).
-
-    The `anchor_verified` parameter is retained for backward compatibility
-    with callers; it is a no-op (the out-of-repo anchor feature has been removed).
     """
     scratch = Path(scratch)
     audit_path = Path(audit_path)

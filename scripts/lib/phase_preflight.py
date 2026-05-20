@@ -130,7 +130,6 @@ def run_state_trust_preflight(
     scratch: Path,
     audit_path: Path,
     lock: Any,
-    anchor_verified: bool,
 ) -> None:
     """Invoke `state_trust.preflight`; map its exceptions to the
     `StateTrustPreflightError` taxonomy used by both approve and reopen.
@@ -140,7 +139,6 @@ def run_state_trust_preflight(
             scratch,
             audit_path=audit_path,
             lock=lock,
-            anchor_verified=anchor_verified,
         )
     except _state_trust.StateAuditMismatchError as exc:
         raise StateTrustPreflightError(

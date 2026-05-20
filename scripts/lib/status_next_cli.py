@@ -167,7 +167,6 @@ def _read_state_with_preflight(
                 scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=True,
             )
         except _state_trust.StateAuditMismatchError as exc:
             print(

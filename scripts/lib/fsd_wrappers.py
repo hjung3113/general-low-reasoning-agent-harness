@@ -182,7 +182,6 @@ def run_fsd_run_phase(
     budgets: Optional[dict] = None,
     allow_network: bool = False,
     accept_degraded_windows_containment: bool = False,
-    anchor_verified: bool = True,  # retained for test compatibility; no-op
     roadmap_root: Optional[Path] = None,
     # Deprecated alias (one release cycle): use consumer_tty instead.
     nonce_id: Optional[str] = None,
@@ -313,7 +312,6 @@ def run_fsd_run_all(
     budgets: Optional[dict] = None,
     allow_network: bool = False,
     accept_degraded_windows_containment: bool = False,
-    anchor_verified: bool = True,  # retained for test compatibility; no-op
     roadmap_root: Optional[Path] = None,
     # Deprecated alias (one release cycle): use consumer_tty instead.
     nonce_id: Optional[str] = None,

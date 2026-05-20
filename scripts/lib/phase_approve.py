@@ -249,7 +249,6 @@ def run_approve(
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
-    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
     skip_state_trust_preflight: bool = False,
 ) -> ApproveResult:
     """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
@@ -475,7 +474,6 @@ def run_approve(
                     scratch,
                     audit_path=audit_path,
                     lock=lock,
-                    anchor_verified=True,
                 )
             except _state_trust.StateAuditMismatchError as exc:
                 print(

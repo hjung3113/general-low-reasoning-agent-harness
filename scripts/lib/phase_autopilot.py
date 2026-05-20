@@ -202,7 +202,6 @@ def _run_state_trust_preflight_for_autopilot(
     scratch: Path,
     audit_path: Path,
     lock: Any,
-    anchor_verified: bool = True,
 ) -> Optional[AutopilotResult]:
     """Run state-trust preflight. Returns AutopilotResult on failure, None on success."""
     try:
@@ -210,7 +209,6 @@ def _run_state_trust_preflight_for_autopilot(
             scratch=scratch,
             audit_path=audit_path,
             lock=lock,
-            anchor_verified=True,
         )
         return None
     except _phase_preflight.StateTrustPreflightError as exc:
@@ -420,8 +418,6 @@ def run_start(
     mode: str,
     budgets: Optional[Mapping[str, int]],
     allow_network: bool,
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
     accept_degraded_windows_containment: bool = False,
     repo_root: Optional[Path] = None,
     roadmap_root: Optional[Path] = None,
@@ -457,10 +453,6 @@ def run_start(
         Budget overrides. None → defaults.
     allow_network : bool
         Whether to allow network (echoed to state + audit).
-    anchor_verified : bool
-        Retained for test compatibility; no-op (anchor feature retired).
-    skip_anchor_preflight : bool
-        Retained for test compatibility; no-op (anchor feature retired).
     accept_degraded_windows_containment : bool
         Bypasses Windows exit 11 (§3.5 Round-3 escape hatch).
     repo_root : Path | None
@@ -1073,8 +1065,6 @@ def run_stop(
     audit_path: Path,
     lock_handle: Any,
     reason: str,
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
     repo_root: Optional[Path] = None,
 ) -> AutopilotResult:
     """Execute the §3.5 `phase autopilot stop` sequence.
@@ -1190,8 +1180,6 @@ def run_next_pending(
     scratch_root: Path,
     audit_path: Path,
     lock_handle: Any,
-    anchor_verified: bool = True,
-    skip_anchor_preflight: bool = False,  # retained for test compatibility; no-op
     repo_root: Optional[Path] = None,
     roadmap_root: Optional[Path] = None,
 ) -> NextPendingResult:

@@ -90,7 +90,6 @@ def cmd_halt_diary_clear(args) -> int:  # type: ignore[no-untyped-def]
                 scratch=scratch,
                 audit_path=audit_path,
                 lock=lock,
-                anchor_verified=True,
             )
         except _phase_preflight.StateTrustPreflightError as exc:
             print(

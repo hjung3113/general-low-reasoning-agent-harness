@@ -69,7 +69,6 @@ def run_clear(
     scratch_root: Path,
     audit_path: Path,
     lock_handle: Any,
-    anchor_verified: bool = True,  # retained for test compatibility; no-op
     stdin_is_tty: bool,
     by: Optional[str] = None,
 ) -> ClearResult:
@@ -83,8 +82,6 @@ def run_clear(
         Audit log path (e.g. `.harness/audit.log`).
     lock_handle : LockHandle
         Must be an acquired, un-released LockHandle. None → TxnLockMissingError.
-    anchor_verified : bool
-        Retained for backward compatibility; no-op (anchor feature removed).
     stdin_is_tty : bool
         Whether stdin is a real TTY. False → exit 6 `non_tty_halt_diary_clear_blocked`.
     by : str | None
