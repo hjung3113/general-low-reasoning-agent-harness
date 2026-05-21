@@ -305,11 +305,18 @@ def cmd_next(args) -> int:
         return 0
 
     if os.environ.get("HARNESS_ADVANCED") != "1" and not use_json and not use_shell:
-        # Delegate to the shared canonical projection so this path and the
-        # status "Next action:" line are always identical (NEW-4 fix).
-        action = _sn.compute_next_action(state)
-        if action is not None:
-            sys.stdout.write(action + "\n")
+        # Normal (non-advanced) surface: hide phase-internal commands from users.
+        # Agent-safe transitions (discuss→plan, plan→execute, execute→done) are
+        # all driven by `harness run`; only human-required steps (approval,
+        # reopen) are exposed directly.  This preserves the daily-four UX:
+        #   harness next → harness run → harness check  (no phase set needed).
+        # The status "Next action:" line still shows the canonical command from
+        # compute_next_action so power users with HARNESS_ADVANCED=1 or
+        # harness status see the underlying transition (NEW-4 parity preserved).
+        if result.agent_safe and result.exit_code == 0:
+            sys.stdout.write("harness run\n")
+        elif result.command is not None:
+            sys.stdout.write(result.command + "\n")
         else:
             phase = state.get("phase", "discuss")
             if phase == "done":
