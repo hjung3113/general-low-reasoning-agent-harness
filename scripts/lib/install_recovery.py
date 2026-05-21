@@ -32,10 +32,12 @@ from __future__ import annotations
 
 import datetime
 import fnmatch
+import json
 import os
 import shutil
 import time
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from pathlib import Path
 from typing import List
 
@@ -44,6 +46,15 @@ from lib.audit import audit_append, KNOWN_VERBS  # noqa: F401 (KNOWN_VERBS impor
 
 # Staging dirs older than this (in seconds) are treated as stale.
 STAGING_AGE_THRESHOLD_SECS: int = 600  # 10 minutes
+
+
+class RecoveryAction(Enum):
+    """Action taken for one pending-manifest recovery."""
+    FINALIZED = auto()       # pending -> final (sentinel path)
+    ROLLED_BACK = auto()     # explicit rollback (.aborted marker)
+    RESUMED = auto()         # resumed batch + finalized
+    QUARANTINED = auto()     # orphaned pending sidecar quarantined
+    NOOP = auto()            # nothing to do
 
 
 @dataclass
@@ -157,6 +168,216 @@ def _emit_audit(target: Path, verb: str, payload: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pending-manifest recovery (.pending-<runid> sidecar)
+# ---------------------------------------------------------------------------
+
+# Age threshold for .complete.tmp orphan cleanup (seconds).
+_SENTINEL_TMP_ORPHAN_AGE_SECS: int = 60
+
+
+def _find_pending_manifests(target: Path) -> List[Path]:
+    """Return all ``installed-manifest.json.pending-*`` files under ``target/.harness/``."""
+    harness = _harness_dir(target)
+    if not harness.is_dir():
+        return []
+    found: List[Path] = []
+    try:
+        with os.scandir(str(harness)) as it:
+            for entry in it:
+                if (
+                    fnmatch.fnmatchcase(
+                        entry.name, "installed-manifest.json.pending-*"
+                    )
+                    and entry.is_file(follow_symlinks=False)
+                ):
+                    found.append(Path(entry.path))
+    except OSError:
+        pass
+    return found
+
+
+def _cleanup_sentinel_tmp_orphans(target: Path) -> int:
+    """Scan ``.harness/.staging-*.complete.tmp`` and unlink orphans older than 60s.
+
+    Returns the count of files removed.
+    """
+    harness = _harness_dir(target)
+    if not harness.is_dir():
+        return 0
+    removed = 0
+    now = time.time()
+    try:
+        with os.scandir(str(harness)) as it:
+            for entry in it:
+                if (
+                    fnmatch.fnmatchcase(entry.name, ".staging-*.complete.tmp")
+                    and entry.is_file(follow_symlinks=False)
+                ):
+                    try:
+                        mtime = os.path.getmtime(entry.path)
+                        if (now - mtime) >= _SENTINEL_TMP_ORPHAN_AGE_SECS:
+                            os.unlink(entry.path)
+                            removed += 1
+                    except OSError:
+                        pass
+    except OSError:
+        pass
+    return removed
+
+
+def _recover_pending_manifest(
+    target: Path,
+    pending_path: Path,
+    result: RecoveryResult,
+) -> RecoveryAction:
+    """Recover one ``installed-manifest.json.pending-<runid>`` sidecar.
+
+    Decision matrix (checked in order — .aborted BEFORE sentinel per REV-2):
+
+    1. ``runid`` extracted from suffix. Derive staging_dir, journal_path, sentinel_path.
+    2. ``.aborted`` marker present in staging_dir → EXPLICIT ROLLBACK (.aborted wins).
+    3. Sentinel (``.staging-<runid>.complete``) exists → FINALIZE (os.replace pending→final).
+    4. Journal + staging_dir present → RESUME batch; on success FINALIZE.
+    5. None of the above → ORPHAN → quarantine pending sidecar; emit audit row.
+    """
+    harness = _harness_dir(target)
+    final_path = harness / "installed-manifest.json"
+
+    # Extract runid from pending filename suffix.
+    prefix = "installed-manifest.json.pending-"
+    if not pending_path.name.startswith(prefix):
+        return RecoveryAction.NOOP
+    runid = pending_path.name[len(prefix):]
+
+    staging_dir = harness / f".staging-{runid}"
+    journal_path = harness / f".staging-{runid}.journal.jsonl"
+    sentinel_path = harness / f".staging-{runid}.complete"
+
+    # Step 1: .aborted wins over sentinel (REV-2 Codex NEW-1 decision matrix).
+    aborted_marker = staging_dir / ".aborted"
+    if aborted_marker.exists():
+        result.sentinel_present = True  # re-use field to signal aborted state
+        # Rollback: for completed journal entries, restore from backup or quarantine.
+        records = read_install_journal(journal_path)
+        completed_rels = _journal_completed(records)
+        backups = _backups_dir(target)
+        conflicts = _conflicts_dir(target)
+        for rel in completed_rels:
+            installed_path = target / rel
+            if not installed_path.exists():
+                continue
+            bak = _find_backup(backups, installed_path.name)
+            if bak is not None:
+                try:
+                    installed_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(str(bak), str(installed_path))
+                    result.rolled_back.append(installed_path)
+                    _emit_audit(target, "install.recovery.rolled_back", {"rel": rel, "backup": str(bak)})
+                except OSError:
+                    _quarantine_file(installed_path, conflicts, rel, target, result)
+            else:
+                _quarantine_file(installed_path, conflicts, rel, target, result)
+        # Cleanup
+        _cleanup_pending_artifacts(staging_dir, journal_path, sentinel_path, pending_path)
+        return RecoveryAction.ROLLED_BACK
+
+    # Step 2: sentinel exists → finalize.
+    if sentinel_path.exists():
+        try:
+            _finalize_pending_manifest(pending_path, final_path, target)
+        except Exception as exc:
+            _emit_audit(target, "install.recovery.pending_finalize_failed", {"error": str(exc)})
+            return RecoveryAction.NOOP
+        _cleanup_pending_artifacts(staging_dir, journal_path, sentinel_path, pending_path)
+        _emit_audit(target, "install.recovery.finished", {"runid": runid, "method": "sentinel_finalize"})
+        result.finished.append(final_path)
+        return RecoveryAction.FINALIZED
+
+    # Step 3: journal + staging dir → resume batch.
+    if journal_path.exists() and staging_dir.exists():
+        try:
+            batch_result = atomic_install_batch(staging_dir, target, journal_path, defer_cleanup=True)
+        except OSError:
+            return RecoveryAction.NOOP
+        if batch_result.aborted:
+            # Batch failed during resume; leave for operator.
+            return RecoveryAction.NOOP
+        # Sentinel written by batch; finalize.
+        if sentinel_path.exists():
+            try:
+                _finalize_pending_manifest(pending_path, final_path, target)
+            except Exception as exc:
+                _emit_audit(target, "install.recovery.pending_finalize_failed", {"error": str(exc)})
+                return RecoveryAction.NOOP
+            _cleanup_pending_artifacts(staging_dir, journal_path, sentinel_path, pending_path)
+            _emit_audit(target, "install.recovery.finished", {"runid": runid, "method": "resume_finalize"})
+            result.finished.append(final_path)
+            return RecoveryAction.RESUMED
+        return RecoveryAction.NOOP
+
+    # Step 4: orphan — no staging, no journal, no sentinel, no .aborted.
+    conflicts = _conflicts_dir(target)
+    try:
+        conflicts.mkdir(parents=True, exist_ok=True)
+        ts = _compact_ts()
+        dest = conflicts / f"installed-manifest.json.pending.{ts}"
+        os.replace(str(pending_path), str(dest))
+        result.quarantined.append(pending_path)
+        _emit_audit(
+            target,
+            "install.recovery.pending_orphaned",
+            {"pending": pending_path.name, "conflicts_path": str(dest)},
+        )
+    except OSError:
+        pass
+    return RecoveryAction.QUARANTINED
+
+
+def _finalize_pending_manifest(pending_path: Path, final_path: Path, target: Path) -> None:
+    """Atomic rename of pending sidecar to final manifest path with post-finalize verify."""
+    # Read pending content before rename.
+    try:
+        pending_content = json.loads(pending_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cannot read pending manifest {pending_path}: {exc}") from exc
+
+    expected_version = pending_content.get("version")
+    os.replace(str(pending_path), str(final_path))
+
+    # Post-finalize verify.
+    try:
+        actual = json.loads(final_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Post-finalize verify failed (unreadable): {exc}") from exc
+    if actual.get("version") != expected_version:
+        raise RuntimeError(
+            f"Post-finalize verify: version mismatch (expected={expected_version!r}, "
+            f"got={actual.get('version')!r}). "
+            f"복구: python3 scripts/harness.py state repair "
+            f"[Finalize verification failed; recover with: python3 scripts/harness.py state repair]"
+        )
+
+
+def _cleanup_pending_artifacts(
+    staging_dir: Path,
+    journal_path: Path,
+    sentinel_path: Path,
+    pending_path: Path,
+) -> None:
+    """Best-effort cleanup of staging artifacts after pending-manifest recovery."""
+    for p in (sentinel_path, journal_path, pending_path):
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if staging_dir.exists():
+        try:
+            shutil.rmtree(str(staging_dir), ignore_errors=True)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Core recovery logic for a single staging dir
 # ---------------------------------------------------------------------------
 
@@ -263,7 +484,14 @@ def _quarantine_file(
 
 
 def recover_aborted_install(target: Path) -> RecoveryResult:
-    """Scan ``target/.harness/.staging-*`` and reconcile stale dirs.
+    """Scan ``target/.harness/`` and reconcile pending installs and stale dirs.
+
+    Order of operations per REV-2:
+    1. Scan ``installed-manifest.json.pending-*`` and dispatch to
+       ``_recover_pending_manifest`` for each.
+    2. Clean up ``.staging-*.complete.tmp`` orphans older than 60s.
+    3. Legacy scan: stale ``.staging-*`` dirs (no pending sidecar) via
+       ``_recover_one``.
 
     Parameters
     ----------
@@ -276,16 +504,33 @@ def recover_aborted_install(target: Path) -> RecoveryResult:
         Summary of recovery actions taken.
     """
     target = Path(target)
+
+    # Step 1: pending-manifest recovery.
+    pending_manifests = _find_pending_manifests(target)
+    any_pending_work = len(pending_manifests) > 0
+
     staging_dirs = _find_staging_dirs(target)
-
     stale = [d for d in staging_dirs if _is_stale(d)]
-    result = RecoveryResult(found_staging_dirs=len(stale))
 
-    if not stale:
+    result = RecoveryResult(found_staging_dirs=len(stale) + len(pending_manifests))
+
+    for pending_path in pending_manifests:
+        _recover_pending_manifest(target, pending_path, result)
+
+    # Step 2: .complete.tmp orphan cleanup.
+    _cleanup_sentinel_tmp_orphans(target)
+
+    # Step 3: legacy stale staging-dir recovery (for staging dirs not linked to a pending sidecar).
+    if not stale and not any_pending_work:
         _emit_audit(target, "install.recovery.noop", {"staging_dirs_found": 0})
         return result
 
     for staging_dir in stale:
+        # Skip if this staging dir was already handled by pending-manifest recovery.
+        runid = staging_dir.name[len(".staging-"):]
+        pending_for_this = _harness_dir(target) / f"installed-manifest.json.pending-{runid}"
+        if pending_for_this in pending_manifests:
+            continue
         _recover_one(staging_dir, target, result)
 
     return result
