@@ -53,7 +53,7 @@ class ReleaseScriptTests(unittest.TestCase):
                 "git pull --ff-only origin main",
                 "git merge --no-ff develop -m merge: release v0.4.3",
                 "python3 -m unittest scripts/test_harness.py scripts/test_release.py",
-                "python3 scripts/harness.py check",
+                "python3 scripts/harness.py check --verify-hashes",
                 "python3 scripts/release_smoke_test.py",
                 "git push origin main",
                 "git tag -s v0.4.3 -m v0.4.3",
