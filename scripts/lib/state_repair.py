@@ -60,6 +60,9 @@ class RepairReport:
     markers_added: list[str] = field(default_factory=list)
     payloads_canonicalized: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Number of pending-manifest sidecars quarantined during install_recovery.
+    # Non-zero → CLI should return rc=1 (partial recovery with quarantine).
+    quarantined_count: int = 0
 
 
 def canonical_roadmap_phases_payload(phases: list[RoadmapPhase]) -> str:
@@ -222,6 +225,8 @@ def repair(root: Path) -> RepairReport:
             f"rolled_back={len(recovery.rolled_back)}, "
             f"quarantined={len(recovery.quarantined)}"
         )
+    # Propagate quarantine count so CLI can return rc=1.
+    report.quarantined_count = len(recovery.quarantined)
 
     roadmap_path = root / ROADMAP_PATH
     state_path = root / STATE_PATH

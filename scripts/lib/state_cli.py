@@ -97,8 +97,15 @@ def run_show(*, root: Path, stream: TextIO, fmt: str = "text") -> int:
 
 
 def run_repair(*, root: Path, stream: TextIO) -> int:
-    """Translate state_repair exceptions to CLI exit codes (T0-5).
+    """Translate state_repair exceptions to CLI exit codes.
 
+    Exit code contract (IMPL-PLAN REV-2 §3.4 / v0.9.5 NEW-3 fix):
+    - 0 — recovery completed cleanly OR no work to do
+    - 1 — partial recovery with quarantine (files moved to .harness/conflicts/)
+    - 2 — catastrophic failure (repair() raised an unexpected exception)
+    - 5 (EXIT_UNPARSEABLE_JSON) — RefusedError (duplicate slug / malformed input)
+
+    Legacy mapping preserved:
     - state_repair.RepairRefusedError → exit 5 (EXIT_UNPARSEABLE_JSON) per
       CONTRACT-PIN §4. Diagnostic written to both `stream` and stderr.
     - SystemExit(1) propagating from a backup-collision in lib.backups →
@@ -119,6 +126,12 @@ def run_repair(*, root: Path, stream: TextIO) -> int:
                 print(msg, file=sys.stderr)
             return EXIT_OPERATIONAL
         raise
+    except Exception as exc:  # noqa: BLE001
+        # Catastrophic: repair() raised an unexpected exception.
+        msg = f"state repair: catastrophic error — {exc}"
+        stream.write(msg + "\n")
+        print(msg, file=sys.stderr)
+        return 2
     if report.files_updated:
         stream.write("updated:\n")
         for path in report.files_updated:
@@ -135,6 +148,10 @@ def run_repair(*, root: Path, stream: TextIO) -> int:
         stream.write("warnings:\n")
         for w in report.warnings:
             stream.write(f"  - {w}\n")
-    if not (report.files_updated or report.markers_added or report.payloads_canonicalized):
+    if not (report.files_updated or report.markers_added or report.payloads_canonicalized
+            or report.warnings):
         stream.write("nothing to repair (already canonical)\n")
+    # rc=1 when quarantine occurred (partial recovery — operator must check .harness/conflicts/).
+    if report.quarantined_count > 0:
+        return 1
     return 0
