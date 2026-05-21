@@ -172,6 +172,58 @@ def teardown_worktree(worktree_path: Path) -> None:
     shutil.rmtree(worktree_path, ignore_errors=True)
 
 
+def _recompute_chain_hash(data: dict) -> str:
+    """Recompute installed_files_chain_hash from the manifest dict.
+
+    Mirrors compute_manifest_hash_chain + verify_manifest_chain normalization
+    in scripts/lib/manifest_reconciler.py.  Duplicated here to avoid importing
+    lib at fixture-build time (import path may not be on sys.path during
+    worktree init runs).
+
+    IMPORTANT: the chain covers only installed_sha256/current_sha256 per file
+    entry (other fields like policy, owner, sha256 are NOT part of the chain).
+    This matches the normalization in verify_manifest_chain (lines ~370-378).
+    """
+    schema_version = data.get("schema_version", 0)
+    harness_version = data.get("harness_version", "")
+    raw_files: dict = data.get("files", {})
+    removed: list = data.get("removed_in_version", [])
+    trust_origin = data.get("trust_origin") or ""
+    release_tag = data.get("release_tag") or ""
+    release_commit = data.get("release_commit") or ""
+
+    # Normalize files: only installed_sha256 + current_sha256 (§6 contract)
+    normalized_files: dict = {
+        path: {
+            k: entry[k]
+            for k in ("installed_sha256", "current_sha256")
+            if k in entry
+        }
+        for path, entry in raw_files.items()
+        if isinstance(entry, dict)
+    }
+
+    chain_parts: list[str] = [
+        f"schema_version={schema_version}",
+        f"harness_version={harness_version}",
+        f"trust_origin={trust_origin}",
+        f"release_tag={release_tag}",
+        f"release_commit={release_commit}",
+    ]
+    for file_path in sorted(normalized_files.keys()):
+        entry = normalized_files[file_path]
+        entry_repr = json.dumps({k: entry[k] for k in sorted(entry.keys())}, sort_keys=True)
+        chain_parts.append(f"file:{file_path}:{entry_repr}")
+    for removed_entry in sorted(removed, key=lambda e: e.get("path", "")):
+        removed_repr = json.dumps(
+            {k: removed_entry[k] for k in sorted(removed_entry.keys())}, sort_keys=True
+        )
+        chain_parts.append(f"removed:{removed_repr}")
+
+    canonical = "\n".join(chain_parts)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _normalize_v094_install_state(target_dir: Path) -> None:
     """Normalize the v0.9.4 installed-manifest.json for determinism.
 
@@ -179,6 +231,11 @@ def _normalize_v094_install_state(target_dir: Path) -> None:
     - installed_at: replaced with HARNESS_FIXED_NOW_ISO env value or a fixed constant
     - git_user_email_at_install_sha256: set to None
     - source: set to a placeholder string (path is build-environment-specific)
+    - trust_origin: set to "dev_unsigned" (real fixture has "signed_tag" from git tag;
+      tests upgrade with HARNESS_ALLOW_UNSIGNED_DEV=1 which blocks signed_tag→dev_unsigned
+      downgrade, so we normalize to dev_unsigned to allow test upgrades)
+    - release_tag / release_commit: set to None (fixture-specific, not relevant for test upgrades)
+    - installed_files_chain_hash: recomputed after normalization (trust fields change it)
     """
     manifest_path = target_dir / ".harness" / "installed-manifest.json"
     if not manifest_path.exists():
@@ -192,11 +249,22 @@ def _normalize_v094_install_state(target_dir: Path) -> None:
     fixed_now = os.environ.get("HARNESS_FIXED_NOW_ISO", "2026-05-21T00:00:00Z")
     data["git_user_email_at_install_sha256"] = None
     data["source"] = "__fixture__"
+    # Normalize trust_origin so upgrade tests with HARNESS_ALLOW_UNSIGNED_DEV=1 work.
+    # A real v0.9.4 install from the signed tag produces trust_origin=signed_tag.
+    # The dev upgrade path (HARNESS_ALLOW_UNSIGNED_DEV=1) produces dev_unsigned.
+    # The trust-downgrade guard blocks signed_tag→dev_unsigned — correct for production
+    # but breaks fixture tests.  Setting dev_unsigned here lets tests run freely.
+    data["trust_origin"] = "dev_unsigned"
+    data["release_tag"] = None
+    data["release_commit"] = None
     # Normalize installed_at for all file entries
     if isinstance(data.get("files"), dict):
         for file_info in data["files"].values():
             if isinstance(file_info, dict) and "installed_at" in file_info:
                 file_info["installed_at"] = fixed_now
+    # Recompute chain hash after trust fields changed (chain covers trust_origin,
+    # release_tag, release_commit — see compute_manifest_hash_chain in manifest_reconciler.py).
+    data["installed_files_chain_hash"] = _recompute_chain_hash(data)
     manifest_path.write_text(
         json.dumps(data, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

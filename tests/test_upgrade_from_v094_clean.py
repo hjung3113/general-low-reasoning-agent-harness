@@ -105,80 +105,6 @@ def _read_audit_rows(target: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _seed_v094_manifest(target: Path) -> str:
-    """Write a minimal v0.9.4 installed-manifest.json.
-
-    Returns the chain hash so tests can verify a delta was detected.
-    The manifest intentionally omits the 35 lib modules added in v0.9.5
-    (BUG-1) so the upgrade will compute a different chain hash.
-
-    MAJOR-2 note: the ``sha256`` values below are synthetic stubs, not real
-    v0.9.4 file hashes.  This is acceptable here because the test's purpose
-    is to verify that (a) the rechain audit row is emitted and (b) the chain
-    hashes change — both goals are served by any manifest whose hash differs
-    from the post-upgrade chain hash.  The synthetic values guarantee the
-    delta is detectable without requiring a real v0.9.4 checkout.
-
-    The ``cause == v094_manifest_gap_remediation`` classification is driven
-    by release_trust.py checking that at least one of the 35 known-missing
-    paths is absent from this manifest's ``files`` dict — which is satisfied
-    here because the stub only lists 3 files.  This mechanism is exercised
-    by test_release_trust_rechained_audit_row_present, which now asserts the
-    strict v094_manifest_gap_remediation cause (MAJOR-1 fix).
-    """
-    # pylint: disable=import-outside-toplevel
-    sys.path.insert(0, str(SCRIPTS_DIR))
-    from lib.manifest_reconciler import compute_manifest_hash_chain  # type: ignore
-
-    harness_dir = target / ".harness"
-    harness_dir.mkdir(parents=True, exist_ok=True)
-
-    v094_files = {
-        "scripts/lib/install.py": {
-            "installed_sha256": "aaa000" + "0" * 58,
-            "current_sha256": "aaa000" + "0" * 58,
-        },
-        "scripts/lib/upgrade.py": {
-            "installed_sha256": "bbb000" + "0" * 58,
-            "current_sha256": "bbb000" + "0" * 58,
-        },
-        "scripts/lib/state.py": {
-            "installed_sha256": "ccc000" + "0" * 58,
-            "current_sha256": "ccc000" + "0" * 58,
-        },
-    }
-
-    chain_manifest: dict[str, Any] = {
-        "release_commit": None,
-        "release_tag": "v0.9.4",
-        "schema_version": 2,
-        "harness_version": "0.9.4",
-        "files": v094_files,
-        "removed_in_version": [],
-        "trust_origin": "dev_unsigned",
-    }
-    v094_chain_hash = compute_manifest_hash_chain(chain_manifest)
-
-    installed_manifest: dict[str, Any] = {
-        # ``version`` must be non-None so upgrade() reads the prior manifest
-        # and enters the non-adoption path where installed_files_chain_hash
-        # is preserved (allowing the T16 chain-delta detection).
-        "version": "0.9.4",
-        "harness_version": "0.9.4",
-        "schema_version": 2,
-        "release_tag": "v0.9.4",
-        "trust_origin": "dev_unsigned",
-        "installed_files_chain_hash": v094_chain_hash,
-        "files": v094_files,
-    }
-    manifest_path = harness_dir / "installed-manifest.json"
-    manifest_path.write_text(
-        json.dumps(installed_manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return v094_chain_hash
-
-
 # ===========================================================================
 # Fixture
 # ===========================================================================
@@ -186,10 +112,14 @@ def _seed_v094_manifest(target: Path) -> str:
 
 @pytest.fixture
 def v094_clean_target(tmp_path: Path, v094_fixtures) -> Path:
-    """Extracted v094-clean fixture with a seeded v0.9.4 installed-manifest."""
+    """Extracted v094-clean fixture; includes real .harness/installed-manifest.json from tarball."""
     extract_dir = tmp_path / "target"
     _extract_fixture(v094_fixtures["clean"], extract_dir)
-    _seed_v094_manifest(extract_dir)
+    # T8: assert the real manifest is present (no synthetic seed needed)
+    assert (extract_dir / ".harness" / "installed-manifest.json").exists(), (
+        "v094-clean.tar.gz must contain .harness/installed-manifest.json; "
+        "regenerate with scripts/build_v094_fixture.py"
+    )
     return extract_dir
 
 
