@@ -1106,21 +1106,47 @@ python3 scripts/harness.py state repair
 | `1` | 부분 복구 — `.harness/conflicts/` 에 격리된 파일 있음; 수동 확인 필요 |
 | `2` | 치명적 오류 — 복구 자체가 실패 |
 
-**성공 출력 예시 (sentinel-finalize):**
+**성공 출력 예시 (이미 정상 — no-op):**
 
 ```
-harness state repair
-recovered: finalized pending manifest (runid=12345-20260521T100000Z-abc123, version=0.9.7)
-exit code 0
+$ python3 scripts/harness.py state repair
+nothing to repair (already canonical)
+$ echo $?
+0
 ```
 
-**실패 출력 예시 (orphan-pending, rc=1):**
+**성공 출력 예시 (sentinel-finalize: 중단된 install 복구):**
 
 ```
-harness state repair
-warning: quarantined orphan pending manifest to .harness/conflicts/installed-manifest.json.pending-99999-...
-[Orphaned pending manifest quarantined; check .harness/conflicts/ for manual review]
-exit code 1
+$ python3 scripts/harness.py state repair
+updated:
+  - .planning/ROADMAP.md
+  - .planning/STATE.md
+markers_added:
+  - .planning/STATE.md
+  - .planning/ROADMAP.md
+warnings:
+  - install_recovery: found 1 stale staging dir(s); finished=1, rolled_back=0, quarantined=0
+$ echo $?
+0
+```
+
+**출력 예시 (orphan-pending 격리, rc=1):**
+
+Staging dir나 sentinel 없이 pending sidecar만 발견되면 격리합니다. `.harness/conflicts/` 를 수동으로 확인하세요.
+
+```
+$ python3 scripts/harness.py state repair
+updated:
+  - .planning/ROADMAP.md
+  - .planning/STATE.md
+markers_added:
+  - .planning/STATE.md
+  - .planning/ROADMAP.md
+warnings:
+  - install_recovery: found 1 stale staging dir(s); finished=0, rolled_back=0, quarantined=1
+$ echo $?
+1
 ```
 
 rc=1 일 때 `.harness/conflicts/` 안을 확인하고 필요시 파일을 수동으로 복구하세요.

@@ -1308,15 +1308,36 @@ python3 scripts/harness.py phase reopen --to plan --reason &quot;scope 추가&qu
 <tr><td><code>1</code></td><td>부분 복구 — <code>.harness/conflicts/</code> 에 격리된 파일 있음; 수동 확인 필요</td></tr>
 <tr><td><code>2</code></td><td>치명적 오류 — 복구 자체가 실패</td></tr>
 </tbody></table></div>
-<p><strong>성공 출력 예시 (sentinel-finalize):</strong></p>
-<pre><code>harness state repair
-recovered: finalized pending manifest (runid=12345-20260521T100000Z-abc123, version=0.9.7)
-exit code 0</code></pre>
-<p><strong>실패 출력 예시 (orphan-pending, rc=1):</strong></p>
-<pre><code>harness state repair
-warning: quarantined orphan pending manifest to .harness/conflicts/installed-manifest.json.pending-99999-...
-[Orphaned pending manifest quarantined; check .harness/conflicts/ for manual review]
-exit code 1</code></pre>
+<p><strong>성공 출력 예시 (이미 정상 — no-op):</strong></p>
+<pre><code class="language-bash">$ python3 scripts/harness.py state repair
+nothing to repair (already canonical)
+$ echo $?
+0</code></pre>
+<p><strong>성공 출력 예시 (sentinel-finalize: 중단된 install 복구):</strong></p>
+<pre><code class="language-bash">$ python3 scripts/harness.py state repair
+updated:
+  - .planning/ROADMAP.md
+  - .planning/STATE.md
+markers_added:
+  - .planning/STATE.md
+  - .planning/ROADMAP.md
+warnings:
+  - install_recovery: found 1 stale staging dir(s); finished=1, rolled_back=0, quarantined=0
+$ echo $?
+0</code></pre>
+<p><strong>출력 예시 (orphan-pending 격리, rc=1):</strong></p>
+<p>Staging dir나 sentinel 없이 pending sidecar만 발견되면 격리합니다. <code>.harness/conflicts/</code> 를 수동으로 확인하세요.</p>
+<pre><code class="language-bash">$ python3 scripts/harness.py state repair
+updated:
+  - .planning/ROADMAP.md
+  - .planning/STATE.md
+markers_added:
+  - .planning/STATE.md
+  - .planning/ROADMAP.md
+warnings:
+  - install_recovery: found 1 stale staging dir(s); finished=0, rolled_back=0, quarantined=1
+$ echo $?
+1</code></pre>
 <p>rc=1 일 때 <code>.harness/conflicts/</code> 안을 확인하고 필요시 파일을 수동으로 복구하세요.</p>
 <p><strong>stale 설치 감지:</strong></p>
 <p><code>harness check</code> 명령이 <code>.harness/</code> 안에서 600초(10분) 이상 방치된 staging 디렉토리를 감지하면 경고를 출력합니다:</p>
