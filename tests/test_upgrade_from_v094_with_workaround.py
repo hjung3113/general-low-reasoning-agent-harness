@@ -175,6 +175,78 @@ def _read_audit_rows(target: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _seed_v094_full_manifest(
+    target: Path,
+    workaround_tarball: Path,
+) -> None:
+    """Seed installed-manifest.json with ALL files present in the workaround tarball.
+
+    A real v0.9.4 install would have a manifest entry for every harness-owned file
+    it installed.  For the non-force upgrade path (upgrade.py:732) to NOT quarantine
+    a file, the file must appear in the manifest with a sha256 that matches its
+    current on-disk bytes.  Seeding all tarball files achieves this.
+
+    Key constraint — chain_files uses ONLY installed_sha256 + current_sha256:
+    upgrade.py:_read_target_trust_origin (lines 188-195) recomputes the chain hash
+    from those two fields.  Any extra field would cause a mismatch → exit 15.
+    We store sha256 separately in installed_files so upgrade.py:733 can read
+    old_hash = h for conflict detection.
+
+    Used exclusively by CRIT-1 tests exercising the non-force upgrade code path.
+    """
+    sys.path.insert(0, str(SCRIPTS_DIR))
+    from lib.manifest_reconciler import compute_manifest_hash_chain  # type: ignore
+
+    # Build sha256 entries for every regular file in the tarball.
+    chain_files: dict[str, Any] = {}
+    installed_files: dict[str, Any] = {}
+    with tarfile.open(workaround_tarball) as tf:
+        for m in tf.getmembers():
+            if not m.isfile():
+                continue
+            fobj = tf.extractfile(m)
+            if fobj is None:
+                continue
+            content = fobj.read()
+            h = hashlib.sha256(content).hexdigest()
+            # chain_files: only the two fields the chain-hash validator reads
+            chain_files[m.name] = {"installed_sha256": h, "current_sha256": h}
+            # installed_files: sha256 shortcut lets upgrade.py:733 find old_hash
+            installed_files[m.name] = {
+                "installed_sha256": h,
+                "current_sha256": h,
+                "sha256": h,
+            }
+
+    harness_dir = target / ".harness"
+    harness_dir.mkdir(parents=True, exist_ok=True)
+
+    chain_manifest: dict[str, Any] = {
+        "release_commit": None,
+        "release_tag": "v0.9.4",
+        "schema_version": 2,
+        "harness_version": "0.9.4",
+        "files": chain_files,
+        "removed_in_version": [],
+        "trust_origin": "dev_unsigned",
+    }
+    v094_chain_hash = compute_manifest_hash_chain(chain_manifest)
+
+    installed_manifest: dict[str, Any] = {
+        "version": "0.9.4",
+        "harness_version": "0.9.4",
+        "schema_version": 2,
+        "release_tag": "v0.9.4",
+        "trust_origin": "dev_unsigned",
+        "installed_files_chain_hash": v094_chain_hash,
+        "files": installed_files,
+    }
+    (harness_dir / "installed-manifest.json").write_text(
+        json.dumps(installed_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _sha256_of_workaround_files(tarball: Path, clean_tarball: Path) -> dict[str, str]:
     """Return sha256 dict of lib files added in workaround (absent in clean)."""
     with tarfile.open(clean_tarball) as tf:
@@ -206,6 +278,23 @@ def v094_workaround_target(tmp_path: Path, v094_fixtures) -> Path:
     extract_dir = tmp_path / "target"
     _extract_fixture(v094_fixtures["workaround"], extract_dir)
     _seed_v094_manifest(extract_dir)
+    return extract_dir
+
+
+@pytest.fixture
+def v094_workaround_target_non_force(tmp_path: Path, v094_fixtures) -> Path:
+    """Workaround fixture with a FULL manifest seed for non-force upgrade tests.
+
+    Seeds a manifest that covers ALL files in the workaround tarball so the
+    non-force upgrade path (upgrade.py:732) finds old_hash == current_hash for
+    sha256-matching files and does NOT quarantine them (CRIT-1 / STALE-2).
+    """
+    extract_dir = tmp_path / "target"
+    _extract_fixture(v094_fixtures["workaround"], extract_dir)
+    _seed_v094_full_manifest(
+        extract_dir,
+        workaround_tarball=v094_fixtures["workaround"],
+    )
     return extract_dir
 
 
@@ -349,6 +438,100 @@ class TestUpgradeFromV094WithWorkaround:
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state["phase"] == "plan", (
             f"Expected plan phase post-upgrade, got {state['phase']}"
+        )
+
+    # -------------------------------------------------------------------
+    # CRIT-1 fix: test the NON-force upgrade path so the quarantine
+    # gate at upgrade.py:732 actually runs.  The --force tests above
+    # bypass that branch entirely (destination unconditionally overwritten).
+    # -------------------------------------------------------------------
+
+    def test_no_false_quarantine_non_force(
+        self, v094_workaround_target_non_force: Path
+    ) -> None:
+        """Matching workaround files must NOT be quarantined on non-force upgrade.
+
+        STALE-2 risk: without --force, upgrade.py:732 enters the conflict
+        detection branch.  For files recorded in the manifest with the
+        correct sha256 (old_hash == current_hash), the gate must NOT trigger.
+        This test exercises that branch — the --force tests do NOT (they
+        skip the branch unconditionally per upgrade.py:732).
+        """
+        result = _run(
+            "upgrade",
+            "--target", str(v094_workaround_target_non_force),
+            "--adopt-existing",
+            # NO --force: exercises the quarantine gate at upgrade.py:732
+            env=_upgrade_env(),
+        )
+        assert result.returncode == 0, (
+            f"non-force upgrade must exit 0.\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # No quarantine warnings for the 35 files that were registered in
+        # the manifest with their correct sha256 values.
+        combined = (result.stdout + result.stderr).lower()
+        assert "quarantined" not in combined, (
+            f"Unexpected quarantine warning on non-force upgrade of "
+            f"sha256-matching files (STALE-2 regression):\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # Zero quarantine entries in .harness/conflicts/
+        conflicts_dir = v094_workaround_target_non_force / ".harness" / "conflicts"
+        conflict_files = list(conflicts_dir.glob("**/*.new")) if conflicts_dir.exists() else []
+        lib_conflicts = [f for f in conflict_files if "scripts/lib/" in str(f)]
+        assert not lib_conflicts, (
+            f"Found quarantine .new files for lib/ on non-force upgrade "
+            f"(STALE-2 regression): {[str(f) for f in lib_conflicts]}"
+        )
+
+    def test_truly_modified_file_is_quarantined_non_force(
+        self, v094_workaround_target_non_force: Path
+    ) -> None:
+        """A file modified AFTER the recorded install hash MUST be quarantined.
+
+        Proves the quarantine gate works in both directions: sha256-matching
+        files (test above) are NOT quarantined, truly-modified files ARE.
+        This catches a regression where the gate is disabled entirely.
+        """
+        # Pick one lib file that is registered in the manifest.  Corrupt its
+        # on-disk content so its sha256 diverges from the recorded old_hash.
+        # The upgrade (non-force) must quarantine it.
+        manifest_path = v094_workaround_target_non_force / ".harness" / "installed-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        files = manifest.get("files", {})
+        # Find a harness-owned lib file registered in our manifest
+        target_rel = next(
+            p for p in sorted(files.keys())
+            if p.startswith("scripts/lib/") and p.endswith(".py")
+        )
+        target_file = v094_workaround_target_non_force / target_rel
+        assert target_file.exists(), f"Expected {target_rel} to exist in workaround target"
+        # Append a comment byte so the sha256 diverges from the recorded hash
+        original_content = target_file.read_bytes()
+        target_file.write_bytes(original_content + b"\n# corrupted-for-test\n")
+
+        result = _run(
+            "upgrade",
+            "--target", str(v094_workaround_target_non_force),
+            "--adopt-existing",
+            # NO --force: must trigger quarantine for the corrupted file
+            env=_upgrade_env(),
+        )
+        # upgrade returns non-zero when there are conflicts
+        assert result.returncode != 0, (
+            f"upgrade must exit non-zero when a modified file conflicts.\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # The corrupted file's .new conflict must exist in .harness/conflicts/
+        conflicts_dir = v094_workaround_target_non_force / ".harness" / "conflicts"
+        expected_conflict = conflicts_dir / f"{target_rel}.new"
+        assert expected_conflict.exists() or any(conflicts_dir.rglob("*.new")), (
+            f"Expected conflict file for {target_rel} after modifying it; "
+            f"quarantine gate did not fire (gate regression)."
         )
 
     def test_upgrade_preexisting_match_audit_verb_if_implemented(

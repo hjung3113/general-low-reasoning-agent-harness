@@ -348,7 +348,180 @@ class TestLifecycleToDone:
 
 
 # ===========================================================================
-# Test 7: smoke contract compliance self-check
+# Test 7: phase reopen coverage (MAJOR-4)
+# ===========================================================================
+
+
+class TestPhaseReopen:
+    """Exercise phase reopen with smoke bypass (codex M-9).
+
+    MAJOR-4 fix: plan §7.6 introduces phase.reopen.bypass as a distinct
+    classification for smoke-bypassed reopens.  T12 (commit 659fb78)
+    implemented this as verb=phase.reopen + proof_class=smoke_bypass.
+    These tests verify:
+      (a) reopen from done → plan with smoke env: rc=0 + phase.reopen audit row
+      (b) proof_class=smoke_bypass is set when HARNESS_SMOKE_BYPASS_SPEED_BUMP=1
+      (c) backward-move guard: reopen from approved=True requires --reset-approval
+    """
+
+    def _full_lifecycle_to_done(self, tmp_path: Path) -> None:
+        """Walk discuss → plan (approve) → execute (approve) → done."""
+        _init_target(tmp_path)
+
+        result = _run(
+            "phase", "set", "plan", "--plan-id", "reopen-smoke",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, (
+            f"phase set plan failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        result = _run(
+            "phase", "approve", "--by", APPROVER_EMAIL, "--at", "2030-01-01T00:00:00Z",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode == 0, (
+            f"phase approve (plan) failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        result = _run(
+            "phase", "set", "execute",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, (
+            f"phase set execute failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        result = _run(
+            "phase", "approve", "--by", APPROVER_EMAIL, "--at", "2030-06-01T00:00:00Z",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode == 0, (
+            f"phase approve (execute) failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        result = _run(
+            "phase", "set", "done",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, (
+            f"phase set done failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+    def test_phase_reopen_from_done_to_plan(self, tmp_path: Path) -> None:
+        """phase reopen --to plan from done phase succeeds with smoke env.
+
+        Verifies:
+          - rc=0
+          - audit row with verb=phase.reopen is written
+          - proof_class=smoke_bypass is set (T12 / plan §7.6 phase.reopen.bypass
+            contract: smoke-bypassed reopens are identified via proof_class)
+          - state rolls back to plan phase
+        """
+        self._full_lifecycle_to_done(tmp_path)
+
+        # Reopen: done → plan.  Smoke env required to bypass TTY gate (codex M-9).
+        result = _run(
+            "phase", "reopen",
+            "--to", "plan",
+            "--by", APPROVER_EMAIL,
+            "--reason", "smoke test: reopen done to plan",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode == 0, (
+            f"phase reopen must exit 0.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # State must be rolled back to plan.
+        state = _read_phase_state(tmp_path)
+        assert state["phase"] == "plan", (
+            f"Expected phase=plan after reopen; got {state['phase']}"
+        )
+
+        # Audit row must be present.
+        audit_path = tmp_path / ".harness" / "audit.log"
+        assert audit_path.exists(), "audit.log must exist after reopen"
+        rows = [
+            json.loads(line)
+            for line in audit_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        reopen_rows = [r for r in rows if r.get("verb") == "phase.reopen"]
+        assert reopen_rows, (
+            f"Expected phase.reopen audit row; verbs found: {[r.get('verb') for r in rows]}"
+        )
+
+        # T12 / plan §7.6: smoke-bypassed reopens carry proof_class=smoke_bypass.
+        row = reopen_rows[0]
+        assert row.get("proof_class") == "smoke_bypass", (
+            f"Expected proof_class=smoke_bypass on smoke-bypassed reopen; "
+            f"row={row}"
+        )
+
+    def test_phase_reopen_backward_move_requires_reset_approval(
+        self, tmp_path: Path
+    ) -> None:
+        """Reopen from approved=True state refuses without --reset-approval.
+
+        NEW-7 contract (T12): backward move (approved=True at reopen) requires
+        the caller to pass --reset-approval to acknowledge the approval is
+        being revoked.  Omitting the flag must produce rc=6.
+        """
+        _init_target(tmp_path)
+
+        # Advance to plan and approve it (state becomes approved=True).
+        result = _run(
+            "phase", "set", "plan", "--plan-id", "reopen-backward-smoke",
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, (
+            f"phase set plan failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+        result = _run(
+            "phase", "approve", "--by", APPROVER_EMAIL, "--at", "2030-01-01T00:00:00Z",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode == 0, (
+            f"phase approve failed.\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # Without --reset-approval, reopen from approved plan → discuss must fail.
+        result = _run(
+            "phase", "reopen",
+            "--to", "discuss",
+            "--by", APPROVER_EMAIL,
+            "--reason", "smoke test: backward without reset-approval",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode != 0, (
+            f"phase reopen without --reset-approval must exit non-zero "
+            f"when approved=True (NEW-7 guard).\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+        # With --reset-approval, the same reopen must succeed.
+        result = _run(
+            "phase", "reopen",
+            "--to", "discuss",
+            "--by", APPROVER_EMAIL,
+            "--reason", "smoke test: backward with reset-approval",
+            "--reset-approval",
+            cwd=str(tmp_path),
+            env=_approve_env(),
+        )
+        assert result.returncode == 0, (
+            f"phase reopen with --reset-approval must exit 0.\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+        state = _read_phase_state(tmp_path)
+        assert state["phase"] == "discuss", (
+            f"Expected phase=discuss after reset-approval reopen; got {state['phase']}"
+        )
+
+
+# ===========================================================================
+# Test 8: smoke contract compliance self-check
 # ===========================================================================
 
 

@@ -111,6 +111,20 @@ def _seed_v094_manifest(target: Path) -> str:
     Returns the chain hash so tests can verify a delta was detected.
     The manifest intentionally omits the 35 lib modules added in v0.9.5
     (BUG-1) so the upgrade will compute a different chain hash.
+
+    MAJOR-2 note: the ``sha256`` values below are synthetic stubs, not real
+    v0.9.4 file hashes.  This is acceptable here because the test's purpose
+    is to verify that (a) the rechain audit row is emitted and (b) the chain
+    hashes change — both goals are served by any manifest whose hash differs
+    from the post-upgrade chain hash.  The synthetic values guarantee the
+    delta is detectable without requiring a real v0.9.4 checkout.
+
+    The ``cause == v094_manifest_gap_remediation`` classification is driven
+    by release_trust.py checking that at least one of the 35 known-missing
+    paths is absent from this manifest's ``files`` dict — which is satisfied
+    here because the stub only lists 3 files.  This mechanism is exercised
+    by test_release_trust_rechained_audit_row_present, which now asserts the
+    strict v094_manifest_gap_remediation cause (MAJOR-1 fix).
     """
     # pylint: disable=import-outside-toplevel
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -223,9 +237,14 @@ class TestUpgradeFromV094Clean:
         row = rechain_rows[0]
         args = row.get("args", {})
         assert "cause" in args, f"rechain row must have cause field: {row}"
-        # cause should be v094_manifest_gap_remediation (35 lib modules added)
-        assert args["cause"] in ("v094_manifest_gap_remediation", "manifest_evolution"), (
-            f"Unexpected cause: {args['cause']}"
+        # cause MUST be v094_manifest_gap_remediation (35 lib modules added).
+        # Plan §2 success criterion 10 mandates this classification when the
+        # v0.9.4 manifest gap is detected.  Accepting manifest_evolution would
+        # allow a silent regression where the upgrade misclassifies the
+        # v0.9.4 → v0.9.5 transition (MAJOR-1 adversarial-review fix).
+        assert args["cause"] == "v094_manifest_gap_remediation", (
+            f"Expected cause=v094_manifest_gap_remediation (35 lib modules "
+            f"added in v0.9.5); got {args['cause']!r}"
         )
 
     def test_rechained_row_has_chain_fields(self, v094_clean_target: Path) -> None:
@@ -351,9 +370,24 @@ class TestUpgradeFromV094Clean:
         )
 
         rows = _read_audit_rows(v094_clean_target)
+        # MAJOR-3 fix: early-return silently passed on broken state.
+        # Replace the guard with an explicit failure so missing rows are
+        # never hidden.  The upgrade emits at minimum a release.trust.rechained
+        # row; if the audit log is empty the implementation has regressed.
+        assert len(rows) >= 1, (
+            f"Expected ≥1 audit rows post-upgrade (at minimum release.trust.rechained), "
+            f"got 0 — audit log is missing entirely"
+        )
+        # Chain linkage verification is only possible with ≥2 rows.
+        # Assert the condition explicitly so a regression that drops to 0 rows
+        # is caught by the assertion above, not silently skipped here.
         if len(rows) < 2:
-            # Not enough rows to verify chaining; just ensure at least one exists
-            assert len(rows) >= 1, "Expected at least one audit row post-upgrade"
+            # Only 1 row present (release.trust.rechained) — chain linkage
+            # cannot be verified but the row's existence is already asserted.
+            verbs = [r.get("verb") for r in rows]
+            assert "release.trust.rechained" in verbs, (
+                f"Only 1 audit row but it is not release.trust.rechained: {verbs}"
+            )
             return
 
         # Verify chain: each row's previous_entry_hash should match prior row's entry_hash
