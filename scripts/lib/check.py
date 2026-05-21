@@ -648,6 +648,39 @@ def _scan_stale_staging_dirs(
     return results
 
 
+def _print_stale_staging_warnings(target: Path) -> int:
+    """Print warning(s) for stale aborted-install staging dirs.
+
+    N == 1: single-line "중단된 설치 감지 (runid=..., age=...s)".
+    N >= 2: single summary line "{N}개 중단된 설치 감지 (oldest runid=..., age=...s)".
+    Returns the number of stale dirs found.
+    """
+    _stale = list(_scan_stale_staging_dirs(target))
+    if len(_stale) == 1:
+        _path, _runid, _age = _stale[0]
+        _age_str = f"{int(_age)}" if _age is not None else "?"
+        print(
+            f"warning: 중단된 설치 감지 (runid={_runid}, age={_age_str}s). "
+            f"복구: python3 scripts/harness.py state repair "
+            f"[Aborted install detected; recover with state repair]"
+        )
+    elif len(_stale) >= 2:
+        _stale_sorted = sorted(
+            _stale,
+            key=lambda t: (t[2] if t[2] is not None else 0),
+            reverse=True,
+        )
+        _oldest_path, _oldest_runid, _oldest_age = _stale_sorted[0]
+        _oldest_age_str = f"{int(_oldest_age)}" if _oldest_age is not None else "?"
+        print(
+            f"warning: {len(_stale)}개 중단된 설치 감지 "
+            f"(oldest runid={_oldest_runid}, age={_oldest_age_str}s). "
+            f"복구: python3 scripts/harness.py state repair "
+            f"[{len(_stale)} aborted installs detected; recover with state repair]"
+        )
+    return len(_stale)
+
+
 def check_installed_target(
     target: Path,
     expected_entries: list[ManifestEntry] | None = None,
@@ -776,13 +809,7 @@ def check_installed_target(
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
     # T5: detect stale aborted-install staging directories.
-    for stale_path, runid, age_secs in _scan_stale_staging_dirs(target):
-        age_str = f"{int(age_secs)}" if age_secs is not None else "?"
-        print(
-            f"warning: 중단된 설치 감지 (runid={runid}, age={age_str}s). "
-            f"복구: python3 scripts/harness.py state repair "
-            f"[Aborted install detected; recover with state repair]"
-        )
+    _print_stale_staging_warnings(target)
 
     for warning in managed_block_warnings(target):
         print(f"warning: {warning.code} in {warning.path}: {warning.message}")

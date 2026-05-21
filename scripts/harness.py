@@ -286,6 +286,7 @@ def install(
     packs: set[str] | None = None,
     approver_email: str | None = None,
     approver_bootstrap_source: str | None = None,
+    quiet: bool = False,
 ) -> None:
     from lib.install import install as _install
     return _install(
@@ -298,6 +299,7 @@ def install(
         harness_version=HARNESS_VERSION,
         approver_email=approver_email,
         approver_bootstrap_source=approver_bootstrap_source,
+        quiet=quiet,
     )
 
 
@@ -311,6 +313,7 @@ def upgrade(
     adapters: set[str] | None = None,
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
+    quiet: bool = False,
 ) -> int:
     from lib.upgrade import upgrade as _upgrade
     return _upgrade(
@@ -323,6 +326,7 @@ def upgrade(
         profiles=profiles,
         packs=packs,
         harness_version=HARNESS_VERSION,
+        quiet=quiet,
     )
 
 
@@ -493,6 +497,12 @@ def run(argv: list[str] | None = None) -> int:
             "Falls back to HARNESS_INSTALL_APPROVER env, then git config user.email."
         ),
     )
+    init_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress progress lines on stderr (init phase ticks). stdout summary is unchanged.",
+    )
 
     upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
     upgrade_parser.add_argument("--target", required=True, type=Path)
@@ -506,6 +516,12 @@ def run(argv: list[str] | None = None) -> int:
     upgrade_parser.add_argument("--adapters", default=None, help="Adapter scope for upgrade. Defaults to installed adapters.")
     upgrade_parser.add_argument("--profiles", default=None, help="Profile scope for upgrade. Defaults to installed profiles.")
     upgrade_parser.add_argument("--packs", default=None, help="Pack scope for upgrade. Defaults to installed packs.")
+    upgrade_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress progress lines on stderr (Pass A/B ticks). stdout summary is unchanged.",
+    )
     upgrade_parser.add_argument(
         "--allow-unsigned-dev",
         action="store_true",
@@ -994,6 +1010,7 @@ def run(argv: list[str] | None = None) -> int:
             packs=final_packs,
             approver_email=_approver_email,
             approver_bootstrap_source=_approver_bootstrap_source,
+            quiet=getattr(args, "quiet", False),
         )
         return 0
     if args.command == "upgrade":
@@ -1018,6 +1035,7 @@ def run(argv: list[str] | None = None) -> int:
             adapters=parse_optional_scope(args.adapters),
             profiles=set(normalize_profiles(list(raw_upgrade_profiles))) if raw_upgrade_profiles is not None else None,
             packs=parse_optional_scope(args.packs),
+            quiet=getattr(args, "quiet", False),
         )
     if args.command == "check":
         command = [sys.executable, str(root / "scripts/check_harness.py")]

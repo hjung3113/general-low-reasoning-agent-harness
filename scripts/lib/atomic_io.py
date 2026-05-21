@@ -326,6 +326,7 @@ def atomic_install_batch(
     *,
     sort_key: Optional[Callable[[str], object]] = None,
     defer_cleanup: bool = False,
+    progress: Optional[Callable[[int, int], None]] = None,
 ) -> AtomicInstallResult:
     """Rename files from ``staging_dir`` into ``target`` via ``os.replace``.
 
@@ -440,6 +441,14 @@ def atomic_install_batch(
 
     journal_path.parent.mkdir(parents=True, exist_ok=True)
 
+    _total = len(rel_paths)
+    _done = len(already_completed)
+    if progress is not None:
+        try:
+            progress(_done, _total)
+        except Exception:
+            pass  # progress is advisory; never abort install for a callback bug
+
     with open(str(journal_path), "a", encoding="utf-8") as jf:
         for rel in rel_paths:
             src = staging_dir / rel
@@ -463,6 +472,12 @@ def atomic_install_batch(
                         + "\n"
                     )
                     jf.flush()
+                    _done += 1
+                    if progress is not None:
+                        try:
+                            progress(_done, _total)
+                        except Exception:
+                            pass
                 # If neither src nor dst exists, silently skip (entry vanished).
                 continue
 
@@ -508,6 +523,12 @@ def atomic_install_batch(
             )
             jf.flush()
             result.completed.append(rel)
+            _done += 1
+            if progress is not None:
+                try:
+                    progress(_done, _total)
+                except Exception:
+                    pass
 
     # Success path: cleanup or defer (write sentinel).
     if not result.aborted:

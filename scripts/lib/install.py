@@ -43,6 +43,7 @@ from lib.state import (
     sha256_text,
 )
 from lib.atomic_io import atomic_install_batch, CrossFilesystemError
+from lib.progress import ProgressReporter
 from lib.version import (
     repo_root,
     resolve_harness_version,
@@ -249,6 +250,7 @@ def install(
     harness_version: str = "0.0.0-dev+unknown",
     approver_email: "str | None" = None,
     approver_bootstrap_source: "str | None" = None,
+    quiet: bool = False,
 ) -> None:
     # P5-P1-3: verify prior installed-manifest chain hash before any install
     # decision (§6 integrity). Raises ManifestChainTamperedError (exit 5) if
@@ -311,6 +313,11 @@ def install(
     journal_path = staging_dir.parent / f"{staging_dir.name}.journal.jsonl"
     pending_path = harness_dir / f"installed-manifest.json.pending-{runid}"
 
+    reporter = ProgressReporter(quiet=quiet)
+    _staging_total = sum(1 for entry, _s, _d in destinations if entry.policy == "harness-owned")
+    reporter.start("staging files", _staging_total)
+    _staged_count = 0
+
     # Phase 1: stage harness-owned; managed-append + project-owned handled in-place.
     staging_map: dict[Path, Path] = {}  # entry.path -> staged path
     for entry, source, destination in destinations:
@@ -324,6 +331,8 @@ def install(
             staged.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(str(source), str(staged))
             staging_map[entry.path] = staged
+            _staged_count += 1
+            reporter.tick(_staged_count)
         else:
             # project-owned scaffold file (destination doesn't exist yet): write directly.
             write_copy(source, destination)
@@ -340,20 +349,33 @@ def install(
     )
 
     # Phase 3: write pending sidecar (atomic + fsync).
+    reporter.note("writing pending sidecar...")
     _atomic_write_json_fsync(pending_path, payload)
 
     # Phase 4: atomic batch rename.
+    reporter.start("applying atomic batch", _staging_total)
     try:
-        result = atomic_install_batch(staging_dir, target, journal_path, defer_cleanup=True)
+        result = atomic_install_batch(
+            staging_dir,
+            target,
+            journal_path,
+            defer_cleanup=True,
+            progress=lambda done, total: reporter.tick(done),
+        )
     except CrossFilesystemError:
         if not os.environ.get("HARNESS_ALLOW_NONATOMIC_INSTALL"):
             raise InstallFailed(
-                "타겟 파일시스템이 atomic rename 을 지원하지 않습니다. "
-                "복구 명령: python3 scripts/harness.py state repair  "
-                "(또는 HARNESS_ALLOW_NONATOMIC_INSTALL=1 로 비-atomic 강제 — 권장하지 않음) "
-                "[Target filesystem does not support atomic rename. "
-                "Recover with: python3 scripts/harness.py state repair "
-                "or set HARNESS_ALLOW_NONATOMIC_INSTALL=1 to force non-atomic install (not recommended)]"
+                "타겟 파일시스템이 atomic rename 을 지원하지 않습니다.\n"
+                "(또는 HARNESS_ALLOW_NONATOMIC_INSTALL=1 로 비-atomic 강제 — 권장하지 않음)\n"
+                "\n"
+                "복구:\n"
+                "    python3 scripts/harness.py state repair\n"
+                "\n"
+                "[Target filesystem does not support atomic rename.\n"
+                "Or set HARNESS_ALLOW_NONATOMIC_INSTALL=1 to force non-atomic install (not recommended).\n"
+                "\n"
+                "Recover:\n"
+                "    python3 scripts/harness.py state repair]"
             )
         # Fallback: copy directly without staging dance.
         for entry, source, destination in destinations:
@@ -365,11 +387,19 @@ def install(
 
     if result is not None and result.aborted:
         raise InstallFailed(
-            f"설치 중단됨 (runid={runid}). 복구: python3 scripts/harness.py state repair "
-            f"[Install aborted (runid={runid}). Recover with: python3 scripts/harness.py state repair]"
+            f"설치 중단됨 (runid={runid}).\n"
+            f"\n"
+            f"복구:\n"
+            f"    python3 scripts/harness.py state repair\n"
+            f"\n"
+            f"[Install aborted (runid={runid}).\n"
+            f"\n"
+            f"Recover:\n"
+            f"    python3 scripts/harness.py state repair]"
         )
 
     # Phase 5: sync roomodes + rewrite pending + finalize.
+    reporter.note("syncing roomodes...")
     sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
 
     # Phase 5a (mirror of upgrade.py FIX-3 B4a): the pending sidecar's .roomodes hashes
@@ -388,6 +418,7 @@ def install(
         payload["files"][".roomodes"]["current_sha256"] = new_hash
         _atomic_write_json_fsync(pending_path, payload)
 
+    reporter.note("finalizing...")
     final_path = harness_dir / "installed-manifest.json"
     os.replace(str(pending_path), str(final_path))
 
@@ -397,9 +428,15 @@ def install(
     expected_version = payload["version"]
     if verify.get("version") != expected_version:
         raise InstallFailed(
-            f"finalize 검증 실패 (expected={expected_version}, got={verify.get('version')}). "
-            f"복구: python3 scripts/harness.py state repair "
-            f"[Finalize verification failed; recover with: python3 scripts/harness.py state repair]"
+            f"finalize 검증 실패 (expected={expected_version}, got={verify.get('version')}).\n"
+            f"\n"
+            f"복구:\n"
+            f"    python3 scripts/harness.py state repair\n"
+            f"\n"
+            f"[Finalize verification failed (expected={expected_version}, got={verify.get('version')}).\n"
+            f"\n"
+            f"Recover:\n"
+            f"    python3 scripts/harness.py state repair]"
         )
 
     # Phase 7: cleanup (best-effort).
@@ -550,39 +587,15 @@ class InstallFailed(RuntimeError):
 
 
 def _atomic_write_json_fsync(path: Path, data: object) -> None:
-    """Write JSON payload to path atomically (fsync + os.replace + dir fsync)."""
+    """Write JSON payload to ``path`` atomically.
+
+    FIX-C (v0.9.7): unified onto ``atomic_io.atomic_write_text`` (cross-fs guard,
+    fchmod-before-replace, dir fsync, Windows retry-replace).  Kept as a thin
+    wrapper so call sites elsewhere in install.py / upgrade.py stay readable.
+    """
+    from lib.atomic_io import atomic_write_text
     content = json.dumps(data, indent=2, sort_keys=True) + "\n"
-    encoded = content.encode("utf-8")
-    tmp_path = path.parent / (path.name + ".tmp")
-    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-    try:
-        try:
-            os.write(fd, encoded)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-    except BaseException:
-        try:
-            os.unlink(str(tmp_path))
-        except FileNotFoundError:
-            pass
-        raise
-    try:
-        os.replace(str(tmp_path), str(path))
-    except BaseException:
-        try:
-            os.unlink(str(tmp_path))
-        except FileNotFoundError:
-            pass
-        raise
-    parent_fd = os.open(str(path.parent), os.O_RDONLY)
-    try:
-        try:
-            os.fsync(parent_fd)
-        except OSError:
-            pass
-    finally:
-        os.close(parent_fd)
+    atomic_write_text(path, content)
 
 
 def _rmdir_recursive_quiet(path: Path) -> None:

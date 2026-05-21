@@ -58,6 +58,7 @@ from lib.state import (
     manifest_sha256,
 )
 from lib.atomic_io import atomic_install_batch, CrossFilesystemError
+from lib.progress import ProgressReporter
 from lib.install import (
     InstallFailed,
     _atomic_write_json_fsync,
@@ -699,6 +700,7 @@ def upgrade(
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
     harness_version: str = "0.0.0-dev+unknown",
+    quiet: bool = False,
 ) -> int:
     if not (root / MANIFEST_PATH).exists():
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
@@ -770,6 +772,11 @@ def upgrade(
     if not dry_run:
         upgrade_staging_dir.mkdir(parents=True, exist_ok=True)
 
+    reporter = ProgressReporter(quiet=quiet)
+    _stage_total = sum(1 for e in entries if e.policy == "harness-owned")
+    reporter.start("staging files", _stage_total)
+    _stage_count = 0
+
     for entry in entries:
         if entry.policy not in {"harness-owned", "managed", "managed-append"}:
             continue
@@ -838,6 +845,8 @@ def upgrade(
             staged.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(str(source), str(staged))
             upgrade_staging_map[entry.path] = staged
+            _stage_count += 1
+            reporter.tick(_stage_count)
             # Pass A: record file state using staged hash (T1.5 durability property).
             # This ensures installed["files"] is complete when reconciler runs.
             installed.setdefault("files", {})[str(entry.path)] = file_state(
@@ -1032,12 +1041,18 @@ def upgrade(
             # NOTE: roomodes hashes are not yet in `installed` here — they are
             # patched in B4 after the batch lands .roomodes.  B4a rewrites the
             # sidecar with the correct hashes before B5 finalizes via os.replace.
+            reporter.note("writing pending sidecar...")
             _atomic_write_json_fsync(upgrade_pending_path, installed)
 
             # Step B3: atomic batch rename.
+            reporter.start("applying atomic batch", len(upgrade_staging_map))
             try:
                 batch_result = atomic_install_batch(
-                    upgrade_staging_dir, target, upgrade_journal_path, defer_cleanup=True
+                    upgrade_staging_dir,
+                    target,
+                    upgrade_journal_path,
+                    defer_cleanup=True,
+                    progress=lambda done, total: reporter.tick(done),
                 )
             except CrossFilesystemError:
                 # Fallback: copy directly.
@@ -1049,12 +1064,20 @@ def upgrade(
 
             if batch_result is not None and batch_result.aborted:
                 raise InstallFailed(
-                    f"업그레이드 중단됨 (runid={upgrade_runid}). 복구: python3 scripts/harness.py state repair "
-                    f"[Upgrade aborted (runid={upgrade_runid}). Recover with: python3 scripts/harness.py state repair]"
+                    f"업그레이드 중단됨 (runid={upgrade_runid}).\n"
+                    f"\n"
+                    f"복구:\n"
+                    f"    python3 scripts/harness.py state repair\n"
+                    f"\n"
+                    f"[Upgrade aborted (runid={upgrade_runid}).\n"
+                    f"\n"
+                    f"Recover:\n"
+                    f"    python3 scripts/harness.py state repair]"
                 )
 
             # Step B4: sync roomodes AFTER batch (atomic rename landed .roomodes);
             # patch hash in installed dict.
+            reporter.note("syncing roomodes...")
             sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
             roomodes_path = target / ".roomodes"
             if (
@@ -1074,6 +1097,7 @@ def upgrade(
             # Step B5: atomic finalize — promote pending sidecar to final manifest.
             # Using os.replace (same discipline as install.py:375) so the rename
             # is atomic; no window where final is absent but pending is gone.
+            reporter.note("finalizing...")
             final_path = target / INSTALL_STATE
             os.replace(str(upgrade_pending_path), str(final_path))
 
@@ -1082,9 +1106,15 @@ def upgrade(
                 verify = json.load(fh)
             if verify.get("version") != harness_version:
                 raise InstallFailed(
-                    f"finalize 검증 실패 (expected={harness_version}, got={verify.get('version')}). "
-                    f"복구: python3 scripts/harness.py state repair "
-                    f"[Finalize verification failed; recover with: python3 scripts/harness.py state repair]"
+                    f"finalize 검증 실패 (expected={harness_version}, got={verify.get('version')}).\n"
+                    f"\n"
+                    f"복구:\n"
+                    f"    python3 scripts/harness.py state repair\n"
+                    f"\n"
+                    f"[Finalize verification failed (expected={harness_version}, got={verify.get('version')}).\n"
+                    f"\n"
+                    f"Recover:\n"
+                    f"    python3 scripts/harness.py state repair]"
                 )
 
             # Step B7: cleanup sentinel, journal, staging dir.

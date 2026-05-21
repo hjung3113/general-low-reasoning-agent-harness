@@ -1024,6 +1024,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/progress.py",
+      "source": "scripts/lib/progress.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/release_trust.py",
       "source": "scripts/lib/release_trust.py",
       "policy": "harness-owned"

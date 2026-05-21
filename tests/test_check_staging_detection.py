@@ -129,15 +129,17 @@ def test_aborted_marker_emits_warning_regardless_of_age(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_multiple_stale_dirs_one_warning_each(tmp_path):
-    """T5-5: two stale dirs -> two warnings with distinct runids."""
+def test_multiple_stale_dirs_one_warning_each(tmp_path, capsys):
+    """T5-5 (FIX-B v0.9.7): two stale dirs -> one summary warning with N count + oldest runid."""
+    from lib.check import _print_stale_staging_warnings
+
     target = _make_target(tmp_path)
     harness = target / ".harness"
 
     runid1 = "11111-20260521T000000Z-stale01"
     runid2 = "22222-20260521T000001Z-stale02"
     _make_staging_dir(harness, runid1, age_secs=700)
-    _make_staging_dir(harness, runid2, age_secs=800)
+    _make_staging_dir(harness, runid2, age_secs=800)  # older
 
     result = _scan_stale_staging_dirs(target)
     assert len(result) == 2, f"Expected 2 stale dirs, got {len(result)}: {result}"
@@ -145,6 +147,16 @@ def test_multiple_stale_dirs_one_warning_each(tmp_path):
     found_runids = {r[1] for r in result}
     assert runid1 in found_runids
     assert runid2 in found_runids
+
+    # FIX-B: N>=2 prints single summary line with "{N}개" + "oldest runid=...".
+    n = _print_stale_staging_warnings(target)
+    assert n == 2
+    captured = capsys.readouterr()
+    out = captured.out
+    assert "2개 중단된 설치 감지" in out, out
+    # The oldest (age=800) is runid2.
+    assert f"oldest runid={runid2}" in out, out
+    assert out.count("중단된 설치 감지") == 1, "expected single summary line"
 
 
 # ---------------------------------------------------------------------------
