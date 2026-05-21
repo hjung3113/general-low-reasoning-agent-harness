@@ -5,7 +5,7 @@ Test cases:
 2. Fresh staging (age < 600s, no .aborted) -> no warning (live-install false-positive guard)
 3. Stale staging + journal -> warning emitted with runid + age
 4. .aborted marker present -> warning regardless of age
-5. Multiple stale dirs -> one warning per dir; output has all runids
+5. Multiple stale dirs -> one summary warning with N count + oldest + all runids (v0.9.7 FIX-B)
 """
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ def test_aborted_marker_emits_warning_regardless_of_age(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Multiple stale dirs -> one warning per dir
+# Test 5: Multiple stale dirs -> one summary warning (v0.9.7 FIX-B)
 # ---------------------------------------------------------------------------
 
 

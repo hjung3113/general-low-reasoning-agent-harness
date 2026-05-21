@@ -665,18 +665,26 @@ def _print_stale_staging_warnings(target: Path) -> int:
             f"[Aborted install detected; recover with state repair]"
         )
     elif len(_stale) >= 2:
-        _stale_sorted = sorted(
-            _stale,
-            key=lambda t: (t[2] if t[2] is not None else 0),
-            reverse=True,
-        )
+        # Sort so that entries with known ages come first, oldest age first;
+        # entries with unknown age sort last (None age cannot be claimed "oldest").
+        def _age_key(t):
+            age = t[2]
+            return (0, -float(age)) if age is not None else (1, 0)
+        _stale_sorted = sorted(_stale, key=_age_key)
         _oldest_path, _oldest_runid, _oldest_age = _stale_sorted[0]
-        _oldest_age_str = f"{int(_oldest_age)}" if _oldest_age is not None else "?"
+        if _oldest_age is not None:
+            _oldest_label = f"oldest runid={_oldest_runid}, age={int(_oldest_age)}s"
+            _oldest_label_en = f"oldest runid={_oldest_runid}, age={int(_oldest_age)}s"
+        else:
+            _oldest_label = f"oldest known runid=?, age=?"
+            _oldest_label_en = f"oldest known runid=?, age=?"
+        _all_runids = ", ".join(t[1] for t in _stale_sorted)
         print(
             f"warning: {len(_stale)}개 중단된 설치 감지 "
-            f"(oldest runid={_oldest_runid}, age={_oldest_age_str}s). "
+            f"({_oldest_label}; all runids: {_all_runids}). "
             f"복구: python3 scripts/harness.py state repair "
-            f"[{len(_stale)} aborted installs detected; recover with state repair]"
+            f"[{len(_stale)} aborted installs detected ({_oldest_label_en}); "
+            f"recover with state repair]"
         )
     return len(_stale)
 

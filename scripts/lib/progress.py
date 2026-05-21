@@ -27,6 +27,18 @@ class ProgressReporter:
         self._total = max(0, int(total))
         self._last_emit = -1
 
+    def _emit(self, line: str) -> None:
+        """Write one line; swallow stream errors.
+
+        Progress output is advisory only — a closed stderr pipe, a non-writable
+        stream, or any other I/O failure must never abort install/upgrade.
+        """
+        try:
+            self.stream.write(line)
+            self.stream.flush()
+        except Exception:
+            pass
+
     def tick(self, done: int) -> None:
         if self.quiet or self._total <= 0:
             return
@@ -38,19 +50,16 @@ class ProgressReporter:
         if done not in quartiles and (done % self.step) != 0 and done != self._total:
             return
         self._last_emit = done
-        self.stream.write(f"{self._label}... [{done}/{self._total}]\n")
-        self.stream.flush()
+        self._emit(f"{self._label}... [{done}/{self._total}]\n")
 
     def done(self, label: str | None = None) -> None:
         if self.quiet:
             return
         text = label if label is not None else self._label
-        self.stream.write(f"{text}... done\n")
-        self.stream.flush()
+        self._emit(f"{text}... done\n")
 
     def note(self, text: str) -> None:
         """One-shot status line (no counter)."""
         if self.quiet:
             return
-        self.stream.write(f"{text}\n")
-        self.stream.flush()
+        self._emit(f"{text}\n")
