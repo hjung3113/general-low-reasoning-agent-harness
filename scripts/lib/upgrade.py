@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import copy
+import datetime
 import json
 import os
+import secrets
+import shutil
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -44,6 +47,7 @@ from lib.roadmap_state import normalize_path
 from lib.state import (
     INSTALL_STATE,
     read_install_state,
+    build_install_state_payload,
     scope_record,
     write_install_state,
     write_json,
@@ -52,6 +56,12 @@ from lib.state import (
     file_hash,
     file_state,
     manifest_sha256,
+)
+from lib.atomic_io import atomic_install_batch, CrossFilesystemError
+from lib.install import (
+    InstallFailed,
+    _atomic_write_json_fsync,
+    _rmdir_recursive_quiet,
 )
 from lib.version import (
     repo_root,
@@ -69,6 +79,51 @@ from lib.manifest_reconciler import (
 )
 from lib.manifest_v2 import read_manifest as _read_manifest_v2
 from lib.state import now_utc as _now_utc
+
+
+class UpgradeRefused(SystemExit):
+    """Raised when the skip-upgrade guard blocks an unsupported version hop."""
+
+
+def _semver_ge(a: str, b: str) -> bool:
+    """Return True if semver string a >= b (major.minor.patch comparison)."""
+    def _parts(v: str) -> tuple[int, int, int]:
+        parts = v.split(".")
+        try:
+            major = int(parts[0]) if parts else 0
+            minor = int(parts[1]) if len(parts) > 1 else 0
+            patch = int(parts[2].split("-")[0].split("+")[0]) if len(parts) > 2 else 0
+            return major, minor, patch
+        except (ValueError, IndexError):
+            return (0, 0, 0)
+    return _parts(a) >= _parts(b)
+
+
+def _check_skip_upgrade_guard(prior_state: dict, target_version: str) -> None:
+    """Raise UpgradeRefused if this is a blocked skip-upgrade path.
+
+    T6 guard: v0.9.4 → v0.9.7 direct upgrade is unsupported.
+    Also raises UpgradeRefused if the prior version cannot be determined.
+    """
+    prior_version_raw = prior_state.get("version") or prior_state.get("harness_version") or ""
+    prior_version = prior_version_raw.lstrip("v")
+    target_version_raw = target_version.lstrip("v")
+
+    if prior_version in {"", "unknown"}:
+        raise UpgradeRefused(
+            "이전 설치 버전을 확인할 수 없습니다. python3 scripts/harness.py state show 로 상태 점검 후 진행 "
+            "[Cannot determine prior install version; run state show to inspect]"
+        )
+
+    if prior_version == "0.9.4" and _semver_ge(target_version_raw, "0.9.7"):
+        if not os.environ.get("HARNESS_ALLOW_SKIP_UPGRADE"):
+            raise UpgradeRefused(
+                "v0.9.4 → v0.9.7 직접 업그레이드는 지원되지 않습니다. "
+                "먼저 v0.9.5 로 업그레이드 후 다시 시도하세요. "
+                "Override (권장하지 않음): HARNESS_ALLOW_SKIP_UPGRADE=1 "
+                "[Skip-upgrade from v0.9.4 directly to v0.9.7 unsupported. "
+                "Upgrade to v0.9.5 first. Override: HARNESS_ALLOW_SKIP_UPGRADE=1]"
+            )
 
 
 def migrate_install_state(state: dict) -> dict:
@@ -649,6 +704,12 @@ def upgrade(
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
     target = target.resolve()
     installed = read_install_state(target)
+
+    # T6 / T4 Pass A: skip-upgrade guard BEFORE any state composition or staging.
+    # Only check when we have a version (not a fresh install via adopt_existing).
+    if installed.get("version") is not None:
+        _check_skip_upgrade_guard(installed, harness_version)
+
     before_migration = copy.deepcopy(installed)
     migrate_install_state(installed)
     report = install_state_migration_report(before_migration, installed)
@@ -692,6 +753,22 @@ def upgrade(
     planned_writes = 0
     planned_removals = 0
     current_paths = {str(entry.path) for entry in entries if entry.policy != "exclude"}
+
+    # T4 Pass A: set up staging dir for atomic harness-owned file writes.
+    # staging_map maps entry.path -> staged file path.
+    # Staged writes are collected and then batch-renamed in Pass B.
+    harness_dir = target / ".harness"
+    harness_dir.mkdir(parents=True, exist_ok=True)
+    iso_compact = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    upgrade_runid = f"{os.getpid()}-{iso_compact}-{secrets.token_hex(3)}"
+    upgrade_staging_dir = harness_dir / f".staging-{upgrade_runid}"
+    upgrade_journal_path = harness_dir / f".staging-{upgrade_runid}.journal.jsonl"
+    upgrade_pending_path = harness_dir / f"installed-manifest.json.pending-{upgrade_runid}"
+    # staging_map: entry.path -> staged Path (for harness-owned writes)
+    upgrade_staging_map: dict[Path, Path] = {}
+
+    if not dry_run:
+        upgrade_staging_dir.mkdir(parents=True, exist_ok=True)
 
     for entry in entries:
         if entry.policy not in {"harness-owned", "managed", "managed-append"}:
@@ -741,11 +818,6 @@ def upgrade(
                 continue
 
             # STALE-1 sync: short-circuit when source is unchanged since install.
-            # If the installed source_sha256 matches the current source file hash,
-            # the harness-owned file is already up-to-date — skip write + counter.
-            # This aligns upgrade's planned_writes with install's: a fresh init
-            # followed by upgrade --dry-run (same version, no source changes) must
-            # report planned_writes=0.
             installed_info = installed_paths.get(str(entry.path), {})
             installed_src_sha = installed_info.get("source_sha256")
             if installed_src_sha and installed_src_sha == new_hash:
@@ -754,12 +826,19 @@ def upgrade(
 
         planned_writes += 1
         if not dry_run:
-            write_copy(source, destination)
+            # T4 Pass A: stage to staging dir instead of writing to destination directly.
+            staged = upgrade_staging_dir / entry.path
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(str(source), str(staged))
+            upgrade_staging_map[entry.path] = staged
+            # Pass A: record file state using staged hash (T1.5 durability property).
+            # This ensures installed["files"] is complete when reconciler runs.
             installed.setdefault("files", {})[str(entry.path)] = file_state(
                 root=root,
                 target=target,
                 entry=entry,
                 source=source,
+                staged=staged,
             )
 
     for path_text, info in list(installed_paths.items()):
@@ -816,11 +895,9 @@ def upgrade(
     provenance = source_provenance(root)
     if provenance:
         installed["source_provenance"] = provenance
-    if not dry_run:
-        sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
-        roomodes_path = target / ".roomodes"
-        if roomodes_path.exists() and isinstance(installed.get("files"), dict) and ".roomodes" in installed["files"]:
-            installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
+    # NOTE: sync_roomodes_profile_modes is deferred to Pass B (after atomic batch)
+    # because the atomic batch renames .roomodes from staging, which must happen
+    # BEFORE the profile-modes sync modifies it. Hash is patched in Pass B.
 
     # S12 — manifest v2 reconciler pass (§6): stamp installed_sha256,
     # current_sha256, and installed_files_chain_hash onto the installed dict.
@@ -923,8 +1000,93 @@ def upgrade(
         except Exception:
             pass  # audit is best-effort; never abort upgrade
 
+    # T4 Pass B: compute file states for staged harness-owned entries,
+    # run atomic batch, write pending sidecar, and finalize.
     if not dry_run and not (adopting_missing_state and conflicts):
-        write_json(target / INSTALL_STATE, installed)
+        if upgrade_staging_map:
+            # Step B2: write pending sidecar (staged hashes; pre-batch durability).
+            _atomic_write_json_fsync(upgrade_pending_path, installed)
+
+            # Step B3: atomic batch rename.
+            try:
+                batch_result = atomic_install_batch(
+                    upgrade_staging_dir, target, upgrade_journal_path, defer_cleanup=True
+                )
+            except CrossFilesystemError:
+                # Fallback: copy directly.
+                for entry_path, staged_file in upgrade_staging_map.items():
+                    entry_dest = target / entry_path
+                    entry_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(str(staged_file), str(entry_dest))
+                batch_result = None  # type: ignore[assignment]
+
+            if batch_result is not None and batch_result.aborted:
+                raise InstallFailed(
+                    f"업그레이드 중단됨 (runid={upgrade_runid}). 복구: python3 scripts/harness.py state repair "
+                    f"[Upgrade aborted (runid={upgrade_runid}). Recover with: python3 scripts/harness.py state repair]"
+                )
+
+            # Step B4: sync roomodes AFTER batch (atomic rename landed .roomodes);
+            # patch hash in installed dict before writing final manifest.
+            sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
+            roomodes_path = target / ".roomodes"
+            if (
+                roomodes_path.exists()
+                and isinstance(installed.get("files"), dict)
+                and ".roomodes" in installed["files"]
+            ):
+                installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
+                installed["files"][".roomodes"]["installed_sha256"] = file_hash(roomodes_path)
+                installed["files"][".roomodes"]["current_sha256"] = file_hash(roomodes_path)
+
+            # Step B5: finalize — write final manifest (with post-sync roomodes hash).
+            final_path = target / INSTALL_STATE
+            write_json(final_path, installed)
+
+            # Step B6: post-finalize verify.
+            with open(str(final_path), encoding="utf-8") as fh:
+                verify = json.load(fh)
+            if verify.get("version") != harness_version:
+                raise InstallFailed(
+                    f"finalize 검증 실패 (expected={harness_version}, got={verify.get('version')}). "
+                    f"복구: python3 scripts/harness.py state repair "
+                    f"[Finalize verification failed; recover with: python3 scripts/harness.py state repair]"
+                )
+
+            # Clean up pending sidecar (already superseded by final manifest).
+            try:
+                upgrade_pending_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+            # Step B7: cleanup.
+            sentinel_path = harness_dir / f".staging-{upgrade_runid}.complete"
+            try:
+                sentinel_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            try:
+                upgrade_journal_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            _rmdir_recursive_quiet(upgrade_staging_dir)
+        else:
+            # No harness-owned files to stage: sync roomodes, clean up staging, write manifest.
+            sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
+            roomodes_path = target / ".roomodes"
+            if (
+                roomodes_path.exists()
+                and isinstance(installed.get("files"), dict)
+                and ".roomodes" in installed["files"]
+            ):
+                installed["files"][".roomodes"]["sha256"] = file_hash(roomodes_path)
+            _rmdir_recursive_quiet(upgrade_staging_dir)
+            write_json(target / INSTALL_STATE, installed)
+
+    elif not dry_run and (adopting_missing_state and conflicts):
+        # Conflict path: no writes, clean up staging dir.
+        _rmdir_recursive_quiet(upgrade_staging_dir)
+
     if dry_run:
         print("upgrade dry-run")
         print(f"target={target}")
