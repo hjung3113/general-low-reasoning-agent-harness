@@ -172,14 +172,34 @@ def file_state(
     entry: ManifestEntry,
     source: Path,
     applied_sha256: str | None = None,
+    staged: "Path | None" = None,
 ) -> dict[str, object]:
+    """Build a file-state record for one manifest entry.
+
+    Parameters
+    ----------
+    staged:
+        When provided AND ``entry.policy == "harness-owned"``, the staged file
+        (under ``.staging-<runid>/``) is hashed instead of the destination.
+        This reflects the content that ``os.replace`` *will* land at the
+        destination — the durability property "pending sidecar composed before
+        any target write" relies on this.  Existing callers pass ``staged=None``
+        which preserves the legacy destination-hash behaviour.
+    """
     destination = destination_path(target, entry)
+    # Determine which path to hash for the sha256 / installed_sha256 / current_sha256 fields.
+    # When staged is provided and this is a harness-owned entry, hash the staged file
+    # (the content that will replace the destination).
+    if staged is not None and entry.policy == "harness-owned":
+        hash_path = staged
+    else:
+        hash_path = destination
     state: dict[str, object] = {
         "policy": entry.policy,
         "version": _active_harness_version(),
         "installed_at": now_utc(),
         "source_sha256": file_hash(source),
-        "sha256": file_hash(destination),
+        "sha256": file_hash(hash_path),
         "owner": entry.owner,
         "adapter": entry.adapter,
         "profile": entry.profile,
@@ -220,7 +240,7 @@ def _git_user_email_sha256() -> str | None:
         return None
 
 
-def write_install_state(
+def build_install_state_payload(
     *,
     root: Path,
     target: Path,
@@ -228,10 +248,26 @@ def write_install_state(
     adapters: set[str],
     profiles: set[str],
     packs: set[str],
-) -> None:
+    staging_map: "dict[Path, Path] | None" = None,
+) -> dict:
+    """Compose the installed-manifest payload dict WITHOUT writing to disk.
+
+    Parameters
+    ----------
+    staging_map:
+        Optional mapping from ``entry.path`` (relative ``Path``) to the
+        corresponding staged file (absolute ``Path``) under ``.staging-<runid>/``.
+        When provided, ``file_state`` is called with ``staged=<path>`` for
+        harness-owned entries so that staging-dir hashes are used instead of
+        destination hashes.  This is the T1.5 / REV-2 durability property:
+        the pending sidecar is composed from staged content BEFORE any target
+        write occurs.
+    """
     from lib.version import source_provenance
     # S12: import v2 manifest helpers for hash-chain stamping (§6)
     from lib.manifest_reconciler import compute_manifest_hash_chain
+
+    staging_map = staging_map or {}
 
     files = {}
     for entry in entries:
@@ -245,22 +281,28 @@ def write_install_state(
             if parsed is None:
                 raise SystemExit(f"Installed managed-append file is missing marker: {entry.path}")
             applied_sha256 = sha256_text(parsed.text)
+
+        # T1.5: pass staged path when available and policy is harness-owned
+        staged_path = staging_map.get(entry.path)
         entry_state = file_state(
             root=root,
             target=target,
             entry=entry,
             source=source,
             applied_sha256=applied_sha256,
+            staged=staged_path,
         )
+
         # S12 — stamp installed_sha256 / current_sha256 per entry (§6)
-        # For harness-owned entries use the destination hash: some files (e.g.
-        # .roomodes) are post-processed after the source copy (profile modes
-        # are merged in by sync_roomodes_profile_modes), so the rendered on-disk
-        # content may differ from the raw source template.  Using the destination
-        # hash avoids a permanent harness-owned-drift signal in `doctor`. For all
-        # other harness-owned files the destination hash equals the source hash.
-        if entry.policy == "harness-owned" and destination.exists():
-            disk_sha = file_hash(destination)
+        # For harness-owned entries use the staged hash if available (T1.5),
+        # otherwise fall back to destination hash.
+        if entry.policy == "harness-owned":
+            if staged_path is not None and staged_path.exists():
+                disk_sha = file_hash(staged_path)
+            elif destination.exists():
+                disk_sha = file_hash(destination)
+            else:
+                disk_sha = file_hash(source)
         else:
             disk_sha = file_hash(source)
         entry_state["installed_sha256"] = disk_sha
@@ -289,8 +331,6 @@ def write_install_state(
 
     # §12.6 producer-side: stamp gitconfig fingerprint so phase_approve can
     # verify the approver's email matches the install-time git user.
-    # Value is None when git is absent or user.email is unset (phase_approve
-    # already skips the check when None — backward compat preserved).
     installed["git_user_email_at_install_sha256"] = _git_user_email_sha256()
 
     # S12 — compute and stamp installed_files_chain_hash (§6)
@@ -309,7 +349,35 @@ def write_install_state(
     }
     installed["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
 
-    write_json(target / INSTALL_STATE, installed)
+    return installed
+
+
+def write_install_state(
+    *,
+    root: Path,
+    target: Path,
+    entries: Iterable[ManifestEntry],
+    adapters: set[str],
+    profiles: set[str],
+    packs: set[str],
+    staging_map: "dict[Path, Path] | None" = None,
+) -> None:
+    """Build and write installed-manifest.json.
+
+    Thin wrapper around ``build_install_state_payload`` + ``write_json``.
+    Accepts an optional ``staging_map`` (passed through to payload builder)
+    for callers that have already staged files and want to record staged hashes.
+    """
+    payload = build_install_state_payload(
+        root=root,
+        target=target,
+        entries=entries,
+        adapters=adapters,
+        profiles=profiles,
+        packs=packs,
+        staging_map=staging_map,
+    )
+    write_json(target / INSTALL_STATE, payload)
 
 
 def read_install_state(target: Path) -> dict[str, object]:
