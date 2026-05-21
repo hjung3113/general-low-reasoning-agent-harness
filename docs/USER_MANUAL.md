@@ -1090,6 +1090,51 @@ python3 scripts/harness.py approve-nonce mint --audience release.publish [--ttl 
 | `next` | Current position에서 승인된 다음 step 제안 |
 | `verify --audit` | Audit log chain integrity 검증 |
 
+### B2.3a 중단된 설치 복구 (v0.9.7+)
+
+`harness init` 또는 `harness upgrade` 도중 프로세스가 비정상 종료된 경우(SIGTERM, 전원 끊김, Ctrl-C 등), 재실행 전에 복구 명령을 실행하세요.
+
+```bash
+python3 scripts/harness.py state repair
+```
+
+**Exit codes:**
+
+| Exit code | 의미 |
+| --- | --- |
+| `0` | 정상 완료 또는 복구 불필요 (no-op) |
+| `1` | 부분 복구 — `.harness/conflicts/` 에 격리된 파일 있음; 수동 확인 필요 |
+| `2` | 치명적 오류 — 복구 자체가 실패 |
+
+**성공 출력 예시 (sentinel-finalize):**
+
+```
+harness state repair
+recovered: finalized pending manifest (runid=12345-20260521T100000Z-abc123, version=0.9.7)
+exit code 0
+```
+
+**실패 출력 예시 (orphan-pending, rc=1):**
+
+```
+harness state repair
+warning: quarantined orphan pending manifest to .harness/conflicts/installed-manifest.json.pending-99999-...
+[Orphaned pending manifest quarantined; check .harness/conflicts/ for manual review]
+exit code 1
+```
+
+rc=1 일 때 `.harness/conflicts/` 안을 확인하고 필요시 파일을 수동으로 복구하세요.
+
+**stale 설치 감지:**
+
+`harness check` 명령이 `.harness/` 안에서 600초(10분) 이상 방치된 staging 디렉토리를 감지하면 경고를 출력합니다:
+
+```
+warning: 중단된 설치 감지 (runid=99999-20260521T100000Z-abcdef, age=1200s). 복구: python3 scripts/harness.py state repair [Aborted install detected; recover with state repair]
+```
+
+이 경우 `state repair` 를 실행하세요.
+
 ### B2.4 Session Lock
 
 | 명령 | 설명 |
