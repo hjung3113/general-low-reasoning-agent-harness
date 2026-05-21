@@ -31,7 +31,9 @@ _No further unreleased breaking changes._
 - Test fixture: v0.9.4 tarball includes deterministic `.harness/` state; upgrade
   tests now exercise real upgrade paths (synthetic seeders removed).
 - `tests/KNOWN_FAILING_TESTS.md` enumerates pre-existing failing node-ids; CI
-  gate via `tests/test_known_failures_drift.py`.
+  gate via `tests/test_known_failures_drift.py`. Baseline seeded under Python 3.9.6
+  (system); failing set may differ under Python 3.14+ (reseed with
+  `scripts/refresh_known_failures.sh` in the target env).
 
 ### Docs
 - USER_MANUAL: new "중단된 설치 복구" subsection with success/failure example output.
