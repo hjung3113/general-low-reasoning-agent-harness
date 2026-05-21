@@ -253,9 +253,18 @@ def write_install_state(
             applied_sha256=applied_sha256,
         )
         # S12 — stamp installed_sha256 / current_sha256 per entry (§6)
-        src_sha = file_hash(source)
-        entry_state["installed_sha256"] = src_sha
-        entry_state["current_sha256"] = src_sha
+        # For harness-owned entries use the destination hash: some files (e.g.
+        # .roomodes) are post-processed after the source copy (profile modes
+        # are merged in by sync_roomodes_profile_modes), so the rendered on-disk
+        # content may differ from the raw source template.  Using the destination
+        # hash avoids a permanent harness-owned-drift signal in `doctor`. For all
+        # other harness-owned files the destination hash equals the source hash.
+        if entry.policy == "harness-owned" and destination.exists():
+            disk_sha = file_hash(destination)
+        else:
+            disk_sha = file_hash(source)
+        entry_state["installed_sha256"] = disk_sha
+        entry_state["current_sha256"] = disk_sha
         files[str(entry.path)] = entry_state
 
     harness_ver = _active_harness_version()
