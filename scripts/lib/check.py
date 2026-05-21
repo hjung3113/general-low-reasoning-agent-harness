@@ -219,7 +219,21 @@ def verify_hashes(target: Path) -> list[HashDriftFinding]:
 
         on_disk = target / normalize_path(path_text)
         if not on_disk.exists():
-            # Missing files are caught by check_installed_target; skip here.
+            # File listed in installed-manifest but absent on disk: emit a
+            # *-missing finding so that deleted harness-owned/managed files
+            # surface in verify_hashes (incl. the doctor path which calls
+            # verify_hashes directly without going through check_installed_target).
+            error_code = f"{policy}-missing"
+            expected = info.get("installed_sha256", "") or info.get("applied_sha256", "")
+            findings.append(
+                HashDriftFinding(
+                    path=path_text,
+                    policy=policy,
+                    error_code=error_code,
+                    expected=expected,
+                    found="(missing)",
+                )
+            )
             continue
 
         if policy in ("harness-owned", "managed"):
@@ -248,7 +262,21 @@ def verify_hashes(target: Path) -> list[HashDriftFinding]:
             try:
                 text = on_disk.read_text(encoding="utf-8")
                 parsed = parse_append_block(text, path_text)
-            except (OSError, ValueError):
+            except OSError:
+                continue
+            except ValueError as exc:
+                # Malformed managed-append markers (duplicate start/end, inverted
+                # order, missing end marker) prevent hash verification and are
+                # themselves a signal of corruption or tampering.
+                findings.append(
+                    HashDriftFinding(
+                        path=path_text,
+                        policy=policy,
+                        error_code="managed-append-malformed",
+                        expected=expected,
+                        found=f"(malformed: {exc})",
+                    )
+                )
                 continue
             if parsed is None:
                 # Block absent — validate_installed_managed_append already reports this.
