@@ -251,3 +251,127 @@ def test_two_pass_payload_equivalence(tmp_path, monkeypatch):
     assert staged_sha == expected_sha, (
         f"Staged hash must equal source hash. Expected {expected_sha}, got {staged_sha}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 4b: Pending sidecar bytes == final manifest bytes after upgrade (FIX-3)
+#
+# Verifies that the pending sidecar written in B4a (post-roomodes-sync) is
+# byte-equal to the final installed-manifest.json produced by os.replace in B5.
+# This closes Architect C-1/C-2: previously the sidecar was written pre-batch
+# and never updated, so a crash between B3 and B5 would recover stale content.
+# ---------------------------------------------------------------------------
+
+
+def test_pending_sidecar_bytes_equal_final_manifest(tmp_path, monkeypatch):
+    """T4-4b: after upgrade, pending sidecar (pre-os.replace) == final manifest."""
+    import json
+
+    target = tmp_path / "target"
+    target.mkdir()
+    harness_dir = target / ".harness"
+    harness_dir.mkdir()
+
+    # Simulate existing v0.9.6 install state
+    (harness_dir / "installed-manifest.json").write_text(
+        json.dumps({
+            "version": "0.9.6",
+            "schema_version": 2,
+            "files": {},
+            "adapters": ["roo"],
+            "profiles": ["generic"],
+            "packs": [],
+        }),
+        encoding="utf-8",
+    )
+
+    # Minimal manifest root
+    root = tmp_path / "source"
+    root.mkdir()
+    harness_manifest_dir = root / "harness"
+    harness_manifest_dir.mkdir()
+    manifest_path = harness_manifest_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({
+            "schema_version": 2,
+            "version": "__release__",
+            "files": [
+                {
+                    "path": "scripts/harness.py",
+                    "source": "scripts/harness.py",
+                    "policy": "harness-owned",
+                    "owner": "harness",
+                    "adapter": "roo",
+                    "profile": "generic",
+                }
+            ],
+            "packs": {},
+        }),
+        encoding="utf-8",
+    )
+    scripts_dir = root / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "harness.py").write_text("# v0.9.7 content\n", encoding="utf-8")
+
+    target_scripts = target / "scripts"
+    target_scripts.mkdir()
+    (target_scripts / "harness.py").write_text("# v0.9.6 content\n", encoding="utf-8")
+
+    # Track whether pending_path bytes == final_path bytes at the os.replace call.
+    # We intercept os.replace to capture the pending content just before promotion.
+    _pending_bytes_at_replace: list[bytes] = []
+
+    import lib.upgrade as _upg_mod
+    original_os_replace = os.replace
+
+    def _capturing_os_replace(src: str, dst: str) -> None:
+        # Capture only the pending sidecar → final manifest replace
+        if "installed-manifest.json.pending-" in src:
+            _pending_bytes_at_replace.append(Path(src).read_bytes())
+        original_os_replace(src, dst)
+
+    monkeypatch.setattr("lib.upgrade.os.replace", _capturing_os_replace)
+    monkeypatch.setattr("lib.state._active_harness_version", lambda: "0.9.7-test")
+    monkeypatch.setattr("lib.state.now_utc", lambda: "2026-05-21T00:00:00Z")
+    monkeypatch.setattr("lib.state._git_user_email_sha256", lambda: None)
+    import lib.manifest_reconciler as _mrc
+    monkeypatch.setattr(_mrc, "verify_install_record_integrity", lambda t: None)
+    monkeypatch.setattr(_upg_mod, "_build_release_manifest_v2", lambda **kw: {
+        "schema_version": 2,
+        "harness_version": "0.9.7-test",
+        "trust_origin": "dev_unsigned",
+        "release_tag": None,
+        "release_commit": None,
+        "files": {"scripts/harness.py": {
+            "installed_sha256": "abc",
+            "current_sha256": "abc",
+            "policy": "harness-owned",
+            "owner": "harness",
+        }},
+    })
+    monkeypatch.setattr(_upg_mod, "_reconcile_install", lambda **kw: [])
+    monkeypatch.setattr(_upg_mod, "_stamp_installed_manifest_v2", lambda installed, **kw: None)
+
+    from lib.upgrade import upgrade
+    rc = upgrade(
+        root=root,
+        target=target,
+        adapters={"roo"},
+        profiles={"generic"},
+        packs=set(),
+        harness_version="0.9.7-test",
+        force=True,
+    )
+    assert rc == 0, "Upgrade must exit 0"
+
+    final_path = harness_dir / "installed-manifest.json"
+    assert final_path.exists(), "Final manifest must exist"
+
+    # The pending sidecar bytes captured at os.replace time must equal
+    # the final manifest bytes (since os.replace is atomic rename).
+    assert _pending_bytes_at_replace, "os.replace for pending→final must have been called"
+    final_bytes = final_path.read_bytes()
+    assert _pending_bytes_at_replace[-1] == final_bytes, (
+        "Pending sidecar bytes must equal final manifest bytes after os.replace. "
+        "Mismatch indicates sidecar was not rewritten post-roomodes-sync (FIX-3 regression)."
+    )

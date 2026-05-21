@@ -1002,9 +1002,26 @@ def upgrade(
 
     # T4 Pass B: compute file states for staged harness-owned entries,
     # run atomic batch, write pending sidecar, and finalize.
+    #
+    # Phase order (mirrors install.py:314-407 per IMPL-PLAN REV-2):
+    #   B2: write pending sidecar (pre-batch, for crash durability)
+    #   B3: atomic batch rename
+    #   B4: sync roomodes (must run after batch landed .roomodes from staging)
+    #       + patch roomodes hashes in `installed` dict
+    #   B4a: REWRITE pending sidecar with post-sync roomodes hashes so the
+    #        sidecar is bit-equal to what the final manifest will contain.
+    #        This closes the staleness window identified by Architect C-1/C-2:
+    #        a crash between B3 and B5 would leave `_recover_pending_manifest`
+    #        finalizing from a sidecar whose .roomodes hashes are pre-sync.
+    #   B5: os.replace(pending → final) — atomic finalize (same as install.py:375)
+    #   B6: re-read final, assert version
+    #   B7: cleanup sentinel, journal, staging dir
     if not dry_run and not (adopting_missing_state and conflicts):
         if upgrade_staging_map:
-            # Step B2: write pending sidecar (staged hashes; pre-batch durability).
+            # Step B2: write pending sidecar (pre-batch, crash durability).
+            # NOTE: roomodes hashes are not yet in `installed` here — they are
+            # patched in B4 after the batch lands .roomodes.  B4a rewrites the
+            # sidecar with the correct hashes before B5 finalizes via os.replace.
             _atomic_write_json_fsync(upgrade_pending_path, installed)
 
             # Step B3: atomic batch rename.
@@ -1027,7 +1044,7 @@ def upgrade(
                 )
 
             # Step B4: sync roomodes AFTER batch (atomic rename landed .roomodes);
-            # patch hash in installed dict before writing final manifest.
+            # patch hash in installed dict.
             sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
             roomodes_path = target / ".roomodes"
             if (
@@ -1039,11 +1056,18 @@ def upgrade(
                 installed["files"][".roomodes"]["installed_sha256"] = file_hash(roomodes_path)
                 installed["files"][".roomodes"]["current_sha256"] = file_hash(roomodes_path)
 
-            # Step B5: finalize — write final manifest (with post-sync roomodes hash).
-            final_path = target / INSTALL_STATE
-            write_json(final_path, installed)
+            # Step B4a: rewrite pending sidecar with post-sync roomodes hashes.
+            # The sidecar now contains the FINAL payload — bit-equal to what
+            # os.replace will promote to installed-manifest.json in B5.
+            _atomic_write_json_fsync(upgrade_pending_path, installed)
 
-            # Step B6: post-finalize verify.
+            # Step B5: atomic finalize — promote pending sidecar to final manifest.
+            # Using os.replace (same discipline as install.py:375) so the rename
+            # is atomic; no window where final is absent but pending is gone.
+            final_path = target / INSTALL_STATE
+            os.replace(str(upgrade_pending_path), str(final_path))
+
+            # Step B6: post-finalize verify (re-read final).
             with open(str(final_path), encoding="utf-8") as fh:
                 verify = json.load(fh)
             if verify.get("version") != harness_version:
@@ -1053,13 +1077,8 @@ def upgrade(
                     f"[Finalize verification failed; recover with: python3 scripts/harness.py state repair]"
                 )
 
-            # Clean up pending sidecar (already superseded by final manifest).
-            try:
-                upgrade_pending_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-            # Step B7: cleanup.
+            # Step B7: cleanup sentinel, journal, staging dir.
+            # (Pending sidecar was promoted to final in B5 — no separate unlink needed.)
             sentinel_path = harness_dir / f".staging-{upgrade_runid}.complete"
             try:
                 sentinel_path.unlink(missing_ok=True)
