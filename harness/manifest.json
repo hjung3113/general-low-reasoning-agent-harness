@@ -934,6 +934,11 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/install_recovery.py",
+      "source": "scripts/lib/install_recovery.py",
+      "policy": "harness-owned"
+    },
+    {
       "path": "scripts/lib/managed_block.py",
       "source": "scripts/lib/managed_block.py",
       "policy": "harness-owned"

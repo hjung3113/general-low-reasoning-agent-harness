@@ -69,10 +69,13 @@ def _collect_lib_imports_from_file(path: Path) -> list[str]:
       - ``from lib.X import ...``  → ``lib.X``
       - ``from lib.X.Y import ...`` → ``lib.X.Y``
       - ``import lib.X``            → ``lib.X``
+      - ``from lib import X``       → ``lib.X``  (T8a broadening: catches sub-module
+        imports like ``from lib import install_recovery``; each alias name is
+        recorded as ``lib.<name>`` so the manifest-completeness check can
+        verify the corresponding file exists)
 
     Skips:
       - Relative imports (``from . import ...``)
-      - ``from lib import X`` bare form (package-level; always present)
     """
     try:
         src = path.read_text(encoding="utf-8", errors="replace")
@@ -88,6 +91,10 @@ def _collect_lib_imports_from_file(path: Path) -> list[str]:
             mod = node.module or ""
             if mod.startswith("lib."):
                 modules.add(mod)
+            elif mod == "lib":
+                # ``from lib import X`` — treat each alias as lib.X
+                for alias in node.names:
+                    modules.add(f"lib.{alias.name}")
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.startswith("lib."):
