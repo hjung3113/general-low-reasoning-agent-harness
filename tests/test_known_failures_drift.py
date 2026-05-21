@@ -10,8 +10,8 @@ Test cases:
 
 Cache freshness:
 - junit.xml mtime must be newer than newest mtime in scripts/ and tests/.
-- STALE = skip (not fail) unless HARNESS_KNOWN_FAILURES_STRICT=1.
-- Bypass stale check: HARNESS_KNOWN_FAILURES_ALLOW_STALE=1.
+- STALE = FAIL by default (prevents silently testing against outdated baseline).
+- Bypass stale check (emergency only): HARNESS_KNOWN_FAILURES_ALLOW_STALE=1.
 """
 from __future__ import annotations
 
@@ -220,7 +220,6 @@ def test_known_failures_not_drifted() -> None:
         )
 
     allow_stale = os.environ.get("HARNESS_KNOWN_FAILURES_ALLOW_STALE", "") == "1"
-    strict_stale = os.environ.get("HARNESS_KNOWN_FAILURES_STRICT", "") == "1"
 
     if _is_cache_stale() and not allow_stale:
         msg = (
@@ -228,10 +227,7 @@ def test_known_failures_not_drifted() -> None:
             "Run: scripts/refresh_known_failures.sh\n"
             "Or bypass (emergency only): HARNESS_KNOWN_FAILURES_ALLOW_STALE=1"
         )
-        if strict_stale:
-            pytest.fail(msg)
-        else:
-            pytest.skip(msg)
+        pytest.fail(msg)
 
     try:
         current_failing = _parse_junit_failures(_JUNIT_CACHE)
