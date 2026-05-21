@@ -5,6 +5,7 @@ Test cases:
 2. SIGTERM mid-upgrade at phase boundary: state repair recovers to consistent version
 3. Idempotency: state repair 3x after upgrade abort
 4. Two-pass dry-run: Pass A's staged content equals final manifest content
+4b. Pending sidecar bytes == final manifest bytes after os.replace (FIX-3 staleness guard)
 5. v0.9.4 → v0.9.7 → blocked by skip-upgrade guard BEFORE any .staging-* created
 """
 from __future__ import annotations
