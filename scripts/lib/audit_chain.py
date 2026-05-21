@@ -198,6 +198,7 @@ class ChainVerifyResult:
     entries_walked: int
     rotation_files_traversed: int
     final_tip_hash: Optional[str]
+    final_after_sha256: Optional[str]  # last entry's after_sha256 (state file sha256)
     error: Optional[AuditChainError]
 
 
@@ -502,6 +503,7 @@ def verify_chain(
     entries_walked = 0
     rotation_files_traversed = 0
     final_tip_hash: Optional[str] = None
+    final_after_sha256: Optional[str] = None
     error: Optional[AuditChainError] = None
 
     try:
@@ -509,6 +511,8 @@ def verify_chain(
             entries_walked += 1
             if "entry_hash" in step.entry:
                 final_tip_hash = step.entry["entry_hash"]
+            if "after_sha256" in step.entry:
+                final_after_sha256 = step.entry["after_sha256"]
             if step.file != audit_path:
                 rotation_files_traversed = max(rotation_files_traversed, 1)
     except AuditBomError:
@@ -520,6 +524,7 @@ def verify_chain(
             entries_walked=entries_walked,
             rotation_files_traversed=rotation_files_traversed,
             final_tip_hash=final_tip_hash,
+            final_after_sha256=final_after_sha256,
             error=error,
         )
 
@@ -528,6 +533,7 @@ def verify_chain(
         entries_walked=entries_walked,
         rotation_files_traversed=rotation_files_traversed,
         final_tip_hash=final_tip_hash,
+        final_after_sha256=final_after_sha256,
         error=None,
     )
 

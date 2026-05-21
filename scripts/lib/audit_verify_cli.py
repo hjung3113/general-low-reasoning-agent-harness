@@ -199,16 +199,16 @@ def cmd_verify_audit(args: Any, root: Path) -> int:
     # The source repo's state is modified during development and would
     # trivially fail this check after any `phase set`.
     _installed_manifest = root / ".harness" / "installed-manifest.json"
-    if fixture_dir is None and result.final_tip_hash and _installed_manifest.exists():
+    if fixture_dir is None and result.final_after_sha256 is not None and _installed_manifest.exists():
         state_path_check = root / _SCRATCH_ROOT / _STATE_NAME
         if state_path_check.exists() and state_path_check.stat().st_size > 0:
             import hashlib as _hashlib
             _state_bytes = state_path_check.read_bytes()
             _actual_state_hash = _hashlib.sha256(_state_bytes).hexdigest()
-            if result.final_tip_hash != _actual_state_hash:
+            if result.final_after_sha256 != _actual_state_hash:
                 print(
                     f"Error (exit 10): audit chain tail does not match state — "
-                    f"last audit entry after_sha256 ({result.final_tip_hash[:16]}…) "
+                    f"last audit entry's after_sha256 ({result.final_after_sha256[:16]}…) "
                     f"differs from {_STATE_NAME} sha256 ({_actual_state_hash[:16]}…); "
                     f"sub_reason=audit_chain_tail_mismatch.\n"
                     f"Fix: run 'harness phase set <phase>' to re-establish the audit "
