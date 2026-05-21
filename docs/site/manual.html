@@ -1001,12 +1001,12 @@ python3 scripts/doctor_harness.py</code></pre>
 <h3 id="a23-release-tag-서명-maintainer">A2.3 Release Tag 서명 (Maintainer)<a class="anchor" href="#a23-release-tag-서명-maintainer" aria-label="Link to this section">§</a></h3>
 <pre><code class="language-bash">git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.6 -m &quot;Release v0.9.6&quot;
-git push origin v0.9.6</code></pre>
+git tag -s v0.9.7 -m &quot;Release v0.9.7&quot;
+git push origin v0.9.7</code></pre>
 <p>Git ≥ 2.34 필요 (Windows: Git for Windows 포함).</p>
 <h3 id="a24-tag-검증-consumer">A2.4 Tag 검증 (Consumer)<a class="anchor" href="#a24-tag-검증-consumer" aria-label="Link to this section">§</a></h3>
 <p><code>harness upgrade</code>는 자동 검증. 수동 검증:</p>
-<pre><code class="language-bash">git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.6</code></pre>
+<pre><code class="language-bash">git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.7</code></pre>
 <h3 id="a25-trust-downgrade-refusal">A2.5 Trust-Downgrade Refusal<a class="anchor" href="#a25-trust-downgrade-refusal" aria-label="Link to this section">§</a></h3>
 <p>한 번 signed tag로 설치되면, <code>--allow-unsigned-dev</code>로도 unsigned로 downgrade 불가능합니다. 대신:</p>
 <ul>
@@ -1113,11 +1113,11 @@ git push origin v0.9.6</code></pre>
 <p><code>harness release</code>를 실행할 때, 하네스는 사용자가 직접 타이핑한 토큰으로 확인을 받습니다. 일반 <code>phase approve</code>의 <code>[y/N]</code> 방지턱(§0.1)보다 한 단계 엄격한 단계입니다.</p>
 <h3 id="a41-사용-흐름">A4.1 사용 흐름<a class="anchor" href="#a41-사용-흐름" aria-label="Link to this section">§</a></h3>
 <ol>
-<li>터미널에서 <code>python3 scripts/harness.py release v0.9.6</code> 실행
+<li>터미널에서 <code>python3 scripts/harness.py release v0.9.7</code> 실행
 </li>
-<li>하네스가 묻습니다: <code>Type &#x27;release v0.9.6&#x27; to confirm:</code>
+<li>하네스가 묻습니다: <code>Type &#x27;release v0.9.7&#x27; to confirm:</code>
 </li>
-<li>정확히 <code>release v0.9.6</code>를 타이핑하고 Enter
+<li>정확히 <code>release v0.9.7</code>를 타이핑하고 Enter
 </li></ol>
 <p>다른 답 (<code>y</code>, Ctrl+C, 다른 문자열)은 cancel로 처리되고 release는 진행되지 않습니다.</p>
 <h3 id="a42-왜-이-단계가-있는가">A4.2 왜 이 단계가 있는가<a class="anchor" href="#a42-왜-이-단계가-있는가" aria-label="Link to this section">§</a></h3>
@@ -1138,7 +1138,7 @@ git push origin v0.9.6</code></pre>
 <ol>
 <li><code>docs/trust/allowed-signers</code> 확인 (signer key 최신인지)
 </li>
-<li>Properly signed release tag로 upgrade:&lt;br&gt;``<code>bash&lt;br&gt;git verify-tag v0.9.6&lt;br&gt;python3 scripts/harness.py upgrade --target /path/to/project&lt;br&gt;</code>``
+<li>Properly signed release tag로 upgrade:&lt;br&gt;``<code>bash&lt;br&gt;git verify-tag v0.9.7&lt;br&gt;python3 scripts/harness.py upgrade --target /path/to/project&lt;br&gt;</code>``
 </li>
 <li>Dev 환경이면 <code>--allow-unsigned-dev</code> 사용 (처음 설치만)
 </li></ol>
@@ -1358,7 +1358,7 @@ exit code 1</code></pre>
 <td>Workflow 품질 신호 진단</td>
 </tr>
 <tr>
-<td><code>release-check --expected-version v0.9.6</code></td>
+<td><code>release-check --expected-version v0.9.7</code></td>
 <td>Release tag 버전 검증</td>
 </tr>
 </tbody></table></div>
@@ -1538,18 +1538,18 @@ python3 /path/to/newer-harness/scripts/harness.py upgrade --target /path/to/proj
 python3 /path/to/project/scripts/harness.py check</code></pre>
 <p>새 버전으로 upgrade하면 공용 workflow 정적 검사 helper인 <code>scripts/lib/workflow_static_checks.py</code>도 target에 설치됩니다.</p>
 <h3 id="c32-installed-target-bootstrapper로-upgrade">C3.2 Installed target bootstrapper로 upgrade<a class="anchor" href="#c32-installed-target-bootstrapper로-upgrade" aria-label="Link to this section">§</a></h3>
-<pre><code class="language-bash">python3 scripts/upgrade_harness.py --version v0.9.6 --dry-run
-python3 scripts/upgrade_harness.py --version v0.9.6
+<pre><code class="language-bash">python3 scripts/upgrade_harness.py --version v0.9.7 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.7
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py</code></pre>
 <p>Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 기본값으로 씁니다. 사내 mirror에서 설치한 target은 별도 지정 없이도 같은 mirror에서 upgrade됩니다.</p>
 <h3 id="c33-사내외부-repo-명시-override">C3.3 사내/외부 repo 명시 override<a class="anchor" href="#c33-사내외부-repo-명시-override" aria-label="Link to this section">§</a></h3>
 <pre><code class="language-bash">python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.9.6 \
+  --version v0.9.7 \
   --dry-run</code></pre>
 <h3 id="c34-remote-access-막힌-경우-local-source-fallback">C3.4 Remote access 막힌 경우 local source fallback<a class="anchor" href="#c34-remote-access-막힌-경우-local-source-fallback" aria-label="Link to this section">§</a></h3>
-<pre><code class="language-bash">python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.6 --dry-run</code></pre>
+<pre><code class="language-bash">python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.7 --dry-run</code></pre>
 <h3 id="c35-오래된-수동-설치-adopt">C3.5 오래된 수동 설치 adopt<a class="anchor" href="#c35-오래된-수동-설치-adopt" aria-label="Link to this section">§</a></h3>
 <p>Target에 harness file은 있지만 <code>.harness/installed-manifest.json</code>이 없으면 adopt 후 upgrade:</p>
 <pre><code class="language-bash">python3 /path/to/newer-harness/scripts/harness.py upgrade \
@@ -1620,7 +1620,7 @@ python3 scripts/harness.py upgrade --target /path/to/project --allow-unsigned-de
 </tbody></table></div>
 <p>PowerShell temp install 예시:</p>
 <pre><code class="language-powershell">$tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.9.6 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.9.7 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 &quot;$($tmp.FullName)\scripts\install_harness.py&quot; --interactive</code></pre>
 <hr>
 <hr>
