@@ -318,11 +318,15 @@ def install(
             write_managed_append(source=source, destination=destination, entry=entry)
         elif entry.policy == "project-owned" and destination.exists():
             continue
-        else:  # harness-owned
+        elif entry.policy == "harness-owned":
+            # Stage to staging dir (will be atomically renamed in Phase 4).
             staged = staging_dir / entry.path
             staged.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(str(source), str(staged))
             staging_map[entry.path] = staged
+        else:
+            # project-owned scaffold file (destination doesn't exist yet): write directly.
+            write_copy(source, destination)
 
     # Phase 2: compose payload from staged hashes.
     payload = build_install_state_payload(

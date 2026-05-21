@@ -11,6 +11,13 @@ Tarballs are byte-identical across macOS, Linux, and different cwds because:
   • entries sorted lexicographically before adding
   • gzip written via gzip.GzipFile(mtime=0) — header timestamp suppressed
 
+T7 changes:
+  • .harness/ INCLUDED in tarball (needed by T8 upgrade tests to find installed-manifest.json)
+  • _normalize_v094_install_state() strips non-deterministic fields from install state
+  • HARNESS_FIXED_NOW_ISO env var pins installed_at timestamps
+  • run_v094_init raises FixtureBuildError on non-zero exit (Hawk M-7)
+  • Determinism self-check: builds twice in separate temp dirs; asserts sha256 equal
+
 CI always rebuilds; tarballs are gitignored; only .sha256 files are checked-in.
 
 Usage:
@@ -22,6 +29,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -34,7 +42,12 @@ from pathlib import Path
 FIXED_MTIME = 1748822400
 
 # Directories / files to exclude when archiving.
-EXCLUDE_NAMES = {"__pycache__", ".git", ".pytest_cache", ".DS_Store", ".harness"}
+# NOTE: .harness is NOT excluded (T7) — fixture must include installed-manifest.json
+EXCLUDE_NAMES = {"__pycache__", ".git", ".pytest_cache", ".DS_Store"}
+
+
+class FixtureBuildError(RuntimeError):
+    """Raised when a fixture build step fails in a way that should abort the build."""
 
 # The 35 lib/*.py modules missing from v0.9.4 manifest.json (BUG-1).
 MISSING_LIB_MODULES: list[str] = [
@@ -159,25 +172,113 @@ def teardown_worktree(worktree_path: Path) -> None:
     shutil.rmtree(worktree_path, ignore_errors=True)
 
 
+def _normalize_v094_install_state(target_dir: Path) -> None:
+    """Normalize the v0.9.4 installed-manifest.json for determinism.
+
+    Strips non-deterministic fields:
+    - installed_at: replaced with HARNESS_FIXED_NOW_ISO env value or a fixed constant
+    - git_user_email_at_install_sha256: set to None
+    - source: set to a placeholder string (path is build-environment-specific)
+    """
+    manifest_path = target_dir / ".harness" / "installed-manifest.json"
+    if not manifest_path.exists():
+        return
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"  WARNING: cannot normalize install state: {exc}", file=sys.stderr, flush=True)
+        return
+
+    fixed_now = os.environ.get("HARNESS_FIXED_NOW_ISO", "2026-05-21T00:00:00Z")
+    data["git_user_email_at_install_sha256"] = None
+    data["source"] = "__fixture__"
+    # Normalize installed_at for all file entries
+    if isinstance(data.get("files"), dict):
+        for file_info in data["files"].values():
+            if isinstance(file_info, dict) and "installed_at" in file_info:
+                file_info["installed_at"] = fixed_now
+    manifest_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def run_v094_init(harness_py: Path, target_dir: Path) -> None:
-    """Run v0.9.4 harness.py init --target <target> --adapters none."""
+    """Run v0.9.4 harness.py init --target <target> --adapters none.
+
+    Raises FixtureBuildError on non-zero exit code (Hawk M-7).
+    """
     target_dir.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    fixed_now = env.get("HARNESS_FIXED_NOW_ISO", "2026-05-21T00:00:00Z")
+    env["HARNESS_FIXED_NOW_ISO"] = fixed_now
+    env["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"  # dev build — skip tag verification
     result = subprocess.run(
         [sys.executable, str(harness_py), "init", "--target", str(target_dir), "--adapters", "none"],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
     )
     print(result.stdout[-2000:] if result.stdout else "", flush=True)
     if result.returncode != 0:
-        # Init exits non-zero on some environments (missing git config etc) but may still
-        # have installed the files we need. Warn but continue.
-        print(
-            f"  WARNING: harness init exited {result.returncode}; stderr:\n{result.stderr[-1000:]}",
-            file=sys.stderr,
-            flush=True,
+        raise FixtureBuildError(
+            f"harness init exited {result.returncode};\n"
+            f"stdout: {result.stdout[-500:]}\n"
+            f"stderr: {result.stderr[-500:]}"
         )
+
+
+def _build_all_once(worktree_path: Path, harness_py: Path, output_dir: Path) -> tuple[str, str]:
+    """Run the full fixture build once, normalizing and producing tarballs.
+
+    Returns (clean_digest, workaround_digest).
+    """
+    clean_target = output_dir / "_build_clean"
+    workaround_target = output_dir / "_build_workaround"
+
+    if clean_target.exists():
+        shutil.rmtree(clean_target)
+    if workaround_target.exists():
+        shutil.rmtree(workaround_target)
+
+    # 1. Run init
+    run_v094_init(harness_py, clean_target)
+
+    # 2. Normalize install state for determinism
+    _normalize_v094_install_state(clean_target)
+
+    # 3. Build clean tarball
+    clean_tarball = output_dir / "v094-clean.tar.gz"
+    clean_digest = build_deterministic_tarball(clean_target, clean_tarball)
+
+    # 4. Build workaround variant
+    shutil.copytree(clean_target, workaround_target)
+    workaround_lib_dst = workaround_target / "scripts" / "lib"
+    workaround_lib_dst.mkdir(parents=True, exist_ok=True)
+    v094_lib_src = worktree_path / "scripts" / "lib"
+    copied = 0
+    for mod_name in MISSING_LIB_MODULES:
+        src = v094_lib_src / mod_name
+        dst = workaround_lib_dst / mod_name
+        if src.exists():
+            shutil.copy2(src, dst)
+            copied += 1
+        else:
+            print(f"  WARNING: missing source module {src}", file=sys.stderr, flush=True)
+    print(f"  Copied {copied}/{len(MISSING_LIB_MODULES)} missing lib modules", flush=True)
+
+    # 5. Build workaround tarball
+    workaround_tarball = output_dir / "v094-with-workaround.tar.gz"
+    workaround_digest = build_deterministic_tarball(workaround_target, workaround_tarball)
+
+    # Cleanup temp build dirs
+    for tmp in (clean_target, workaround_target):
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    return clean_digest, workaround_digest
 
 
 def main() -> None:
@@ -189,14 +290,13 @@ def main() -> None:
         help="Directory to write tarballs and .sha256 files (default: tests/fixtures)",
     )
     parser.add_argument("--keep-worktrees", action="store_true", help="Skip cleanup of scratch worktrees (debug)")
+    parser.add_argument("--skip-determinism-check", action="store_true", help="Skip the double-build determinism check")
     args = parser.parse_args()
 
     output_dir: Path = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     worktree_path = Path(tempfile.gettempdir()) / "v094-worktree"
-    clean_target = Path(tempfile.gettempdir()) / "v094-clean"
-    workaround_target = Path(tempfile.gettempdir()) / "v094-workaround"
 
     try:
         # 1. Check out v0.9.4 source.
@@ -204,65 +304,51 @@ def main() -> None:
         setup_worktree("v0.9.4", worktree_path)
         harness_py = worktree_path / "scripts" / "harness.py"
 
-        # 2. Run init to produce a clean v0.9.4 install.
-        print("\n=== Step 2: harness init (clean) ===", flush=True)
-        if clean_target.exists():
-            shutil.rmtree(clean_target)
-        run_v094_init(harness_py, clean_target)
+        # 2. First build pass.
+        print("\n=== Step 2: first build pass ===", flush=True)
+        build1_dir = output_dir / "_pass1"
+        build1_dir.mkdir(exist_ok=True)
+        clean_digest1, workaround_digest1 = _build_all_once(worktree_path, harness_py, build1_dir)
+        print(f"  clean sha256: {clean_digest1}", flush=True)
+        print(f"  workaround sha256: {workaround_digest1}", flush=True)
 
-        # 3. Build v094-clean tarball.
-        print("\n=== Step 3: build v094-clean.tar.gz ===", flush=True)
-        clean_tarball = output_dir / "v094-clean.tar.gz"
-        clean_digest = build_deterministic_tarball(clean_target, clean_tarball)
-        print(f"  sha256: {clean_digest}", flush=True)
-        (output_dir / "v094-clean.tar.gz.sha256").write_text(f"{clean_digest}  v094-clean.tar.gz\n", encoding="utf-8")
+        # 3. Determinism self-check: build a second time.
+        if not args.skip_determinism_check:
+            print("\n=== Step 3: determinism self-check (second build pass) ===", flush=True)
+            build2_dir = output_dir / "_pass2"
+            build2_dir.mkdir(exist_ok=True)
+            clean_digest2, workaround_digest2 = _build_all_once(worktree_path, harness_py, build2_dir)
+            if clean_digest1 != clean_digest2 or workaround_digest1 != workaround_digest2:
+                raise FixtureBuildError(
+                    f"Determinism check FAILED:\n"
+                    f"  clean:       {clean_digest1} vs {clean_digest2}\n"
+                    f"  workaround:  {workaround_digest1} vs {workaround_digest2}"
+                )
+            print("  Determinism check PASSED", flush=True)
+            # Cleanup second pass
+            shutil.rmtree(build2_dir, ignore_errors=True)
 
-        # 4. Build workaround variant: copy the 35 missing lib modules into the target.
-        print("\n=== Step 4: build v094-with-workaround target ===", flush=True)
-        if workaround_target.exists():
-            shutil.rmtree(workaround_target)
-        shutil.copytree(clean_target, workaround_target)
-        workaround_lib_dst = workaround_target / "scripts" / "lib"
-        workaround_lib_dst.mkdir(parents=True, exist_ok=True)
-        v094_lib_src = worktree_path / "scripts" / "lib"
-        copied = 0
-        for mod_name in MISSING_LIB_MODULES:
-            src = v094_lib_src / mod_name
-            dst = workaround_lib_dst / mod_name
-            if src.exists():
-                shutil.copy2(src, dst)
-                copied += 1
-            else:
-                print(f"  WARNING: missing source module {src}", file=sys.stderr, flush=True)
-        print(f"  Copied {copied}/{len(MISSING_LIB_MODULES)} missing lib modules", flush=True)
+        # 4. Copy final tarballs to output_dir and write .sha256 files.
+        for fname, digest in [
+            ("v094-clean.tar.gz", clean_digest1),
+            ("v094-with-workaround.tar.gz", workaround_digest1),
+        ]:
+            src_tarball = build1_dir / fname
+            dst_tarball = output_dir / fname
+            if src_tarball != dst_tarball:
+                shutil.copy2(src_tarball, dst_tarball)
+            (output_dir / f"{fname}.sha256").write_text(
+                f"{digest}  {fname}\n", encoding="utf-8"
+            )
+            print(f"  wrote {fname} ({dst_tarball.stat().st_size:,} bytes, sha256={digest[:16]}...)", flush=True)
 
-        # 5. Build v094-with-workaround tarball.
-        print("\n=== Step 5: build v094-with-workaround.tar.gz ===", flush=True)
-        workaround_tarball = output_dir / "v094-with-workaround.tar.gz"
-        workaround_digest = build_deterministic_tarball(workaround_target, workaround_tarball)
-        print(f"  sha256: {workaround_digest}", flush=True)
-        (output_dir / "v094-with-workaround.tar.gz.sha256").write_text(
-            f"{workaround_digest}  v094-with-workaround.tar.gz\n", encoding="utf-8"
-        )
-
-        # 6. Print summary.
-        clean_size = clean_tarball.stat().st_size
-        workaround_size = workaround_tarball.stat().st_size
-        print(
-            f"\n=== Done ===\n"
-            f"  v094-clean.tar.gz          {clean_size:>10,} bytes  sha256={clean_digest[:16]}...\n"
-            f"  v094-with-workaround.tar.gz {workaround_size:>10,} bytes  sha256={workaround_digest[:16]}...",
-            flush=True,
-        )
+        shutil.rmtree(build1_dir, ignore_errors=True)
+        print("\n=== Done ===", flush=True)
 
     finally:
         if not args.keep_worktrees:
             print("\n=== Cleanup ===", flush=True)
             teardown_worktree(worktree_path)
-            for tmp in (clean_target, workaround_target):
-                if tmp.exists():
-                    shutil.rmtree(tmp, ignore_errors=True)
-                    print(f"  Removed {tmp}", flush=True)
 
 
 if __name__ == "__main__":
