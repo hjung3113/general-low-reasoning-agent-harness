@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="v0.9.3 harness release documentation landing page">
-  <title>v0.9.3 Harness Docs</title>
+  <meta name="description" content="v0.9.5 harness release documentation landing page">
+  <title>v0.9.5 Harness Docs</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -15,12 +15,12 @@
     <article class="content">
       <div class="source-links"><span>View Markdown source</span><a href="../../README.md">README.md</a></div>
       <section class="hero" id="top">
-  <p class="eyebrow">v0.9.3 Release Docs</p>
+  <p class="eyebrow">v0.9.5 Release Docs</p>
   <h1>범용 저추론 에이전트 하네스</h1>
   <p class="lead">저추론 에이전트가 discuss, plan, execute, done 흐름을 놓치지 않도록 돕는 클라이언트 중립 하네스입니다. 이번 정적 문서는 설치부터 어댑터 작성, speed bump 의사결정까지 한 자리에서 볼 수 있게 정리했습니다.</p>
   <div class="quick-links" aria-label="Quick links">
     <a href="manual.html#02-glossary--용어">용어 바로가기</a>
-    <a href="#whats-new">v0.9.0 변경점</a>
+    <a href="#whats-new">v0.9.5 변경점</a>
     <a href="use-cases.html#rooopencode-어댑터로-작업하기">어댑터 유즈케이스</a>
   </div>
 </section>
@@ -30,13 +30,18 @@
   <a class="doc-card" href="advanced.html"><span>Advanced</span><strong>Flags & ADR</strong><p>하네스 플래그와 phase.approve speed bump 결정 기록.</p></a>
 </section>
 <section id="whats-new">
-  <h2>What’s new in v0.9.0<a class="anchor" href="#whats-new" aria-label="Link to this section">§</a></h2>
+  <h2>What’s new in v0.9.5<a class="anchor" href="#whats-new" aria-label="Link to this section">§</a></h2>
+  <p><strong>v0.9.5</strong> — 2026-05-21 hotfix release. v0.9.4 install-broken(P0) + 8개 주요 버그 수정.</p>
   <ul>
-    <li><strong>Speed bump 모델:</strong> <code>phase approve</code>는 보안 장벽이 아니라 사용자가 직접 확인하는 release checkpoint입니다.</li>
-    <li><strong>Autopilot 분리:</strong> 자동 진행 모드와 speed bump 확인을 별도 개념으로 유지해 오해를 줄입니다.</li>
-    <li><strong>Adapter 중립성:</strong> Roo/OpenCode는 adapter이며 core protocol의 출처가 아닙니다.</li>
-    <li><strong>Release-ready docs:</strong> 사용자 설명서, 유즈케이스, 고급 플래그, ADR을 브라우저에서 바로 읽을 수 있습니다.</li>
+    <li><strong>Manifest gap 해소:</strong> <code>harness/manifest.json</code>에 누락된 <code>scripts/lib/*.py</code> 모듈 35개 추가. Fresh install에서 발생하던 <code>ModuleNotFoundError</code> 완전 해소.</li>
+    <li><strong>Install-record 자동 생성:</strong> <code>harness init</code>이 <code>.harness/installed-manifest.json</code>을 즉시 생성. <code>approve</code> / <code>verify</code> 첫 실행 crash 수정.</li>
+    <li><strong>Daily-four 정상화:</strong> <code>harness next</code>가 <code>harness run</code>을 안내. <code>init → next → run → check</code> 사이클이 <code>phase set</code> 없이 완주합니다.</li>
+    <li><strong>에러 코드 통일:</strong> 모든 에러에서 non-zero exit code 반환. CI 우회(rc=0) 수정.</li>
+    <li><strong>State show 루트 탐색:</strong> <code>state show</code>가 CWD에서 <code>.git</code> / <code>.harness</code>를 위로 탐색. 서브디렉토리에서도 올바른 루트를 찾습니다.</li>
+    <li><strong>Hash 검증 활성화:</strong> <code>check --verify-hashes</code>가 per-policy sha256 4개 필드를 실제로 검증합니다.</li>
+    <li><strong>Atomic install helper:</strong> <code>scripts/lib/atomic_io.py</code> 추가. install.py / upgrade.py wire-in은 v0.9.6으로 이연.</li>
   </ul>
+  <p>전체 변경사항: <a href="../../CHANGELOG.md">CHANGELOG.md</a> § v0.9.5</p>
 </section>
 <section id="glossary">
 <h2 id="용어-glossary">용어 / Glossary<a class="anchor" href="#용어-glossary" aria-label="Link to this section">§</a></h2>
@@ -95,7 +100,7 @@
 <hr>
 </section>
     </article>
-    <aside class="toc" aria-label="Table of contents"><strong>On this page</strong><a class="toc-h2" href="#whats-new">What’s new in v0.9.0</a><a class="toc-h2" href="#glossary">Glossary</a><a class="toc-h2" href="#용어-glossary">용어 / Glossary</a></aside>
+    <aside class="toc" aria-label="Table of contents"><strong>On this page</strong><a class="toc-h2" href="#whats-new">What’s new in v0.9.5</a><a class="toc-h2" href="#glossary">Glossary</a><a class="toc-h2" href="#용어-glossary">용어 / Glossary</a></aside>
   </main>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.9.3)
+# 하네스 사용자 설명서 (v0.9.5)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -64,6 +64,25 @@
 
 - [D1. Carryover](#d1-carryover)
 - [D2. 참고 자료](#d2-참고-자료)
+
+---
+
+## What's new in v0.9.5
+
+> **v0.9.5** — 2026-05-21 hotfix release. 이전 버전(v0.9.4)의 설치 불능(P0) + 8개 주요 버그를 수정합니다.
+
+### 주요 수정 내역
+
+- **Manifest gap 해소 (T3 + T14b)**: `harness/manifest.json`에 누락된 `scripts/lib/*.py` 모듈 35개 추가. v0.9.4 fresh install에서 발생하던 `ModuleNotFoundError` 완전 해소.
+- **Install-record 자동 생성 (T7)**: `harness init`이 `.harness/installed-manifest.json`을 즉시 생성합니다. v0.9.4에서 `approve` / `verify`가 "install-record not found"로 crash하던 문제 수정.
+- **State show 루트 탐색 수정 (T9)**: `state show` 명령이 CWD에서 `.git` / `.harness`를 위로 탐색합니다. 서브디렉토리에서 실행해도 올바른 프로젝트 루트를 찾습니다.
+- **Daily-four 워크플로 정상화 (BLOCK-2)**: `harness next`가 정상 모드에서 `harness run`을 안내합니다. `init → next → run → check` 네 명령 사이클이 `phase set` 없이도 동작합니다.
+- **에러 코드 통일 (T10)**: 모든 에러에서 non-zero exit code를 반환합니다. v0.9.4에서 발생하던 CI 우회 가능성(rc=0) 수정.
+- **Dry-run 가짜 격리 수정 (STALE-2)**: `upgrade --dry-run`이 sha256이 일치하는 workaround 파일을 잘못 quarantine하지 않습니다.
+- **Done→done 멱등 noop (T13)**: `harness phase set done` 반복 실행 시 rc=0으로 noop 처리. 회귀 시에는 `EXIT_OPERATIONAL` 반환.
+- **Atomic install helper (T14a)**: `scripts/lib/atomic_io.py` 추가. install.py / upgrade.py wire-in은 v0.9.6으로 이연.
+- **Hash 검증 매트릭스 활성화 (STALE-3)**: `check --verify-hashes`가 per-policy sha256 4개 필드를 실제로 검증합니다.
+- **Upgrade 호환 테스트 (T15)**: v0.9.4 → v0.9.5 in-place upgrade를 검증하는 테스트 3종 추가.
 
 ---
 
@@ -769,8 +788,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.3 -m "Release v0.9.3"
-git push origin v0.9.3
+git tag -s v0.9.5 -m "Release v0.9.5"
+git push origin v0.9.5
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -780,7 +799,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.3
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.5
 ```
 
 ### A2.5 Trust-Downgrade Refusal
@@ -884,9 +903,9 @@ Failure → exit 10 (audit chain failure).
 
 ### A4.1 사용 흐름
 
-1. 터미널에서 `python3 scripts/harness.py release v0.9.0` 실행
-2. 하네스가 묻습니다: `Type 'release v0.9.0' to confirm:`
-3. 정확히 `release v0.9.0`를 타이핑하고 Enter
+1. 터미널에서 `python3 scripts/harness.py release v0.9.5` 실행
+2. 하네스가 묻습니다: `Type 'release v0.9.5' to confirm:`
+3. 정확히 `release v0.9.5`를 타이핑하고 Enter
 
 다른 답 (`y`, Ctrl+C, 다른 문자열)은 cancel로 처리되고 release는 진행되지 않습니다.
 
@@ -914,7 +933,7 @@ CI 환경에서는 별도의 trust path (`HARNESS_BY_TRUST` + OIDC)를 사용합
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.9.0
+   git verify-tag v0.9.5
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
@@ -1085,7 +1104,7 @@ python3 scripts/harness.py approve-nonce mint --audience release.publish [--ttl 
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.9.0` | Release tag 버전 검증 |
+| `release-check --expected-version v0.9.5` | Release tag 버전 검증 |
 
 ### B2.6 FSD (Fast Slash-command Dispatch)
 
@@ -1229,8 +1248,8 @@ python3 /path/to/project/scripts/harness.py check
 ### C3.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.9.0 --dry-run
-python3 scripts/upgrade_harness.py --version v0.9.0
+python3 scripts/upgrade_harness.py --version v0.9.5 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.5
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -1242,14 +1261,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.9.0 \
+  --version v0.9.5 \
   --dry-run
 ```
 
 ### C3.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.0 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.5 --dry-run
 ```
 
 ### C3.5 오래된 수동 설치 adopt
@@ -1331,7 +1350,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.9.0 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.9.5 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 
