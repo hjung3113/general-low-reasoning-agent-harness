@@ -63,6 +63,7 @@ APPROVER_EMAIL = "workaround-test@example.com"
 # (updated during v0.9.5 hotfix; correct to overwrite with --force).
 _KNOWN_DIVERGENT = {
     "scripts/lib/audit.py",
+    "scripts/lib/audit_chain.py",   # f7d1081: final_after_sha256 fix differs from v0.9.4 workaround copy
     "scripts/lib/audit_verify_cli.py",
     "scripts/lib/hooks.py",
     "scripts/lib/phase_cli.py",
