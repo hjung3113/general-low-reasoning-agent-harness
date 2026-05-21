@@ -273,12 +273,59 @@ class AtomicInstallResult:
     aborted: bool = False
 
 
+def _write_completion_sentinel(staging_dir: Path) -> None:
+    """Write a durable completion sentinel alongside *staging_dir*.
+
+    Sentinel path: ``staging_dir.parent / (staging_dir.name + ".complete")``
+    Written via fsync(tmp_fd) + os.replace + fsync(parent_dir_fd) for
+    durability.  The ``.complete.tmp`` intermediate is always unlinked (either
+    by os.replace on success, or explicitly on failure).
+    """
+    sentinel_path = staging_dir.parent / (staging_dir.name + ".complete")
+    sentinel_tmp = staging_dir.parent / (staging_dir.name + ".complete.tmp")
+    fd = os.open(str(sentinel_tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.replace(str(sentinel_tmp), str(sentinel_path))
+    except BaseException:
+        # If os.replace fails, clean up the tmp file so it doesn't linger.
+        try:
+            os.unlink(str(sentinel_tmp))
+        except FileNotFoundError:
+            pass
+        raise
+    parent_fd = os.open(str(sentinel_path.parent), os.O_RDONLY)
+    try:
+        try:
+            os.fsync(parent_fd)
+        except OSError:
+            pass  # best-effort on platforms that reject dir fsync
+    finally:
+        os.close(parent_fd)
+
+
+def _cleanup_staging_and_journal(staging_dir: Path, journal_path: Path) -> None:
+    """Best-effort cleanup of staging directory and journal file."""
+    try:
+        _rmdir_recursive(staging_dir)
+    except OSError:
+        pass
+    try:
+        journal_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def atomic_install_batch(
     staging_dir: Path,
     target: Path,
     journal_path: Path,
     *,
     sort_key: Optional[Callable[[str], object]] = None,
+    defer_cleanup: bool = False,
 ) -> AtomicInstallResult:
     """Rename files from ``staging_dir`` into ``target`` via ``os.replace``.
 
@@ -462,17 +509,12 @@ def atomic_install_batch(
             jf.flush()
             result.completed.append(rel)
 
-    # Clean up staging dir on full success.
-    try:
-        _rmdir_recursive(staging_dir)
-    except OSError:
-        pass  # Best-effort cleanup; not a hard failure.
-
-    # Remove the journal on clean completion (no partial state to recover).
-    try:
-        journal_path.unlink()
-    except FileNotFoundError:
-        pass
+    # Success path: cleanup or defer (write sentinel).
+    if not result.aborted:
+        if defer_cleanup:
+            _write_completion_sentinel(staging_dir)
+        else:
+            _cleanup_staging_and_journal(staging_dir, journal_path)
 
     return result
 
