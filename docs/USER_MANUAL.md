@@ -80,7 +80,8 @@
 - **에러 코드 통일 (T10)**: 모든 에러에서 non-zero exit code를 반환합니다. v0.9.4에서 발생하던 CI 우회 가능성(rc=0) 수정.
 - **Dry-run 가짜 격리 수정 (STALE-2)**: `upgrade --dry-run`이 sha256이 일치하는 workaround 파일을 잘못 quarantine하지 않습니다.
 - **Done→done 멱등 noop (T13)**: `harness phase set done` 반복 실행 시 rc=0으로 noop 처리. 회귀 시에는 `EXIT_OPERATIONAL` 반환.
-- **Atomic install helper (T14a)**: `scripts/lib/atomic_io.py` 추가. install.py / upgrade.py wire-in은 v0.9.6으로 이연.
+- **Atomic install helper (T14a, T3/T4 wire-in v0.9.7)**: `scripts/lib/atomic_io.py` 도입 + install.py / upgrade.py 가 staging 디렉토리에 stage 후 `os.replace` 로 atomic 하게 finalize. 중단된 설치는 `.harness/.staging-<runid>/` 가 남아 `harness check` 가 감지하고 `state repair` 로 복구합니다.
+- **Init/upgrade 진행 상태 (v0.9.7)**: `harness init` 과 `harness upgrade` 가 stderr 로 phase 별 진행 줄을 출력합니다 (`staging files... [N/M]`, `applying atomic batch... [N/M]`, `writing pending sidecar...`, `syncing roomodes...`, `finalizing...`). `--quiet` 플래그로 끌 수 있습니다. stdout 의 최종 요약 줄은 변하지 않습니다.
 - **Hash 검증 매트릭스 활성화 (STALE-3)**: `check --verify-hashes`가 per-policy sha256 4개 필드를 실제로 검증합니다.
 - **Upgrade 호환 테스트 (T15)**: v0.9.4 → v0.9.5 in-place upgrade를 검증하는 테스트 3종 추가.
 
@@ -1160,6 +1161,20 @@ warning: 중단된 설치 감지 (runid=99999-20260521T100000Z-abcdef, age=1200s
 ```
 
 이 경우 `state repair` 를 실행하세요.
+
+### B2.3b v0.9.4 → v0.9.7 업그레이드 시 주의사항 (격리 경고)
+
+v0.9.4 설치에는 `harness/manifest.json` 에 포함되지 않은 `scripts/lib/*.py` 파일이 있을 수 있습니다 (v0.9.4 STALE-1 / Manifest-gap 버그). v0.9.5 이상으로 업그레이드하면 매니페스트가 정정되면서 이 "manifest 에 없는데 디스크에는 있는" 파일들이 `.harness/conflicts/` 로 격리될 수 있습니다.
+
+업그레이드 후 다음을 확인하세요:
+
+```bash
+ls .harness/conflicts/ 2>/dev/null
+```
+
+격리된 파일이 모두 v0.9.4 잔재(매니페스트에 새로 추가된 lib 파일과 같은 이름)이고 현재 설치된 `scripts/lib/<name>.py` 가 새 콘텐츠로 정상 동작한다면, `.harness/conflicts/` 폴더는 안전하게 삭제할 수 있습니다.
+
+[Note (English): v0.9.4 installs may carry `scripts/lib/*.py` files that were not listed in `harness/manifest.json` (the v0.9.4 STALE-1 bug). Upgrading to v0.9.5+ quarantines those leftovers under `.harness/conflicts/`. If the new install has working `scripts/lib/<name>.py` on disk, the quarantine folder is safe to delete.]
 
 ### B2.4 Session Lock
 

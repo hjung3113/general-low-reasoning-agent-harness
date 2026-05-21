@@ -1343,6 +1343,12 @@ $ echo $?
 <p><code>harness check</code> 명령이 <code>.harness/</code> 안에서 600초(10분) 이상 방치된 staging 디렉토리를 감지하면 경고를 출력합니다:</p>
 <pre><code>warning: 중단된 설치 감지 (runid=99999-20260521T100000Z-abcdef, age=1200s). 복구: python3 scripts/harness.py state repair [Aborted install detected; recover with state repair]</code></pre>
 <p>이 경우 <code>state repair</code> 를 실행하세요.</p>
+<h3 id="b23b-v094-v097-isolation">B2.3b v0.9.4 → v0.9.7 업그레이드 시 주의사항 (격리 경고)<a class="anchor" href="#b23b-v094-v097-isolation" aria-label="Link to this section">§</a></h3>
+<p>v0.9.4 설치에는 <code>harness/manifest.json</code> 에 포함되지 않은 <code>scripts/lib/*.py</code> 파일이 있을 수 있습니다 (v0.9.4 STALE-1 / Manifest-gap 버그). v0.9.5 이상으로 업그레이드하면 매니페스트가 정정되면서 이 "manifest 에 없는데 디스크에는 있는" 파일들이 <code>.harness/conflicts/</code> 로 격리될 수 있습니다.</p>
+<p>업그레이드 후 다음을 확인하세요:</p>
+<pre><code class="language-bash">ls .harness/conflicts/ 2&gt;/dev/null</code></pre>
+<p>격리된 파일이 모두 v0.9.4 잔재(매니페스트에 새로 추가된 lib 파일과 같은 이름)이고 현재 설치된 <code>scripts/lib/&lt;name&gt;.py</code> 가 새 콘텐츠로 정상 동작한다면, <code>.harness/conflicts/</code> 폴더는 안전하게 삭제할 수 있습니다.</p>
+<p><em>Note (English):</em> v0.9.4 installs may carry <code>scripts/lib/*.py</code> files that were not listed in <code>harness/manifest.json</code> (the v0.9.4 STALE-1 bug). Upgrading to v0.9.5+ quarantines those leftovers under <code>.harness/conflicts/</code>. If the new install has working <code>scripts/lib/&lt;name&gt;.py</code> on disk, the quarantine folder is safe to delete.</p>
 <h3 id="b24-session-lock">B2.4 Session Lock<a class="anchor" href="#b24-session-lock" aria-label="Link to this section">§</a></h3>
 <div class="table-wrap"><table>
 <thead><tr>

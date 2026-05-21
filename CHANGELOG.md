@@ -35,8 +35,24 @@ _No further unreleased breaking changes._
   (system); failing set may differ under Python 3.14+ (reseed with
   `scripts/refresh_known_failures.sh` in the target env).
 
+### UX
+- `harness init` / `harness upgrade` emit phase-by-phase progress lines on
+  stderr (`staging files... [N/M]`, `applying atomic batch... [N/M]`,
+  `writing pending sidecar...`, `syncing roomodes...`, `finalizing...`). Disable
+  with `--quiet`. stdout summary is unchanged.
+- Bilingual install/upgrade failure messages reformatted: separate Korean and
+  English blocks with the `state repair` recovery command on its own copy-pasteable line.
+- `harness check` collapses multiple stale-staging warnings into a single
+  `{N}개 중단된 설치 감지 (oldest runid=…)` summary when N >= 2.
+
+### Refactor
+- `lib/install._atomic_write_json_fsync` unified onto `lib/atomic_io.atomic_write_text`
+  (single canonical fsync + dir-fsync + Windows retry-replace path).
+
 ### Docs
 - USER_MANUAL: new "중단된 설치 복구" subsection with success/failure example output.
+- USER_MANUAL: new "v0.9.4 → v0.9.7 업그레이드 시 주의사항 (격리 경고)" section
+  documenting `.harness/conflicts/` leftovers from the v0.9.4 manifest-gap bug.
 
 ### Deferred to v0.9.8
 - Managed-append + `write_text_file` content-mutating atomic staging

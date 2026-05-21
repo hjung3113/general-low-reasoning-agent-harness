@@ -39,9 +39,10 @@
     <li><strong>에러 코드 통일:</strong> 모든 에러에서 non-zero exit code 반환. CI 우회(rc=0) 수정.</li>
     <li><strong>State show 루트 탐색:</strong> <code>state show</code>가 CWD에서 <code>.git</code> / <code>.harness</code>를 위로 탐색. 서브디렉토리에서도 올바른 루트를 찾습니다.</li>
     <li><strong>Hash 검증 활성화:</strong> <code>check --verify-hashes</code>가 per-policy sha256 4개 필드를 실제로 검증합니다.</li>
-    <li><strong>Atomic install helper:</strong> <code>scripts/lib/atomic_io.py</code> 추가. install.py / upgrade.py wire-in은 v0.9.6으로 이연.</li>
+    <li><strong>Atomic install (T3/T4 wire-in, v0.9.7):</strong> <code>scripts/lib/atomic_io.py</code> 와 install.py / upgrade.py 연결 완료. staging &rarr; <code>os.replace</code> finalize. 중단 시 <code>.harness/.staging-&lt;runid&gt;/</code> 가 남고 <code>harness check</code> 가 감지, <code>state repair</code> 로 복구.</li>
+    <li><strong>Init/upgrade 진행 표시 (v0.9.7):</strong> stderr 에 phase 별 진행 줄 (<code>staging files... [N/M]</code> 등). <code>--quiet</code> 로 비활성. stdout 요약은 불변.</li>
   </ul>
-  <p>전체 변경사항: <a href="../../CHANGELOG.md">CHANGELOG.md</a> § v0.9.5</p>
+  <p>전체 변경사항: <a href="../../CHANGELOG.md">CHANGELOG.md</a> § v0.9.7</p>
 </section>
 <section id="glossary">
 <h2 id="용어-glossary">용어 / Glossary<a class="anchor" href="#용어-glossary" aria-label="Link to this section">§</a></h2>
