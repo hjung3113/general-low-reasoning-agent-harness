@@ -26,6 +26,9 @@ tmp/
 # only the .sha256 pin files are checked-in (CI verifies the hash after rebuild).
 tests/fixtures/*.tar.gz
 
+# Test cache — junit.xml from refresh_known_failures.sh; never committed (Codex MAJOR-4).
+.harness-test-cache/
+
 # Python build / install artifacts
 __pycache__/
 *.egg-info/
