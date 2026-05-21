@@ -187,10 +187,17 @@ class TestHarnessNextAfterInit:
 
 class TestStatusNextParity:
     def test_status_next_parity(self, fresh_target: Path) -> None:
-        """harness status 'Next action:' line must equal `harness next` stdout."""
-        next_result = _run("next", cwd=str(fresh_target))
+        """harness status 'Next action:' line must equal `harness next` canonical output.
+
+        Parity is tested in HARNESS_ADVANCED=1 mode where both status and next
+        use compute_next_action verbatim (NEW-4 contract).  In normal mode
+        harness next maps agent-safe transitions to 'harness run' for UX, which
+        intentionally diverges from the canonical phase command shown by status.
+        """
+        advanced_env = {**os.environ, "HARNESS_ADVANCED": "1"}
+        next_result = _run("next", cwd=str(fresh_target), env=advanced_env)
         assert next_result.returncode == 0, (
-            f"harness next failed: {next_result.stderr}"
+            f"harness next (advanced) failed: {next_result.stderr}"
         )
         status_result = _run("status", cwd=str(fresh_target))
         assert status_result.returncode == 0, (
@@ -210,7 +217,7 @@ class TestStatusNextParity:
         )
 
         assert next_cmd == next_action_line, (
-            f"harness next ({next_cmd!r}) != status 'Next action' ({next_action_line!r})"
+            f"harness next ADVANCED ({next_cmd!r}) != status 'Next action' ({next_action_line!r})"
         )
 
 
