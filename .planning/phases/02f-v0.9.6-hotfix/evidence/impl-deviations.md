@@ -39,3 +39,19 @@ The evidence file documents this equivalence. Full CLI SIGTERM tests deferred to
 **IMPL-PLAN:** "version constant updated everywhere."
 
 **Actual:** `HARNESS_VERSION` in `scripts/lib/harness.py` is computed dynamically from `git describe --tags` at runtime — there is no static string to bump. The `version` field in installed manifests reflects the git tag at install time. Version refs in docs/README were updated (T11); no static constant bump needed.
+
+---
+
+## FIX-4: Pass A managed-append writes + retired-file deletion remain pre-atomic (narrowed claim)
+
+**IMPL-PLAN claim:** "Pass A is write-free — no target file mutations before pending sidecar."
+
+**Actual:** Restructuring managed-append writes and retired-file deletion to occur after the pending sidecar is written was assessed as high refactor risk for v0.9.7. The narrower guarantee is:
+
+- **harness-owned files**: fully atomic via os.replace(pending→final), pending sidecar rewritten post-batch (FIX-3 ✓)
+- **managed-append targets**: written in Pass A (in-place, pre-sidecar) — NOT atomic for v0.9.7
+- **retired-file deletion**: performed in Pass A (pre-sidecar) — NOT atomic for v0.9.7
+
+Both code locations now carry a `NOTE (FIX-4 narrowing)` comment explaining the deferral.
+
+**Disposition:** Deferred to v0.9.8. CHANGELOG already documents "Managed-append and composed write_text_file updates remain in-place." No IMPL-PLAN amendment required — claim is narrowed not violated for the harness-owned scope.

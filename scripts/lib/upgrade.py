@@ -779,6 +779,13 @@ def upgrade(
         new_hash = file_hash(source)
 
         if entry.policy == "managed-append":
+            # NOTE (FIX-4 narrowing): managed-append writes happen here in Pass A,
+            # BEFORE the pending sidecar is written and before the atomic batch.
+            # This is intentional for v0.9.7: atomicising managed-append content
+            # mutations is deferred to v0.9.8.  The durability guarantee for
+            # harness-owned files (via os.replace pending→final) does NOT extend
+            # to managed-append targets.  See CHANGELOG "Deferred to v0.9.8" and
+            # impl-deviations.md FIX-4 entry.
             from lib.append_block import plan_managed_append, plan_managed_append_retirement
             result = plan_managed_append(
                 source=source,
@@ -871,6 +878,9 @@ def upgrade(
             if not dry_run:
                 write_copy(destination, conflict_path)
             continue
+        # NOTE (FIX-4 narrowing): retired-file deletion happens here in Pass A,
+        # before the pending sidecar / atomic batch.  Moving this to after the
+        # batch is deferred to v0.9.8.  See impl-deviations.md FIX-4 entry.
         if not dry_run:
             if destination.exists():
                 destination.unlink()
