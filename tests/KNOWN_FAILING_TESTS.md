@@ -12,7 +12,6 @@ Count: 36
 - These tests fail when the full suite runs together (test isolation issues, sys.path pollution, or environment requirements not met in this local dev setup).
 - `scripts/test_*.py` integration tests excluded — they require a live installed target directory or specific environment state. Run separately if needed.
 - `tests/slash/*` and `tests/smoke/*` failures are pre-existing from before v0.9.7.
-- `tests/test_upgrade_dry_run.py::TestUpgradeDryRunNoFalseQuarantine::test_no_quarantine_warning_on_fresh_install` is pre-existing (.roomodes.new conflict).
 - `tests/install/test_manifest_trust_root_deferral.py` failures: pre-existing (S14 trust-root deferral not yet implemented).
 - `tests/phase_autopilot/test_cycle2_p2_jti_corrupted.py` failures: pre-existing JTI rotation implementation gap.
 - `tests/phase_txn/test_cycle1_fixes.py::TestPendingSentinelRecovery` failures: pre-existing (sentinel recovery contract mismatch).
@@ -55,5 +54,4 @@ tests/smoke/test_grep_gate_stale_terms.py::TestWordBoundaryMatching::test_autopi
 tests/smoke/test_grep_gate_stale_terms.py::TestWordBoundaryMatching::test_windows_containment_degraded_not_flagged
 tests/smoke/test_verify_fix_lines.py::test_each_exit_case_passes[8-approve_during_autopilot]
 tests/smoke/test_verify_fix_lines.py::test_enforcer_exits_zero
-tests/test_upgrade_dry_run.py::TestUpgradeDryRunNoFalseQuarantine::test_no_quarantine_warning_on_fresh_install
 ```

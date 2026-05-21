@@ -369,8 +369,25 @@ def install(
             f"[Install aborted (runid={runid}). Recover with: python3 scripts/harness.py state repair]"
         )
 
-    # Phase 5: sync roomodes + finalize.
+    # Phase 5: sync roomodes + rewrite pending + finalize.
     sync_roomodes_profile_modes(target=target, profiles=profiles, source_root=root)
+
+    # Phase 5a (mirror of upgrade.py FIX-3 B4a): the pending sidecar's .roomodes hashes
+    # were composed from the staged template content (pre-sync). sync_roomodes_profile_modes
+    # mutates target/.roomodes with profile-injected content, producing a different hash.
+    # Rewrite the pending sidecar with post-sync hashes BEFORE the final os.replace so the
+    # finalized installed-manifest.json matches what's actually on disk.
+    roomodes_path = target / ".roomodes"
+    if (
+        roomodes_path.exists()
+        and ".roomodes" in payload.get("files", {})
+    ):
+        new_hash = file_hash(roomodes_path)
+        payload["files"][".roomodes"]["sha256"] = new_hash
+        payload["files"][".roomodes"]["installed_sha256"] = new_hash
+        payload["files"][".roomodes"]["current_sha256"] = new_hash
+        _atomic_write_json_fsync(pending_path, payload)
+
     final_path = harness_dir / "installed-manifest.json"
     os.replace(str(pending_path), str(final_path))
 
