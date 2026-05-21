@@ -596,6 +596,58 @@ def should_check_as_installed_target(root: Path, *, harness_version: str = "0.0.
     return version not in {MANIFEST_SOURCE_VERSION, harness_version}
 
 
+def _scan_stale_staging_dirs(
+    target: Path,
+) -> list[tuple[Path, str, float | None]]:
+    """Return stale staging dirs as list of (path, runid, age_secs) tuples.
+
+    A staging dir is stale when:
+    - It has a sibling ``.staging-<name>.journal.jsonl`` file, AND
+    - ``install_recovery._is_stale(staging_dir)`` is True (age >= 600s OR .aborted marker).
+
+    This avoids false-positives on live install operations (fresh dirs < 600s old).
+    Per-task one warning row per stale dir (LRR M-3).
+    """
+    import fnmatch as _fnmatch
+    import time as _time
+    try:
+        from lib.install_recovery import _is_stale as _ir_is_stale
+    except ImportError:
+        return []
+
+    harness = target / ".harness"
+    if not harness.is_dir():
+        return []
+
+    results: list[tuple[Path, str, float | None]] = []
+    try:
+        import os as _os
+        with _os.scandir(str(harness)) as it:
+            for entry in it:
+                if not (
+                    _fnmatch.fnmatchcase(entry.name, ".staging-*")
+                    and entry.is_dir(follow_symlinks=False)
+                ):
+                    continue
+                staging_dir = Path(entry.path)
+                runid = entry.name[len(".staging-"):]
+                journal = harness / (entry.name + ".journal.jsonl")
+                if not journal.exists():
+                    continue  # no journal = not a harness install staging dir
+                if not _ir_is_stale(staging_dir):
+                    continue  # not stale yet (live install, < 600s)
+                try:
+                    import time as _t
+                    mtime = staging_dir.stat().st_mtime
+                    age_secs: float | None = _t.time() - mtime
+                except OSError:
+                    age_secs = None
+                results.append((staging_dir, runid, age_secs))
+    except OSError:
+        pass
+    return results
+
+
 def check_installed_target(
     target: Path,
     expected_entries: list[ManifestEntry] | None = None,
@@ -723,6 +775,15 @@ def check_installed_target(
             check_phase_state_semantics(path)
     if roadmap_state_sync_applicable(target):
         check_roadmap_state_sync(target)
+    # T5: detect stale aborted-install staging directories.
+    for stale_path, runid, age_secs in _scan_stale_staging_dirs(target):
+        age_str = f"{int(age_secs)}" if age_secs is not None else "?"
+        print(
+            f"warning: 중단된 설치 감지 (runid={runid}, age={age_str}s). "
+            f"복구: python3 scripts/harness.py state repair "
+            f"[Aborted install detected; recover with state repair]"
+        )
+
     for warning in managed_block_warnings(target):
         print(f"warning: {warning.code} in {warning.path}: {warning.message}")
     if verify_hashes:
