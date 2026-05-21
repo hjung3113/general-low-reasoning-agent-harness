@@ -1,4 +1,4 @@
-# 하네스 사용자 설명서 (v0.9.6)
+# 하네스 사용자 설명서 (v0.9.7)
 
 이미 하네스가 설치된 target repository에서 일하는 사람을 위한 설명서입니다.
 어떻게 시작하고, 무엇을 prompt하고, 어떤 명령을 언제 쓰는지 처음부터 끝까지 다룹니다.
@@ -788,8 +788,8 @@ release@harness namespaces="git" ssh-ed25519 AAAA... maintainer@example.com
 ```bash
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.6 -m "Release v0.9.6"
-git push origin v0.9.6
+git tag -s v0.9.7 -m "Release v0.9.7"
+git push origin v0.9.7
 ```
 
 Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
@@ -799,7 +799,7 @@ Git ≥ 2.34 필요 (Windows: Git for Windows 포함).
 `harness upgrade`는 자동 검증. 수동 검증:
 
 ```bash
-git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.6
+git -c gpg.ssh.allowedSignersFile=docs/trust/allowed-signers verify-tag v0.9.7
 ```
 
 ### A2.5 Trust-Downgrade Refusal
@@ -903,9 +903,9 @@ Failure → exit 10 (audit chain failure).
 
 ### A4.1 사용 흐름
 
-1. 터미널에서 `python3 scripts/harness.py release v0.9.6` 실행
-2. 하네스가 묻습니다: `Type 'release v0.9.6' to confirm:`
-3. 정확히 `release v0.9.6`를 타이핑하고 Enter
+1. 터미널에서 `python3 scripts/harness.py release v0.9.7` 실행
+2. 하네스가 묻습니다: `Type 'release v0.9.7' to confirm:`
+3. 정확히 `release v0.9.7`를 타이핑하고 Enter
 
 다른 답 (`y`, Ctrl+C, 다른 문자열)은 cancel로 처리되고 release는 진행되지 않습니다.
 
@@ -933,7 +933,7 @@ CI 환경에서는 별도의 trust path (`HARNESS_BY_TRUST` + OIDC)를 사용합
 1. `docs/trust/allowed-signers` 확인 (signer key 최신인지)
 2. Properly signed release tag로 upgrade:
    ```bash
-   git verify-tag v0.9.6
+   git verify-tag v0.9.7
    python3 scripts/harness.py upgrade --target /path/to/project
    ```
 3. Dev 환경이면 `--allow-unsigned-dev` 사용 (처음 설치만)
@@ -1149,7 +1149,7 @@ warning: 중단된 설치 감지 (runid=99999-20260521T100000Z-abcdef, age=1200s
 | `check` | 설치된 harness 구조 검증 |
 | `check --worktree` | Staged/unstaged/untracked changes가 approved paths 내인지 확인 |
 | `doctor` | Workflow 품질 신호 진단 |
-| `release-check --expected-version v0.9.6` | Release tag 버전 검증 |
+| `release-check --expected-version v0.9.7` | Release tag 버전 검증 |
 
 ### B2.6 FSD (Fast Slash-command Dispatch)
 
@@ -1293,8 +1293,8 @@ python3 /path/to/project/scripts/harness.py check
 ### C3.2 Installed target bootstrapper로 upgrade
 
 ```bash
-python3 scripts/upgrade_harness.py --version v0.9.6 --dry-run
-python3 scripts/upgrade_harness.py --version v0.9.6
+python3 scripts/upgrade_harness.py --version v0.9.7 --dry-run
+python3 scripts/upgrade_harness.py --version v0.9.7
 python3 scripts/check_harness.py
 python3 scripts/doctor_harness.py
 ```
@@ -1306,14 +1306,14 @@ Install state에 git source provenance가 있으면 bootstrapper는 그 repo를 
 ```bash
 python3 scripts/upgrade_harness.py \
   --repo https://github.com/hjung3113/general-low-reasoning-agent-harness.git \
-  --version v0.9.6 \
+  --version v0.9.7 \
   --dry-run
 ```
 
 ### C3.4 Remote access 막힌 경우 local source fallback
 
 ```bash
-python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.6 --dry-run
+python3 scripts/upgrade_harness.py --source /path/to/newer-harness --version v0.9.7 --dry-run
 ```
 
 ### C3.5 오래된 수동 설치 adopt
@@ -1395,7 +1395,7 @@ PowerShell temp install 예시:
 
 ```powershell
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-git clone --depth 1 --branch v0.9.6 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
+git clone --depth 1 --branch v0.9.7 https://github.com/hjung3113/general-low-reasoning-agent-harness.git $tmp.FullName
 py -3 "$($tmp.FullName)\scripts\install_harness.py" --interactive
 ```
 

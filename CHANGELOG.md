@@ -13,6 +13,35 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.7 (2026-05-21)
+
+### Hardening
+- harness init/upgrade harness-owned file replacement now uses resumable per-file
+  atomic staging with a pending-manifest sidecar, completion sentinel, and runid
+  collision-resistant naming (`scripts/lib/atomic_io.py` + `install_recovery.py`).
+  Crashes mid-install (SIGTERM, power loss, manual abort) are recoverable via
+  `harness state repair`. Managed-append and composed write_text_file updates
+  remain in-place and are deferred to a later release.
+- Skip-upgrade guard refuses v0.9.4 → v0.9.7 with an actionable bilingual message
+  (override: `HARNESS_ALLOW_SKIP_UPGRADE=1`).
+- `harness state repair` exit codes: 0 (clean / no-op), 1 (quarantined partial),
+  2 (catastrophic).
+- `harness check` now warns when a stale aborted-install staging directory is
+  detected (age ≥ 600s OR `.aborted` marker).
+- Test fixture: v0.9.4 tarball includes deterministic `.harness/` state; upgrade
+  tests now exercise real upgrade paths (synthetic seeders removed).
+- `tests/KNOWN_FAILING_TESTS.md` enumerates pre-existing failing node-ids; CI
+  gate via `tests/test_known_failures_drift.py`.
+
+### Docs
+- USER_MANUAL: new "중단된 설치 복구" subsection with success/failure example output.
+
+### Deferred to v0.9.8
+- Managed-append + `write_text_file` content-mutating atomic staging
+- Pre-existing test failure triage (76 tests)
+- BUG-4 release-check rc=0
+- Symlink-aware staging; Windows support
+
 ## v0.9.6 — 2026-05-21
 
 ### Documentation hotfix
