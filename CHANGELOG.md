@@ -13,6 +13,30 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.6 — 2026-05-21
+
+### Documentation hotfix
+
+Pure-docs release. No code changes. Brings the user-facing docs surface back
+in sync with the actual shipped behavior post-v0.9.5.
+
+- **USER_MANUAL.md**: bump version header to v0.9.6; preserve What's new in
+  v0.9.5 section as historical context.
+- **README.md**: bump installation/upgrade examples and `release-check`
+  expected-version to v0.9.6.
+- **docs/site/*.html**: regenerate `index.html`, `manual.html`,
+  `advanced.html`, `use-cases.html` against the new version header.
+- **docs/use-cases/README.md**: bump intro version reference.
+
+### Deferred to next release
+
+Substantive work for the v0.9.5 known limitations (T14a `atomic_install_batch`
+wire-in into `install.py` / `upgrade.py`, fixture `.harness/` inclusion in
+`build_v094_fixture.py`, KNOWN_FAILING_TESTS.md) was scoped under
+`.planning/phases/02f-v0.9.6-hotfix/` (DRAFT plan + 3-panel Opus review) but
+DEFERRED. v0.9.6 ships docs only; the deferred items roll forward to the next
+session's work.
+
 ## v0.9.5 — 2026-05-21
 
 ### Fixed (P0 / P1 hotfixes from v0.9.4 install-broken report)
