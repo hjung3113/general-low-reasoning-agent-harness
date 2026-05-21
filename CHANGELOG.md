@@ -13,6 +13,67 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.5 — 2026-05-21
+
+### Fixed (P0 / P1 hotfixes from v0.9.4 install-broken report)
+
+- **Manifest gap (T3 + T14b)**: 35 missing `scripts/lib/*.py` modules added to
+  `harness/manifest.json`; fresh `harness init` now ships all required files.
+  `scripts/lib/install_recovery.py` (added in T14b) also registered.
+- **Import-smoke broadened (T8a)**: `check.py _collect_lib_imports_from_file`
+  now also catches `from lib import X` forms (previously skipped), preventing
+  this manifest-gap class from recurring silently.
+- **Install-record bootstrap (T7)**: fresh `harness init` now writes
+  `.harness/installed-manifest.json` immediately; `approve` / `verify` no
+  longer fail with "install-record not found" on the very first run.
+- **Wrong-tree root resolution (T9)**: `state_cli.resolve_root` walks up from
+  CWD to the nearest `.git` / `.harness` ancestor; fixes 5× `__file__.parents`
+  wrong-tree crashes.
+- **Error code map (T10)**: unified exit-code table; harness now exits non-zero
+  on all errors (fixes CI-bypass via `rc=0` on errors, NEW-3).
+- **Dry-run quarantine false-positive (T6 / STALE-2)**: upgrade `--dry-run`
+  no longer quarantines workaround files whose sha256 matches the v0.9.5
+  source.
+- **Done→done idempotent noop (T13)**: `harness phase set done` when already
+  done returns `rc=0`; divergent done-state returns `EXIT_OPERATIONAL`.
+- **Reopen smoke bypass (T12)**: dual-env gate
+  (`HARNESS_SMOKE_TEST=1 + HARNESS_SMOKE_BYPASS_SPEED_BUMP=1`) allows CI smoke
+  to reopen phases; bypass recorded as `proof_class=smoke_bypass`.
+- **Audit-verify tail check (f7d1081)**: `audit_verify_cli` now compares
+  `final_after_sha256` (correct field) instead of `final_tip_hash` against
+  `phase-state.json` sha256.
+- **Chain re-anchor audit (T16)**: upgrade re-hashes `installed_files_chain_hash`
+  after manifest expansion and writes a `release.trust.rechained` audit row.
+- **Daily-four UX (BLOCK-2)**: `harness next` in normal mode now emits
+  `harness run` instead of `harness phase set plan`; the daily-four workflow
+  (`init → next → run → check`) no longer requires explicit `phase set`.
+- **Release smoke cases (FIX-5)**: fsd-status-roo/opencode now parse
+  env-prefixed backtick spans; oidc-jti-replay marker check uses correct
+  sha256-based filename.  All 18 smoke cases pass.
+
+### Added
+- **`scripts/lib/install_recovery.py`** (T14b): state-repair module detects
+  and cleans up orphaned `.staging-<pid>/` directories left by interrupted
+  installs; delegated from `harness state repair`.
+- **`scripts/lib/atomic_io.py`** (T14a helper): `atomic_install_batch`
+  stage-then-rename helper landed.  Wire-in to `install.py` / `upgrade.py`
+  write paths deferred to v0.9.6 (see below).
+- **T15 upgrade-compat tests**: `tests/test_smoke_lifecycle.py`,
+  `tests/test_upgrade_from_v094_clean.py`,
+  `tests/test_upgrade_from_v094_with_workaround.py` (5 + 5 + 7 tests).
+
+### Known limitations / deferred to v0.9.6
+- **`atomic_install_batch` not wired**: the `atomic_io.py` helper is
+  implemented and tested but `install.py` / `upgrade.py` still write files
+  in-place.  An interrupted upgrade leaves a partial install; `state repair`
+  will detect orphaned staging dirs once the wire-in lands.
+- **Fixture `.harness/` not captured**: `tests/fixtures/v094-*.tar.gz` do not
+  include `.harness/installed-manifest.json` / `audit.log`; upgrade tests
+  synthesise the v0.9.4 state rather than replaying a real capture.
+- **Dev-unsigned (`HARNESS_ALLOW_UNSIGNED_DEV=1`) upgrades do not rechain**:
+  the T16 `record_rechain` path is only exercised by signed-tag installs.
+  This is a dev-mode limitation; real signed-tag installs rechain correctly.
+
 ## v0.9.4 — 2026-05-20
 
 ### Added
