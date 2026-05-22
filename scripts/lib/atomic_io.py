@@ -485,7 +485,13 @@ def atomic_install_batch(
             dst.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                os.replace(str(src), str(dst))
+                # v0.9.11: route through replace_with_retry so Windows
+                # AV/indexer transient PermissionError on individual files
+                # gets the same 100/250/500/1000/2000/4000 ms backoff as
+                # atomic_write_text. Previously this raw os.replace would
+                # fail the entire batch on the first locked file.
+                from .durable_fs import replace_with_retry as _rwr
+                _rwr(str(src), str(dst))
             except OSError as exc:
                 # Record the failure in the journal.
                 jf.write(

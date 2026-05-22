@@ -34,7 +34,7 @@ from typing import Union
 
 _OS_KIND = os.name  # "posix" or "nt"; pinned via test_dispatch_constant_matches_os_name
 
-_REPLACE_BACKOFF_SECONDS: tuple[float, ...] = (0.05, 0.10, 0.20, 0.40, 0.80)
+_REPLACE_BACKOFF_SECONDS: tuple[float, ...] = (0.1, 0.25, 0.5, 1.0, 2.0, 4.0)
 
 
 class DurableFsError(OSError):

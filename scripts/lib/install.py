@@ -273,6 +273,13 @@ def install(
     adapters = adapters if adapters is not None else {"roo"}
     profiles = profiles if profiles is not None else {"generic"}
     packs = packs if packs is not None else set()
+
+    # v0.9.11: preflight write-test on target before any real work. Skipped
+    # on dry-run so it does not pollute the target with .harness/.
+    if not dry_run:
+        _resolved_target = target.resolve() if hasattr(target, "resolve") else Path(target).resolve()
+        _preflight_target_writable(_resolved_target)
+
     all_entries = load_manifest(root)
     validate_scope_names(all_entries, adapters=adapters, profiles=profiles, packs=packs)
     entries = select_entries(all_entries, adapters=adapters, profiles=profiles, packs=packs)
@@ -605,6 +612,75 @@ def _stamp_install_trust_origin(
 
 class InstallFailed(RuntimeError):
     """Raised when an atomic install fails and cannot be recovered automatically."""
+
+
+def _preflight_target_writable(target: Path) -> None:
+    """v0.9.11: confirm we can create + write inside ``target/.harness/``.
+
+    Common Windows failure modes this catches up-front, with one clear
+    message + remediation list, instead of a mid-flow PermissionError
+    traceback:
+      - target dir itself read-only for the current user
+      - inherited deny-write ACL
+      - AV / EDR policy blocking dot-prefix directory creation
+      - prior install owned by elevated user; current user cannot overwrite
+      - target on a network share that refused dot-prefix dirs
+
+    Raises SystemExit with rc=1 if any of those is the case. The probe is
+    cleaned up regardless of outcome.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+
+    if not os.access(str(target), os.W_OK):
+        raise SystemExit(
+            f"error: harness init refused — target is not writable: {target}\n"
+            f"\n"
+            f"가능한 원인 + 대처:\n"
+            f"  1) 다른 사용자 권한으로 만들어진 target 폴더 → 새 폴더에 init:\n"
+            f"     python3 scripts/harness.py init --target <new-empty-folder>\n"
+            f"  2) 회사 PC AV / DLP 정책이 쓰기 차단 → 폴더 위치 변경\n"
+            f"     (예: C:\\Users\\<you>\\dev\\<project>)\n"
+            f"  3) 관리자 권한 PowerShell 에서 재시도 (마지막 수단)\n"
+            f"\n"
+            f"[Target directory is not writable by the current user.\n"
+            f"Try a new empty target, move target out of restricted location, or rerun as admin.]"
+        )
+
+    harness_dir = target / ".harness"
+    try:
+        harness_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SystemExit(
+            f"error: harness init refused — cannot create .harness/ in {target}: {exc}\n"
+            f"\n"
+            f"흔한 원인: 회사 PC AV/EDR 가 dot-prefix 디렉토리 생성 차단 (Windows).\n"
+            f"대처:\n"
+            f"  1) target 을 user 디렉토리 안으로 이동:\n"
+            f"     python3 scripts/harness.py init --target C:\\Users\\<you>\\dev\\<project>\n"
+            f"  2) target 폴더에 대해 AV 예외 등록\n"
+            f"\n"
+            f"[Cannot create .harness/ — likely AV/EDR blocks hidden-dir creation. "
+            f"Move target into your user profile or whitelist target in AV settings.]"
+        ) from exc
+
+    probe = harness_dir / ".write-probe"
+    try:
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        raise SystemExit(
+            f"error: harness init refused — .harness/ exists but is not writable: {exc}\n"
+            f"\n"
+            f"흔한 원인: 이전 install 이 관리자 권한으로 돌아 .harness/ 가 다른 사용자 소유.\n"
+            f"대처 (Windows PowerShell):\n"
+            f"  takeown /F .harness /R /A\n"
+            f"  icacls .harness /grant \"$env:USERNAME:(F)\" /T\n"
+            f"  Remove-Item -Recurse -Force .harness\n"
+            f"  python3 scripts\\harness.py init --target .\n"
+            f"\n"
+            f"[.harness/ exists but current user has no write permission. "
+            f"takeown + icacls + delete then retry.]"
+        ) from exc
 
 
 def _atomic_write_json_fsync(path: Path, data: object) -> None:

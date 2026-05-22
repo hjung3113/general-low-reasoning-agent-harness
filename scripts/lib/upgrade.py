@@ -705,6 +705,12 @@ def upgrade(
     if not (root / MANIFEST_PATH).exists():
         raise SystemExit("Upgrade must be run from a harness source tree with harness/manifest.json.")
     target = target.resolve()
+
+    # v0.9.11: same preflight as install — skip on dry-run.
+    if not dry_run:
+        from lib.install import _preflight_target_writable as _preflight
+        _preflight(target)
+
     installed = read_install_state(target)
 
     # T6 / T4 Pass A: skip-upgrade guard BEFORE any state composition or staging.

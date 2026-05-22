@@ -13,6 +13,42 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.11 (2026-05-22) — Windows PermissionError robustness
+
+User report: harness init refused with mid-flow PermissionError traceback
+on a fresh target on a Windows work PC; "user shouldn't have to diagnose
+this." Fix is to make the harness robust to common Windows file-locking
+scenarios on its own, not push the diagnostic burden onto the operator.
+
+### Hardening
+- `lib/durable_fs._REPLACE_BACKOFF_SECONDS`: 50/100/200/400/800 ms
+  (1.55 s total) → 100/250/500/1000/2000/4000 ms (7.85 s total).
+  Windows Defender / EDR scans on freshly-written files commonly hold a
+  handle for 2–5 s; the prior schedule timed out before the scanner
+  released the file.
+- `lib/atomic_io.atomic_install_batch`: per-file rename now routes through
+  `replace_with_retry` instead of raw `os.replace`. Previously a single
+  transient PermissionError on one of ~140 files would abort the whole
+  batch even though the failure was a 1-second AV pin.
+- `lib/install._preflight_target_writable` (new): runs at the top of
+  install (and reused by upgrade). Probes `mkdir target`, `os.access(W_OK)`,
+  `mkdir .harness`, write+unlink `.harness/.write-probe`. Each failure
+  case maps to one actionable bilingual error message naming the likely
+  Windows cause + concrete remediation (new target, takeown/icacls,
+  AV whitelist). Skipped on `--dry-run`.
+- `harness.py main`: top-level `PermissionError` no longer prints a Python
+  traceback. It prints a one-screen Korean+English message listing the
+  three common causes (elevated prior install, AV handle pin, source==target)
+  with concrete fixes. `HARNESS_DEBUG=1` still gives the full traceback.
+
+### Why not just smarter retries
+- AV pins are transient (retry helps).
+- Elevated-prior-install needs takeown/icacls (retry never helps).
+- Source==target / AV-blocked dot-prefix-dir needs operator action.
+
+Preflight separates these three so the user sees the right fix the first
+time instead of grinding through "retry, fail, ask Claude" cycles.
+
 ## v0.9.10 (2026-05-22) — dry-run echo + scripts/ reorg + README sweep
 
 ### Reorg (scripts/)

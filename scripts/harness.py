@@ -1198,6 +1198,35 @@ if __name__ == "__main__":
         raise SystemExit(run())
     except SystemExit:
         raise
+    except PermissionError as _exc:
+        # v0.9.11: top-level PermissionError catcher. Mostly hit on Windows
+        # when AV/EDR holds a file handle longer than the 7.85 s replace
+        # backoff, or when target was originally installed by an elevated
+        # user and a non-elevated retry hits a write-blocked .harness/.
+        # Surface one actionable message instead of a Python traceback.
+        _path_hint = ""
+        try:
+            _path_hint = f" — path: {_exc.filename!r}" if getattr(_exc, "filename", None) else ""
+        except Exception:
+            pass
+        print(
+            f"error: 권한 거부 (PermissionError){_path_hint}\n"
+            f"\n"
+            f"흔한 원인 + 대처:\n"
+            f"  1) target 디렉토리가 다른 사용자 권한으로 만들어짐\n"
+            f"     → 새 폴더에 init 또는 takeown/icacls 로 권한 회수\n"
+            f"  2) AV/EDR (Defender 등) 가 파일 핸들 점유 중\n"
+            f"     → 잠시 후 재시도 (보통 5~10 초). 또는 target 폴더 AV 예외 등록.\n"
+            f"  3) source 와 target 이 같은 폴더 → 다른 폴더로 분리\n"
+            f"\n"
+            f"세부 traceback: HARNESS_DEBUG=1 환경 변수 설정 후 재실행.\n"
+            f"[Top-level PermissionError. Most likely Windows AV handle pin or "
+            f"prior elevated install. Retry, switch target, or whitelist in AV.]",
+            file=sys.stderr,
+        )
+        if os.environ.get("HARNESS_DEBUG") == "1":
+            _traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
     except Exception as _exc:
         if os.environ.get("HARNESS_DEBUG") == "1":
             _traceback.print_exc(file=sys.stderr)
