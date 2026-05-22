@@ -54,8 +54,7 @@ Scoping rationale (§C of S14)
   adapter-facing files plus ``scripts/lib/`` minus the above exemptions.
 
 * Launcher strings (``python3 scripts/harness.py`` etc.) — checked in
-  slash-command Markdown only (adapter commands), NOT in
-  ``scripts/lib/smoke_lifecycle.py`` (backward-compat parser), or historical
+  slash-command Markdown only (adapter commands), NOT in historical
   planning docs.
 
 Consolidation (§A of S14)
@@ -159,10 +158,6 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
         # phase_approve.py — HARNESS_HUMAN appears only in security comments
         # explicitly stating the env var is NOT consulted (Round-4 BLOCK fix).
         "scripts/lib/phase_approve.py",
-        # smoke_lifecycle.py — contains a regex / docstring that documents the
-        # legacy `python3 scripts/harness.py` form for backward-compat parsing
-        # of old command markdown files.
-        "scripts/lib/smoke_lifecycle.py",
         # v0.8.0_todo ux-polish spec — forward-looking note that mentions
         # the old slash name as a problem statement; deferred/historical.
         "docs/superpowers/specs/v0.8.0_todo/2026-05-17-ux-polish.md",

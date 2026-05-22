@@ -959,11 +959,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/smoke_lifecycle.py",
-      "source": "scripts/lib/smoke_lifecycle.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/state.py",
       "source": "scripts/lib/state.py",
       "policy": "harness-owned"

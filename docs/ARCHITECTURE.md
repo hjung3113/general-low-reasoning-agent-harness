@@ -56,7 +56,7 @@ Tier 2 (Tier 1만 의존):
   session, state_diagnostics, workflow_static_checks, state_repair
 
 Tier 3:
-  install, adoption, check, doctor, smoke_lifecycle,
+  install, adoption, check, doctor,
   phase_cli, status_next_cli, state_cli, halt_diary_cli, cli_budgets
 
 Tier 4 (heaviest aggregator):

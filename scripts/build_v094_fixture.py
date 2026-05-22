@@ -75,7 +75,6 @@ MISSING_LIB_MODULES: list[str] = [
     "roomodes_writer.py",
     "safe_open.py",
     "session.py",
-    "smoke_lifecycle.py",
     "state_trust.py",
     "timestamps.py",
     "transition.py",

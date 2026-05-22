@@ -87,7 +87,6 @@
 |---|---|---|---|
 | `check.py` | 1110 | 19종 invariant 검증 | ✅ (단순화 가능) |
 | `doctor.py` | 545 | Drift findings + render (markdown/json) | 🔄 |
-| `smoke_lifecycle.py` | 608 | Adapter-neutral lifecycle smoke driver | ❌ (smoke 폐기 시) |
 | `state_diagnostics.py` | 422 | Malformed-state diagnostic, schema 검증 | ✅ |
 | `state_repair.py` | 371 | Managed marker block 재생성 | ✅ |
 | `halt_diary.py` | 196 | Halt diary 로직 | 🔄 |
@@ -111,7 +110,7 @@ Tier 2: manifest, append_block, state, install_recovery,
         phase_approve, phase_reopen, planning_status, status_next,
         session, state_diagnostics, state_repair, state_trust
 
-Tier 3: install, adoption, check, doctor, smoke_lifecycle,
+Tier 3: install, adoption, check, doctor,
         phase_cli, status_next_cli, state_cli
 
 Tier 4: upgrade (모두 의존)
@@ -138,7 +137,6 @@ Tier 4: upgrade (모두 의존)
 **Module reduction**: 60 → 54 lib modules. **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→11 (fs_fence 제거). **DEAD_LEGACY** 2개 잔존 (Tier B).
 
 **Remaining phases**:
-- smoke_lifecycle removal (DIAGNOSTICS) — 608 LOC
 - halt_diary + cli_budgets optional cleanup — ~700 LOC
 - doctor.py simplification — ~200 LOC potential
 
