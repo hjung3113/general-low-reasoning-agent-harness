@@ -1,6 +1,6 @@
 """Backup helpers for atomic state-mutation workflows.
 
-Owning slice: T0-1 CC5 (extracted from ``lib.state_migrate``).
+Owning slice: T0-1 CC5.
 Future owner: T0-5 per CONTRACT-PIN §1 -- may patch retention policy.
 
 Public surface:
@@ -132,8 +132,7 @@ def _write_bak_excl(bak_path: Path, content: bytes) -> None:
             f"error: backup file already exists at {bak_path}; this typically "
             f"indicates a previous migration crashed. Inspect the backup and either:\n"
             f"  (a) restore it manually (cp {bak_path} <target>) and re-run, or\n"
-            f"  (b) run 'harness migrate state --resume' to continue from the backup, or\n"
-            f"  (c) remove the stale backup after confirming target is correct."
+            f"  (b) remove the stale backup after confirming target is correct."
         )
     try:
         os.write(fd, content)

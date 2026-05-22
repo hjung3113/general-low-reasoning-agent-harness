@@ -339,4 +339,5 @@ Exit: 0 / 3 (locked) / 14 (undecidable).
 9. TTY-only speed bumps (approve, reopen, halt-diary clear)
 10. Crash-safe state+audit transactions
 
-**Phase 1 removals**: No workflow enforcement changes. All security removal was dormant code (autopilot_guard, fs_fence, secret_key, cli_deprecated, state_migrate, audit_verify_cli, release_trust SSH dead code). Audit chain + state_trust + crash-safety fully retained.
+**Phase 1 removals**: No workflow enforcement changes. All security removal was dormant code (autopilot_guard, fs_fence, secret_key, cli_deprecated, audit_verify_cli, release_trust SSH dead code). Audit chain + state_trust + crash-safety fully retained.
+**Phase 2 removals**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; `harness migrate state` subcommand removed).

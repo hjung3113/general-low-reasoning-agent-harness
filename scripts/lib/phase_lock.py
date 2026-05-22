@@ -22,8 +22,7 @@ Public surface
                                     -- single recovery attempt; returns None.
 
 The recovery path emits `verb=lock.recovered` (design §3.7 line 417) only
-when an `audit_path` is supplied; this mirrors `state_migrate.migrate_file`
-and `durable_fs` — wiring policy is the caller's, not this module's.
+when an `audit_path` is supplied; wiring policy is the caller's, not this module's.
 
 OS-substrate details:
 * `_current_boot_id`: Linux `/proc/sys/kernel/random/boot_id`, macOS

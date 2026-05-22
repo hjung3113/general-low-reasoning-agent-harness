@@ -354,7 +354,7 @@ class SchemaVersionStampTests(unittest.TestCase):
 
     def test_phase_set_refuses_unknown_schema_version(self) -> None:
         # Plant a state with state_schema_version=1 (older). Refuse with
-        # exit 5 + structured remediation referencing the migrator.
+        # exit 5 + error message.
         (self.tmp / ".scratch" / "phase-state.json").write_text(json.dumps({
             "phase": "discuss",
             "state_schema_version": 1,
@@ -363,7 +363,6 @@ class SchemaVersionStampTests(unittest.TestCase):
         self.assertEqual(r.returncode, 5, r.stderr)
         self.assertIn("state_schema_version=1", r.stderr)
         self.assertIn("expected 2", r.stderr)
-        self.assertIn("harness migrate state --forward", r.stderr)
 
     # NOTE v0.9.0: test_phase_approve_refuses_unknown_schema_version removed.
     # The old _do_phase_approve (via _write_state_atomic / _ensure_state_schema_version)

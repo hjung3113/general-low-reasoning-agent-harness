@@ -135,7 +135,7 @@ def _canonical_bytes(state: Optional[Mapping[str, Any]]) -> bytes:
 
     Pinned to `json.dumps(..., sort_keys=True, indent=2,
     separators=(',', ': '))` with a trailing LF, matching the existing
-    `state_migrate.serialize` shape (recovery matrix in S01-D.2 depends
+    Canonical serialize shape (recovery matrix in S01-D.2 depends
     on byte-equality with prior writes). For audit-chain canonicalization
     (rfc8785) see §2.3 — that lives in S06.
     """

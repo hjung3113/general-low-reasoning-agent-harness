@@ -979,16 +979,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/state_migrate.py",
-      "source": "scripts/lib/state_migrate.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/state_migrate_t04.py",
-      "source": "scripts/lib/state_migrate_t04.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/state_repair.py",
       "source": "scripts/lib/state_repair.py",
       "policy": "harness-owned"

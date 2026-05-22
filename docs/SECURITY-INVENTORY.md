@@ -122,6 +122,8 @@ Per v0.9.13 commit: low-perf AI agent, **no multi-user threat model**.
 - Legacy flag deprecation (cli_deprecated)
 - trust_origin decision tree (always dev_unsigned now)
 
+**Removed in Phase 2**:
+- state_migrate.py + state_migrate_t04.py + migrate_state.py (v0→v2 migration — all state is now v2)
+
 **Deferred to future phase** (still present, not workflow-critical):
-- state_migrate.py + state_migrate_t04.py (v0→v2 migration, 593 LOC — Tier B phase)
 - audit_verify (chain library `verify_chain`/`walk_chain` test-only callers)

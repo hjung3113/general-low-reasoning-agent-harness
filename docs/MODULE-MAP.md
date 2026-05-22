@@ -94,14 +94,9 @@
 | `workflow_static_checks.py` | 119 | 설치된 하네스의 static check | ✅ |
 | `audit_verify_cli.py` | (235) | (SECURITY에 카운트) | — |
 
-## DEAD_LEGACY (2 modules, 593 LOC) — Tier B deferred
+## DEAD_LEGACY — Phase 2 제거 완료
 
-| Module | LOC | Purpose | Verdict |
-|---|---|---|---|
-| `state_migrate.py` | 495 | v0 → v2 마이그레이션 | ❌ Tier B |
-| `state_migrate_t04.py` | 98 | T04 verification entry 재배치 | ❌ Tier B |
-
-이번 phase 1 (security)에 포함 안 됨. v2 universal 가정 후 Tier B에서 일괄 제거 예정.
+`state_migrate.py`, `state_migrate_t04.py`, `migrate_state.py` (v0→v2 마이그레이션) — Phase 2에서 제거됨. 모든 state는 이제 v2.
 
 ---
 
@@ -163,7 +158,6 @@ Tier 4: upgrade (모두 의존)
 | `release_harness.py` | 27 | ✅ |
 | `show_phase_status.py` | 29 | ✅ |
 | `project_dashboard.py` | 10 | 🔄 (stub) |
-| `migrate_state.py` | 104 | ❌ |
 | `build_v094_fixture.py` | 423 | ❌ (legacy fixture) |
 | `target_smoke_test.py` | 95 | ✅ |
 | `verify_adrs_accepted.py` | 113 | 🔄 (ADR 폐기 시 drop) |

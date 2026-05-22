@@ -64,7 +64,7 @@ Tier 4 (heaviest aggregator):
 ```
 
 **Removed in Phase 1**: secret_key, cli_deprecated, fs_fence, autopilot_guard, audit_verify_cli, release_trust (sec-7b orphan).
-**Still present, Tier B deferred**: state_migrate, state_migrate_t04.
+**Removed in Phase 2**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2).
 
 ## Two-axis 분류: workflow vs deployment
 

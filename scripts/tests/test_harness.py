@@ -3505,18 +3505,6 @@ class PhaseStateCheckerV2Tests(unittest.TestCase):
             path = self._write_state(Path(tmpdir), self._base_done_v2())
             harness.check_phase_state_semantics(path)
 
-    # T-7: rejects v0 state with migration prompt
-    def test_check_rejects_v0_state_with_migration_prompt(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = self._base_done_v2()
-            del state["state_schema_version"]
-            path = self._write_state(Path(tmpdir), state)
-            with self.assertRaises(SystemExit) as ctx:
-                harness.check_phase_state_semantics(path)
-            msg = str(ctx.exception)
-            self.assertIn("state_schema_version", msg)
-            self.assertIn("python3 scripts/harness.py migrate state --forward", msg)
-
     # T-8: done does not require approved=false
     def test_check_done_does_not_require_approved_false(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3683,29 +3671,6 @@ class ChangelogStructureTests(unittest.TestCase):
         self.assertIn("state_schema_version", body)
         # Ledger L12 — migrator --resume verb mention required.
         self.assertIn("--resume", body)
-
-
-class HarnessMigrateSubparserTests(unittest.TestCase):
-    """T0-1 CC1: `harness migrate state --forward` must delegate to migrate_state.py."""
-
-    def test_harness_migrate_state_forward_invocation(self) -> None:
-        # Copy the v0 fixture into a temp dir and invoke the wrapper CLI
-        # through `harness.py migrate state --forward --dry-run`.
-        fixtures = REPO_ROOT / "scripts" / "fixtures" / "migrate"
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp = Path(tmpdir)
-            target = tmp / "phase-state.json"
-            target.write_bytes((fixtures / "phase_state_v0_input.json").read_bytes())
-            result = subprocess.run(
-                [sys.executable, str(REPO_ROOT / "scripts" / "harness.py"),
-                 "migrate", "state", "--forward", "--dry-run",
-                 "--target", str(target)],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(result.returncode, 0,
-                             msg=f"stderr={result.stderr}\nstdout={result.stdout}")
-            expected = (fixtures / "phase_state_v0_to_v2_golden.json").read_text(encoding="utf-8")
-            self.assertEqual(result.stdout, expected)
 
 
 class GitignoreInvariantsTests(unittest.TestCase):

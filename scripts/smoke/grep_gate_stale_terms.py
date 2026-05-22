@@ -32,9 +32,8 @@ Usage
 
 Scoping rationale (§C of S14)
 ------------------------------
-* ``automation_mode`` — legitimately referenced by migration code
-  (``scripts/lib/state_migrate.py``, ``scripts/lib/phase_state.py``) and
-  legacy validator (``scripts/lib/check.py``). Checked only in
+* ``automation_mode`` — legitimately referenced by legacy-validation code
+  (``scripts/lib/phase_state.py``, ``scripts/lib/check.py``). Checked only in
   adapter-facing files (``.roo/``, ``.opencode/``, ``docs/superpowers/``
   minus exempted specs).
 
@@ -178,12 +177,11 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
 # that term only}.  Used when a file is mostly clean but has one legitimate
 # reference to a single term.
 TERM_EXEMPT_PATHS: dict[str, frozenset[str]] = {
-    # automation_mode: migration and legacy-validation code that MUST reference
-    # the old field name in order to forward-migrate state from v1→v2.
+    # automation_mode: legacy-validation/coercion code that MUST reference
+    # the old field name to handle pre-v2 state files.
     "automation_mode": frozenset(
         {
             "scripts/lib/phase_state.py",      # _load_state: legacy coercion §1.1
-            "scripts/lib/state_migrate.py",    # forward/reverse migration
             "scripts/lib/check.py",            # legacy validator (automation_mode field)
             "scripts/lib/planning_status.py",  # display: reads legacy field
             "scripts/lib/project_dashboard/renderer.py",  # display: reads legacy field

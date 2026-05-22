@@ -107,4 +107,4 @@ KEEP (sanity):
 
 ## Test fixtures (`tests/fixtures/`, `scripts/fixtures/`)
 
-대부분 phase-state / manifest / roadmap snapshots. legacy v0 fixture는 state_migrate 제거 시 같이 정리.
+대부분 phase-state / manifest / roadmap snapshots. legacy v0 fixture는 Phase 2에서 state_migrate 제거와 함께 정리 완료.

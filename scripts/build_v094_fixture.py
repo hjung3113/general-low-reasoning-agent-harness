@@ -76,8 +76,6 @@ MISSING_LIB_MODULES: list[str] = [
     "safe_open.py",
     "session.py",
     "smoke_lifecycle.py",
-    "state_migrate.py",
-    "state_migrate_t04.py",
     "state_trust.py",
     "timestamps.py",
     "transition.py",

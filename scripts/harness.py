@@ -563,29 +563,6 @@ def run(argv: list[str] | None = None) -> int:
     state_repair_p = state_sub.add_parser("repair", help="Canonicalize managed marker blocks.")
     state_repair_p.add_argument("--root", type=Path, default=None)
 
-    # `harness migrate state ...` -- thin delegator to scripts/migrate_state.py
-    # (T0-1 CC1). All flags are forwarded verbatim.
-    migrate_parser = subparsers.add_parser(
-        "migrate",
-        help="Migrate harness state files between schema versions.",
-    )
-    migrate_sub = migrate_parser.add_subparsers(dest="migrate_command", required=True)
-    migrate_state_p = migrate_sub.add_parser(
-        "state",
-        help="Migrate .scratch/phase-state.json between v0 and v2 (ADR-001).",
-    )
-    mig_mode = migrate_state_p.add_mutually_exclusive_group(required=True)
-    mig_mode.add_argument("--forward", action="store_true",
-                          help="Apply v0 -> v2 transformation.")
-    mig_mode.add_argument("--reverse", action="store_true",
-                          help="Apply v2 -> v0 transformation.")
-    mig_mode.add_argument("--resume", action="store_true",
-                          help="Resume from sidecar after crash.")
-    migrate_state_p.add_argument("--target", default=".scratch/phase-state.json",
-                                 help="Path to phase-state file.")
-    migrate_state_p.add_argument("--dry-run", action="store_true",
-                                 help="Print canonical transformed output to stdout; no disk mutation.")
-
     # ----- phase lifecycle verbs (ADR-003a Artifact 1, T0-3) -----
     phase_parser = subparsers.add_parser(
         "phase",
@@ -876,22 +853,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.state_command == "repair":
             return state_run_repair(root=state_root, stream=sys.stdout)
         raise AssertionError(f"Unhandled state subcommand: {args.state_command}")
-    if args.command == "migrate":
-        if args.migrate_command == "state":
-            # Forward args to scripts/migrate_state.py:main().
-            import migrate_state as _migrate_state
-            forwarded: list[str] = []
-            if args.forward:
-                forwarded.append("--forward")
-            elif args.reverse:
-                forwarded.append("--reverse")
-            elif args.resume:
-                forwarded.append("--resume")
-            forwarded.extend(["--target", str(args.target)])
-            if args.dry_run:
-                forwarded.append("--dry-run")
-            return _migrate_state.main(forwarded)
-        raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
     if args.command == "phase":
         from lib.phase_cli import (
             cmd_phase_set,

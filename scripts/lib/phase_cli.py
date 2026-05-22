@@ -121,16 +121,15 @@ def _ensure_state_schema_version(data: dict) -> None:
     """Stamp ``state_schema_version=2`` on the state, or refuse with exit 5.
 
     Contract: CONTRACT-PIN §7 L2 + ADR-001 Decision L2 require every v2 state
-    write to carry ``state_schema_version=2``. The canonical producer is
-    ``scripts/lib/state_migrate.py:forward`` (see MIGRATOR doc). Prior to
-    this stamp, ``phase set`` / ``phase approve`` silently omitted the field,
+    write to carry ``state_schema_version=2``. Prior to this stamp,
+    ``phase set`` / ``phase approve`` silently omitted the field,
     forcing the smoke comparator to use an ``<ANY>`` sentinel for the field
     (see 02b-11 commit bab5c5d). Mutates ``data`` in-place.
 
     Semantics:
     - field absent  -> stamp to 2.
     - field == 2    -> no-op.
-    - field == N!=2 -> exit 5 with a remediation line naming the migrator.
+    - field == N!=2 -> exit 5 with an error message.
     """
     current = data.get("state_schema_version")
     if current is None:
@@ -140,7 +139,7 @@ def _ensure_state_schema_version(data: dict) -> None:
         return
     print(
         f"error: state_schema_version={current!r} expected {_EXPECTED_STATE_SCHEMA_VERSION}; "
-        f"run 'harness migrate state --forward' first",
+        f"update state_schema_version to {_EXPECTED_STATE_SCHEMA_VERSION} manually",
         file=sys.stderr,
     )
     sys.exit(EXIT_UNPARSEABLE_JSON)

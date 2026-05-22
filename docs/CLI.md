@@ -15,7 +15,6 @@
 | `release-check` | `lib.version.release_check()` | 릴리즈 version/tag/worktree 게이트 | KEEP (release 시) |
 | `state show` | `lib.state_cli.run_show()` | Phase-state projection 출력 | KEEP |
 | `state repair` | `lib.state_cli.run_repair()` | Managed marker block 재생성 | KEEP |
-| `migrate state` | `migrate_state.py` | v0 → v2 마이그레이션 | **DROP** (v2 universal) |
 | `phase set <target>` | `lib.phase_cli.cmd_phase_set()` | Phase 전이 | KEEP |
 | `phase approve` | `lib.phase_cli.cmd_phase_approve()` | TTY-only [y/N] approval | KEEP |
 | `phase reopen --to <p>` | `lib.phase_cli.cmd_phase_reopen()` | Backward 전이 + diary 회전 | KEEP |
@@ -58,7 +57,6 @@
 | `install_harness.py` | Interactive installer (238 LOC) | KEEP |
 | `upgrade_harness.py` | Target-local upgrade bootstrapper (193 LOC) | KEEP |
 | `uninstall_harness.py` | Uninstall flow (358 LOC) | KEEP |
-| `migrate_state.py` | v0→v2 migration (104 LOC) | **DROP** |
 | `release.py` | Develop→main merge, tag, push (217 LOC) | KEEP (release ops) |
 | `release_harness.py` | release-check wrapper (27 LOC) | KEEP |
 | `show_phase_status.py` | Phase status JSON (29 LOC) | KEEP |
@@ -115,6 +113,6 @@ harness next [--shell|--json]
 harness run
 ```
 
-**Removed** (Phase 1): `migrate state`, `verify --audit`.
+**Removed**: `migrate state` (Phase 2), `verify --audit` (Phase 1).
 
 **Pending**: `release-check` (release ops 별도 도구로), `halt-diary clear` (autopilot 정리 시).

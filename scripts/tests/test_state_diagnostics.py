@@ -87,24 +87,6 @@ def _write_broken_state(repo: Path) -> Path:
 
 
 class TestRemediationHints(unittest.TestCase):
-    def test_diagnostic_suggests_resume_when_sidecar_present(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repo = Path(tmpdir)
-            backups = repo / ".harness" / "backups"
-            backups.mkdir(parents=True)
-            sidecar = (
-                backups
-                / "phase-state.json.pre-repair.20260516T193045123456789Z.12345.bak.resume.json"
-            )
-            sidecar.write_text("{}", encoding="utf-8")
-            path = _write_broken_state(repo)
-            buf = io.StringIO()
-            with redirect_stderr(buf):
-                with self.assertRaises(SystemExit) as ctx:
-                    state_diagnostics.load_state_json(path)
-            self.assertEqual(ctx.exception.code, EXIT_UNPARSEABLE_JSON)
-            self.assertIn("harness migrate state --resume", buf.getvalue())
-
     def test_diagnostic_lists_backups_when_present_and_no_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repo = Path(tmpdir)
@@ -140,7 +122,6 @@ class TestRemediationHints(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     state_diagnostics.load_state_json(path)
             err = buf.getvalue()
-            self.assertNotIn("harness migrate state --resume", err)
             self.assertNotIn("restore from .harness/backups/", err)
             self.assertIn("fix the JSON", err)
 
