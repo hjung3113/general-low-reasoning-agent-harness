@@ -13,6 +13,30 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.10 (2026-05-22) — dry-run echo + README sweep
+
+### UX
+- `harness init --dry-run` and `harness upgrade --dry-run` now print the
+  exact command to run for real on a final stdout line:
+  `To execute for real: python3 scripts/harness.py init --target ... --adapters roo --profiles generic`.
+  Previously dry-run output dumped scope variables but never closed the loop
+  on "now what do I actually type".
+
+### Docs
+- README: hard-coded `v0.9.7` tokens bumped to `v0.9.9` (release-check
+  enforces single-version README invariant).
+- README §3: deprecated `python3 scripts/upgrade_harness.py --version vX.Y.Z`
+  example replaced with `python3 scripts/harness.py upgrade --target ...`.
+  Added explanatory note that `upgrade_harness.py` is the pre-v0.9.5
+  self-bootstrap entry-point only.
+- README §6 (Upgrade pointer): same shift to `harness.py upgrade --target`
+  primary path.
+
+### Smoke
+- `scripts/full_smoke.sh` 2d-signed-to-dev-refused: DEV_REF picked dynamically
+  via `git rev-list HEAD --not <all tags> | head -1` instead of a fragile
+  `HEAD~3`. Survives tag churn between releases.
+
 ## v0.9.9 (2026-05-22) — kill approver-email requirement
 
 `harness init` used to refuse when no approver email was available (CLI flag

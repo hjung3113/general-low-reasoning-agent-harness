@@ -1180,4 +1180,17 @@ def upgrade(
         for path in conflict_paths:
             print(f"conflict={path}")
         print("no mutation performed")
+        # v0.9.10: print the exact command to run for-real (drop --dry-run).
+        _cmd = (
+            f"python3 scripts/harness.py upgrade --target {target} "
+            f"--adapters {','.join(sorted(adapters))} "
+            f"--profiles {','.join(sorted(profiles))}"
+        )
+        if packs:
+            _cmd += f" --packs {','.join(sorted(packs))}"
+        if force:
+            _cmd += " --force"
+        if adopt_existing:
+            _cmd += " --adopt-existing"
+        print(f"To execute for real: {_cmd}")
     return 1 if conflicts else 0

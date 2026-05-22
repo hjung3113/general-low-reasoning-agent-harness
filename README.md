@@ -35,7 +35,7 @@ Target repository에 planning state, phase gate, adapter command, workflow skill
 이 repo는 harness source이며, 직접 사용하는 제품이 아닙니다.
 `scripts/harness.py init`으로 **target repository**에 설치하면 그 target에서 일상 작업이 이루어집니다.
 
-v0.9.7의 일상 CLI 표면은 네 개입니다:
+v0.9.9의 일상 CLI 표면은 네 개입니다:
 
 ```bash
 harness
@@ -70,7 +70,7 @@ harness check
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.9.7 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.9 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/install_harness.py" --interactive
 ```
 
@@ -116,14 +116,14 @@ python3 scripts/project_dashboard.py --serve
 | ETL with SQL Server | `dotnet-etl` + `--db mssql` | `python3 scripts/harness.py init --target ... --profiles dotnet-etl --db mssql` |
 | 버그 진단 | debugging + TDD | `--packs workflow-core,workflow-debugging,workflow-tdd` |
 | 보안/권한/secret 변경 | security review | `--packs workflow-core,workflow-security-review,workflow-code-review` |
-| 하네스 업그레이드 | remembered init scope | `python3 scripts/upgrade_harness.py --version v0.9.7 --dry-run` |
+| 하네스 업그레이드 (in-place) | remembered init scope | `python3 scripts/harness.py upgrade --target /path/to/project --dry-run` |
 | 하네스 일부 제거 | uninstall scopes | `python3 scripts/uninstall_harness.py --interactive` |
 
 사내/외부 repo 헷갈리지 않는 설치 예시:
 
 ```bash
 tmp="$(mktemp -d)"
-git clone --depth 1 --branch v0.9.7 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
+git clone --depth 1 --branch v0.9.9 https://github.com/hjung3113/general-low-reasoning-agent-harness.git "$tmp"
 python3 "$tmp/scripts/harness.py" init --target /path/to/project --adapters both
 ```
 
@@ -222,13 +222,13 @@ python3 -m unittest scripts/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py
-python3 scripts/harness.py release-check --expected-version v0.9.7
+python3 scripts/harness.py release-check --expected-version v0.9.9
 
 # 2. Tag 서명 (SSH key)
 git config user.signingKey ~/.ssh/id_ed25519
 git config gpg.format ssh
-git tag -s v0.9.7 -m "Release v0.9.7"
-git push origin v0.9.7
+git tag -s v0.9.9 -m "Release v0.9.9"
+git push origin v0.9.9
 ```
 
 상세 tag signing/trust root 절차는 [docs/trust/README.md](docs/trust/README.md) 참고.
@@ -248,13 +248,17 @@ git push origin v0.9.7
 빠른 포인터:
 
 ```bash
-# 업그레이드 (dry-run 먼저)
-python3 scripts/upgrade_harness.py --version v0.9.7 --dry-run
-python3 scripts/upgrade_harness.py --version v0.9.7
+# 업그레이드 (dry-run 먼저 → 마지막 줄에 실제 명령 출력됨)
+python3 scripts/harness.py upgrade --target /path/to/project --dry-run
+python3 scripts/harness.py upgrade --target /path/to/project
 
-# 제거
+# 제거 (interactive 가 권장; --select 1..5 로 비대화형 가능)
 python3 scripts/uninstall_harness.py --interactive
 ```
+
+> 참고: `scripts/upgrade_harness.py` 는 v0.9.5 이전 target 의 self-bootstrap
+> entry-point (target 안에서 source repo fetch 후 위 명령 실행). 일반 사용은
+> 위 `harness.py upgrade` 로 충분.
 
 ---
 

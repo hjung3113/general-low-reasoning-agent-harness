@@ -311,6 +311,15 @@ def install(
         # files overwritten".  See stale1-trace.md §3 for the full analysis.
         print(f"planned_writes={len(destinations)}")
         print("no mutation performed")
+        # v0.9.10: print the exact command to run for-real (drop --dry-run).
+        _cmd = (
+            f"python3 scripts/harness.py init --target {target} "
+            f"--adapters {','.join(sorted(adapters))} "
+            f"--profiles {','.join(sorted(profiles))}"
+        )
+        if packs:
+            _cmd += f" --packs {','.join(sorted(packs))}"
+        print(f"To execute for real: {_cmd}")
         return
 
     # --- Atomic staged install (T3 / REV-2 phase order) ---
