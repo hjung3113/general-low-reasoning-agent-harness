@@ -12,9 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 HARNESS = REPO / "scripts" / "harness.py"
-FIX = Path(__file__).resolve().parents[1] / "fixtures" / "cli_contract"
+FIX = Path(__file__).resolve().parents[2] / "fixtures" / "cli_contract"
 sys.path.insert(0, str(REPO / "scripts"))
 
 NANOS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z$")

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 HARNESS = REPO / "scripts" / "harness.py"
 
 
@@ -44,7 +44,7 @@ class DriftTemplateTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         (self.tmp / ".scratch").mkdir()
         (self.tmp / ".harness").mkdir()
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
     def _call_drift(self):
         from lib.check import check_drift

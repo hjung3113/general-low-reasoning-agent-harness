@@ -90,12 +90,11 @@ def resolve_approver_email(
 
     Priority:
       1. ``cli_flag``                       → source = "cli-flag"
-      2. ``HARNESS_INSTALL_APPROVER`` env   → source = "env"
-      3. ``git config user.email``          → source = "git-config"
-      4. ``<getpass.getuser>@<hostname>``   → source = "auto"
-      5. ``"local@harness"`` constant       → source = "auto"
+      2. ``git config user.email``          → source = "git-config"
+      3. ``<getpass.getuser>@<hostname>``   → source = "auto"
+      4. ``"local@harness"`` constant       → source = "auto"
 
-    Invalid CLI/env values fall through to the next source instead of aborting.
+    Invalid CLI values fall through to the next source instead of aborting.
     """
     _env = env if env is not None else os.environ
 
@@ -104,13 +103,6 @@ def resolve_approver_email(
             return _sanitize_approver_email(cli_flag), "cli-flag"
         except ValueError:
             pass  # v0.9.9: invalid flag → fall through
-
-    env_val = _env.get("HARNESS_INSTALL_APPROVER", "")
-    if env_val:
-        try:
-            return _sanitize_approver_email(env_val), "env"
-        except ValueError:
-            pass  # v0.9.9: invalid env → fall through
 
     try:
         result = subprocess.run(
@@ -201,13 +193,11 @@ def write_install_record(
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     record: dict = {
-        "schema_version": 1,
+        "schema_version": 2,
         "harness_version": harness_version,
         "installed_at_iso": now_iso,
         "bootstrap_source": bootstrap_source,
-        "approvers": [
-            {"email": approver_email, "added_at": now_iso, "source": "bootstrap"},
-        ],
+        "installer_email": approver_email,
         "source_provenance": {"commit": commit_sha, "tag": tag_val, "dirty": is_dirty},
     }
 
@@ -265,12 +255,7 @@ def install(
     quiet: bool = False,
     force: bool = False,
 ) -> None:
-    # P5-P1-3: verify prior installed-manifest chain hash before any install
-    # decision (§6 integrity). Raises ManifestChainTamperedError (exit 5) if
-    # the chain hash has been tampered. Returns False for fresh installs.
-    from lib.manifest_reconciler import verify_install_record_integrity as _vir
-    _vir(target.resolve() if hasattr(target, 'resolve') else Path(target).resolve())
-
+    # v0.9.13: chain hash verification removed.
     adapters = adapters if adapters is not None else {"roo"}
     profiles = profiles if profiles is not None else {"generic"}
     packs = packs if packs is not None else set()
@@ -576,9 +561,7 @@ def _stamp_install_trust_origin(
     On verification failure: stamps trust_origin=dev_unsigned if HARNESS_ALLOW_UNSIGNED_DEV=1,
     otherwise exits with EXIT_RELEASE_TRUST_INVALID to fail closed.
     """
-    import os as _os
     from lib.state import INSTALL_STATE, write_json, read_install_state
-    from lib.manifest_reconciler import compute_manifest_hash_chain
 
     is_dev_version = (
         harness_version.startswith("0.0.0-dev+")
@@ -594,35 +577,15 @@ def _stamp_install_trust_origin(
         trust_origin = "dev_unsigned"
     else:
         from lib.release_trust import UpgradeTrustError, verify_release_tag
-        from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
         tag = "v" + harness_version
-        allow_unsigned = _os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV", "") == "1"
         try:
             release_commit = verify_release_tag(root, tag)
             release_tag = tag
             trust_origin = "signed_tag"
-        except UpgradeTrustError as _te:
-            # tag_not_found means this is not an actual release tag (e.g. dev/test
-            # version string) — stamp dev_unsigned without blocking.
-            if _te.sub_reason == "tag_not_found" or allow_unsigned:
-                trust_origin = "dev_unsigned"
-                if _te.sub_reason != "tag_not_found":
-                    sys.stderr.write(
-                        f"WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — install trust_origin=dev_unsigned "
-                        f"for {tag!r}.\n"
-                    )
-            else:
-                sys.stderr.write(
-                    f"ERROR: SSH tag verification failed for {tag!r} ({_te.sub_reason}). "
-                    f"Set HARNESS_ALLOW_UNSIGNED_DEV=1 to bypass (dev installs only).\n"
-                )
-                # B-5 (Cycle-2): preserve original exception context on the SystemExit.
-                raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from _te
+        except UpgradeTrustError:
+            # v0.9.13: never refuse on trust; fall back to dev_unsigned.
+            trust_origin = "dev_unsigned"
 
-    # Patch the trust fields into the freshly-written install state record.
-    # B-4 (Cycle-2): strict — re-raise on failure so install fails loudly rather
-    # than silently leaving a manifest with no trust stamping.  Silent bypass is
-    # unacceptable for internal-share-stable.
     install_state_path = target / INSTALL_STATE
     state: dict = read_install_state(target)
     state["trust_origin"] = trust_origin
@@ -630,25 +593,6 @@ def _stamp_install_trust_origin(
         state["release_tag"] = release_tag
     if release_commit is not None:
         state["release_commit"] = release_commit
-    # Re-compute chain hash to include the new trust fields.
-    files_dict: dict = state.get("files", {})
-    chain_manifest: dict = {
-        "release_commit": state.get("release_commit"),
-        "release_tag": state.get("release_tag"),
-        "schema_version": state.get("schema_version", 2),
-        "harness_version": state.get("harness_version", harness_version),
-        "files": {
-            p: {
-                "installed_sha256": v.get("installed_sha256", ""),
-                "current_sha256": v.get("current_sha256", ""),
-            }
-            for p, v in files_dict.items()
-            if isinstance(v, dict) and "installed_sha256" in v
-        },
-        "removed_in_version": [],
-        "trust_origin": trust_origin,
-    }
-    state["installed_files_chain_hash"] = compute_manifest_hash_chain(chain_manifest)
     write_json(install_state_path, state)
 
     # B-4 (Cycle-2): emit release.trust.bypassed audit row when trust_origin=dev_unsigned

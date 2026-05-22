@@ -218,14 +218,9 @@ def test_override_identity_empty_reason_rejected(env):
 # ---------------------------------------------------------------------------
 
 
-def test_resolved_email_not_in_approvers_advisory_v099(env, monkeypatch, capsys):
-    """v0.9.9: approver-membership refusal removed (internal single-user
-    threat model — see feedback_internal_only_threat_model memory).
-
-    Previously this asserted exit_code=6/approver_not_in_install_record.
-    Now mismatch logs an advisory to stderr and approve continues to the
-    Step 7 speed-bump (which we answer "n" via monkeypatch to return cleanly).
-    """
+def test_resolved_email_not_in_approvers_no_check(env, monkeypatch):
+    """v0.9.13: approver-membership Step 3 removed entirely. No advisory,
+    no refusal — approve proceeds straight to Step 7 speed-bump."""
     rc = _run(
         env,
         by="mallory@evil.example",
@@ -235,8 +230,6 @@ def test_resolved_email_not_in_approvers_advisory_v099(env, monkeypatch, capsys)
         input_response="n",
     )
     assert rc.sub_reason != "approver_not_in_install_record"
-    err = capsys.readouterr().err
-    assert "advisory" in err and "v0.9.9" in err
 
 
 # ---------------------------------------------------------------------------

@@ -85,10 +85,6 @@ _FIX_GITCONFIG = (
     "Fix: run `git config user.email <your-email>` "
     "or pass `harness phase reopen --by <your-email>`"
 )
-_FIX_APPROVER_MEMBERSHIP = (
-    "Fix: only emails listed in `.harness/install-record.json approvers[]` "
-    "may reopen; re-run `harness install`"
-)
 _FIX_REASON = (
     "Fix: pass `--reason \"<text>\"` describing why you are rewinding "
     "(the reason is audited)"
@@ -245,9 +241,9 @@ def run_reopen(
         )
         return ReopenResult(exit_code=6, sub_reason="gitconfig_email_unset")
 
-    # Step 5: install-record approvers membership
+    # Step 5: install-record presence (membership check removed v0.9.13).
     try:
-        install_record = _phase_preflight.load_install_record(install_record_path)
+        _phase_preflight.load_install_record(install_record_path)
     except FileNotFoundError:
         print(
             f"error: phase reopen refused: {install_record_path} not found. "
@@ -255,20 +251,6 @@ def run_reopen(
             file=sys.stderr,
         )
         return ReopenResult(exit_code=6, sub_reason="install_record_missing")
-
-    approvers = _phase_preflight.approvers_emails(install_record)
-    if resolved.lower() not in approvers:
-        print(
-            f"error: phase reopen refused: {resolved!r} is not in "
-            f"install-record approvers[]. {_FIX_APPROVER_MEMBERSHIP}",
-            file=sys.stderr,
-        )
-        return ReopenResult(
-            exit_code=6,
-            sub_reason="approver_not_in_install_record",
-            resolved_email=resolved,
-            by_source=by_source,
-        )
 
     # Steps 6+7+8 under primary lock.
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)

@@ -540,14 +540,7 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     audit_path = harness_dir / "audit.log"
     install_record_path = harness_dir / "install-record.json"
 
-    # Nonce dir: honour explicit --nonce-dir arg, else fall back to the
-    # canonical out-of-project default (~/.harness/approval-nonces/).
-    from lib import approval_nonce as _approval_nonce
-
-    nonce_dir_raw: Optional[str] = getattr(args, "nonce_dir", None)
-    nonce_dir: Path = (
-        Path(nonce_dir_raw) if nonce_dir_raw else _approval_nonce.default_nonce_dir()
-    )
+    nonce_dir: Path = harness_dir  # v0.9.13: nonce machinery removed; arg unused
 
     stdin_isatty: bool = sys.stdin.isatty()
     # X8/HIGH-B-2: On Windows os.ttyname is unavailable; mint a synthetic
@@ -765,6 +758,38 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
 # --------------------------------------------------------------------------
 # phase reopen
 # --------------------------------------------------------------------------
+
+
+def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
+    """`harness phase next-pending` — pure read of `.planning/phases/`.
+
+    Prints next non-done phase slug, or `all done` sentinel. No state mutation.
+    """
+    del args
+    cwd = Path.cwd()
+    roadmap_root = cwd / ".planning" / "phases"
+    if not roadmap_root.is_dir():
+        print("all done")
+        return 0
+    slugs = sorted(
+        d.name for d in roadmap_root.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
+    )
+    for slug in slugs:
+        state_file = roadmap_root / slug / "phase-state.json"
+        if not state_file.exists():
+            print(slug)
+            return 0
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            print(slug)
+            return 0
+        if str(data.get("phase", "")).lower() != "done":
+            print(slug)
+            return 0
+    print("all done")
+    return 0
 
 
 def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
