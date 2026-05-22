@@ -1,6 +1,0 @@
-# Format: <principal> namespaces="git" <ssh-public-key>
-#
-# Add one line per authorized signer (release engineer).
-# Verify fingerprint out-of-band (Slack/email/in-person) before adding.
-
-release@harness namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOx1V0+QlweMMrRpBNkOYFEC05lQUQW3Wos/b3w6WHRS hjung3113@gmail.com
