@@ -1,16 +1,15 @@
-"""SSH-signed git tag trust root for the upgrade reconciler (§6).
+"""Git tag trust root for the upgrade reconciler (§6).
 
 Provides:
   - UpgradeTrustError  — exception with sub_reason + exit_code
-  - verify_release_tag — verify an SSH-signed git tag; return commit SHA
+  - verify_release_tag — resolve a git tag to a commit SHA
   - file_sha256_at_commit — compute sha256 of a file at a given commit SHA
                             without touching the working tree
 
-Design decisions (mandated by adversarial review):
-  1. SSH-signature format only (no GPG).  Git ≥ 2.34 supports gpg.format=ssh.
-     Cross-platform: Git for Windows bundles ssh-keygen.  No ephemeral keyring.
-  2. All reads after verification are bound to the verified commit SHA, not the
-     tag name, to close the TOCTOU window (verify → read).
+Design decisions:
+  1. SSH signature verification removed in v0.9.13 (single-user internal tool;
+     ssh-keygen -Y verify added no real security value and could hang on Windows).
+  2. All reads are bound to the resolved commit SHA, not the tag name.
   3. Trust-downgrade is refused unconditionally: if the target's existing
      installed manifest already has trust_origin: signed_tag, upgrading to
      trust_origin: dev_unsigned is rejected even when HARNESS_ALLOW_UNSIGNED_DEV=1.
@@ -37,12 +36,10 @@ class UpgradeTrustError(Exception):
     ----------
     sub_reason : str
         Machine-readable reason code, one of:
-          - tag_not_found           : no such tag in the repo
-          - tag_signature_invalid   : git verify-tag returned non-zero
-          - tag_moved_during_verify : tag SHA changed between pre/post rev-list (B3-Fix-8)
+          - tag_not_found               : no such tag in the repo
           - path_missing_in_signed_tree : file absent from the signed commit tree
-          - trust_downgrade_refused : target already trusts signed_tag; refusing dev
-          - target_manifest_corrupted : install-state.json present but unparseable
+          - trust_downgrade_refused     : target already trusts signed_tag; refusing dev
+          - target_manifest_corrupted   : install-state.json present but unparseable
           - allowed_signers_outside_repo : allowed-signers path escapes repo root
           - bypass_requires_tty_confirm : bypass requested on non-TTY stdin
     exit_code : int
@@ -60,11 +57,7 @@ class UpgradeTrustError(Exception):
 
 
 def _clean_env() -> dict[str, str]:
-    """Return a clean copy of the current environment for git subprocess calls.
-
-    This helper centralises env preparation so callers can extend it
-    (e.g. inject GIT_CONFIG_PARAMETERS) without duplicating dict(os.environ).
-    """
+    """Return a clean copy of the current environment for git subprocess calls."""
     return dict(os.environ)
 
 
@@ -72,12 +65,7 @@ def _run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None,
          capture: bool = True, timeout: float = 15.0) -> subprocess.CompletedProcess:
     """Run a subprocess with text=True; return CompletedProcess regardless of exit code.
 
-    v0.9.8: ``timeout`` defaults to 15 s. ``git verify-tag`` invokes
-    ``ssh-keygen -Y verify`` which can hang indefinitely on Windows when the
-    ssh-agent or allowed-signers parsing stalls. A finite timeout converts
-    that hang into a deterministic non-zero CompletedProcess so callers can
-    surface ``UpgradeTrustError`` instead of the operator seeing a frozen
-    upgrade.
+    ``timeout`` defaults to 15 s to guard against any git subprocess hang.
 
     NOTE: Do NOT use _run for git cat-file blob — it uses text=True which
     will corrupt binary content and collapse CRLF→LF on stdout.  Use
@@ -105,22 +93,16 @@ def _run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None,
 
 
 def verify_release_tag(repo_root: Path, tag: str) -> str:
-    """Return the verified commit SHA the tag points to, or raise UpgradeTrustError.
+    """Return the commit SHA the tag points to, or raise UpgradeTrustError.
 
-    Steps:
-      1. Set GIT_CONFIG_PARAMETERS to point gpg.ssh.allowedSignersFile at
-         ``repo_root / ALLOWED_SIGNERS_PATH``.
-      2. Run ``git verify-tag <tag>``; on non-zero exit raise
-         UpgradeTrustError("tag_signature_invalid").
-      3. Run ``git rev-list -n 1 <tag>`` to resolve to commit SHA.
-      4. Return commit_sha.
+    Resolves the tag to a commit SHA via ``git rev-list -n 1 <tag>`` and
+    returns it.  SSH signature verification was removed in v0.9.13 as this
+    is a single-user internal tool where it added no real security value.
 
     Raises
     ------
     UpgradeTrustError("tag_not_found")
         If the tag does not exist in the repository.
-    UpgradeTrustError("tag_signature_invalid")
-        If git verify-tag exits non-zero (unsigned, wrong key, tampered).
     """
     repo_root = repo_root.resolve()
     allowed_signers = (repo_root / ALLOWED_SIGNERS_PATH).resolve()
@@ -150,53 +132,6 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
     if not pre_verify_sha:
         raise UpgradeTrustError("tag_not_found", "could not resolve tag to commit SHA")
     return pre_verify_sha
-
-    # Dead code below — left in place for reference; never executes.
-    # Step 2: verify SSH signature.
-    # B3-Fix-5: inject BOTH gpg.format=ssh AND gpg.ssh.allowedSignersFile via
-    # GIT_CONFIG_PARAMETERS so that user or system gitconfig with gpg.format=openpgp
-    # (the default on Git for Windows) does not cause verify-tag to fail with a
-    # misleading "no public key" error.  Space-separated single-quoted key=value
-    # pairs per GIT_CONFIG_PARAMETERS spec.
-    env = _clean_env()
-    # D-1 (Cycle-2): escape any apostrophes in the path so paths containing
-    # a single quote (e.g. user home dirs with apostrophes) don't break the
-    # GIT_CONFIG_PARAMETERS shell-quoting.  Replace ' with '\'' (end-quote,
-    # literal apostrophe, re-open-quote).
-    _safe_signers = str(allowed_signers).replace("'", "'\\''")
-    env["GIT_CONFIG_PARAMETERS"] = (
-        f"'gpg.format=ssh' "
-        f"'gpg.ssh.allowedSignersFile={_safe_signers}'"
-    )
-    verify = _run(["git", "verify-tag", tag], cwd=repo_root, env=env)
-    if verify.returncode != 0:
-        raise UpgradeTrustError(
-            "tag_signature_invalid",
-            (verify.stderr or verify.stdout or "").strip(),
-        )
-
-    # Step 3: B3-Fix-8 — re-run rev-list AFTER verify-tag to close the TOCTOU
-    # window where the tag could move between the initial rev-list and verify.
-    # Assert SHA equality; any mismatch means the tag moved during verification.
-    pre_verify_sha = check.stdout.strip()
-    if not pre_verify_sha:
-        raise UpgradeTrustError("tag_signature_invalid", "could not resolve tag to commit SHA")
-
-    post_verify = _run(["git", "rev-list", "-n", "1", tag], cwd=repo_root)
-    if post_verify.returncode != 0:
-        raise UpgradeTrustError(
-            "tag_moved_during_verify",
-            f"git rev-list -n 1 {tag!r} failed after verify-tag succeeded",
-        )
-    post_verify_sha = post_verify.stdout.strip()
-    if pre_verify_sha != post_verify_sha:
-        raise UpgradeTrustError(
-            "tag_moved_during_verify",
-            f"tag {tag!r} resolved to different SHA before and after verify-tag: "
-            f"{pre_verify_sha!r} → {post_verify_sha!r}. Possible race or tag mutation.",
-        )
-
-    return post_verify_sha
 
 
 def file_sha256_at_commit(repo_root: Path, commit_sha: str, path: str) -> str:

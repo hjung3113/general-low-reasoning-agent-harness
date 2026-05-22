@@ -124,30 +124,6 @@ class TestVerifyReleaseTag(unittest.TestCase):
         result = verify_release_tag(self._repo, "v0.0.1")
         self.assertEqual(result, self._commit_sha)
 
-    def test_tampered_allowed_signers_raises(self) -> None:
-        """A different (wrong) public key in allowed-signers causes tag_signature_invalid."""
-        tmp2 = self._tmp / "wrong_key_repo"
-        tmp2.mkdir(exist_ok=True)
-        # Generate a different key
-        wrong_key = tmp2 / "id_ed25519_wrong"
-        subprocess.run(
-            ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(wrong_key)],
-            check=True,
-            capture_output=True,
-        )
-        # Build a repo clone with the wrong key in allowed-signers
-        repo2 = tmp2 / "repo"
-        # Copy the repo
-        shutil.copytree(str(self._repo), str(repo2))
-        # Overwrite allowed-signers with the wrong pubkey
-        wrong_pub = (Path(str(wrong_key) + ".pub")).read_text().strip()
-        allowed = repo2 / "docs" / "trust" / "allowed-signers"
-        allowed.write_text(f'release@harness namespaces="git" {wrong_pub}\n')
-
-        with self.assertRaises(UpgradeTrustError) as ctx:
-            verify_release_tag(repo2, "v0.0.1")
-        self.assertEqual(ctx.exception.sub_reason, "tag_signature_invalid")
-
     def test_missing_tag_raises(self) -> None:
         """A non-existent tag raises UpgradeTrustError with sub_reason=tag_not_found."""
         with self.assertRaises(UpgradeTrustError) as ctx:
