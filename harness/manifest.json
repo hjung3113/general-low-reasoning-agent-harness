@@ -839,11 +839,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/fs_fence.py",
-      "source": "scripts/lib/fs_fence.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/halt_diary.py",
       "source": "scripts/lib/halt_diary.py",
       "policy": "harness-owned"

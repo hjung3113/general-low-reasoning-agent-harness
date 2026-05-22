@@ -61,7 +61,6 @@ MISSING_LIB_MODULES: list[str] = [
     "ci_provenance.py",
     "cli_budgets.py",
     "durable_fs.py",
-    "fs_fence.py",
     "fsd_wrappers.py",
     "halt_diary.py",
     "halt_diary_cli.py",

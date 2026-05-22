@@ -270,7 +270,6 @@ _V094_MISSING_MODULES: frozenset[str] = frozenset([
     "scripts/lib/managed_block.py",
     "scripts/lib/halt_diary.py",
     "scripts/lib/halt_diary_cli.py",
-    "scripts/lib/fs_fence.py",
     "scripts/lib/durable_fs.py",
     "scripts/lib/cli_budgets.py",
     "scripts/lib/backups.py",
