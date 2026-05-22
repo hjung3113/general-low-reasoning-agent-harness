@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "general-low-reasoning-agent-harness"
-version = "0.9.4"
-description = "Low-reasoning AI agent guardrails — phase gate, audit chain, autopilot guards."
+version = "0.9.14"
+description = "Low-reasoning AI agent guardrails — phase gate workflow + audit chain for single-user dev."
 requires-python = ">=3.11"
 # Runtime is intentionally dependency-light. RFC 8785 canonicalization
 # (ADR 2026-05-17-audit-canonicalization-locking-and-state-trust) is required

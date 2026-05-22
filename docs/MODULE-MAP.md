@@ -139,6 +139,15 @@ Tier 4: upgrade (모두 의존)
 
 **Remaining phases**:
 - doctor.py simplification — ~200 LOC potential
+- **Release ops redesign** (deferred): `scripts/release_smoke_test.py` is referenced
+  by `scripts/release.py:170`, `scripts/tests/test_release.py`, and
+  `.github/workflows/release.yml:62` but the file does not exist in the tree.
+  Release flow is broken at HEAD. Needs ground-up rebuild or full removal of
+  release-ops surface (release.py, release_harness.py, release-check CLI).
+- **Test directory consolidation** (deferred): `scripts/tests/` (30 flat
+  unittest files) and `tests/` (75+ pytest files) live side by side.
+  `scripts/release.py:170` invokes specific files by path via `python3 -m
+  unittest`, so consolidation requires release-ops rebuild first.
 
 ---
 
