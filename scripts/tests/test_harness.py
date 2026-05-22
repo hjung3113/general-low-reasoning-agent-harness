@@ -13,13 +13,13 @@ from unittest import mock
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import harness
 import install_harness
 from lib import version
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class HarnessToolTests(unittest.TestCase):

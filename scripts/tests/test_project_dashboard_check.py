@@ -14,7 +14,7 @@ from pathlib import Path
 
 from tests._helpers.planning_repo import make_minimal_planning_repo
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run(root):

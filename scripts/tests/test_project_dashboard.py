@@ -12,7 +12,7 @@ from unittest import mock
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.project_dashboard import core as project_dashboard
 from lib.project_dashboard import renderer as dashboard_renderer
@@ -147,7 +147,7 @@ progress:
             self.assertIn("Core docs can drift.", html)
 
     def test_entrypoint_stays_thin(self) -> None:
-        entrypoint = Path(__file__).resolve().parent / "project_dashboard.py"
+        entrypoint = Path(__file__).resolve().parents[1] / "project_dashboard.py"
         line_count = len(entrypoint.read_text(encoding="utf-8").splitlines())
 
         self.assertLessEqual(line_count, 40)
@@ -166,7 +166,7 @@ progress:
             self.assertTrue(any(action["id"] == "run" and action["confirmation"] for action in payload["actions"]))
 
     def test_dashboard_assets_are_present_for_dynamic_routes(self) -> None:
-        asset_dir = Path(__file__).resolve().parent / "lib/project_dashboard/assets"
+        asset_dir = Path(__file__).resolve().parents[1] / "lib/project_dashboard/assets"
 
         html = (asset_dir / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('<html lang="en">', html)

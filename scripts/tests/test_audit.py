@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.audit import (  # noqa: E402
     audit_append,
@@ -25,7 +25,7 @@ def _worker(audit_path: str, i: int) -> None:
     # multiprocessing requires top-level callable. Re-import inside the child.
     import sys as _sys
     from pathlib import Path as _P
-    _sys.path.insert(0, str(_P(__file__).resolve().parent))
+    _sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
     from lib.audit import audit_append as _aa
     _aa(
         {

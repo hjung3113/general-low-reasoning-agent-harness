@@ -13,7 +13,25 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
-## v0.9.10 (2026-05-22) — dry-run echo + README sweep
+## v0.9.10 (2026-05-22) — dry-run echo + scripts/ reorg + README sweep
+
+### Reorg (scripts/)
+- 44 dev/integration test files moved: `scripts/test_*.py` →
+  `scripts/tests/test_*.py`. The lone PowerShell test fixture
+  (`scripts/tests/test_autopilot_guard_deny.ps1`) was already in place.
+- Test files' `sys.path` setup auto-migrated from
+  `Path(__file__).resolve().parent` to `.parents[1]` (and `.parent.parent`
+  → `.parents[2]`) so they still find `lib/` from one level deeper.
+- `pyproject.toml` setuptools excludes now list `scripts.tests*` as well.
+- `harness/manifest.json` source-side path for `scripts/test_project_dashboard.py`
+  bumped to `scripts/tests/test_project_dashboard.py` (target-installed path
+  unchanged at `scripts/test_project_dashboard.py`).
+- README + USER_MANUAL invocation examples updated to
+  `python3 -m unittest scripts/tests/test_harness.py`.
+- README §4 (저장소 구조) updated: `tests/` and `smoke/` subdirs listed
+  explicitly under `scripts/`.
+
+
 
 ### UX
 - `harness init --dry-run` and `harness upgrade --dry-run` now print the

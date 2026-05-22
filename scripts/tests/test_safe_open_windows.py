@@ -34,7 +34,7 @@ import importlib
 import os
 
 # Ensure scripts/lib is importable
-_LIB = Path(__file__).parent / "lib"
+_LIB = Path(__file__).parents[1] / "lib"
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 

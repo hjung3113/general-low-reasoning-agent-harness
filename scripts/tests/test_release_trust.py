@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 # Adjust sys.path so `lib.*` imports work when run from scripts/
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.release_trust import UpgradeTrustError, file_sha256_at_commit, verify_release_tag
 

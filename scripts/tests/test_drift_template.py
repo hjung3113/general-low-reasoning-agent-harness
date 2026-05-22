@@ -44,7 +44,7 @@ class DriftTemplateTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         (self.tmp / ".scratch").mkdir()
         (self.tmp / ".harness").mkdir()
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
     def _call_drift(self):
         from lib.check import check_drift

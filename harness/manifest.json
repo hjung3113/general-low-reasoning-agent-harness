@@ -1199,7 +1199,7 @@
     },
     {
       "path": "scripts/test_project_dashboard.py",
-      "source": "scripts/test_project_dashboard.py",
+      "source": "scripts/tests/test_project_dashboard.py",
       "policy": "harness-owned"
     },
     {

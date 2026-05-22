@@ -142,7 +142,8 @@ scripts/                   harness CLI와 설치 도구
   release_smoke_test.py    release matrix smoke test
   project_dashboard.py     target-local static/interactive dashboard
   release.py               develop → main → tag → push → GitHub release 자동화
-  test_harness.py          단위 테스트 (unittest)
+  tests/                   단위 + 통합 테스트 (`python3 -m unittest scripts/tests/test_*.py`)
+  smoke/                   release smoke runners + fixtures
   lib/                     role-split 모듈
     version.py, profiles.py, manifest.py, append_block.py
     state.py, roadmap_state.py, worktree.py
@@ -191,7 +192,7 @@ tests/                     추가 테스트 스위트
 
 ```bash
 # 단위 테스트
-python3 -m unittest scripts/test_harness.py
+python3 -m unittest scripts/tests/test_harness.py
 
 # 전체 pytest
 python3 -m pytest tests/ -q
@@ -202,8 +203,8 @@ python3 scripts/release_smoke_test.py
 
 | Platform | 단위 테스트 | Source check | Smoke |
 | --- | --- | --- | --- |
-| Linux/macOS | `python3 -m unittest scripts/test_harness.py` | `python3 scripts/harness.py check` | `python3 scripts/release_smoke_test.py` |
-| Windows PowerShell | `py -3 -m unittest scripts/test_harness.py` | `py -3 scripts/harness.py check` | `py -3 scripts/release_smoke_test.py` |
+| Linux/macOS | `python3 -m unittest scripts/tests/test_harness.py` | `python3 scripts/harness.py check` | `python3 scripts/release_smoke_test.py` |
+| Windows PowerShell | `py -3 -m unittest scripts/tests/test_harness.py` | `py -3 scripts/harness.py check` | `py -3 scripts/release_smoke_test.py` |
 
 ### Check
 
@@ -218,7 +219,7 @@ python3 scripts/harness.py check --worktree
 
 ```bash
 # 1. Release gate 검증
-python3 -m unittest scripts/test_harness.py
+python3 -m unittest scripts/tests/test_harness.py
 python3 scripts/harness.py check
 python3 scripts/harness.py check --worktree
 python3 scripts/release_smoke_test.py

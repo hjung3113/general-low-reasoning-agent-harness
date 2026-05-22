@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.managed_block import render_block, BEGIN_MARKER_FMT, END_MARKER_FMT
 

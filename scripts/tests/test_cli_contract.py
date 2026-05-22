@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 HARNESS = REPO / "scripts" / "harness.py"
-FIX = Path(__file__).resolve().parent / "fixtures" / "cli_contract"
+FIX = Path(__file__).resolve().parents[1] / "fixtures" / "cli_contract"
 sys.path.insert(0, str(REPO / "scripts"))
 
 NANOS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z$")

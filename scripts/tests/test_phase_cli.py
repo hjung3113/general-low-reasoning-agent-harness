@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 HARNESS = REPO / "scripts" / "harness.py"
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from unittest import mock
 from types import SimpleNamespace

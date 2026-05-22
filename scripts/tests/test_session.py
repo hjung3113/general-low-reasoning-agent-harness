@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.session import acquire_lock, release_lock, read_lock_payload, is_pid_alive, LockfileExists, read_boot_id  # noqa: E402
 from lib import session as session_mod  # noqa: E402
@@ -60,7 +60,7 @@ class LockfileTests(unittest.TestCase):
         # T0-3 amendment #4: assert atexit-path removes lockfile on clean exit.
         script = (
             "import sys\n"
-            f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+            f"sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
             "from lib.session import acquire_lock\n"
             "cm = acquire_lock.__wrapped__ if hasattr(acquire_lock, '__wrapped__') else None\n"
             "lp = " + repr(str(self.lock_path)) + "\n"
@@ -123,7 +123,7 @@ class LockfileTests(unittest.TestCase):
     def test_sigint_during_acquire_releases_lock(self) -> None:
         script = (
             "import sys, time\n"
-            f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+            f"sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
             "from pathlib import Path\n"
             "from lib.session import acquire_lock\n"
             "lp = Path(" + repr(str(self.lock_path)) + ")\n"

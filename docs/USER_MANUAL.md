@@ -521,7 +521,7 @@ For schema changes, include rollback DDL and migration test.
 
 ```text
 Windows 사용자에게 적용할 명령은 PowerShell 기준으로 써줘.
-.sh 스크립트는 Linux/macOS 전용으로 보고, 하네스 핵심 검증은 scripts/harness.py check와 scripts/test_harness.py로 해.
+.sh 스크립트는 Linux/macOS 전용으로 보고, 하네스 핵심 검증은 scripts/harness.py check와 scripts/tests/test_harness.py로 해.
 경로는 Windows 절대경로를 그대로 쓰되, manifest나 planning 문서에는 repo-relative POSIX 스타일 경로를 기록해.
 ```
 
@@ -1429,7 +1429,7 @@ $env:LOCALAPPDATA = "$env:UserProfile\AppData\Local"
 | 작업 | Linux/macOS | Windows PowerShell |
 | --- | --- | --- |
 | harness check | `python3 scripts/harness.py check` | `py -3 scripts/harness.py check` |
-| 단위 테스트 | `python3 -m unittest scripts/test_harness.py` | `py -3 -m unittest scripts/test_harness.py` |
+| 단위 테스트 | `python3 -m unittest scripts/tests/test_harness.py` | `py -3 -m unittest scripts/tests/test_harness.py` |
 | smoke | `python3 scripts/release_smoke_test.py` | `py -3 scripts/release_smoke_test.py` |
 
 PowerShell temp install 예시:

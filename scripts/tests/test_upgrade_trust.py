@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Adjust sys.path so `lib.*` imports work when run from scripts/
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.release_trust import UpgradeTrustError
 from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID

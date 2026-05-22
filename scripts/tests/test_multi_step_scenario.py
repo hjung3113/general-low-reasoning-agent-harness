@@ -132,5 +132,5 @@ class DriverLoopTests(unittest.TestCase):
 if __name__ == "__main__":
     import sys
     # Make scripts/smoke importable when run directly.
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     unittest.main()

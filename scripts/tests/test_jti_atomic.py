@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import phase_autopilot  # noqa: E402
 from lib.ci_provenance import CiOidcJtiReplayed  # noqa: E402
@@ -52,7 +52,7 @@ def _worker_check_jti(
 
 class TestJtiAtomicConcurrency(unittest.TestCase):
 
-    _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+    _SCRIPTS_DIR = str(Path(__file__).resolve().parents[1])
 
     def _run_two_concurrent(
         self, jti: str, harness_dir: Path, audit_path: Path

@@ -38,4 +38,5 @@ exclude = [
   "scripts.smoke.fixtures*",
   "scripts.smoke.golden*",
   "scripts.test_*",
+  "scripts.tests*",
 ]

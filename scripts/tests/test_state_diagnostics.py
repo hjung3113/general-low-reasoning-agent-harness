@@ -16,7 +16,7 @@ import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import state_diagnostics  # noqa: E402
 from lib.exitcodes import EXIT_UNPARSEABLE_JSON  # noqa: E402
@@ -589,7 +589,7 @@ class TestNoBareJsonLoadsOnStatePaths(unittest.TestCase):
         return sorted(set(violations))
 
     def test_grep_gate_no_bare_json_loads_on_state_paths_outside_helper(self) -> None:
-        lib_dir = Path(__file__).resolve().parent / "lib"
+        lib_dir = Path(__file__).resolve().parents[1] / "lib"
         violations: list[str] = []
         for py in sorted(lib_dir.glob("*.py")):
             if py.name == "state_diagnostics.py":
@@ -626,7 +626,7 @@ class TestNoBareJsonLoadsOnStatePaths(unittest.TestCase):
         """doctor.py contains intentional bare json.loads on
         phase-state.json wrapped in try/except — those must NOT be
         flagged because doctor.py is on the allowlist."""
-        lib_dir = Path(__file__).resolve().parent / "lib"
+        lib_dir = Path(__file__).resolve().parents[1] / "lib"
         doctor_py = lib_dir / "doctor.py"
         self.assertTrue(doctor_py.exists())
         # The AST scanner SHOULD find violations in doctor.py (proving

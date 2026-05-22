@@ -22,13 +22,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import state_migrate  # noqa: E402
 from lib import atomic_io  # noqa: E402
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "scripts" / "fixtures" / "migrate"
 
 
