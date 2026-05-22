@@ -293,9 +293,16 @@ def build_removal_plan(*, target: Path, installed_files: dict[str, object], sele
                 installed_files.pop(path_text, None)
             continue
         if policy in {"harness-owned", "managed", "project-owned"}:
+            # v0.9.12: previously refused to delete a locally-modified
+            # harness-owned file as a "conflict". User explicitly asked
+            # for uninstall; that refusal was paternalistic. Now: still
+            # queue for delete, but warn so the user knows they're losing
+            # local changes. (Local mods rarely matter for harness-owned
+            # files; if they did, the user shouldn't have edited them.)
             if modified_harness_owned(destination, info) and scope_for_path(path_text, info) != "docs":
-                conflicts.append(path_text)
-                continue
+                warnings.append(
+                    f"deleting locally-modified harness-owned file: {path_text}"
+                )
             if destination.exists():
                 remove_paths.append(path_text)
             else:

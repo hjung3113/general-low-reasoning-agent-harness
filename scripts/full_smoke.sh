@@ -357,8 +357,17 @@ run "6n-upgrade-force" 0 "$HARNESS upgrade --target $T --force"
 T=$SMOKE_ROOT/t6o && mkdir -p $T
 $HARNESS init --target $T --profile generic --adapter roo >/dev/null 2>&1
 echo "// local mod" >> "$T/scripts/harness.py"
-run "6o-upgrade-no-force-conflicts" 1 "$HARNESS upgrade --target $T"
-assert_contains "6o-conflict-stdout" "$SMOKE_ROOT/6o-upgrade-no-force-conflicts.stdout" "conflicts).*Next"
+# v0.9.12: harness-owned local-mod no longer blocks upgrade with conflict;
+# user bytes are backed up to .harness/conflicts/<path>.user-backup-<runid>
+# and the upgrade proceeds.
+run "6o-upgrade-overwrites-local-mod" 0 "$HARNESS upgrade --target $T"
+assert_contains "6o-stdout-summary" "$SMOKE_ROOT/6o-upgrade-overwrites-local-mod.stdout" "upgraded harness"
+# User backup should exist under .harness/conflicts/
+find $T/.harness/conflicts -name "*.user-backup-*" 2>/dev/null | head -1 | grep -q user-backup && {
+    PASS=$((PASS+1)); echo "PASS [6o-user-backup-created]"
+} || {
+    FAIL=$((FAIL+1)); echo "FAIL [6o-user-backup-created]"
+}
 
 # cleanup worktrees
 git -C "$REPO" worktree remove "$WT" 2>/dev/null

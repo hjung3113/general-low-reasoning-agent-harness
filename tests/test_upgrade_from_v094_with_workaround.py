@@ -68,7 +68,10 @@ _KNOWN_DIVERGENT = {
     "scripts/lib/hooks.py",
     "scripts/lib/phase_cli.py",
     "scripts/lib/phase_reopen.py",
-    "scripts/lib/phase_approve.py",  # v0.9.9: dropped approver-membership refusal
+    "scripts/lib/phase_approve.py",   # v0.9.9: dropped approver-membership refusal
+    "scripts/lib/state.py",           # v0.9.12: build_install_state_payload accepts harness_version
+    "scripts/lib/durable_fs.py",      # v0.9.11: backoff schedule extended for Windows AV
+    "scripts/uninstall_harness.py",   # v0.9.12: locally-modified files no longer block uninstall
 }
 
 # ---------------------------------------------------------------------------
@@ -333,17 +336,10 @@ class TestUpgradeFromV094WithWorkaround:
     # bypass that branch entirely (destination unconditionally overwritten).
     # -------------------------------------------------------------------
 
-    @pytest.mark.xfail(
-        reason=(
-            "T8-triage (v0.9.7): real v0.9.4 fixture does NOT include the 35 workaround "
-            "lib modules in installed-manifest.json (they were manually copied in by the user, "
-            "not installed by harness init). Non-force upgrade correctly quarantines these "
-            "untracked files. This test was originally written with _seed_v094_full_manifest "
-            "which synthesized a manifest covering all 35 extra files. A future PR can add a "
-            "dedicated fixture variant that seeds the manifest with the workaround files."
-        ),
-        strict=True,
-    )
+    # v0.9.12: xfail removed. Auto-overwrite-with-backup means even
+    # un-manifested workaround files trigger no `.new` quarantine — user's
+    # copy is saved to .harness/conflicts/<path>.user-backup-<runid>, upgrade
+    # proceeds, rc=0.
     def test_no_false_quarantine_non_force(
         self, v094_workaround_target_non_force: Path
     ) -> None:
@@ -385,14 +381,15 @@ class TestUpgradeFromV094WithWorkaround:
             f"(STALE-2 regression): {[str(f) for f in lib_conflicts]}"
         )
 
-    def test_truly_modified_file_is_quarantined_non_force(
+    def test_truly_modified_file_auto_overwrites_with_backup_v0912(
         self, v094_workaround_target_non_force: Path
     ) -> None:
-        """A file modified AFTER the recorded install hash MUST be quarantined.
+        """v0.9.12: harness-owned files no longer block upgrade with `.new`
+        conflict. They auto-overwrite + back up the user's bytes to
+        `.harness/conflicts/<path>.user-backup-<runid>`.
 
-        Proves the quarantine gate works in both directions: sha256-matching
-        files (test above) are NOT quarantined, truly-modified files ARE.
-        This catches a regression where the gate is disabled entirely.
+        Previously: quarantined as `.new`, upgrade returned non-zero.
+        Now: overwritten in place, backup saved, upgrade succeeds (rc=0).
         """
         # Pick one lib file that is registered in the manifest.  Corrupt its
         # on-disk content so its sha256 diverges from the recorded old_hash.
@@ -415,21 +412,24 @@ class TestUpgradeFromV094WithWorkaround:
             "upgrade",
             "--target", str(v094_workaround_target_non_force),
             "--adopt-existing",
-            # NO --force: must trigger quarantine for the corrupted file
+            # NO --force: v0.9.12 auto-overwrites + saves user-backup
             env=_upgrade_env(),
         )
-        # upgrade returns non-zero when there are conflicts
-        assert result.returncode != 0, (
-            f"upgrade must exit non-zero when a modified file conflicts.\n"
+        # v0.9.12: harness-owned overwrite is no longer a conflict; rc=0
+        assert result.returncode == 0, (
+            f"upgrade should succeed (v0.9.12 auto-overwrite).\n"
             f"stdout={result.stdout}\nstderr={result.stderr}"
         )
-
-        # The corrupted file's .new conflict must exist in .harness/conflicts/
+        # User's bytes must be preserved as .user-backup-<runid>
         conflicts_dir = v094_workaround_target_non_force / ".harness" / "conflicts"
-        expected_conflict = conflicts_dir / f"{target_rel}.new"
-        assert expected_conflict.exists() or any(conflicts_dir.rglob("*.new")), (
-            f"Expected conflict file for {target_rel} after modifying it; "
-            f"quarantine gate did not fire (gate regression)."
+        backups = list(conflicts_dir.rglob("*.user-backup-*"))
+        assert backups, (
+            f"v0.9.12 must back up user-modified bytes to "
+            f".harness/conflicts/<path>.user-backup-<runid>; none found"
+        )
+        # Destination file now matches the new source bytes
+        assert target_file.read_bytes() != (original_content + b"\n# corrupted-for-test\n"), (
+            "destination should have been overwritten with new harness content"
         )
 
     def test_upgrade_preexisting_match_audit_verb_if_implemented(

@@ -343,21 +343,63 @@ def _build_release_manifest_v2(
     if is_dev_version or allow_unsigned:
         # Might end up as dev_unsigned; check downgrade now.
         if existing_trust_origin == "signed_tag":
-            _emit_trust_audit(
-                "release.trust.refused",
-                target=target,
-                sub_reason="trust_downgrade_refused",
-                target_path=str(target) if target else None,
-            )
-            _te_downgrade = UpgradeTrustError(
-                "trust_downgrade_refused",
-                "target manifest already has trust_origin=signed_tag; "
-                "refusing downgrade to dev_unsigned. "
-                "Unset HARNESS_ALLOW_UNSIGNED_DEV or use a signed release tag.",
-            )
-            # B3-Fix-2: emit SystemExit with the constant exit code, not a bare
-            # UpgradeTrustError that may propagate silently.
-            raise SystemExit(_te_downgrade.exit_code) from _te_downgrade
+            # v0.9.12: per feedback_internal_only_threat_model, this is an
+            # internal single-user dev tool. The trust-downgrade refusal was
+            # designed to block an attacker substituting an unsigned harness
+            # for a signed one — but on this threat model the attacker would
+            # already need write access to the user's checkout. The refusal
+            # is therefore workflow friction, not a security control. Honor
+            # HARNESS_ALLOW_UNSIGNED_DEV=1 / --allow-unsigned-dev to bypass.
+            if allow_unsigned:
+                sys.stderr.write(
+                    "WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — bypassing "
+                    "trust-downgrade refusal (signed_tag → dev_unsigned). "
+                    "Audit row release.trust.bypassed will be emitted.\n"
+                )
+                _emit_trust_audit(
+                    "release.trust.bypassed",
+                    target=target,
+                    sub_reason="trust_downgrade_bypassed",
+                    target_path=str(target) if target else None,
+                )
+            else:
+                _emit_trust_audit(
+                    "release.trust.refused",
+                    target=target,
+                    sub_reason="trust_downgrade_refused",
+                    target_path=str(target) if target else None,
+                )
+                # v0.9.12: print actionable bypass + recovery instructions
+                # to stderr BEFORE raising SystemExit. Previously rc=15 left
+                # the operator with no on-screen indication of how to proceed.
+                sys.stderr.write(
+                    "\n"
+                    "error: trust-downgrade refused (rc=15).\n"
+                    f"  target was installed from a signed release tag\n"
+                    "  source checkout is dev (not on a release tag, or dirty worktree)\n"
+                    "\n"
+                    "두 가지 회피 (둘 중 하나 선택):\n"
+                    "\n"
+                    "  1) 소스를 release tag 로 체크아웃 (권장):\n"
+                    "       git fetch --tags\n"
+                    "       git checkout v0.9.11   # 또는 최신 태그\n"
+                    "       python3 scripts/harness.py upgrade --target <target>\n"
+                    "\n"
+                    "  2) dev 강제 (내부 도구 — 보안 영향 없음):\n"
+                    "       HARNESS_ALLOW_UNSIGNED_DEV=1 \\\n"
+                    "         python3 scripts/harness.py upgrade --target <target> --allow-unsigned-dev\n"
+                    "\n"
+                    "[Trust-downgrade refused. Either check out a release tag, or set\n"
+                    " HARNESS_ALLOW_UNSIGNED_DEV=1 + --allow-unsigned-dev to bypass.]\n"
+                )
+                _te_downgrade = UpgradeTrustError(
+                    "trust_downgrade_refused",
+                    "target manifest already has trust_origin=signed_tag; "
+                    "refusing downgrade to dev_unsigned. "
+                    "Use HARNESS_ALLOW_UNSIGNED_DEV=1 + --allow-unsigned-dev to bypass, "
+                    "or check out a release tag.",
+                )
+                raise SystemExit(_te_downgrade.exit_code) from _te_downgrade
 
     if is_dev_version:
         # Dev checkout: working-tree path without tag verification.
@@ -829,23 +871,43 @@ def upgrade(
                 )
             continue
 
+        _force_restage = False
         if destination.exists() and not force:
             old_hash = installed_paths.get(str(entry.path), {}).get("sha256")
             current_hash = file_hash(destination)
             if not old_hash or current_hash != old_hash:
-                conflicts += 1
-                conflict_paths.append(f"{entry.path}.new")
-                conflict_path = target / ".harness/conflicts" / f"{entry.path}.new"
+                # v0.9.12: harness-owned files are by definition
+                # harness-managed. If the user locally edited one (e.g.
+                # docs/USER_MANUAL.md), the upgrade should still ship the
+                # canonical new content rather than blocking with a `.new`
+                # conflict that the user then has to manually resolve.
+                # Back up user bytes to .harness/conflicts/<path>.user-backup-<runid>
+                # and force re-stage (bypass STALE-1 short-circuit below).
                 if not dry_run:
-                    write_copy(source, conflict_path)
-                continue
+                    backup_path = (
+                        target
+                        / ".harness/conflicts"
+                        / f"{entry.path}.user-backup-{upgrade_runid}"
+                    )
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.copyfile(str(destination), str(backup_path))
+                    except OSError:
+                        pass  # backup is best-effort — never block upgrade
+                _force_restage = True
 
             # STALE-1 sync: short-circuit when source is unchanged since install.
-            installed_info = installed_paths.get(str(entry.path), {})
-            installed_src_sha = installed_info.get("source_sha256")
-            if installed_src_sha and installed_src_sha == new_hash:
-                # Source unchanged since install — no write needed.
-                continue
+            # v0.9.12: skip the short-circuit when destination was locally
+            # modified, otherwise the modified file would silently be left
+            # in place (planned_writes=0 / "no harness-owned files needed
+            # restaging") — exactly the silent-skip regression the v0.9.12
+            # auto-overwrite was meant to fix.
+            if not _force_restage:
+                installed_info = installed_paths.get(str(entry.path), {})
+                installed_src_sha = installed_info.get("source_sha256")
+                if installed_src_sha and installed_src_sha == new_hash:
+                    # Source unchanged since install — no write needed.
+                    continue
 
         planned_writes += 1
         if not dry_run:

@@ -287,6 +287,7 @@ def install(
     approver_email: str | None = None,
     approver_bootstrap_source: str | None = None,
     quiet: bool = False,
+    force: bool = False,
 ) -> None:
     from lib.install import install as _install
     return _install(
@@ -300,6 +301,7 @@ def install(
         approver_email=approver_email,
         approver_bootstrap_source=approver_bootstrap_source,
         quiet=quiet,
+        force=force,
     )
 
 
@@ -504,6 +506,16 @@ def run(argv: list[str] | None = None) -> int:
         action="store_true",
         default=False,
         help="Suppress progress lines on stderr (init phase ticks). stdout summary is unchanged.",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help=(
+            "Overwrite existing harness-owned files and clear .harness/ "
+            "before re-staging. Use to recover from a half-installed state "
+            "(files present but installed-manifest.json missing). v0.9.12+."
+        ),
     )
 
     upgrade_parser = subparsers.add_parser("upgrade", help="Update harness-owned files in a target project.")
@@ -1013,6 +1025,7 @@ def run(argv: list[str] | None = None) -> int:
             approver_email=_approver_email,
             approver_bootstrap_source=_approver_bootstrap_source,
             quiet=getattr(args, "quiet", False),
+            force=getattr(args, "force", False),
         )
         return 0
     if args.command == "upgrade":

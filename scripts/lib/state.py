@@ -249,6 +249,7 @@ def build_install_state_payload(
     profiles: set[str],
     packs: set[str],
     staging_map: "dict[Path, Path] | None" = None,
+    harness_version: "str | None" = None,
 ) -> dict:
     """Compose the installed-manifest payload dict WITHOUT writing to disk.
 
@@ -309,7 +310,15 @@ def build_install_state_payload(
         entry_state["current_sha256"] = disk_sha
         files[str(entry.path)] = entry_state
 
-    harness_ver = _active_harness_version()
+    # v0.9.12: prefer explicit harness_version (passed by install()/upgrade()
+    # from the CLI --version-resolved value) over module-level fallback.
+    # _active_harness_version() reads sys.modules['harness'], but when
+    # scripts/harness.py is executed directly it lives in sys.modules['__main__']
+    # and the lookup returns the literal default '0.0.0-dev+unknown' — which
+    # then got stamped into installed-manifest.json even when --version v0.9.X
+    # was passed. install-record (which was already given the explicit value)
+    # said v0.9.X while installed-manifest said 0.0.0+unknown. Now they agree.
+    harness_ver = harness_version if harness_version is not None else _active_harness_version()
     installed: dict[str, object] = {
         "schema_version": 2,          # S12 v2 field (§6)
         "state_schema_version": 2,
@@ -361,6 +370,7 @@ def write_install_state(
     profiles: set[str],
     packs: set[str],
     staging_map: "dict[Path, Path] | None" = None,
+    harness_version: "str | None" = None,
 ) -> None:
     """Build and write installed-manifest.json.
 
@@ -376,6 +386,7 @@ def write_install_state(
         profiles=profiles,
         packs=packs,
         staging_map=staging_map,
+        harness_version=harness_version,
     )
     write_json(target / INSTALL_STATE, payload)
 

@@ -263,6 +263,7 @@ def install(
     approver_email: "str | None" = None,
     approver_bootstrap_source: "str | None" = None,
     quiet: bool = False,
+    force: bool = False,
 ) -> None:
     # P5-P1-3: verify prior installed-manifest chain hash before any install
     # decision (§6 integrity). Raises ManifestChainTamperedError (exit 5) if
@@ -294,12 +295,73 @@ def install(
         for entry, _, destination in destinations
         if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
     ]
-    if existing:
+    # v0.9.12: detect half-installed state — files present but no manifest.
+    # Common cause: previous init hit a mid-flow PermissionError between
+    # Phase 4 (atomic batch) and Phase 5 (finalize), leaving target with
+    # most files installed but no installed-manifest.json. Without --force
+    # the user is stuck: init refuses (files exist), upgrade refuses (no
+    # install state). With --force we cleanly delete existing files +
+    # staging dirs + pending sidecars before proceeding.
+    if existing and not force and not dry_run:
+        manifest_present = (target / ".harness" / "installed-manifest.json").exists()
+        half_installed = not manifest_present
+        if half_installed:
+            staging_hint = ""
+            harness_dir = target / ".harness"
+            if harness_dir.exists():
+                stale_staging = list(harness_dir.glob(".staging-*"))
+                pending = list(harness_dir.glob("installed-manifest.json.pending-*"))
+                if stale_staging or pending:
+                    staging_hint = (
+                        f"\n  detected: {len(stale_staging)} stale .staging-* dir(s), "
+                        f"{len(pending)} pending sidecar(s)"
+                    )
+            raise SystemExit(
+                f"error: harness init detected a half-installed state "
+                f"({len(existing)} harness-owned files present, but "
+                f".harness/installed-manifest.json is missing).{staging_hint}\n"
+                f"\n"
+                f"흔한 원인: 이전 init 이 PermissionError 등으로 도중에 실패.\n"
+                f"\n"
+                f"해결:\n"
+                f"  1) (권장) --force 로 재실행 — 기존 harness-owned 파일 + .harness/ 정리 후 새로 init:\n"
+                f"       python3 scripts/harness.py init --target {target} --force\n"
+                f"\n"
+                f"  2) 또는 수동 정리:\n"
+                f"       Remove-Item -Recurse -Force .harness   # PowerShell\n"
+                f"       rm -rf .harness                         # bash\n"
+                f"     그 후 다시 init.\n"
+                f"\n"
+                f"[Half-installed state detected. Re-run with --force, or delete "
+                f"`.harness/` + the harness-owned files and retry.]"
+            )
         raise SystemExit(
             "Refusing to overwrite existing files during init:\n  "
             + "\n  ".join(existing)
-            + "\nHint: pick an empty target directory, or remove these files first."
+            + "\nHint: pick an empty target directory, remove these files first, "
+            "or pass --force to overwrite."
         )
+
+    # v0.9.12: --force on init cleans up prior install state before staging.
+    if force and not dry_run and existing:
+        if not quiet:
+            sys.stderr.write(
+                f"init --force: removing {len(existing)} existing harness-owned "
+                f"file(s) and clearing .harness/ before re-staging.\n"
+            )
+        for entry_path in existing:
+            dest = target / entry_path
+            try:
+                if dest.is_symlink() or dest.exists():
+                    dest.unlink()
+            except OSError:
+                pass  # best-effort; if it persists, atomic batch will hit
+        harness_dir = target / ".harness"
+        if harness_dir.exists():
+            try:
+                shutil.rmtree(str(harness_dir), ignore_errors=True)
+            except OSError:
+                pass
 
     if dry_run:
         print("init dry-run")
@@ -374,6 +436,7 @@ def install(
         profiles=profiles,
         packs=packs,
         staging_map=staging_map,
+        harness_version=harness_version,
     )
 
     # Phase 3: write pending sidecar (atomic + fsync).

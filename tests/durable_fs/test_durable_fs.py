@@ -187,12 +187,15 @@ def test_replace_with_retry_retries_on_permission_error_then_succeeds(tmp_path: 
         durable_fs.replace_with_retry(src, dst)
 
     assert call_count["n"] == 3
-    # First two failures used the documented 50ms, 100ms backoff.
-    assert sleeps[:2] == [0.05, 0.10]
+    # v0.9.11: backoff schedule extended to 100ms, 250ms, 500ms, 1s, 2s, 4s
+    # (was 50/100/200/400/800ms) so Windows Defender / EDR multi-second
+    # handle pins no longer time out before release.
+    assert sleeps[:2] == [0.1, 0.25]
     assert dst.read_text(encoding="utf-8") == "payload"
 
 
-def test_replace_with_retry_exhausts_after_five_failures(tmp_path: Path):
+def test_replace_with_retry_exhausts_after_six_failures(tmp_path: Path):
+    """v0.9.11: backoff extended from 5 → 6 entries."""
     src = tmp_path / "src.txt"
     dst = tmp_path / "dst.txt"
     src.write_text("payload", encoding="utf-8")
@@ -207,10 +210,10 @@ def test_replace_with_retry_exhausts_after_five_failures(tmp_path: Path):
         with pytest.raises(durable_fs.DurableFsError, match="replace"):
             durable_fs.replace_with_retry(src, dst)
 
-    # 5 attempts → 4 sleeps between attempts 1-2, 2-3, 3-4, 4-5; the 5th
-    # attempt's failure is the terminal one — no sleep follows it because
-    # no retry follows it either (S01-B P2 review fix).
-    assert sleeps == [0.05, 0.10, 0.20, 0.40]
+    # 6 attempts → 5 sleeps between them; final attempt's failure has no
+    # sleep because no retry follows. Schedule:
+    # 100/250/500/1000/2000/4000 ms (7.85 s total).
+    assert sleeps == [0.1, 0.25, 0.5, 1.0, 2.0]
 
 
 def test_replace_with_retry_propagates_non_permission_errors(tmp_path: Path):
