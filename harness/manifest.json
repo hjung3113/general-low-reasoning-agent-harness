@@ -934,11 +934,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/release_trust.py",
-      "source": "scripts/lib/release_trust.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/roadmap_state.py",
       "source": "scripts/lib/roadmap_state.py",
       "policy": "harness-owned"
