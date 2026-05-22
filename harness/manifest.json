@@ -979,11 +979,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/secret_key.py",
-      "source": "scripts/lib/secret_key.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/session.py",
       "source": "scripts/lib/session.py",
       "policy": "harness-owned"

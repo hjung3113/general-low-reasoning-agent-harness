@@ -253,7 +253,6 @@ _V094_MISSING_MODULES: frozenset[str] = frozenset([
     "scripts/lib/roo_modes.py",
     "scripts/lib/roomodes_writer.py",
     "scripts/lib/safe_open.py",
-    "scripts/lib/secret_key.py",
     "scripts/lib/session.py",
     "scripts/lib/smoke_lifecycle.py",
     "scripts/lib/state_cli.py",

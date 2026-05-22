@@ -350,7 +350,6 @@ KNOWN_VERBS: frozenset = frozenset([
     "ci.oidc.jti.replay",
     "ci.oidc.jti.store_rotated",   # P2-A5: corrupted JTI store rotation event
     "ci.oidc.jti.dir_override",    # C-4 (Cycle-2): HARNESS_JTI_DIR env override detected
-    "audit.secret_key.rotated",    # B3-Fix-7: corrupt secret.key rotated aside
     # FSD dashboard verbs (slash-command wrappers)
     "fsd-run-all",
     "fsd-run-phase",

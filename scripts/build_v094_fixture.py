@@ -78,7 +78,6 @@ MISSING_LIB_MODULES: list[str] = [
     "phase_txn.py",
     "roomodes_writer.py",
     "safe_open.py",
-    "secret_key.py",
     "session.py",
     "smoke_lifecycle.py",
     "state_migrate.py",
