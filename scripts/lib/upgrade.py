@@ -486,11 +486,11 @@ def upgrade(
         upgrade_staging_dir.mkdir(parents=True, exist_ok=True)
 
     reporter = ProgressReporter(quiet=quiet)
-    # v0.9.8: total is an upper bound (some entries short-circuit on
-    # source_sha256 match). The terminal "staged N files" note below is
-    # the authoritative count so small upgrades still surface progress.
-    _stage_total = sum(1 for e in entries if e.policy == "harness-owned")
-    reporter.start("staging files", _stage_total)
+    # v0.9.13: the per-tick `[N/total]` line was misleading — total was the
+    # full harness-owned entry count, but STALE-1 short-circuits drop most
+    # of those. We now emit a single "staging files..." note and finish with
+    # the authoritative count.
+    reporter.note("staging files...")
     _stage_count = 0
 
     for entry in entries:
@@ -499,17 +499,11 @@ def upgrade(
 
         source = source_path(root, entry)
         destination = destination_path(target, entry)
-        new_hash = file_hash(source)
 
         if entry.policy == "managed-append":
-            # NOTE (FIX-4 narrowing): managed-append writes happen here in Pass A,
-            # BEFORE the pending sidecar is written and before the atomic batch.
-            # This is intentional for v0.9.7: atomicising managed-append content
-            # mutations is deferred to v0.9.8.  The durability guarantee for
-            # harness-owned files (via os.replace pending→final) does NOT extend
-            # to managed-append targets.  See CHANGELOG "Deferred to v0.9.8" and
-            # impl-deviations.md FIX-4 entry.
-            from lib.append_block import plan_managed_append, plan_managed_append_retirement
+            # FIX-4: managed-append writes happen in Pass A, before the pending
+            # sidecar / atomic batch.
+            from lib.append_block import plan_managed_append
             result = plan_managed_append(
                 source=source,
                 destination=destination,
@@ -536,18 +530,23 @@ def upgrade(
                 )
             continue
 
+        # v0.9.13: defer file_hash(source) so non-existent destinations skip
+        # it. (We still read the destination hash when present because we
+        # need it both for user-mod detection AND for STALE-1 comparison —
+        # the v0.9.12 contract is "harness-owned files always reset to
+        # canonical on upgrade, backing up user edits", which means we can't
+        # short-circuit before the user-mod check.)
+        new_hash = file_hash(source)
+        installed_info = installed_paths.get(str(entry.path), {})
+
         _force_restage = False
         if destination.exists() and not force:
-            old_hash = installed_paths.get(str(entry.path), {}).get("sha256")
+            old_hash = installed_info.get("sha256")
             current_hash = file_hash(destination)
             if not old_hash or current_hash != old_hash:
-                # v0.9.12: harness-owned files are by definition
-                # harness-managed. If the user locally edited one (e.g.
-                # docs/USER_MANUAL.md), the upgrade should still ship the
-                # canonical new content rather than blocking with a `.new`
-                # conflict that the user then has to manually resolve.
-                # Back up user bytes to .harness/conflicts/<path>.user-backup-<runid>
-                # and force re-stage (bypass STALE-1 short-circuit below).
+                # v0.9.12: harness-owned files are harness-managed. Back up
+                # user bytes to .harness/conflicts/<path>.user-backup-<runid>
+                # and force re-stage instead of producing a .new conflict.
                 if not dry_run:
                     backup_path = (
                         target
@@ -558,33 +557,25 @@ def upgrade(
                     try:
                         shutil.copyfile(str(destination), str(backup_path))
                     except OSError:
-                        pass  # backup is best-effort — never block upgrade
+                        pass  # backup is best-effort
                 _force_restage = True
 
-            # STALE-1 sync: short-circuit when source is unchanged since install.
-            # v0.9.12: skip the short-circuit when destination was locally
-            # modified, otherwise the modified file would silently be left
-            # in place (planned_writes=0 / "no harness-owned files needed
-            # restaging") — exactly the silent-skip regression the v0.9.12
-            # auto-overwrite was meant to fix.
+            # STALE-1 sync: short-circuit when source is unchanged since
+            # install. Skipped when destination was locally modified, else
+            # the modified file would silently stay (the silent-skip
+            # regression the v0.9.12 auto-overwrite was meant to fix).
             if not _force_restage:
-                installed_info = installed_paths.get(str(entry.path), {})
                 installed_src_sha = installed_info.get("source_sha256")
                 if installed_src_sha and installed_src_sha == new_hash:
-                    # Source unchanged since install — no write needed.
                     continue
 
         planned_writes += 1
         if not dry_run:
-            # T4 Pass A: stage to staging dir instead of writing to destination directly.
             staged = upgrade_staging_dir / entry.path
             staged.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(str(source), str(staged))
             upgrade_staging_map[entry.path] = staged
             _stage_count += 1
-            reporter.tick(_stage_count)
-            # Pass A: record file state using staged hash (T1.5 durability property).
-            # This ensures installed["files"] is complete when reconciler runs.
             installed.setdefault("files", {})[str(entry.path)] = file_state(
                 root=root,
                 target=target,
@@ -593,8 +584,8 @@ def upgrade(
                 staged=staged,
             )
 
-    # v0.9.8: always surface Pass A outcome — count is authoritative even
-    # when most entries short-circuited (source_sha256 unchanged).
+    # v0.9.8: always surface Pass A outcome — authoritative count even when
+    # most entries short-circuited (source_sha256 unchanged).
     if _stage_count == 0:
         reporter.note("staging files... no harness-owned files needed restaging")
     else:
@@ -630,16 +621,18 @@ def upgrade(
             if not dry_run:
                 write_copy(destination, conflict_path)
             continue
-        # NOTE (FIX-4 narrowing): retired-file deletion happens here in Pass A,
-        # before the pending sidecar / atomic batch.  Moving this to after the
-        # batch is deferred to v0.9.8.  See impl-deviations.md FIX-4 entry.
-        if not dry_run:
-            if destination.exists():
+        # FIX-4: retired-file deletion happens in Pass A.
+        # v0.9.13: count BEFORE unlink — the prior `if destination.exists()`
+        # check ran after unlink and so always saw a missing file, reporting
+        # `0 removals` even when files were deleted.
+        if destination.exists():
+            planned_removals += 1
+            if not dry_run:
                 destination.unlink()
                 remove_empty_parents(destination.parent, target)
                 installed.setdefault("files", {}).pop(path_text, None)
-        if destination.exists():
-            planned_removals += 1
+        elif not dry_run:
+            installed.setdefault("files", {}).pop(path_text, None)
 
     if not dry_run:
         normalize_selected_project_owned_state(root=root, target=target, entries=entries, installed=installed)
@@ -802,11 +795,14 @@ def upgrade(
             _atomic_write_json_fsync(upgrade_pending_path, installed)
 
             # Step B5: atomic finalize — promote pending sidecar to final manifest.
-            # Using os.replace (same discipline as install.py:375) so the rename
-            # is atomic; no window where final is absent but pending is gone.
+            # v0.9.13: route through replace_with_retry so a Windows AV/indexer
+            # pin on installed-manifest.json gets the same 7.85 s backoff as
+            # every other state write, instead of failing the whole upgrade
+            # on the first PermissionError.
             reporter.note("finalizing...")
             final_path = target / INSTALL_STATE
-            os.replace(str(upgrade_pending_path), str(final_path))
+            from lib.durable_fs import replace_with_retry as _rwr
+            _rwr(str(upgrade_pending_path), str(final_path))
 
             # Step B6: post-finalize verify (re-read final).
             with open(str(final_path), encoding="utf-8") as fh:
