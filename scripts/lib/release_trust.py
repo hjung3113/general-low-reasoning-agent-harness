@@ -10,9 +10,6 @@ Design decisions:
   1. SSH signature verification removed in v0.9.13 (single-user internal tool;
      ssh-keygen -Y verify added no real security value and could hang on Windows).
   2. All reads are bound to the resolved commit SHA, not the tag name.
-  3. Trust-downgrade is refused unconditionally: if the target's existing
-     installed manifest already has trust_origin: signed_tag, upgrading to
-     trust_origin: dev_unsigned is rejected even when HARNESS_ALLOW_UNSIGNED_DEV=1.
 """
 from __future__ import annotations
 
@@ -38,10 +35,7 @@ class UpgradeTrustError(Exception):
         Machine-readable reason code, one of:
           - tag_not_found               : no such tag in the repo
           - path_missing_in_signed_tree : file absent from the signed commit tree
-          - trust_downgrade_refused     : target already trusts signed_tag; refusing dev
-          - target_manifest_corrupted   : install-state.json present but unparseable
           - allowed_signers_outside_repo : allowed-signers path escapes repo root
-          - bypass_requires_tty_confirm : bypass requested on non-TTY stdin
     exit_code : int
         Always EXIT_RELEASE_TRUST_INVALID (15 per §3.4 Cycle-1 fix).
     """

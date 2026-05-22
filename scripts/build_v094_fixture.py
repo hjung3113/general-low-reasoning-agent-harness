@@ -244,11 +244,7 @@ def _normalize_v094_install_state(target_dir: Path) -> None:
     fixed_now = os.environ.get("HARNESS_FIXED_NOW_ISO", "2026-05-21T00:00:00Z")
     data["git_user_email_at_install_sha256"] = None
     data["source"] = "__fixture__"
-    # Normalize trust_origin so upgrade tests with HARNESS_ALLOW_UNSIGNED_DEV=1 work.
-    # A real v0.9.4 install from the signed tag produces trust_origin=signed_tag.
-    # The dev upgrade path (HARNESS_ALLOW_UNSIGNED_DEV=1) produces dev_unsigned.
-    # The trust-downgrade guard blocks signed_tag→dev_unsigned — correct for production
-    # but breaks fixture tests.  Setting dev_unsigned here lets tests run freely.
+    # Always dev_unsigned: no trust ceremony in this internal tool.
     data["trust_origin"] = "dev_unsigned"
     data["release_tag"] = None
     data["release_commit"] = None
@@ -275,7 +271,6 @@ def run_v094_init(harness_py: Path, target_dir: Path) -> None:
     env = dict(os.environ)
     fixed_now = env.get("HARNESS_FIXED_NOW_ISO", "2026-05-21T00:00:00Z")
     env["HARNESS_FIXED_NOW_ISO"] = fixed_now
-    env["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"  # dev build — skip tag verification
     result = subprocess.run(
         [sys.executable, str(harness_py), "init", "--target", str(target_dir), "--adapters", "none"],
         check=False,

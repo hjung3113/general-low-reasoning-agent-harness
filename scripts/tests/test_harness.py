@@ -195,10 +195,7 @@ class HarnessToolTests(unittest.TestCase):
             installed["source"] = str(source)
             installed_path.write_text(json.dumps(installed), encoding="utf-8")
 
-            with mock.patch.object(harness, "repo_root", return_value=target), mock.patch.dict(
-                os.environ,
-                {"HARNESS_ALLOW_UNSIGNED_DEV": "1", "HARNESS_BYPASS_TTY_CONFIRM": "1"},
-            ):
+            with mock.patch.object(harness, "repo_root", return_value=target):
                 result = harness.run(["--version", "v9.8.8", "upgrade", "--target", str(target), "--dry-run"])
 
             self.assertEqual(0, result)
@@ -229,8 +226,6 @@ class HarnessToolTests(unittest.TestCase):
                 text=True,
                 env={
                     **os.environ,
-                    "HARNESS_ALLOW_UNSIGNED_DEV": "1",
-                    "HARNESS_BYPASS_TTY_CONFIRM": "1",
                 },
             )
 

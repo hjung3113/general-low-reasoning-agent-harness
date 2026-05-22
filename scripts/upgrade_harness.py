@@ -174,10 +174,6 @@ def run(argv: list[str] | None = None) -> int:
     print("delegating: " + " ".join(command))
     env = os.environ.copy()
     env["HARNESS_DELEGATED_SOURCE_KIND"] = kind
-    if kind == "path" and "HARNESS_ALLOW_UNSIGNED_DEV" not in env:
-        env["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"
-        env["HARNESS_ALLOW_UNSIGNED_DEV_SOURCE"] = "path_source"
-        env["HARNESS_BYPASS_TTY_CONFIRM"] = "1"
     if kind in {"release", "ref"}:
         env["HARNESS_DELEGATED_SOURCE_REPO"] = args.repo
     env["HARNESS_DELEGATED_SOURCE_REF"] = ref

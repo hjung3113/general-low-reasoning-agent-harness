@@ -36,7 +36,7 @@ EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded
 # Exit 15 is free per §3.4 table (not assigned to any meaning).
 # Previously used 17 which §3.4 assigns to "human action required" — collision
 # resolved by moving release-trust to 15.
-EXIT_RELEASE_TRUST_INVALID = 15  # tag_signature_invalid, trust_downgrade_refused, etc.
+EXIT_RELEASE_TRUST_INVALID = 15  # release-trust failure (tag_not_found / path_missing_in_signed_tree / allowed_signers_outside_repo)
 # §3.4 "human action required" slot — also used by `harness next` autopilot
 # halt with sub_reason=requires_human. Phase.approve non-TTY halts use the
 # same numeric value with sub_reason=non_tty_approval_blocked.

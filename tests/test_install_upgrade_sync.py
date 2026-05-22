@@ -37,8 +37,6 @@ _PYTHON = sys.executable
 
 _DEV_ENV = {
     **os.environ,
-    "HARNESS_ALLOW_UNSIGNED_DEV": "1",
-    "HARNESS_BYPASS_TTY_CONFIRM": "1",
 }
 
 

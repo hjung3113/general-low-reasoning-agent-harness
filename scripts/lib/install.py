@@ -554,67 +554,13 @@ def _stamp_install_trust_origin(
     target: Path,
     harness_version: str,
 ) -> None:
-    """B3-Fix-3: stamp trust_origin/release_tag/release_commit on the fresh install record.
-
-    For release builds: calls verify_release_tag; on success stamps trust_origin=signed_tag.
-    For dev builds (0.0.0-dev+...): stamps trust_origin=dev_unsigned immediately.
-    On verification failure: stamps trust_origin=dev_unsigned if HARNESS_ALLOW_UNSIGNED_DEV=1,
-    otherwise exits with EXIT_RELEASE_TRUST_INVALID to fail closed.
-    """
+    """Stamp trust_origin=dev_unsigned on the fresh install record."""
     from lib.state import INSTALL_STATE, write_json, read_install_state
-
-    is_dev_version = (
-        harness_version.startswith("0.0.0-dev+")
-        or harness_version == "0.0.0-dev+unknown"
-        or harness_version.endswith(".dev0")
-    )
-
-    trust_origin: str
-    release_tag: str | None = None
-    release_commit: str | None = None
-
-    if is_dev_version:
-        trust_origin = "dev_unsigned"
-    else:
-        from lib.release_trust import UpgradeTrustError, verify_release_tag
-        tag = "v" + harness_version
-        try:
-            release_commit = verify_release_tag(root, tag)
-            release_tag = tag
-            trust_origin = "signed_tag"
-        except UpgradeTrustError:
-            # v0.9.13: never refuse on trust; fall back to dev_unsigned.
-            trust_origin = "dev_unsigned"
 
     install_state_path = target / INSTALL_STATE
     state: dict = read_install_state(target)
-    state["trust_origin"] = trust_origin
-    if release_tag is not None:
-        state["release_tag"] = release_tag
-    if release_commit is not None:
-        state["release_commit"] = release_commit
+    state["trust_origin"] = "dev_unsigned"
     write_json(install_state_path, state)
-
-    # B-4 (Cycle-2): emit release.trust.bypassed audit row when trust_origin=dev_unsigned
-    # at install time (symmetric with upgrade path — forensic visibility).
-    if trust_origin == "dev_unsigned":
-        try:
-            import datetime as _dt
-            from lib.audit import audit_append as _aa
-            _audit_path = target / ".harness" / "audit.log"
-            _aa(
-                {
-                    "verb": "release.trust.bypassed",
-                    "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "args": {
-                        "bypass_source": "install_path",
-                        "reason": "tag_not_found" if not release_tag else "tag_signature_invalid",
-                    },
-                },
-                audit_path=_audit_path,
-            )
-        except Exception:
-            pass  # audit failure is non-fatal
 
 
 class InstallFailed(RuntimeError):
