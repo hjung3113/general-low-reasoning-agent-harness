@@ -702,11 +702,18 @@ def run(argv: list[str] | None = None) -> int:
             "(e.g., --pre-commit)"
         )
     if args.command == "init":
+        raw_adapters = parse_scope(args.adapters, default={"roo"})
+        for adapter in raw_adapters:
+            if adapter not in KNOWN_ADAPTERS:
+                raise SystemExit(f"unknown harness scope requested: adapter: {adapter}")
         raw_profiles = parse_scope(args.profiles, default={"generic"})
         profiles_resolved = normalize_profiles(list(raw_profiles))
         if args.packs is not None:
             # User explicitly provided --packs: honour it as-is.
             final_packs: set[str] = parse_scope(args.packs, default={"workflow-core"})
+            for pack in final_packs:
+                if pack not in KNOWN_PACKS:
+                    raise SystemExit(f"unknown harness scope requested: pack: {pack}")
         else:
             # Auto-derive packs from profile defaults + optional db axis.
             auto_packs: set[str] = set()
@@ -733,7 +740,7 @@ def run(argv: list[str] | None = None) -> int:
             root=root,
             target=args.target,
             dry_run=args.dry_run,
-            adapters=parse_scope(args.adapters, default={"roo"}),
+            adapters=raw_adapters,
             profiles=set(profiles_resolved),
             packs=final_packs,
             approver_email=_approver_email,

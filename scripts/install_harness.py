@@ -222,8 +222,11 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--adapters",
         default="roo",
-        choices=[name for name, _ in ADAPTER_OPTIONS],
-        help="Adapter selection: roo | opencode | both | none (default: roo).",
+        help=(
+            "Adapter selection (default: roo). Accepts a single keyword "
+            "(roo | opencode | both | none) or a comma-separated list "
+            "(e.g. 'roo,opencode')."
+        ),
     )
     parser.add_argument(
         "--profiles",
