@@ -55,8 +55,7 @@ Scoping rationale (§C of S14)
 
 * Launcher strings (``python3 scripts/harness.py`` etc.) — checked in
   slash-command Markdown only (adapter commands), NOT in
-  ``scripts/lib/smoke_lifecycle.py`` (backward-compat parser),
-  ``scripts/smoke/runner.py`` (legacy command normalizer), or historical
+  ``scripts/lib/smoke_lifecycle.py`` (backward-compat parser), or historical
   planning docs.
 
 Consolidation (§A of S14)
@@ -164,9 +163,6 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
         # legacy `python3 scripts/harness.py` form for backward-compat parsing
         # of old command markdown files.
         "scripts/lib/smoke_lifecycle.py",
-        # runner.py — normalizes the legacy form from LLM responses to
-        # [sys.executable, HARNESS, ...]; backward-compat shim.
-        "scripts/smoke/runner.py",
         # v0.8.0_todo ux-polish spec — forward-looking note that mentions
         # the old slash name as a problem statement; deferred/historical.
         "docs/superpowers/specs/v0.8.0_todo/2026-05-17-ux-polish.md",
@@ -185,18 +181,6 @@ TERM_EXEMPT_PATHS: dict[str, frozenset[str]] = {
             "scripts/lib/check.py",            # legacy validator (automation_mode field)
             "scripts/lib/planning_status.py",  # display: reads legacy field
             "scripts/lib/project_dashboard/renderer.py",  # display: reads legacy field
-        }
-    ),
-    # multi_step_scenario.py prompt uses the old form to show the LLM both
-    # accepted command forms; this is intentional for backward compat.
-    "python3 scripts/harness.py": frozenset(
-        {
-            "scripts/smoke/multi_step_scenario.py",
-        }
-    ),
-    "python scripts/harness.py": frozenset(
-        {
-            "scripts/smoke/multi_step_scenario.py",
         }
     ),
     # --auto / --chain: Roo workflow prompt-level flags (NOT harness CLI flags).

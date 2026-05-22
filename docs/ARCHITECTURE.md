@@ -12,7 +12,7 @@ general-low-reasoning-agent-harness/
 ├── scripts/                    # 모든 Python 로직 (lib/ + 14개 top-level)
 │   ├── harness.py              # CLI dispatcher (1031 LOC, argparse subparsers)
 │   ├── lib/                    # 60개 모듈, ~21.5K LOC
-│   └── smoke/                  # smoke runner + judge + aggregator (E2E LLM scenarios)
+│   └── smoke/                  # grep gates only (live-trial harness removed Phase 2)
 ├── harness/                    # 타겟에 심을 자원들
 │   ├── skeleton/clean/         # AGENTS.md + README.md 템플릿 (project-owned 복사)
 │   ├── profiles/               # generic / dotnet-etl / python-etl / react-web

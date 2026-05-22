@@ -35,8 +35,6 @@ py-modules = ["harness_cli"]
 include = ["scripts*"]
 exclude = [
   "scripts.fixtures*",
-  "scripts.smoke.fixtures*",
-  "scripts.smoke.golden*",
   "scripts.test_*",
   "scripts.tests*",
 ]

@@ -66,20 +66,13 @@
 
 ## Smoke scripts (`scripts/smoke/`)
 
+Live-trial harness removed Phase 2. Remaining modules are diagnostics gates only.
+
 | Module | Purpose |
 |---|---|
-| `runner.py` | Per-trial: budget caps (60s/20k in/4k out), retry, evidence writer |
-| `judge.py` | Programmatic (no LLM) judge: parse final state + audit |
-| `aggregator.py` | Pass rate (≥80% gate), SUMMARY.json/.md |
-| `model_client.py` | Haiku-4.5 client (pinned), urllib fallback |
-| `fake_client.py` | In-memory double for unit tests |
-| `low_reasoning_scenario.py` | Phase E live trials (02b-10) |
-| `multi_step_scenario.py` | Tier-2 multi-step env-aware driver |
-| `prepare_scratch.py` | Deterministic fixture scratch dir |
-| `verify_launcher_matrix.py` | Console-script launcher 검증 (POSIX/Windows) |
-| `grep_gate_*.py` | Stale term sweep (3 gates) |
-
-Smoke 전체 = DIAGNOSTICS/QA 영역. 워크플로우 강제와 무관 → 슬림 빌드에서 DROP 가능.
+| `grep_gate_stale_terms.py` | Stale term sweep (S14 full + launcher-only modes) |
+| `grep_gate_slash_rename.py` | Slash-command rename regex gate |
+| `grep_gate_release_terms.py` | Release-term adapter-only sweep |
 
 ## Git hooks (`.githooks/`)
 
