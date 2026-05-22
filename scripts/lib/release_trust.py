@@ -69,21 +69,39 @@ def _clean_env() -> dict[str, str]:
 
 
 def _run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None,
-         capture: bool = True) -> subprocess.CompletedProcess:
+         capture: bool = True, timeout: float = 15.0) -> subprocess.CompletedProcess:
     """Run a subprocess with text=True; return CompletedProcess regardless of exit code.
+
+    v0.9.8: ``timeout`` defaults to 15 s. ``git verify-tag`` invokes
+    ``ssh-keygen -Y verify`` which can hang indefinitely on Windows when the
+    ssh-agent or allowed-signers parsing stalls. A finite timeout converts
+    that hang into a deterministic non-zero CompletedProcess so callers can
+    surface ``UpgradeTrustError`` instead of the operator seeing a frozen
+    upgrade.
 
     NOTE: Do NOT use _run for git cat-file blob — it uses text=True which
     will corrupt binary content and collapse CRLF→LF on stdout.  Use
     file_sha256_at_commit (which calls subprocess.run directly with no text=True)
     for content hashing.
     """
-    return subprocess.run(
-        args,
-        cwd=cwd,
-        capture_output=capture,
-        text=True,
-        env=env,
-    )
+    try:
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            capture_output=capture,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=124,
+            stdout=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
+            stderr=(
+                (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+            ) + f"\n[timeout after {timeout}s]",
+        )
 
 
 def verify_release_tag(repo_root: Path, tag: str) -> str:

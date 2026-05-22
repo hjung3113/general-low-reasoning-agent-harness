@@ -13,6 +13,36 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.8 (2026-05-22) — upgrade UX hotfix
+
+Driven by Windows/PowerShell smoke: v0.9.7 upgrade looked like a hang on
+small upgrades because stdout was empty after `finalizing...` and the
+staging-files progress line never crossed its quartile throttle. Plus
+`git verify-tag` had no timeout so a stalled ssh-keygen could freeze
+the upgrade indefinitely.
+
+### UX
+- `harness upgrade` now prints a final stdout summary on success:
+  `upgraded harness → vX.Y.Z at <target> (N writes, R removals, C conflicts).
+  Next: cd <target> && python3 scripts/harness.py check`. Empty stdout
+  was being read as "hang" on Windows.
+- Pass A staging surfaces an explicit terminal note —
+  `staging files... staged N file(s)` (or `... no harness-owned files
+  needed restaging`) — so small upgrades that short-circuit on
+  source_sha256 match still show progress.
+
+### Hardening
+- `lib/release_trust._run`: 15 s default timeout. `git verify-tag` spawns
+  `ssh-keygen -Y verify`, which on Windows can hang on a stalled ssh-agent
+  or allowed-signers parse. Timeout converts the hang into a deterministic
+  non-zero CompletedProcess so callers raise UpgradeTrustError with a
+  readable `[timeout after 15.0s]` instead of freezing.
+
+### Notes
+- v0.9.7 → v0.9.8 is a wire-level no-op upgrade (only UX + timeout).
+  Trust-downgrade refusal (signed → dev) still applies; for dev source
+  HEAD set `HARNESS_VERSION` to a release version or run from a clean tag.
+
 ## v0.9.7 (2026-05-21)
 
 ### Hardening

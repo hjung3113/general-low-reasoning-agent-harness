@@ -773,6 +773,9 @@ def upgrade(
         upgrade_staging_dir.mkdir(parents=True, exist_ok=True)
 
     reporter = ProgressReporter(quiet=quiet)
+    # v0.9.8: total is an upper bound (some entries short-circuit on
+    # source_sha256 match). The terminal "staged N files" note below is
+    # the authoritative count so small upgrades still surface progress.
     _stage_total = sum(1 for e in entries if e.policy == "harness-owned")
     reporter.start("staging files", _stage_total)
     _stage_count = 0
@@ -856,6 +859,13 @@ def upgrade(
                 source=source,
                 staged=staged,
             )
+
+    # v0.9.8: always surface Pass A outcome — count is authoritative even
+    # when most entries short-circuited (source_sha256 unchanged).
+    if _stage_count == 0:
+        reporter.note("staging files... no harness-owned files needed restaging")
+    else:
+        reporter.note(f"staging files... staged {_stage_count} file(s)")
 
     for path_text, info in list(installed_paths.items()):
         if path_text in current_paths:
@@ -1145,6 +1155,16 @@ def upgrade(
     elif not dry_run and (adopting_missing_state and conflicts):
         # Conflict path: no writes, clean up staging dir.
         _rmdir_recursive_quiet(upgrade_staging_dir)
+
+    if not dry_run:
+        # v0.9.8: explicit stdout summary so operators can tell upgrade
+        # completed (mirrors install.py:435). Empty stdout was being read
+        # as "hang" on Windows/PowerShell where stderr buffering differs.
+        print(
+            f"upgraded harness → v{harness_version} at {target} "
+            f"({planned_writes} writes, {planned_removals} removals, {conflicts} conflicts). "
+            f"Next: cd {target} && python3 scripts/harness.py check"
+        )
 
     if dry_run:
         print("upgrade dry-run")
