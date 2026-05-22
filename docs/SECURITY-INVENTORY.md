@@ -20,7 +20,7 @@
 ### KEEP — SURVIVING MODULES
 
 - **audit.py** (558 LOC) — chain SHA256 stamping (state_trust oracle)
-- **audit_chain.py** (559 LOC) — per-entry chain, walk, verify (test-only callers after sec-5)
+- **audit_chain.py** (126 LOC) — per-entry chain stamp only; walk/verify removed Phase 2 Item 5
 - **audit_rotation.py** (61 LOC) — rotated file enumeration
 - **state_trust.py** (388 LOC) — audit oracle preflight (after_sha256 compare)
 
@@ -38,7 +38,7 @@
 
 ## KEPT MODULES (post-phase 1)
 
-### 1. Audit chain (`audit.py` 558 + `audit_chain.py` 559 + `audit_rotation.py` 61)
+### 1. Audit chain (`audit.py` 558 + `audit_chain.py` 126 + `audit_rotation.py` 61)
 
 Per-entry SHA256 chain (ADR D-3). `entry_hash = sha256(rfc8785(entry) + previous_hash)`. 10 MiB / 10k entries rotate with seam entry `audit.rotated`.
 

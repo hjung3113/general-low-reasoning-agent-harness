@@ -61,17 +61,6 @@ class TestChainStampedWriter:
         entry_for_hash = {k: v for k, v in entry.items() if k != "entry_hash"}
         assert entry["entry_hash"] == compute_entry_hash(entry_for_hash)
 
-    def test_chain_walks_cleanly(self, tmp_path):
-        """Written entries must pass verify_chain."""
-        from lib.audit_chain import verify_chain
-        audit_path = tmp_path / "audit.log"
-        for i in range(5):
-            audit_append({"verb": f"phase.set_{i}", "at": "2026-05-17T00:00:00Z"},
-                         audit_path=audit_path)
-        result = verify_chain(audit_path)
-        assert result.ok is True
-        assert result.entries_walked == 5
-
     def test_minimal_fallback_preserves_chain_fields(self, tmp_path):
         """§12.5 #1: last-resort minimal fallback must preserve chain fields."""
         from lib.audit_chain import GENESIS_HASH
@@ -90,25 +79,3 @@ class TestChainStampedWriter:
         assert "previous_entry_hash" in entry
         assert "seq" in entry
         assert "seq_global" in entry
-
-
-class TestBomRejection:
-    def test_bom_in_audit_exits_5(self, tmp_path):
-        """§2.4: reading an audit.log with BOM prefix must raise exit 5."""
-        from lib.audit_chain import verify_chain
-        from lib.audit_chain import AuditBomError
-        audit_path = tmp_path / "audit.log"
-        # Write BOM + content
-        audit_path.write_bytes(b"\xef\xbb\xbf" + b'{"verb":"phase.set"}\n')
-        with pytest.raises(AuditBomError) as exc_info:
-            list(__import__("lib.audit_chain", fromlist=["walk_chain"]).walk_chain(audit_path))
-        assert exc_info.value.exit_code == 5
-
-    def test_bom_fixture(self):
-        """Use the pinned BOM fixture."""
-        from lib.audit_chain import verify_chain, AuditBomError
-        fixture = Path(__file__).parent.parent / "fixtures" / "audit" / "bom_in_audit" / "audit.log"
-        if not fixture.exists():
-            pytest.skip("fixture missing: bom_in_audit/audit.log")
-        with pytest.raises(AuditBomError):
-            list(__import__("lib.audit_chain", fromlist=["walk_chain"]).walk_chain(fixture))

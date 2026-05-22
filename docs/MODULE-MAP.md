@@ -65,7 +65,7 @@
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
 | `audit.py` | 558 | audit.log writer, rotation orchestration | ✅ |
-| `audit_chain.py` | 559 | per-entry SHA256 chain stamping, walk, verify (test-only callers) | ✅ |
+| `audit_chain.py` | 126 | per-entry SHA256 chain stamping only; verify/walk path removed Phase 2 Item 5 | ✅ |
 | `audit_rotation.py` | 61 | Rotated file enumeration | ✅ |
 | `state_trust.py` | 388 | Audit oracle preflight (after_sha256 비교) | ✅ |
 
