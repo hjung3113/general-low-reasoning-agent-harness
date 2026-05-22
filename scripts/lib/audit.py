@@ -336,8 +336,6 @@ KNOWN_VERBS: frozenset = frozenset([
     "audit.repair",
     # Halt diary verbs
     "halt_diary.clear",
-    # Network guard verbs
-    "autopilot.network.deny",
     # CLI / session verbs
     "approve_nonce.mint",
     "session.unlock",
