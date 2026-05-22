@@ -341,7 +341,6 @@ KNOWN_VERBS: frozenset = frozenset([
     "autopilot.network.deny",
     # CLI / session verbs
     "approve_nonce.mint",
-    "cli.deprecated_flag",
     "session.unlock",
     "lock.recovered",
     # Migration / CI verbs

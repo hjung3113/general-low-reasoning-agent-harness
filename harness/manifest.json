@@ -824,11 +824,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/cli_deprecated.py",
-      "source": "scripts/lib/cli_deprecated.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/doctor.py",
       "source": "scripts/lib/doctor.py",
       "policy": "harness-owned"

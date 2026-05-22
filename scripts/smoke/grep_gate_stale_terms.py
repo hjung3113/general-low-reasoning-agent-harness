@@ -38,8 +38,7 @@ Scoping rationale (§C of S14)
   adapter-facing files (``.roo/``, ``.opencode/``, ``docs/superpowers/``
   minus exempted specs).
 
-* ``--chain`` / ``--auto`` (deprecated harness CLI flags) — detected by
-  ``scripts/lib/cli_deprecated.py`` (explicitly exempted). Roo workflow
+* ``--chain`` / ``--auto`` (deprecated harness CLI flags) — Roo workflow
   skills, rules, and plans legitimately describe these flags as
   *prompt-level controls* (NOT as harness CLI invocations). Checked only
   in slash-command Markdown files (``.roo/commands/*.md``,
@@ -159,9 +158,6 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
         "docs/adr/2026-05-17-approver-provenance-and-execution-mode.md",
         "docs/adr/2026-05-17-audit-canonicalization-locking-and-state-trust.md",
         "docs/adr/2026-05-17-autopilot-guards-and-manual-handoff.md",
-        # cli_deprecated.py — the S07 deprecation detector MUST reference
-        # --chain / --auto in order to detect them at argv-parse time.
-        "scripts/lib/cli_deprecated.py",
         # phase_approve.py — HARNESS_HUMAN appears only in security comments
         # explicitly stating the env var is NOT consulted (Round-4 BLOCK fix).
         "scripts/lib/phase_approve.py",
@@ -207,9 +203,7 @@ TERM_EXEMPT_PATHS: dict[str, frozenset[str]] = {
     ),
     # --auto / --chain: Roo workflow prompt-level flags (NOT harness CLI flags).
     # .roo/commands/README.md and phase-execute.md are the canonical reference
-    # docs that DEFINE these Roo prompt flags (§4 Automation Flags). They
-    # must not be confused with the deprecated harness.py --auto / --chain CLI
-    # flags detected by scripts/lib/cli_deprecated.py.
+    # docs that DEFINE these Roo prompt flags (§4 Automation Flags).
     "--auto": frozenset(
         {
             ".roo/commands/README.md",
@@ -341,7 +335,6 @@ _FULL_CATEGORIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
         SLASH_CMD_GLOBS,
     ),
     # 2. Deprecated CLI flags — only in slash-command Markdown.
-    #    (scripts/lib/cli_deprecated.py is globally exempted)
     (
         "deprecated-cli-flags-in-slash-cmds",
         ("--chain", "--auto"),
