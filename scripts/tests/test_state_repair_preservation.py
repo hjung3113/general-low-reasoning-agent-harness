@@ -244,7 +244,7 @@ class CliExitCodeTests(unittest.TestCase):
 
 class SkeletonGitignoreTests(unittest.TestCase):
     def test_skeleton_gitignore_contains_harness_backups_path(self) -> None:
-        repo_root = Path(__file__).resolve().parents[1]
+        repo_root = Path(__file__).resolve().parents[2]
         gitignore = repo_root / "harness" / "skeleton" / "clean" / ".gitignore"
         lines = gitignore.read_text(encoding="utf-8").splitlines()
         self.assertIn(".harness/backups/", lines)

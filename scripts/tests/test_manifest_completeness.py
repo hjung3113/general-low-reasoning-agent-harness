@@ -19,7 +19,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPO / "harness" / "manifest.json"
 SCRIPTS = REPO / "scripts"
 

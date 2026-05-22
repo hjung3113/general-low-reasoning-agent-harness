@@ -147,7 +147,7 @@ progress:
             self.assertIn("Core docs can drift.", html)
 
     def test_entrypoint_stays_thin(self) -> None:
-        entrypoint = Path(__file__).resolve().parents[1] / "project_dashboard.py"
+        entrypoint = Path(__file__).resolve().parents[2] / "scripts/project_dashboard.py"
         line_count = len(entrypoint.read_text(encoding="utf-8").splitlines())
 
         self.assertLessEqual(line_count, 40)
@@ -166,7 +166,7 @@ progress:
             self.assertTrue(any(action["id"] == "run" and action["confirmation"] for action in payload["actions"]))
 
     def test_dashboard_assets_are_present_for_dynamic_routes(self) -> None:
-        asset_dir = Path(__file__).resolve().parents[1] / "lib/project_dashboard/assets"
+        asset_dir = Path(__file__).resolve().parents[2] / "scripts/lib/project_dashboard/assets"
 
         html = (asset_dir / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('<html lang="en">', html)
@@ -226,7 +226,7 @@ progress:
         self.assertEqual("127.0.0.1", dashboard_server.host_without_port("127.0.0.1:8765"))
 
     def test_manifest_installs_dashboard_runtime_files(self) -> None:
-        manifest = json.loads((Path(__file__).resolve().parents[1] / "harness/manifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads((Path(__file__).resolve().parents[2] / "harness/manifest.json").read_text(encoding="utf-8"))
         paths = {entry["path"] for entry in manifest["files"]}
 
         self.assertIn("scripts/project_dashboard.py", paths)
