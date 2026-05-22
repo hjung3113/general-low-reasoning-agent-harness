@@ -87,7 +87,7 @@ _FIX_AUTOPILOT = (
     "first, then re-approve"
 )
 _FIX_STATE_TRUST = (
-    "Fix: run `harness verify --audit`; "
+    "Fix: inspect .harness/audit.log manually; "
     "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
     "or re-run `harness install`"
 )

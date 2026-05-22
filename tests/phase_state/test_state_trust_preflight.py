@@ -107,7 +107,7 @@ def test_preflight_rejects_tampered_approved_true_with_empty_audit(
         _ok(scratch, audit_path, lock)
     assert excinfo.value.exit_code == 10
     # Manual repair path is part of the §2.6 step-4 contract.
-    assert "harness verify --audit" in str(excinfo.value)
+    assert "inspect .harness/audit.log" in str(excinfo.value)
     assert "git checkout" in str(excinfo.value) or "harness install" in str(excinfo.value)
 
 

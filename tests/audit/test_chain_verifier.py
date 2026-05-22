@@ -553,36 +553,3 @@ class TestTruncationDetection:
         with pytest.raises(AuditChainTruncationError):
             list(walk_chain(log))
 
-    def test_single_valid_chain_entry_verify_ok(self, tmp_path):
-        """P1-5: a single valid chain entry passes cmd_verify_audit."""
-        import types
-        from lib.audit_verify_cli import cmd_verify_audit
-        from lib.audit_chain import stamp_chain_fields, GENESIS_HASH
-        import json as _json
-
-        # Write 2 entries
-        audit_path = tmp_path / "audit.log"
-        prev = GENESIS_HASH
-        entries_data = []
-        for i, verb in enumerate(["phase.set", "phase.approve"]):
-            stamped = stamp_chain_fields(
-                {"verb": verb, "at": "2026-05-17T00:00:00Z", "index": i + 1,
-                 "schema_version": 2},
-                previous_entry_hash=prev,
-                seq=i + 1,
-                seq_global=i + 1,
-            )
-            entries_data.append(stamped)
-            prev = stamped["entry_hash"]
-
-        # Only write the first entry (truncate the second)
-        audit_path.write_text(
-            _json.dumps(entries_data[0], separators=(",", ":"), sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-        # Build a mock args object
-        args = types.SimpleNamespace(verify_fixture=str(tmp_path))
-        rc = cmd_verify_audit(args, tmp_path)
-        # Single valid entry is OK
-        assert rc == 0

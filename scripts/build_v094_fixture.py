@@ -56,7 +56,6 @@ MISSING_LIB_MODULES: list[str] = [
     "audit.py",
     "audit_chain.py",
     "audit_rotation.py",
-    "audit_verify_cli.py",
     "ci_provenance.py",
     "cli_budgets.py",
     "durable_fs.py",

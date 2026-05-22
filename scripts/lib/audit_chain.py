@@ -299,7 +299,7 @@ def walk_chain(
                         f"Expected last entry of rotated-out file to carry "
                         f"verb=audit.rotated and next_file_seed_previous_entry_hash. "
                         f"Fix: this rotation was performed without seam emission; "
-                        f"run 'harness verify --audit --fixture <dir>' to diagnose."
+                        f"inspect .harness/audit.log manually."
                     )
                 # Verify the new file's first entry chains from the seam seed
                 seed_hash = last_prev_entry.get("next_file_seed_previous_entry_hash")
@@ -316,7 +316,7 @@ def walk_chain(
                                 f"Rotation seam seed mismatch in {file_path}: "
                                 f"first entry previous_entry_hash={first_prev!r} "
                                 f"does not match seam seed={seed_hash!r} from {prev_file}. "
-                                f"Fix: run 'harness verify --audit --fixture <dir>'."
+                                f"Fix: inspect .harness/audit.log manually."
                             )
 
         for entry_idx, entry in enumerate(file_entries):
@@ -330,7 +330,7 @@ def walk_chain(
                         f"file={file_path}, entry_idx={entry_idx}. "
                         f"Forward-only migration: once v2 is seen all subsequent "
                         f"entries must be v2 (sub_reason=v1_after_v2_downgrade). "
-                        f"Fix: run 'harness verify --audit --fixture <dir>'.",
+                        f"Fix: inspect .harness/audit.log manually.",
                         sub_reason="v1_after_v2_downgrade",
                     )
                 # v1 entry — tolerate, advance prev_hash only if entry has entry_hash
@@ -357,7 +357,7 @@ def walk_chain(
                         f"Rotation seam hash mismatch in {file_path} at entry 0: "
                         f"expected previous_entry_hash={last_file_last_hash!r} "
                         f"but got {entry_prev!r}. "
-                        f"Fix: run 'harness verify --audit --fixture <dir>' to diagnose."
+                        f"Fix: inspect .harness/audit.log manually."
                     )
 
             # Check duplicate seq_global and monotonic gaps
@@ -366,7 +366,7 @@ def walk_chain(
                 if sg in seen_seq_globals:
                     raise AuditChainDuplicateError(
                         f"Duplicate seq_global={sg} in {file_path}. "
-                        f"Fix: run 'harness verify --audit' to diagnose."
+                        f"Fix: inspect .harness/audit.log manually."
                     )
                 # Check for gaps in seq_global (must be monotonically increasing)
                 if seen_seq_globals:
@@ -375,7 +375,7 @@ def walk_chain(
                         raise AuditChainGapError(
                             f"seq_global gap detected: expected {max_seen + 1} "
                             f"but got {sg} in {file_path}. "
-                            f"Fix: run 'harness verify --audit' to diagnose."
+                            f"Fix: inspect .harness/audit.log manually."
                         )
                 seen_seq_globals.add(sg)
 
@@ -388,7 +388,7 @@ def walk_chain(
                 raise AuditChainTamperedError(
                     f"entry_hash mismatch at seq_global={sg} in {file_path}: "
                     f"stored={stored!r}, computed={computed!r}. "
-                    f"Fix: run 'harness verify --audit --fixture {file_path.parent}'."
+                    f"Fix: inspect .harness/audit.log manually."
                 )
 
             # Verify previous_entry_hash chain link
@@ -400,7 +400,7 @@ def walk_chain(
                         f"Chain break at seq_global={sg} in {file_path}: "
                         f"previous_entry_hash={entry_prev!r} does not match "
                         f"prior entry_hash={prev_hash!r}. "
-                        f"Fix: run 'harness verify --audit --fixture {file_path.parent}'."
+                        f"Fix: inspect .harness/audit.log manually."
                     )
 
             prev_hash = stored
@@ -437,8 +437,8 @@ def _read_entries(path: Path) -> list[dict]:
                 raise AuditChainTruncationError(
                     f"Partial JSON tail in {path}: last non-empty line is not "
                     f"valid JSON (likely a partial write). "
-                    f"Fix: truncate the incomplete line with "
-                    f"'harness verify --audit --repair-tail'."
+                    f"Fix: truncate the incomplete line manually; "
+                    f"inspect .harness/audit.log manually."
                 )
             # Interior malformed line — tolerate (will fail hash check in walk)
     return entries
@@ -477,7 +477,7 @@ def _enumerate_rotated_files_with_gap_check(audit_path: Path, rotation_dir: Path
             raise AuditChainGapError(
                 f"Missing rotation file {base_name}.{n} (gap detected: "
                 f"{base_name}.{max_n} exists but {base_name}.{n} is missing). "
-                f"Fix: run 'harness verify --audit' to diagnose."
+                f"Fix: inspect .harness/audit.log manually."
             )
 
     # Return in oldest-first order: max_n down to 1, then current

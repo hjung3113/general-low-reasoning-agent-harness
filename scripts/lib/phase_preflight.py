@@ -47,7 +47,7 @@ FIX_APPROVER_MEMBERSHIP = (
     "may run this verb; re-run `harness install`"
 )
 FIX_STATE_TRUST = (
-    "Fix: run `harness verify --audit`; "
+    "Fix: inspect .harness/audit.log manually; "
     "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
     "or re-run `harness install`"
 )

@@ -195,8 +195,6 @@ run "3h-state-show-json" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/ha
 # 3i state repair (no-op on healthy install)
 run "3i-state-repair-noop" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py state repair"
 
-# 3j verify --audit
-run "3j-verify-audit" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py verify --audit"
 
 echo ""
 echo "=============================================="

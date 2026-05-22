@@ -52,7 +52,7 @@ from . import phase_txn as _phase_txn
 STATE_NAME = _phase_txn.STATE_NAME
 _BOM = b"\xef\xbb\xbf"
 
-_FIX_AUDIT = "Fix: run 'harness verify --audit'"
+_FIX_AUDIT = "Fix: inspect .harness/audit.log manually"
 _FIX_REPAIR_MANUAL = (
     "if the mismatch is intentional, restore via "
     "'git checkout -- .scratch/phase-state.json' or re-run 'harness install'"
@@ -93,7 +93,7 @@ class StateMalformedJsonError(StateTrustError):
 
 class StateEmptyError(StateTrustError):
     """Exit 14 — state file present but zero bytes; this is a crash
-    artefact, not tampering. Routes to recover, not to verify --audit."""
+    artefact, not tampering. Routes to recover, not to audit inspection."""
 
     exit_code = 14
 

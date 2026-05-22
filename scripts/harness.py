@@ -670,28 +670,6 @@ def run(argv: list[str] | None = None) -> int:
         help="Print the lockfile payload and exit 0 without removing.",
     )
 
-    # harness verify --audit [--fixture <dir>] (design §12.7, §12.9, S06)
-    verify_parser = subparsers.add_parser(
-        "verify",
-        help="Verify audit log chain integrity (§2.2, §12.7).",
-    )
-    verify_parser.add_argument(
-        "--audit",
-        action="store_true",
-        required=True,
-        help="Verify the audit log chain.",
-    )
-    verify_parser.add_argument(
-        "--fixture",
-        dest="verify_fixture",
-        default=None,
-        metavar="DIR",
-        help=(
-            "Override source to verify from <DIR>/audit.log + rotation files. "
-            "Anchor checks are skipped (§12.9)."
-        ),
-    )
-
     # ----- halt-diary admin verbs (design §5.3 + §12.7) -----
     halt_diary_parser = subparsers.add_parser(
         "halt-diary",
@@ -940,9 +918,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.halt_diary_command == "clear":
             return cmd_halt_diary_clear(args)
         raise AssertionError(f"Unhandled halt-diary subcommand: {args.halt_diary_command}")
-    if args.command == "verify":
-        from lib.audit_verify_cli import cmd_verify_audit
-        return cmd_verify_audit(args, root)
     if args.command == "status":
         from lib.status_next_cli import cmd_status
         return cmd_status(args)

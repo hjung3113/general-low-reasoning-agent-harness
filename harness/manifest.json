@@ -799,11 +799,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/audit_verify_cli.py",
-      "source": "scripts/lib/audit_verify_cli.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/backups.py",
       "source": "scripts/lib/backups.py",
       "policy": "harness-owned"

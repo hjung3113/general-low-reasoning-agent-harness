@@ -171,7 +171,7 @@ def _read_state_with_preflight(
         except _state_trust.StateAuditMismatchError as exc:
             print(
                 f"error: harness status/next: state-trust mismatch: {exc}\n"
-                f"Fix: run 'harness verify --audit'",
+                f"Fix: inspect .harness/audit.log manually",
                 file=sys.stderr,
             )
             return None, 10
@@ -186,7 +186,7 @@ def _read_state_with_preflight(
             exit_code = getattr(exc, "exit_code", 10)
             print(
                 f"error: harness status/next: state-trust preflight failed: {exc}\n"
-                f"Fix: run 'harness verify --audit'",
+                f"Fix: inspect .harness/audit.log manually",
                 file=sys.stderr,
             )
             return None, exit_code
