@@ -493,8 +493,10 @@ def run(argv: list[str] | None = None) -> int:
         default=None,
         metavar="ADDR",
         help=(
-            "Bootstrap approver email for .harness/install-record.json. "
-            "Falls back to HARNESS_INSTALL_APPROVER env, then git config user.email."
+            "[optional, v0.9.9+] Audit-display email recorded in "
+            ".harness/install-record.json. Not required — harness auto-derives "
+            "<user>@<host> when no value is provided. The approver field is no "
+            "longer enforced (internal single-user threat model)."
         ),
     )
     init_parser.add_argument(

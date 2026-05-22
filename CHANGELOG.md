@@ -13,6 +13,39 @@ All notable changes to this harness.
 
 _No further unreleased breaking changes._
 
+## v0.9.9 (2026-05-22) — kill approver-email requirement
+
+`harness init` used to refuse when no approver email was available (CLI flag
+→ `HARNESS_INSTALL_APPROVER` env → `git config user.email` → SystemExit).
+That requirement was workflow theater: this is an internal single-user dev
+tool (see [[feedback_internal_only_threat_model]]). A user sitting at their
+own PC approving their own phase does not need an email-address gate.
+
+### Removed
+- `harness init` no longer refuses on missing email. `resolve_approver_email`
+  always returns a value, falling through to `<user>@<host>` (via
+  `getpass.getuser()` + `socket.gethostname()`), then to the constant
+  `local@harness` if even that fails. Source field becomes `auto` in that case.
+- `phase approve` Step 3 (install-record approvers membership) is now
+  advisory: a mismatch logs a stderr line "advisory: phase approve identity
+  ... is not in install-record approvers ... Proceeding anyway (v0.9.9:
+  internal single-user threat model)" and approve continues. Previously
+  exited rc=6 / `approver_not_in_install_record`.
+
+### Why
+Pre-v0.9.9 fresh `harness init` could refuse outright when:
+- the operator's git config had no user.email set (common on locked-down
+  work machines),
+- no `HARNESS_INSTALL_APPROVER` env was exported,
+- and the operator didn't know about the (undocumented) `--approver-email`
+  flag.
+
+That was hidden friction with zero security value for this threat model.
+
+### CLI help text
+`--approver-email`'s help now reads "[optional, v0.9.9+] ... not required —
+harness auto-derives `<user>@<host>` when no value is provided."
+
 ## v0.9.8 (2026-05-22) — upgrade UX hotfix
 
 Driven by Windows/PowerShell smoke: v0.9.7 upgrade looked like a hang on

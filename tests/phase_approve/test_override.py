@@ -218,26 +218,25 @@ def test_override_identity_empty_reason_rejected(env):
 # ---------------------------------------------------------------------------
 
 
-def test_resolved_email_not_in_approvers_rejected_even_with_override(env):
-    """Override identity is the audit *display* — the resolved email
-    (gitconfig or --by) MUST still be a listed approver. This prevents
-    `--override-identity` from being an env-spoof rename.
+def test_resolved_email_not_in_approvers_advisory_v099(env, monkeypatch, capsys):
+    """v0.9.9: approver-membership refusal removed (internal single-user
+    threat model — see feedback_internal_only_threat_model memory).
 
-    Design decision (under-specified): §3.1 step 4 says override
-    "bypasses step 3"; we read this as "bypasses the membership check
-    for the DISPLAYED identity", NOT "lets any caller approve". The
-    operational invariant is "humans listed in install-record approve".
-    See ADR-001 + conductor brief.
+    Previously this asserted exit_code=6/approver_not_in_install_record.
+    Now mismatch logs an advisory to stderr and approve continues to the
+    Step 7 speed-bump (which we answer "n" via monkeypatch to return cleanly).
     """
-    # approver gate fires before Step 7 prompt; no monkeypatch needed
     rc = _run(
         env,
-        by="mallory@evil.example",  # NOT in approvers
+        by="mallory@evil.example",
         override_identity="alice@example.com",
         override_reason="trying to spoof identity",
+        monkeypatch=monkeypatch,
+        input_response="n",
     )
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "approver_not_in_install_record"
+    assert rc.sub_reason != "approver_not_in_install_record"
+    err = capsys.readouterr().err
+    assert "advisory" in err and "v0.9.9" in err
 
 
 # ---------------------------------------------------------------------------

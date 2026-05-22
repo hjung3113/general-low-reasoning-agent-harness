@@ -68,6 +68,7 @@ _KNOWN_DIVERGENT = {
     "scripts/lib/hooks.py",
     "scripts/lib/phase_cli.py",
     "scripts/lib/phase_reopen.py",
+    "scripts/lib/phase_approve.py",  # v0.9.9: dropped approver-membership refusal
 }
 
 # ---------------------------------------------------------------------------

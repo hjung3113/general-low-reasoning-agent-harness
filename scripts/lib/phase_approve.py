@@ -443,23 +443,18 @@ def run_approve(
         return ApproveResult(exit_code=6, sub_reason="install_record_missing")
 
     approvers = _approvers_emails(install_record)
-    # Note: prior code had a bypass `and not getattr(args, "override_identity", False)`.
-    # S05 removes that bypass — the resolved identity (gitconfig or --by)
-    # MUST still be a listed approver even when `--override-identity` is
-    # set. The override changes only the audit-displayed identity; the
-    # GATE remains "humans listed in install-record approve". See the
-    # design decision comment in the override branch above.
-    if resolved.lower() not in approvers:
-        print(
-            f"error: phase approve refused: {resolved!r} is not in "
-            f"install-record approvers[]. {_FIX_APPROVER_MEMBERSHIP}",
-            file=sys.stderr,
-        )
-        return ApproveResult(
-            exit_code=6,
-            sub_reason="approver_not_in_install_record",
-            resolved_email=resolved,
-            by_source=by_source,
+    # v0.9.9: approver-membership check is now advisory only. This is an
+    # internal single-user dev tool (memory feedback_internal_only_threat_model);
+    # the "approvers list" was workflow theater rather than security. The
+    # check remains in place for forensic visibility — a mismatch logs a
+    # warning to stderr but no longer blocks approve. Install-record bootstrap
+    # source "auto" (no real email available) is always treated as a match.
+    _ir_source = install_record.get("bootstrap_source", "")
+    if _ir_source != "auto" and resolved.lower() not in approvers:
+        sys.stderr.write(
+            f"advisory: phase approve identity {resolved!r} is not in "
+            f"install-record approvers[]={approvers!r}. Proceeding anyway "
+            f"(v0.9.9: internal single-user threat model).\n"
         )
 
     # ---------- Steps 4+5+6+7+8: under primary lock ----------

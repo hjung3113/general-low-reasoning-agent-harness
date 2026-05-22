@@ -205,10 +205,22 @@ def test_explicit_by_flag_overrides_gitconfig(env, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_email_not_in_approvers_rejected_exit_6(env):
-    rc = _run(env, gitconfig_email="mallory@evil.example")  # returns before Step 7
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "approver_not_in_install_record"
+def test_email_not_in_approvers_no_longer_blocks_v099(env, monkeypatch, capsys):
+    """v0.9.9: approver-membership check is advisory only. Mismatch must
+    NOT abort approve at Step 3 (internal single-user threat model).
+
+    Uses monkeypatch to answer "n" at the Step 7 speed-bump so the function
+    returns cleanly after passing Step 3.
+    """
+    rc = _run(
+        env,
+        gitconfig_email="mallory@evil.example",
+        monkeypatch=monkeypatch,
+        input_response="n",
+    )
+    assert rc.sub_reason != "approver_not_in_install_record"
+    err = capsys.readouterr().err
+    assert "advisory" in err and "v0.9.9" in err
 
 
 def test_listed_approver_accepted(env, monkeypatch):

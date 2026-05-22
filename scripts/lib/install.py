@@ -80,32 +80,37 @@ def resolve_approver_email(
     env: "dict | None" = None,
     root: "Path | None" = None,
 ) -> "tuple[str, str]":
-    """Resolve bootstrap approver email using priority chain.
+    """Resolve bootstrap approver email — never fails.
 
-    Priority: (1) cli_flag, (2) HARNESS_INSTALL_APPROVER env, (3) git config user.email.
-    Returns ``(lowercased_email, bootstrap_source)``.
-    Raises ``SystemExit`` if all sources empty/invalid.
+    v0.9.9: this is an internal single-user dev tool (see memory
+    feedback_internal_only_threat_model). The approver email used to be a
+    hard requirement that refused init when no source was available — that
+    was workflow theater, not security. Now this returns a best-effort
+    identity and never raises.
+
+    Priority:
+      1. ``cli_flag``                       → source = "cli-flag"
+      2. ``HARNESS_INSTALL_APPROVER`` env   → source = "env"
+      3. ``git config user.email``          → source = "git-config"
+      4. ``<getpass.getuser>@<hostname>``   → source = "auto"
+      5. ``"local@harness"`` constant       → source = "auto"
+
+    Invalid CLI/env values fall through to the next source instead of aborting.
     """
     _env = env if env is not None else os.environ
 
     if cli_flag is not None:
         try:
             return _sanitize_approver_email(cli_flag), "cli-flag"
-        except ValueError as exc:
-            raise SystemExit(
-                f"error: --approver-email invalid: {exc}\n"
-                "Fix: provide a valid email address with --approver-email."
-            ) from exc
+        except ValueError:
+            pass  # v0.9.9: invalid flag → fall through
 
     env_val = _env.get("HARNESS_INSTALL_APPROVER", "")
     if env_val:
         try:
             return _sanitize_approver_email(env_val), "env"
-        except ValueError as exc:
-            raise SystemExit(
-                f"error: HARNESS_INSTALL_APPROVER invalid: {exc}\n"
-                "Fix: set HARNESS_INSTALL_APPROVER to a valid email address."
-            ) from exc
+        except ValueError:
+            pass  # v0.9.9: invalid env → fall through
 
     try:
         result = subprocess.run(
@@ -123,13 +128,20 @@ def resolve_approver_email(
     except (OSError, subprocess.SubprocessError):
         pass
 
-    raise SystemExit(
-        "error: harness init refused: cannot determine approver email.\n"
-        "Provide one of:\n"
-        "  --approver-email <addr>          (CLI flag)\n"
-        "  HARNESS_INSTALL_APPROVER=<addr>  (environment variable)\n"
-        "  git config user.email            (git config)"
-    )
+    try:
+        import getpass as _gp
+        import socket as _sk
+        user = _gp.getuser() or "user"
+        host = _sk.gethostname() or "localhost"
+        candidate = f"{user}@{host}".lower()
+        try:
+            return _sanitize_approver_email(candidate), "auto"
+        except ValueError:
+            pass
+    except Exception:
+        pass
+
+    return "local@harness", "auto"
 
 
 def write_install_record(

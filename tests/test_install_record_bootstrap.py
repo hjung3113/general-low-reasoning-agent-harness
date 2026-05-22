@@ -97,8 +97,13 @@ def test_init_falls_back_to_git_config():
     assert source == "git-config"
 
 
-def test_init_refuses_when_all_empty():
-    """No flag/env/git → SystemExit with actionable message."""
+def test_init_falls_back_to_auto_when_all_empty():
+    """v0.9.9: no flag/env/git → auto-derived identity, NOT SystemExit.
+
+    Replaces the prior v0.9.5-era 'refuse on empty' assertion. Internal
+    single-user tool — approver requirement was workflow theater, killed in
+    v0.9.9 (memory feedback_internal_only_threat_model).
+    """
     import subprocess
 
     class _R:
@@ -106,10 +111,10 @@ def test_init_refuses_when_all_empty():
         stdout = ""
 
     with patch.object(subprocess, "run", return_value=_R()):
-        with pytest.raises(SystemExit) as exc_info:
-            resolve_approver_email(cli_flag=None, env={})
-    msg = str(exc_info.value)
-    assert "--approver-email" in msg or "HARNESS_INSTALL_APPROVER" in msg
+        email, source = resolve_approver_email(cli_flag=None, env={})
+    assert source == "auto"
+    assert "@" in email
+    assert email.islower()
 
 
 # ---------------------------------------------------------------------------
