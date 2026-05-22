@@ -35,7 +35,7 @@ general-low-reasoning-agent-harness/
 | INFRA | 11 | 2,819 | ✅ KEEP (fs_fence removed) |
 | DIAGNOSTICS | 8 | 3,606 | 🔄 TRIM (smoke pending) |
 | SECURITY | 5 | 1,550 | ✅ KEEP (9→5 modules) |
-| CLI_DISPATCH | 4 | 1,515 | 🔄 (halt_diary_cli pending) |
+| CLI_DISPATCH | 3 | 1,474 | ✅ KEEP |
 
 **Total**: 53 lib + 12 scripts/*.py = 65 Python files, ~19K LOC.
 
@@ -57,14 +57,14 @@ Tier 2 (Tier 1만 의존):
 
 Tier 3:
   install, adoption, check, doctor,
-  phase_cli, status_next_cli, state_cli, halt_diary_cli, cli_budgets
+  phase_cli, status_next_cli, state_cli
 
 Tier 4 (heaviest aggregator):
   upgrade (adoption + install + manifest_reconciler + manifest_v2 + ...)
 ```
 
 **Removed in Phase 1**: secret_key, cli_deprecated, fs_fence, autopilot_guard, audit_verify_cli, release_trust (sec-7b orphan).
-**Removed in Phase 2**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2).
+**Removed in Phase 2**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets (autopilot/budget scaffolding — ~816 LOC modules + ~1200 LOC tests; Item 7).
 
 ## Two-axis 분류: workflow vs deployment
 

@@ -886,12 +886,10 @@ def check_phase_state_semantics(path: Path) -> None:
     # When present, it MUST be inside the enum — fail closed to defeat
     # hand-edited or forged values (state-trust preflight lands in S01-E).
     if "execution_mode" in state:
-        from lib.phase_state import EXECUTION_MODES  # local import: avoids cycle
         execution_mode = state["execution_mode"]
-        if execution_mode not in EXECUTION_MODES:
+        if execution_mode != "manual":
             raise SystemExit(
-                f"{path} execution_mode must be one of "
-                f"{sorted(EXECUTION_MODES)}; got {execution_mode!r}."
+                f"{path} execution_mode must be 'manual'; got {execution_mode!r}."
             )
     auto_selected = state.get("auto_selected")
     if not isinstance(auto_selected, list):

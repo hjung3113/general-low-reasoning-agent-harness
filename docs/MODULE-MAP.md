@@ -17,7 +17,7 @@
 | `phase_lock.py` | 529 | O_EXCL primary lock + dead-process recovery | ✅ |
 | `phase_txn.py` | 836 | 5-step crash-safe state+audit txn + recovery matrix | ✅ |
 | `phase_approve.py` | 705 | TTY [y/N] gate, identity, approver membership | ✅ |
-| `phase_reopen.py` | 553 | Backward 전이, draft 보존, autopilot halt | ✅ |
+| `phase_reopen.py` | 553 | Backward 전이, draft 보존 | ✅ |
 | `planning_grammar.py` | 176 | STATE.md/ROADMAP.md regex + parsing | ✅ |
 | `planning_status.py` | 689 | Read-only status projection, task inventory | ✅ |
 | `roadmap_state.py` | 272 | 5-point invariant check | ✅ |
@@ -78,8 +78,6 @@
 | `phase_cli.py` | 825 | phase set/approve/reopen/next-pending, session unlock | ✅ |
 | `status_next_cli.py` | 491 | status/next/run CLI handlers | ✅ |
 | `state_cli.py` | 158 | state show/repair CLI | ✅ |
-| `halt_diary_cli.py` | 128 | halt-diary clear CLI | 🔄 (autopilot 정리에 따라) |
-| `cli_budgets.py` | 495 | Budget decrement, exhaustion, halt-diary 연동 | 🔄 |
 
 ## DIAGNOSTICS (8 modules, 3,606 LOC)
 
@@ -89,7 +87,6 @@
 | `doctor.py` | 545 | Drift findings + render (markdown/json) | 🔄 |
 | `state_diagnostics.py` | 422 | Malformed-state diagnostic, schema 검증 | ✅ |
 | `state_repair.py` | 371 | Managed marker block 재생성 | ✅ |
-| `halt_diary.py` | 196 | Halt diary 로직 | 🔄 |
 | `workflow_static_checks.py` | 119 | 설치된 하네스의 static check | ✅ |
 | `audit_verify_cli.py` | (235) | (SECURITY에 카운트) | — |
 
@@ -112,6 +109,8 @@ Tier 2: manifest, append_block, state, install_recovery,
 
 Tier 3: install, adoption, check, doctor,
         phase_cli, status_next_cli, state_cli
+
+**Removed (Phase 2 Item 7)**: halt_diary_cli, cli_budgets, halt_diary
 
 Tier 4: upgrade (모두 의존)
 ```
@@ -136,8 +135,9 @@ Tier 4: upgrade (모두 의존)
 
 **Module reduction**: 60 → 54 lib modules. **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→11 (fs_fence 제거). **DEAD_LEGACY** 2개 잔존 (Tier B).
 
+**Phase 2 Item 7 completion**: halt-diary + cli_budgets + autopilot scaffolding removed — ~816 LOC modules + ~1200 LOC tests. `halt_diary.py` (196 LOC), `halt_diary_cli.py` (128 LOC), `cli_budgets.py` (495 LOC) deleted. Schema fields `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network` removed. Audit verbs `phase.autopilot.*`, `halt_diary.clear` removed.
+
 **Remaining phases**:
-- halt_diary + cli_budgets optional cleanup — ~700 LOC
 - doctor.py simplification — ~200 LOC potential
 
 ---

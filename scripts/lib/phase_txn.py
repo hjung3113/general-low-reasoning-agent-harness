@@ -1,16 +1,10 @@
 """Crash-safe state+audit transaction protocol (design §3.8).
 
-Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
-
 Holding the state lock prevents concurrent writers; it does NOT make
 two-file (state + audit) mutation crash-atomic. A power loss between
 `os.replace(state)` and audit append, or between audit append and the
 replace, can leave them divergent. This module provides the 5-step
 protocol that closes that gap.
-
-Slice S01-D.1 implements `commit_transaction` (steps 1-5). The 12-row
-recovery matrix (`recover()`) lives in S01-D.2 and consumes the same
-journal/tmp/audit artefacts written here.
 
 Public surface
 --------------
@@ -55,14 +49,6 @@ STATE_NAME = "phase-state.json"
 _TXN_VERBS: frozenset[str] = frozenset([
     "phase.approve",
     "phase.reopen",
-    "phase.autopilot.start",
-    "phase.autopilot.start_hash_finalized",
-    "phase.autopilot.start.recover_pending",
-    "phase.autopilot.stop",
-    "phase.autopilot.halt",
-    "phase.autopilot.halt.budget",
-    "phase.budget.halt",
-    "halt_diary.clear",
 ])
 
 
@@ -76,41 +62,17 @@ class TxnLockMissingError(TxnError):
     """Caller invoked commit_transaction without an acquired LockHandle."""
 
 
-class BudgetExhaustedError(TxnError):
-    """Raised by commit_transaction when a count-based budget is exhausted.
-
-    Design decision (§3.4 + §5.3): exit code 9, sub_reason
-    "budget_exhausted:<capability>".  Raised BEFORE any journal write so no
-    partial artefacts are left on disk.
-
-    Caller-contract: the commit is NOT attempted — the caller should either
-    apply_budget_halt and commit the halted state (which will pass because
-    execution_mode will be "manual" by then), or propagate exit 9.
-    """
-
-    def __init__(self, *, capability: str, remaining: int, message: str) -> None:
-        super().__init__(message)
-        self.exit_code: int = 9
-        self.sub_reason: str = f"budget_exhausted:{capability}"
-        self.capability: str = capability
-        self.remaining: int = remaining
-
-
 @dataclasses.dataclass
 class TxnRequest:
     """Inputs to one commit. `before_state` may be `None` for a from-
     nothing insert; `after_state` is the canonical post-state dict.
 
     Audit drafts: most verbs emit ONE audit entry per transaction
-    (`audit_entry_draft`). The S04+S05 review-fix (P1-3) extended this to
-    accept a LIST of drafts (`audit_entry_drafts`) so a single atomic
-    transaction can emit multiple correlated audit rows (e.g. a reopen
-    that halts active autopilot emits `phase.autopilot.halt` followed by
-    `phase.reopen` under one `txn_id`). The singular `audit_entry_draft`
-    field is preserved as the backward-compat path; if both are set, the
-    plural list wins. All drafts share the same `txn_id` and
-    `before/after_sha256` decorations.
-
+    (`audit_entry_draft`). The plural `audit_entry_drafts` accepts a LIST
+    of drafts so a single atomic transaction can emit multiple correlated
+    audit rows. The singular `audit_entry_draft` field is the backward-compat
+    path; if both are set, the plural list wins. All drafts share the same
+    `txn_id` and `before/after_sha256` decorations.
     """
 
     action: str
@@ -178,18 +140,6 @@ def commit_transaction(
 ) -> str:
     """Execute steps 1-5 of design §3.8 in order. Returns the assigned `txn_id`.
 
-    Budget check (§3.5 + §5.3 caller-contract):
-    BEFORE step 1 (journal write), if request.before_state has
-    execution_mode != "manual" AND cli_budgets_remaining is set, check the
-    "file_mutation_ops" budget. If exhausted, raise BudgetExhaustedError
-    (exit_code=9, sub_reason="budget_exhausted:file_mutation_ops") before any
-    artefact is written.
-
-    Caller-contract for decrement: callers that want the after_state to reflect
-    the decremented budget MUST apply `with_budget_decrement(after_state)`
-    themselves before building the TxnRequest.  See `with_budget_decrement`
-    below.  This keeps commit_transaction free of budget-semantics coupling.
-
     Step 1: write journal {txn_id, action, before_sha256, after_sha256,
             audit_entry_draft, started_at_monotonic}; fsync(journal_fd);
             fsync_parent_dir(scratch).
@@ -205,48 +155,6 @@ def commit_transaction(
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
-
-    # Budget pre-check (BEFORE journal write — no artefacts written yet).
-    # Only applied when autopilot is active AND budgets are configured.
-    #
-    # EXEMPTED actions (P1-3 fix): internal-finalize commits that are
-    # follow-up bookkeeping to a prior user-driven mutation. These must
-    # complete to satisfy §1.1 invariants; exempting them prevents a
-    # wedged PENDING sentinel when file_mutation_ops=0.
-    #
-    # P1-1 fix: "phase.autopilot.start_recover_pending" is the recovery
-    # rollback committed by recover() when it detects a PENDING sentinel.
-    # It MUST be exempt because the very state it corrects has
-    # file_mutation_ops that may be 0.
-    #
-    # P1-2 fix: halt verbs are exempt because the before_state that triggers
-    # them has file_mutation_ops==0 (the exhausted budget), which would
-    # cause BudgetExhaustedError before the halt commit can persist.
-    # All halt-bookkeeping action strings MUST appear here.
-    _FINALIZE_EXEMPT_ACTIONS = frozenset({
-        "phase.autopilot.start_hash_finalized",
-        "phase.autopilot.start_recover_pending",  # P1-1: PENDING crash recovery rollback
-        "phase.autopilot.halt.budget",            # P1-2: wall_seconds budget halt
-        "phase.autopilot.halt",                   # P1-2: generic autopilot halt
-        "phase.budget.halt",                      # P1-2: alias used by some callers
-    })
-    if request.before_state is not None and request.action not in _FINALIZE_EXEMPT_ACTIONS:
-        _exec_mode = request.before_state.get("execution_mode", "manual")
-        if _exec_mode != "manual":
-            _budgets = request.before_state.get("cli_budgets_remaining")
-            if _budgets is not None:
-                _remaining = _budgets.get("file_mutation_ops")
-                if _remaining is not None and _remaining <= 0:
-                    raise BudgetExhaustedError(
-                        capability="file_mutation_ops",
-                        remaining=0,
-                        message=(
-                            f"commit_transaction rejected: file_mutation_ops budget "
-                            f"exhausted (remaining={_remaining}). "
-                            "Apply apply_budget_halt and commit the halted state, "
-                            "or let the caller exit 9. (§3.5 caller-contract)"
-                        ),
-                    )
 
     journal_path = scratch / JOURNAL_NAME
     tmp_path = scratch / TMP_NAME
@@ -520,18 +428,12 @@ def recover(
     if not J:
         if not T:
             if audit_txn is None:
-                _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-                if _pending is not None:
-                    return _pending
                 return RecoveryResult(row=1, decision="quiescent", exit_code=0)
             # Row 3 review-fix: only accept when the on-disk state hash
             # matches the audit tail's `after_sha256`. Otherwise the
             # state file has drifted (corruption / out-of-band edit) and
             # we MUST exit 14 rather than silently report "accept".
             if audit_after_sha and state_hash == audit_after_sha:
-                _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-                if _pending is not None:
-                    return _pending
                 return RecoveryResult(
                     row=3, decision="post_finalize_no_tmp_accept", exit_code=0
                 )
@@ -543,9 +445,6 @@ def recover(
             # No audit info to corroborate — historical "orphan_tmp" path.
             os.unlink(tmp_path)
             _durable_fs.fsync_parent_dir(scratch)
-            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-            if _pending is not None:
-                return _pending
             return RecoveryResult(row=2, decision="orphan_tmp_unlinked", exit_code=0)
         # Row 4 review-fix: audit claims a transition; require state hash
         # match before treating the tmp as discardable. Tampered state
@@ -553,9 +452,6 @@ def recover(
         if audit_after_sha and state_hash == audit_after_sha:
             os.unlink(tmp_path)
             _durable_fs.fsync_parent_dir(scratch)
-            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-            if _pending is not None:
-                return _pending
             return RecoveryResult(
                 row=4, decision="orphan_tmp_unlinked_post_finalize", exit_code=0
             )
@@ -580,9 +476,6 @@ def recover(
             _durable_fs.fsync_parent_dir(scratch)
             row = 6 if T else 5
             decision = "rollback_journal_and_tmp" if T else "rollback_journal_only"
-            _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-            if _pending is not None:
-                return _pending
             return RecoveryResult(row=row, decision=decision, exit_code=0)
         # state != before AND audit never recorded -> corruption.
         row = 10 if T else 11
@@ -595,9 +488,6 @@ def recover(
             os.unlink(tmp_path)
         os.unlink(journal_path)
         _durable_fs.fsync_parent_dir(scratch)
-        _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-        if _pending is not None:
-            return _pending
         return RecoveryResult(row=8, decision="finalize", exit_code=0)
 
     if state_hash == before_sha and T and _file_sha(tmp_path) == after_sha:
@@ -611,123 +501,10 @@ def recover(
             os.close(fd)
         os.unlink(journal_path)
         _durable_fs.fsync_parent_dir(scratch)
-        _pending = _recover_pending_sentinel(scratch, audit_path=audit_path, lock=lock)
-        if _pending is not None:
-            return _pending
         return RecoveryResult(row=7, decision="roll_forward", exit_code=0)
 
     # Audit confirms but state matches neither before nor after.
     return RecoveryResult(row=9, decision="undecidable", exit_code=14)
-
-
-def _recover_pending_sentinel(
-    scratch: Path,
-    *,
-    audit_path: Path,
-    lock: Optional[_phase_lock.LockHandle],
-) -> Optional["RecoveryResult"]:
-    """P1-1 fix: Defense-in-depth check for PENDING autopilot_start_entry_hash.
-
-    Called after the 12-row matrix produces a self-healing (exit_code=0)
-    result. If the on-disk state has `autopilot_start_entry_hash == "PENDING"`
-    AND `execution_mode != "manual"`, this means a crash happened between the
-    two-phase autopilot start commits (the PENDING sentinel was written but the
-    real hash was never finalized). We must rollback to manual so the state does
-    not report autopilot active forever.
-
-    Returns a new RecoveryResult if rollback was performed, or None if no
-    PENDING sentinel was detected (caller uses its own result in that case).
-    """
-    state_path = scratch / STATE_NAME
-    if not state_path.exists():
-        return None
-
-    try:
-        state_bytes = state_path.read_bytes()
-        if not state_bytes:
-            return None
-        state = json.loads(state_bytes.decode("utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    if state.get("autopilot_start_entry_hash") != "PENDING":
-        return None
-    if state.get("execution_mode") == "manual":
-        return None
-
-    # PENDING sentinel detected with active autopilot → rollback to manual.
-    import copy
-    from . import phase_reopen as _phase_reopen
-
-    now = _now_iso()
-    run_id = state.get("autopilot_run_id")
-    phase_slug = state.get("autopilot_phase_slug")
-
-    # Build the last_halt diary for this crash event.
-    last_halt_entry = {
-        "at": now,
-        "halt_reason": "crash_during_autopilot_start_hash_finalize",
-        "autopilot_run_id": run_id,
-        "autopilot_mode": state.get("autopilot_mode"),
-        "autopilot_phase_slug": phase_slug,
-        "suggested_next_command": (
-            f"harness phase autopilot start --phase {phase_slug}"
-            if phase_slug
-            else "harness phase autopilot start --phase <slug>"
-        ),
-        "suggested_next_command_requires_human": False,
-        "acknowledged_at": None,
-    }
-
-    # Rotate prior last_halt into history (cap=5).
-    prior_last_halt = state.get("last_halt")
-    if prior_last_halt is not None and prior_last_halt.get("acknowledged_at") is None:
-        prior_last_halt = dict(prior_last_halt)
-        prior_last_halt["acknowledged_at"] = now
-    new_last_halt_history = _phase_reopen._rotate_last_halt_history(
-        state, prior_last_halt, cap=5
-    )
-
-    new_state = copy.deepcopy(state)
-    new_state["execution_mode"] = "manual"
-    new_state["autopilot_run_id"] = None
-    new_state["autopilot_mode"] = None
-    new_state["autopilot_phase_slug"] = None
-    new_state["autopilot_start_entry_hash"] = None
-    new_state["autopilot_allow_network"] = None
-    if "autopilot_started_at_iso" in new_state:
-        new_state["autopilot_started_at_iso"] = None
-    new_state["last_halt"] = last_halt_entry
-    new_state["last_halt_history"] = new_last_halt_history
-
-    audit_draft = {
-        "verb": "phase.autopilot.start.recover_pending",
-        "args": {
-            "halt_reason": "crash_during_autopilot_start_hash_finalize",
-            "autopilot_run_id": run_id,
-            "autopilot_phase_slug": phase_slug,
-            "recovered_at": now,
-        },
-        "at": now,
-    }
-
-    commit_transaction(
-        scratch,
-        lock=lock,
-        request=TxnRequest(
-            action="phase.autopilot.start_recover_pending",
-            before_state=state,
-            after_state=new_state,
-            audit_entry_draft=audit_draft,
-        ),
-        audit_path=audit_path,
-    )
-
-    return RecoveryResult(
-        row=0,
-        decision="pending_sentinel_rollback_to_manual",
-        exit_code=0,
-    )
 
 
 def _now_iso() -> str:
@@ -741,56 +518,14 @@ def _now_iso() -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# with_budget_decrement — caller-contract helper
-# ---------------------------------------------------------------------------
-
-
-def with_budget_decrement(
-    after_state: Mapping[str, Any],
-    *,
-    capability: str = "file_mutation_ops",
-) -> dict:
-    """Caller-contract helper: return a copy of `after_state` with the named
-    capability decremented by 1 (clamped to 0).
-
-    Design decision (§3.5 caller-contract): commit_transaction does NOT
-    auto-decrement budgets to keep it free of budget semantics.  Callers that
-    want the persisted state to reflect consumption MUST apply this helper to
-    `after_state` before building the TxnRequest.  Opt-in, not mandatory —
-    callers that don't decrement will hit the budget check on the next commit
-    (the check uses `before_state.cli_budgets_remaining`).
-
-    No-op when:
-      - after_state.execution_mode == "manual" (no autopilot → no budget)
-      - after_state.cli_budgets_remaining is None (no budgets configured)
-      - capability not in cli_budgets_remaining (capability not tracked)
-      - capability == "wall_seconds" (wall_seconds is time-checked, not counted)
-    """
-    # Lazy import to avoid circular at module load time.
-    from . import cli_budgets as _cli_budgets
-
-    exec_mode = after_state.get("execution_mode", "manual")
-    if exec_mode == "manual":
-        return dict(after_state)
-
-    budgets = after_state.get("cli_budgets_remaining")
-    if budgets is None:
-        return dict(after_state)
-
-    return _cli_budgets.decrement(dict(after_state), capability=capability)  # type: ignore[arg-type]
-
-
 __all__ = [
     "TxnError",
     "TxnLockMissingError",
-    "BudgetExhaustedError",
     "TxnRequest",
     "RecoveryResult",
     "JOURNAL_NAME",
     "TMP_NAME",
     "STATE_NAME",
     "commit_transaction",
-    "with_budget_decrement",
     "recover",
 ]

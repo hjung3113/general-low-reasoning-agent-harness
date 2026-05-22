@@ -176,22 +176,22 @@ def test_next_json_sorted_keys():
 
 
 def test_next_autopilot_active_exits_18():
-    """Autopilot active → exit_code=18, requires_human=False, command=None."""
-    state = _make_state(phase="execute", execution_mode="phase_autopilot")
+    """Autopilot removed — execution_mode is always manual; no exit 18 case."""
+    # execution_mode=phase_autopilot is ignored; system treats all as manual
+    state = _make_state(phase="execute", execution_mode="manual")
     result = sn.compute_next(state=state, audit_path=None)
-    assert result.exit_code == 18
-    assert result.requires_human is False
-    assert result.command is None
-    assert result.agent_safe is False
+    # In execute without approval, should require human
+    assert result.exit_code == 17
+    assert result.requires_human is True
 
 
 def test_next_shell_exits_18_when_autopilot():
-    """shell format exits 18 when autopilot active."""
-    state = _make_state(phase="execute", execution_mode="phase_autopilot")
+    """Shell format no longer exits 18 — autopilot removed."""
+    state = _make_state(phase="discuss")
     result = sn.compute_next(state=state, audit_path=None)
     text, exit_code = sn.format_next_shell(result)
-    assert exit_code == 18
-    assert text == ""
+    assert exit_code == 0
+    assert "harness phase set plan" in text
 
 
 # ---------------------------------------------------------------------------
@@ -200,18 +200,17 @@ def test_next_shell_exits_18_when_autopilot():
 
 
 def test_next_unacknowledged_halt_returns_suggested_command():
-    """Unacknowledged halt → result uses halt's suggested_next_command."""
+    """Halt diary removed — last_halt is ignored; normal phase logic applies."""
     halt = _make_halt_diary(
         suggested_next_command="harness phase autopilot stop --reason 'budget'",
         suggested_next_command_requires_human=False,
     )
-    state = _make_state(phase="execute", execution_mode="manual", last_halt=halt)
+    state = _make_state(phase="discuss", execution_mode="manual", last_halt=halt)
     result = sn.compute_next(state=state, audit_path=None)
 
-    assert result.command == "harness phase autopilot stop --reason 'budget'"
-    assert result.requires_human is False
+    # Halt diary no longer affects next action; discuss phase goes to plan
+    assert result.command == "harness phase set plan"
     assert result.exit_code == 0
-    assert "halt" in result.reason.lower()
 
 
 def test_next_unacknowledged_halt_requires_human_exits_17():

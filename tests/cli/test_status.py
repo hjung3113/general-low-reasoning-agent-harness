@@ -112,11 +112,11 @@ def test_status_human_format_phase_execute_approved():
 
 
 def test_status_human_format_halt_diary_none():
-    """Human format shows '(none recent)' when no halt diary."""
+    """Human format shows execution mode line."""
     state = _make_state(phase="execute", last_halt=None)
     result = sn.compute_status(state=state, audit_path=None)
     text = sn.format_status_human(result)
-    assert "(none recent)" in text
+    assert "Execution mode" in text
 
 
 # ---------------------------------------------------------------------------
@@ -125,18 +125,13 @@ def test_status_human_format_halt_diary_none():
 
 
 def test_status_human_format_with_recent_halt():
-    """Human format renders halt block when last_halt is present."""
-    halt = _make_halt_diary(
-        run_id="8f6c",
-        halt_reason="verification_failed",
-    )
-    state = _make_state(phase="execute", last_halt=halt)
+    """Human format shows execution mode and next action lines (halt diary removed)."""
+    state = _make_state(phase="execute")
     result = sn.compute_status(state=state, audit_path=None)
     text = sn.format_status_human(result)
 
-    assert "Halt diary" in text
-    assert "8f6c" in text
-    assert "verification_failed" in text
+    assert "Execution mode" in text
+    assert "Next action" in text
 
 
 def test_status_human_halt_acknowledged_at_set_not_blocking():
@@ -170,7 +165,6 @@ def test_status_json_format():
         "execution_mode",
         "projected_execute_gate_valid",
         "can_enter_execute",
-        "last_halt",
         "next_action",
     }
     for key in required_keys:
@@ -374,17 +368,12 @@ def test_status_compute_does_not_write_state(tmp_path: Path):
 
 
 def test_status_autopilot_active_shown():
-    """Human format shows autopilot as active when autopilot_run_id is set."""
-    state = _make_state(
-        phase="execute",
-        execution_mode="phase_autopilot",
-        autopilot_run_id="run-xyz",
-        autopilot_phase_slug="02c-hardening",
-    )
+    """Human format shows execution mode line (autopilot removed, always manual)."""
+    state = _make_state(phase="execute")
     result = sn.compute_status(state=state, audit_path=None)
     text = sn.format_status_human(result)
-    assert "active" in text
-    assert "run-xyz" in text
+    assert "Execution mode" in text
+    assert "manual" in text
 
 
 def test_status_json_includes_projected_booleans():
@@ -560,12 +549,8 @@ def test_status_json_shape_complete():
         "approved_at_iso",
         "approved_by",
         "approved_source",
-        "autopilot_phase_slug",
-        "autopilot_run_id",
         "can_enter_execute",
         "execution_mode",
-        "last_halt",
-        "last_halt_age_seconds",
         "next_action",
         "phase",
         "phase_entered_at_iso",
@@ -633,18 +618,12 @@ def test_iso_lt_microsecond_precision():
 
 
 def test_status_human_format_reverted_annotation():
-    """Human format appends [reverted from <mode>] when manual + last_halt.mode is set (P2-6)."""
-    halt = _make_halt_diary()
-    halt["mode"] = "phase_autopilot"
-    state = _make_state(
-        phase="discuss",
-        execution_mode="manual",
-        last_halt=halt,
-    )
+    """Human format shows simple execution mode line (reverted annotation removed)."""
+    state = _make_state(phase="discuss", execution_mode="manual")
     result = sn.compute_status(state=state, audit_path=None)
     text = sn.format_status_human(result)
-    assert "[reverted from phase_autopilot]" in text, (
-        f"Expected '[reverted from phase_autopilot]' in execution mode line.\nGot:\n{text}"
+    assert "Execution mode  : manual" in text, (
+        f"Expected 'Execution mode  : manual' in output.\nGot:\n{text}"
     )
 
 

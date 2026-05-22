@@ -117,14 +117,14 @@ class TestAuditTailPartialWrite(unittest.TestCase):
     # --- txn verbs: all entries in _TXN_VERBS should be flagged when missing fields
 
     def test_autopilot_start_txn_verb_missing_fields_is_partial(self) -> None:
-        """phase.autopilot.start is a txn verb — missing fields → partial."""
+        """Autopilot removed — phase.autopilot.start is not a txn verb; not flagged as partial."""
         entry = {
             "verb": "phase.autopilot.start",
             "at": "2026-01-01T00:00:00Z",
         }
         with tempfile.TemporaryDirectory() as tmpdir:
             audit = self._write_audit(tmpdir, json.dumps(entry) + "\n")
-            self.assertTrue(_audit_tail_partial_write(audit))
+            self.assertFalse(_audit_tail_partial_write(audit))
 
     def test_phase_reopen_txn_verb_missing_fields_is_partial(self) -> None:
         """phase.reopen is a txn verb — missing fields → partial."""

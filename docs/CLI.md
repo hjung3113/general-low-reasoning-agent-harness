@@ -20,7 +20,6 @@
 | `phase reopen --to <p>` | `lib.phase_cli.cmd_phase_reopen()` | Backward 전이 + diary 회전 | KEEP |
 | `phase next-pending` | `lib.phase_cli.cmd_phase_next_pending()` | 다음 미완 phase slug | KEEP |
 | `session unlock` | `lib.phase_cli.cmd_session_unlock()` | Stale lock 해제 | KEEP |
-| `halt-diary clear` | `lib.halt_diary_cli.cmd_halt_diary_clear()` | Halt diary ack | KEEP if autopilot 유지 |
 | `status` | `lib.status_next_cli.cmd_status()` | Phase + halt + next action | KEEP |
 | `next` | `lib.status_next_cli.cmd_next()` | Recommended next action | KEEP |
 | `run` | `lib.status_next_cli.cmd_run()` | Safe step 실행, human 멈춤 | KEEP |
@@ -105,6 +104,6 @@ harness next [--shell|--json]
 harness run
 ```
 
-**Removed**: `migrate state` (Phase 2), `verify --audit` (Phase 1).
+**Removed**: `verify --audit` (Phase 1), `migrate state` (Phase 2 Item 1), `halt-diary clear` (Phase 2 Item 7).
 
-**Pending**: `release-check` (release ops 별도 도구로), `halt-diary clear` (autopilot 정리 시).
+**Pending**: `release-check` (release ops 별도 도구로).

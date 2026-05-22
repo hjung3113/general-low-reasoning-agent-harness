@@ -321,21 +321,9 @@ KNOWN_VERBS: frozenset = frozenset([
     "phase.set.idempotent-noop",  # T13 NEW-5: done→done byte-identical noop
     "phase.approve",
     "phase.reopen",
-    # Autopilot verbs
-    "phase.autopilot.start",
-    "phase.autopilot.stop",
-    "phase.autopilot.halt",
-    "phase.autopilot.halt.budget",            # budget-halt alias (txn verb)
-    "phase.autopilot.start_hash_finalized",   # hash committed after start
-    "phase.autopilot.start.refused",          # start refused (budget/preflight)
-    "phase.autopilot.start.recover_pending",  # recovery path from pending start
-    # Budget verbs
-    "phase.budget.halt",                      # budget exhausted halt (txn verb)
     # Audit infrastructure verbs
     "audit.rotated",
     "audit.repair",
-    # Halt diary verbs
-    "halt_diary.clear",
     # CLI / session verbs
     "approve_nonce.mint",
     "session.unlock",

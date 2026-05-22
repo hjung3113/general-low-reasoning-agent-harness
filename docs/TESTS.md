@@ -54,7 +54,6 @@
 | `dep_guard/` | 1 | INFRA | Runtime-dep import guard contract | ✅ |
 | `durable_fs/` | 1 | INFRA | Cross-platform durability primitives | ✅ |
 | `fixtures/` | — | — | Test fixtures | ✅ |
-| `halt_diary/` | (n/a) | — | Halt diary tests | 🔄 |
 | `install/` | 3 | INSTALL | Quarantine uuid4 suffix, upgrade summary | ✅ |
 | `integration/` | 1 | SMOKE | E2E `phase approve` PTY [y/N] | ✅ |
 | `phase_approve/` | 3 | WORKFLOW | ADR-003a human-only gate | ✅ |
@@ -68,6 +67,7 @@
 | `safe_open/` | 1 | INFRA | O_NOFOLLOW race-safe open | ✅ |
 
 **Removed** (Phase 1): cli/ (5 files), autopilot/, phase_autopilot/, fsd_wrappers/, cycle1_fixC/, ci_provenance/, release_smoke/, slash/ (1 file), smoke/ (3 files) — ~20 test files total.
+**Removed** (Phase 2 Item 7): halt_diary/ test dir — ~1200 LOC tests.
 
 ## Phase 1 Completion: Test File Removal
 

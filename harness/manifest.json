@@ -809,11 +809,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/cli_budgets.py",
-      "source": "scripts/lib/cli_budgets.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/doctor.py",
       "source": "scripts/lib/doctor.py",
       "policy": "harness-owned"
@@ -826,16 +821,6 @@
     {
       "path": "scripts/lib/exitcodes.py",
       "source": "scripts/lib/exitcodes.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/halt_diary.py",
-      "source": "scripts/lib/halt_diary.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/halt_diary_cli.py",
-      "source": "scripts/lib/halt_diary_cli.py",
       "policy": "harness-owned"
     },
     {

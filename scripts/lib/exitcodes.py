@@ -23,12 +23,11 @@ EXIT_STALE_UNCERTAIN = 7
 EXIT_TIMESTAMP_OUT_OF_RANGE = 8
 EXIT_PLANNING_DRIFT = 12  # dashboard --check detected drift between planning docs and live gate
 # §12.6 line 1322: nonce HMAC consumers reject invalid/missing signatures with
-# exit 6 `nonce_signature_invalid`.  sub_reason distinguishes from
-# EXIT_WRONG_PHASE_FOR_VERB.  Budget-exhausted uses 9 operationally
-# (phase_txn.BudgetExhausted) — that keeps exit 9.
+# exit 6 `nonce_signature_invalid`. sub_reason distinguishes from
+# EXIT_WRONG_PHASE_FOR_VERB.
 EXIT_NONCE_SIGNATURE_INVALID = 6
 # §12.2: reparse-point refusal uses the same exit code as scope_violation (4)
-# per spec §12.2 line 1254.  FenceWindowsUnsupported stays at 11.
+# per spec §12.2 line 1254. FenceWindowsUnsupported stays at 11.
 EXIT_PATH_REPARSE_REFUSED = 4  # path_reparse_refused — reparse point on Windows path
 # §12.2: ADS / Win32 reserved-char components — containment error, not reparse
 EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded

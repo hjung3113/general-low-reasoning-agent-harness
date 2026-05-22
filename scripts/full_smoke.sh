@@ -249,9 +249,6 @@ run "5a-phase-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness
 # 5b session help
 run "5b-session-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py session --help"
 
-# 5c halt-diary help
-run "5c-halt-diary-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py halt-diary --help"
-
 # 5f install help (advanced)
 run "5f-install-help" 0 "HARNESS_ADVANCED=1 $HARNESS install --help"
 

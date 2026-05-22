@@ -10,29 +10,14 @@ Order of operations (any failure → typed `ReopenResult` with non-zero
      Empty → exit 6 `gitconfig_email_unset`.
   5. install-record approvers membership (§3.1 step 3 + §6.1).
   6. State-trust preflight (§2.6) under the primary lock.
-  6b. Source-phase validation (S04+S05 review-fix P2-1): `--to plan`
-      permitted only from execute/done; `--to discuss` permitted from any
-      phase (design §3.2 line 250).
+  6b. Source-phase validation: `--to plan` permitted only from execute/done;
+      `--to discuss` permitted from any phase (design §3.2 line 250).
   7. State mutation:
        - phase → target
        - approved=False, approved_at=None, approved_by=None
        - verification → draft_verification, allowed_paths → draft_allowed_paths
        - execute_attempt_started_at=None
-       - If `execution_mode != manual`: populate `last_halt` per §5.3, push
-         the prior `last_halt` (if any) onto `last_halt_history[-5:]`, clear
-         all `autopilot_*` fields, set `execution_mode = "manual"`.
-       - Else (manual mode) + target=="plan" + stale `last_halt`: MOVE the
-         stale diary onto `last_halt_history[-5:]` and set `last_halt=None`
-         (§5.3 line 946 + S04+S05 review-fix P1-2). For target=="discuss"
-         the stale diary is RETAINED but its `acknowledged_at` is stamped
-         (the user has seen and explicitly handled the halt via reopen).
-       - Whichever halt diary survives in `after_state.last_halt` MUST
-         have `acknowledged_at` set (§1.1 line 67 + P1-1).
-  8. Audit entries: `verb=phase.reopen` always; when reopen halts active
-     autopilot a `verb=phase.autopilot.halt` row is also emitted inside
-     the same atomic transaction (§3.2 line 253 + S04+S05 review-fix P1-3).
-
-Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
+  8. Audit entry: `verb=phase.reopen`.
 """
 
 from __future__ import annotations
@@ -57,7 +42,6 @@ from . import state_trust as _state_trust  # noqa: F401
 
 _VALID_TARGETS = frozenset({"plan", "discuss"})
 _PLAN_VALID_SOURCES = frozenset({"execute", "done"})
-_HALT_HISTORY_CAP = 5
 
 
 @dataclasses.dataclass(frozen=True)
@@ -112,39 +96,6 @@ _FIX_BACKWARD_RESET = (
 def default_gitconfig_email_lookup() -> str:
     """Thin wrapper over `phase_preflight.default_gitconfig_email_lookup`."""
     return _phase_preflight.default_gitconfig_email_lookup()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _rotate_last_halt_history(
-    state: dict,
-    new_entry: Optional[Mapping],
-    *,
-    cap: int = _HALT_HISTORY_CAP,
-) -> list:
-    """Return a new `last_halt_history` list with `new_entry` appended
-    (if non-empty) and tail-capped at `cap`. Pure: does not mutate
-    `state`. Shared between the autopilot-halt branch and the
-    manual `--to plan` clearing branch (P2-6)."""
-    history = list(state.get("last_halt_history") or [])
-    if new_entry:
-        history.append(dict(new_entry))
-        history = history[-cap:]
-    return history
-
-
-def _ack_diary(diary: Optional[Mapping], *, now_iso: str) -> Optional[dict]:
-    """Return a copy of `diary` with `acknowledged_at` set to `now_iso`
-    if `diary` is non-empty; else None. P1-1: `phase reopen` is the verb
-    that user-initiates the acknowledgement (spec §1.1 line 67)."""
-    if not diary:
-        return None
-    d = dict(diary)
-    d["acknowledged_at"] = now_iso
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -290,23 +241,6 @@ def run_reopen(
         before_state = json.loads(state_path.read_text(encoding="utf-8"))
         from_phase = before_state.get("phase")
 
-        # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
-        from . import cli_budgets as _cli_budgets
-        _halt_exit = _cli_budgets.wall_seconds_check_and_maybe_halt(
-            before_state=before_state,
-            scratch_root=scratch,
-            audit_path=audit_path,
-            lock_handle=lock,
-        )
-        if _halt_exit is not None:
-            return ReopenResult(
-                exit_code=_halt_exit,
-                sub_reason="budget_exhausted:wall_seconds",
-                resolved_email=resolved,
-                by_source=by_source,
-                from_phase=from_phase,
-            )
-
         # Step 6b: source-phase validation (P2-1).
         if target == "plan" and from_phase not in _PLAN_VALID_SOURCES:
             print(
@@ -371,101 +305,7 @@ def run_reopen(
         # Reset attempt clock (§1.1 / conductor brief).
         after_state["execute_attempt_started_at"] = None
 
-        # Active autopilot halt (§3.5.2 + §5.3) AND stale-diary handling
-        # (P1-2 + P1-1).
         halted_run_id: Optional[str] = None
-        emit_halt_audit = False
-        halt_audit_payload: Optional[dict] = None
-        prev_mode = before_state.get("execution_mode", "manual")
-        if prev_mode != "manual":
-            # ---- A. active autopilot halt branch ----
-            halted_run_id = before_state.get("autopilot_run_id")
-            new_diary = {
-                "run_id": halted_run_id,
-                "mode": before_state.get("autopilot_mode"),
-                "phase_slug": before_state.get("autopilot_phase_slug"),
-                "last_successful_transition": None,
-                "halt_reason": "reopen",
-                "halt_at_iso": now_iso,
-                "suggested_next_command": f"harness phase set {target}",
-                # Round-7 BLOCK fix (Adapter C-19) — P1-4: `harness phase
-                # set {target}` is non-TTY-only (it routes through the
-                # standard transition validator, not an approval gate),
-                # so the suggested next command does NOT require human
-                # interaction. This flag is False here; verbs that point
-                # at `phase approve` / `phase reopen` would set True.
-                "suggested_next_command_requires_human": False,
-                # P1-1: reopen IS the user-initiated ack; stamp it now so
-                # §3.6 (execute→done) does not refuse on `acknowledged_at
-                # is None`. Mirrors `phase autopilot start` and
-                # `halt-diary clear`.
-                "acknowledged_at": now_iso,
-            }
-            # Push the PRIOR diary onto history (cap-5 helper, P2-6).
-            after_state["last_halt_history"] = _rotate_last_halt_history(
-                before_state, before_state.get("last_halt")
-            )
-            after_state["last_halt"] = new_diary
-            # Clear all autopilot_* fields (§3.5.2).
-            after_state["execution_mode"] = "manual"
-            after_state["autopilot_run_id"] = None
-            after_state["autopilot_mode"] = None
-            after_state["autopilot_phase_slug"] = None
-            after_state["autopilot_start_entry_hash"] = None
-            after_state["autopilot_allow_network"] = False
-            after_state["cli_budgets_remaining"] = None
-
-            # Emit `phase.autopilot.halt` audit row inside the same txn
-            # (P1-3 + §3.2 line 253). The halt row carries the diary
-            # fields at top-level so reviewers can correlate without
-            # opening the overflow archive.
-            emit_halt_audit = True
-            halt_audit_payload = {
-                "verb": "phase.autopilot.halt",
-                "by": resolved,
-                "by_source": by_source,
-                "confirmation_kind": "human_cli",
-                "run_id": halted_run_id,
-                "mode": before_state.get("autopilot_mode"),
-                "phase_slug": before_state.get("autopilot_phase_slug"),
-                "halt_reason": "reopen",
-                "halt_at_iso": now_iso,
-                # NOTE: the forensic fields (run_id, mode, phase_slug,
-                # halt_reason, halt_at_iso) are ALL promoted to the top
-                # level so they survive audit_append's 512-byte truncation
-                # of the `args` carrier. A redundant `args` sub-dict is
-                # intentionally omitted — it would push the truncated line
-                # over AUDIT_MAX_LINE_BYTES and trigger the minimal fallback
-                # that strips txn_id (see P2-4 sentinel + §3.2 line 253
-                # atomicity contract). The `commit_transaction` loop adds
-                # txn_id, before/after_sha256 at step 3; with no `args`
-                # the total entry is ~489 bytes, safely under 512.
-            }
-        else:
-            # ---- B. manual mode: handle stale `last_halt` per §5.3 ----
-            prior_diary = before_state.get("last_halt")
-            if prior_diary:
-                if target == "plan":
-                    # §5.3 line 946: --to plan CLEARS last_halt because the
-                    # user has explicitly handled it. The cleared diary
-                    # moves onto last_halt_history (cap-5), ack-stamped
-                    # so forensic readers can see when it was handled.
-                    acked = _ack_diary(prior_diary, now_iso=now_iso)
-                    after_state["last_halt_history"] = _rotate_last_halt_history(
-                        before_state, acked
-                    )
-                    after_state["last_halt"] = None
-                else:
-                    # target == "discuss": leave diary populated but
-                    # stamp acknowledged_at so the §3.6 (execute→done)
-                    # gate does not refuse on a later run.
-                    after_state["last_halt"] = _ack_diary(
-                        prior_diary, now_iso=now_iso
-                    )
-            # else: no diary to handle; leave last_halt / history alone.
-
-        # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
-        after_state = _phase_txn.with_budget_decrement(after_state)
 
         # ---------- Step 8: audit entries ----------
         # Top-level fields survive `audit_append`'s 1024-byte truncation
@@ -500,14 +340,7 @@ def run_reopen(
         # phase_approve.py convention — reuses proof_class=smoke_bypass).
         if _smoke_bypass_active:
             reopen_draft["proof_class"] = "smoke_bypass"
-        # P1-3: when halting active autopilot, emit halt row FIRST then
-        # reopen row (logical order: halt the prior thing, then the verb
-        # that caused it). Both share the same txn_id.
-        if emit_halt_audit:
-            assert halt_audit_payload is not None
-            drafts = [halt_audit_payload, reopen_draft]
-        else:
-            drafts = [reopen_draft]
+        drafts = [reopen_draft]
 
         txn_id = _phase_txn.commit_transaction(
             scratch,

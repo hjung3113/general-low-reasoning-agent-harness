@@ -365,9 +365,9 @@ def run_full() -> int:
         sys.stderr.write(
             "\nFix: remove the listed strings from the installed artifacts.\n"
             "See design §9 line 1117 for the canonical forbidden-term list.\n"
-            "Terms renamed: automation_mode→execution_mode, "
+            "Terms removed/renamed: automation_mode→execution_mode, "
             "containment_*→network_guard_*, "
-            "autopilot_budgets_remaining→cli_budgets_remaining, "
+            "autopilot_budgets_remaining (removed), "
             "HARNESS_HUMAN→gitconfig-based identity.\n"
             "Alternative launchers must not appear in adapter slash-command bodies.\n"
         )

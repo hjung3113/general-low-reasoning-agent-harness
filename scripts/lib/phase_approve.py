@@ -506,22 +506,6 @@ def run_approve(
             )
         before_state = json.loads(state_path.read_text(encoding="utf-8"))
 
-        # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
-        from . import cli_budgets as _cli_budgets
-        _halt_exit = _cli_budgets.wall_seconds_check_and_maybe_halt(
-            before_state=before_state,
-            scratch_root=scratch,
-            audit_path=audit_path,
-            lock_handle=lock,
-        )
-        if _halt_exit is not None:
-            return ApproveResult(
-                exit_code=_halt_exit,
-                sub_reason="budget_exhausted:wall_seconds",
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-
         # ---------- Step 5: execution_mode gate ----------
         execution_mode = before_state.get("execution_mode", "manual")
         if execution_mode != "manual":
@@ -626,9 +610,6 @@ def run_approve(
         # surfaces the same value the audit log carries.
         after_state["approved_by"] = override_identity or resolved
         after_state["approved_at"] = approved_at
-
-        # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
-        after_state = _phase_txn.with_budget_decrement(after_state)
 
         # Audit entry: proof_class=soft_tty records that the human confirmed
         # via interactive [y/N] prompt on a TTY (speed-bump design §4.1).

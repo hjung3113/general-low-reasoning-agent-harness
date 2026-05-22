@@ -37,11 +37,12 @@ Legacy `automation_mode` (v0.6.1) 자동 마이그레이션: chain→phase_autop
 
 v2 필드 (`phase_state.py:42-61`):
 ```
-execution_mode, autopilot_run_id, autopilot_mode, autopilot_phase_slug,
-autopilot_start_entry_hash, autopilot_allow_network, autopilot_started_at_iso,
-cli_budgets_remaining, last_halt, last_halt_history, execute_attempt_started_at,
-plan_finalized_at, draft_verification, draft_allowed_paths
+execution_mode (always "manual"; autopilot to be redesigned),
+execute_attempt_started_at, plan_finalized_at,
+draft_verification, draft_allowed_paths
 ```
+
+**Removed (Phase 2 Item 7)**: `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network`, `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`.
 
 ### Stale-approval check (§3.6)
 
@@ -59,7 +60,7 @@ Approval은 둘 모두보다 나중이어야 유효. 옛 approval로 새 plan �
 |---|---|---|
 | `harness phase set <target>` | 전이 검증 → lock → state-trust preflight → commit_transaction | 0/2/4/10/14 |
 | `harness phase approve` | **TTY-only** [y/N] prompt → `approved=true` stamp. 허용 phase: plan/execute. 식별: gitconfig email or `--by`. approver membership 검증 (`.harness/install-record.json`) | 0/17/idempotent |
-| `harness phase reopen --to <p> --reason <t>` | **TTY-only**. plan/discuss로 backward. approval/verification/allowed_paths 클리어. autopilot 중이면 halt diary 회전 | 0/6 |
+| `harness phase reopen --to <p> --reason <t>` | **TTY-only**. plan/discuss로 backward. approval/verification/allowed_paths 클리어 | 0/6 |
 | `harness phase next-pending` | 다음 미완 phase slug 출력 (read-only) | 0 |
 | `harness session unlock [--force]` | stale lock 해제 (psutil로 dead-PID 확인) | 0/3 |
 
@@ -81,13 +82,12 @@ Speed-bump 디자인 (2026-05-19 ADR). 순서:
 3. Identity: `--by <email>` 또는 `git config user.email`
 4. Approver membership 검증
 5. Anchor preflight (state hash)
-6. `execution_mode != manual` → exit 8 (autopilot 중 approve 금지)
-7. Idempotency: 이미 approved면 exit 0 no-op
-8. TTY [y/N] prompt
-9. commit_transaction with `proof_class=soft_tty`
+6. Idempotency: 이미 approved면 exit 0 no-op
+7. TTY [y/N] prompt
+8. commit_transaction with `proof_class=soft_tty`
 
 Fix-line 메시지 표 (ADR-003a Artifact 1):
-- `_FIX_TTY`, `_FIX_GITCONFIG`, `_FIX_APPROVER_MEMBERSHIP`, `_FIX_AUTOPILOT`, `_FIX_STATE_TRUST`
+- `_FIX_TTY`, `_FIX_GITCONFIG`, `_FIX_APPROVER_MEMBERSHIP`, `_FIX_STATE_TRUST`
 
 ## 4. Planning grammar
 
@@ -143,8 +143,7 @@ Letter suffix 지원 (`1a`, `2b` 등).
 
 ```
 phase, phase_entered_at_iso, approved, approved_by, approved_at_iso, approved_source,
-execution_mode, autopilot_run_id, autopilot_phase_slug, last_halt, last_halt_age_seconds,
-projected_execute_gate_valid, can_enter_execute, next_action
+execution_mode, projected_execute_gate_valid, can_enter_execute, next_action
 ```
 
 Boolean gates:
@@ -183,33 +182,7 @@ Boolean gates:
 | 18 | required AGENTS.md 문구 | Karpathy guideline / phase=execute gate / discuss pass |
 | 19 | contamination | PR #N, "DB context snapshot", "implemented/완료", "under PR review" |
 
-## 8. Halt diary (`halt_diary.py`)
-
-Autopilot 정지 기록.
-
-State 필드:
-```python
-last_halt = {
-  "run_id": "...",
-  "halt_reason": "...",
-  "halted_at_iso": "...",
-  "acknowledged_at": "<iso or None>"
-}
-last_halt_history = [...]  # cap=5
-```
-
-**Halt blocking** (`transition.py:338-350`, §12.12):
-- `execute → done` 차단 if `last_halt && !acknowledged_at`
-- 해결: `harness halt-diary clear` 또는 `phase reopen`
-
-### `halt-diary clear` 흐름
-
-1. TTY gate → exit 6
-2. `last_halt is None` → exit 0 no-op
-3. `acknowledged_at = now`, 이전 diary → history, `last_halt = None`
-4. commit_transaction (verb=halt_diary.clear)
-
-## 9. Pre-commit hook (`hooks.py`)
+## 8. Pre-commit hook (`hooks.py`)
 
 `.git/hooks/pre-commit`에 설치. 마커:
 ```bash
@@ -229,7 +202,7 @@ Install: 없으면 skeleton 전체 작성; 있으면 마커 블록만 in-place �
 
 Security: owner-execute bit만, umask 존중.
 
-## 10. Profile/skill-pack selection (`profiles.py`)
+## 9. Profile/skill-pack selection (`profiles.py`)
 
 ```python
 KNOWN_PROFILES = {"generic", "dotnet-etl", "python-etl", "react-web"}
@@ -251,7 +224,7 @@ _DB_PACKS = {
 
 Default = generic. Repo evidence + user input 으로 specific profile 선택. Legacy alias: `dotnet-etl-mssql → dotnet-etl` (deprecation warning).
 
-## 11. AGENTS.md skeleton rules
+## 10. AGENTS.md skeleton rules
 
 `harness/skeleton/clean/AGENTS.md` 강제 규칙:
 
@@ -263,7 +236,7 @@ Default = generic. Repo evidence + user input 으로 specific profile 선택. Le
 6. Skill plugin 디시플린 (generic 기본, repo evidence 우선)
 7. Karpathy guidelines (think before coding, simplicity first, surgical changes, goal-driven)
 
-## 12. Phase reopen (`phase_reopen.py`)
+## 11. Phase reopen (`phase_reopen.py`)
 
 Backward transition.
 
@@ -280,11 +253,10 @@ Mutation:
 - approved/approved_at/approved_by → null
 - verification → draft_verification (보존), allowed_paths → draft_allowed_paths
 - execute_attempt_started_at = None
-- autopilot 중이면: last_halt 기록 + history 회전 + autopilot 필드 클리어 + execution_mode=manual
 
-Audit: `phase.reopen` + (autopilot active면) `phase.autopilot.halt` — 같은 atomic txn.
+Audit: `phase.reopen` — atomic txn.
 
-## 13. State trust preflight (`state_trust.py`, `phase_preflight.py`)
+## 12. State trust preflight (`state_trust.py`, `phase_preflight.py`)
 
 `.scratch/phase-state.json` 변조 검출. 모든 phase-mutating verb 시작에서 호출.
 
@@ -292,10 +264,9 @@ Audit: `phase.reopen` + (autopilot active면) `phase.autopilot.halt` — 같은 
 2. Audit log (rotation 포함) 역추적 → 가장 최근 TXN verb 의 `after_sha256`
 3. Mismatch → exit 10 `state_audit_mismatch`
 4. Baseline state (fresh install, approved=false, phase=discuss, no plan_id) 는 audit 증거 없어도 OK
-5. `autopilot_start_entry_hash` PENDING (crash marker) → exit 14, recover() 필요
-6. BOM/CRLF/malformed JSON 거부
+5. BOM/CRLF/malformed JSON 거부
 
-## 14. Crash-safe transaction (`phase_txn.py`)
+## 13. Crash-safe transaction (`phase_txn.py`)
 
 5-step protocol (lock held throughout):
 
@@ -311,7 +282,7 @@ Exit: 0 / 3 (locked) / 14 (undecidable).
 
 **Phase 1 note**: No change to core protocol; all crash-safety mechanisms retained.
 
-## 15. Exit codes (`exitcodes.py`)
+## 14. Exit codes (`exitcodes.py`)
 
 | Code | Symbol | Meaning |
 |---|---|---|
@@ -331,13 +302,12 @@ Exit: 0 / 3 (locked) / 14 (undecidable).
 1. 11개 허용 전이만 (transition.py 표)
 2. Forward edge → approval 필수
 3. Stale-approval check (post-date plan/execute timestamps)
-4. Halt diary unacknowledged → execute→done 차단
-5. Managed marker blocks = machine-owned
-6. Roadmap/state 5-point sync
-7. Hash drift detection (harness-owned/managed/managed-append)
-8. Pre-commit scope gate (exit 4)
-9. TTY-only speed bumps (approve, reopen, halt-diary clear)
-10. Crash-safe state+audit transactions
+4. Managed marker blocks = machine-owned
+5. Roadmap/state 5-point sync
+6. Hash drift detection (harness-owned/managed/managed-append)
+7. Pre-commit scope gate (exit 4)
+8. TTY-only speed bumps (approve, reopen)
+9. Crash-safe state+audit transactions
 
 **Phase 1 removals**: No workflow enforcement changes. All security removal was dormant code (autopilot_guard, fs_fence, secret_key, cli_deprecated, audit_verify_cli, release_trust SSH dead code). Audit chain + state_trust + crash-safety fully retained.
-**Phase 2 removals**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; `harness migrate state` subcommand removed).
+**Phase 2 removals**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets + autopilot/budget schema fields (Item 7).

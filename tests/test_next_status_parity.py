@@ -279,9 +279,9 @@ def test_done_next_action_is_none() -> None:
 
 
 def test_autopilot_next_action_is_none() -> None:
-    """Autopilot active → None."""
-    state = _state(phase="plan", execution_mode="chain_autopilot")
-    assert compute_next_action(state) is None
+    """Autopilot removed — plan phase unapproved → suggest approve."""
+    state = _state(phase="plan", execution_mode="manual")
+    assert compute_next_action(state) == "harness phase approve"
 
 
 def test_format_status_human_next_action_line_matches_next_command(

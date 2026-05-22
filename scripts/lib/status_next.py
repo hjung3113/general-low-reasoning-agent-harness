@@ -55,11 +55,7 @@ class StatusResult:
     approved_by: Optional[str]
     approved_at_iso: Optional[str]
     approved_source: Optional[str]      # "gitconfig_auto" / "override_identity" / "ci_..."
-    execution_mode: str                 # "manual" / "phase_autopilot" / "chain_autopilot"
-    autopilot_run_id: Optional[str]
-    autopilot_phase_slug: Optional[str]
-    last_halt: Optional[dict]           # raw diary or None
-    last_halt_age_seconds: Optional[int]
+    execution_mode: str                 # always "manual"
     projected_execute_gate_valid: bool  # §1.1 line 624
     can_enter_execute: bool             # §1.1 line 624 (while in plan)
     next_action: Optional[str]          # the recommendation string
@@ -119,27 +115,6 @@ def _approved_fresh(state: dict, phase: str) -> bool:
     return not _iso_lt(approved_at, baseline)
 
 
-def _compute_last_halt_age(last_halt: Optional[dict]) -> Optional[int]:
-    """Compute age in seconds since halt_at_iso, or None."""
-    if last_halt is None:
-        return None
-    halt_at = last_halt.get("halt_at_iso")
-    if halt_at is None:
-        return None
-    try:
-        from datetime import datetime, timezone
-        body = halt_at[:-1] if halt_at.endswith("Z") else halt_at
-        if "." in body:
-            integer_part, frac = body.split(".", 1)
-            body = integer_part + "." + frac[:6]
-        dt = datetime.fromisoformat(body + "+00:00")
-        now = datetime.now(timezone.utc)
-        delta = now - dt
-        return max(0, int(delta.total_seconds()))
-    except Exception:
-        return None
-
-
 def _phase_entered_at(state: dict, phase: str) -> Optional[str]:
     """Return the ISO timestamp when this phase was entered, if available."""
     if phase == "execute":
@@ -157,21 +132,9 @@ def compute_next_action(state: dict) -> Optional[str]:
     identical input (NEW-4 parity fix).
 
     Returns a CLI command string (e.g. ``"harness phase set plan"``) or
-    ``None`` when no action is appropriate (autopilot active, phase done,
-    unknown phase).
+    ``None`` when no action is appropriate (phase done, unknown phase).
     """
-    execution_mode = state.get("execution_mode", "manual")
     phase = state.get("phase", "discuss")
-    last_halt = state.get("last_halt")
-
-    # Autopilot active — no manual action
-    if execution_mode != "manual":
-        return None
-
-    # Unacknowledged halt takes priority
-    if last_halt is not None and last_halt.get("acknowledged_at") is None:
-        suggested = last_halt.get("suggested_next_command")
-        return suggested if suggested else "harness halt-diary clear"
 
     # Phase-based
     if phase == "discuss":
@@ -226,9 +189,7 @@ def compute_status(*, state: dict, audit_path) -> StatusResult:
     Does NOT acquire lock (read-only consistent-snapshot per §3.9).
     """
     phase = state.get("phase", "discuss")
-    execution_mode = state.get("execution_mode", "manual")
     approved = bool(state.get("approved"))
-    last_halt = state.get("last_halt")
 
     # Gate booleans
     projected_execute_gate_valid = _compute_projected_execute_gate_valid(state)
@@ -244,11 +205,7 @@ def compute_status(*, state: dict, audit_path) -> StatusResult:
         approved_by=state.get("approved_by"),
         approved_at_iso=state.get("approved_at"),
         approved_source=state.get("approved_source"),
-        execution_mode=execution_mode,
-        autopilot_run_id=state.get("autopilot_run_id"),
-        autopilot_phase_slug=state.get("autopilot_phase_slug"),
-        last_halt=last_halt,
-        last_halt_age_seconds=_compute_last_halt_age(last_halt),
+        execution_mode=state.get("execution_mode", "manual"),
         projected_execute_gate_valid=projected_execute_gate_valid,
         can_enter_execute=can_enter_execute,
         next_action=next_action,
@@ -258,43 +215,18 @@ def compute_status(*, state: dict, audit_path) -> StatusResult:
 def compute_next(*, state: dict, audit_path) -> NextResult:
     """Pure: decide next action based on current state.
 
-    Returns NextResult with exit_code per §3.4 (0/17/18).
+    Returns NextResult with exit_code per §3.4 (0/17).
 
     The ``command`` field is always sourced from ``compute_next_action``
     (the single canonical projection, NEW-4) so that it is byte-identical
     to the ``next_action`` field produced by ``compute_status``.
     """
-    execution_mode = state.get("execution_mode", "manual")
     phase = state.get("phase", "discuss")
-    last_halt = state.get("last_halt")
 
     # Canonical command from the shared projection.
     command = compute_next_action(state)
 
-    # Rule 1: Autopilot active → no manual action
-    if execution_mode != "manual":
-        return NextResult(
-            requires_human=False,
-            agent_safe=False,
-            command=None,
-            reason="autopilot active; no manual action expected",
-            exit_code=18,
-        )
-
-    # Rule 2: Unacknowledged halt → consult diary
-    if last_halt is not None and last_halt.get("acknowledged_at") is None:
-        requires_human = bool(last_halt.get("suggested_next_command_requires_human", True))
-        halt_reason = last_halt.get("halt_reason", "unknown")
-        exit_code = 17 if requires_human else 0
-        return NextResult(
-            requires_human=requires_human,
-            agent_safe=(not requires_human and command is not None),
-            command=command,
-            reason=f"unacknowledged halt: {halt_reason}",
-            exit_code=exit_code,
-        )
-
-    # Rule 3: Phase-based decision — command already resolved above.
+    # Phase-based decision — command already resolved above.
     if phase == "discuss":
         return NextResult(
             requires_human=False,
@@ -384,54 +316,7 @@ def format_status_human(result: StatusResult) -> str:
     else:
         lines.append("Approved        : no")
 
-    # Execution mode line — append [reverted from <mode>] annotation when
-    # the mode is manual but last_halt records a non-null previous mode.
-    em = result.execution_mode
-    em_str = em
-    if (
-        em == "manual"
-        and result.last_halt is not None
-        and result.last_halt.get("mode") is not None
-    ):
-        em_str = f"{em} [reverted from {result.last_halt['mode']}]"
-    lines.append(f"Execution mode  : {em_str}")
-
-    # Autopilot line
-    if result.autopilot_run_id:
-        ap_str = f"active (run_id={result.autopilot_run_id}"
-        if result.autopilot_phase_slug:
-            ap_str += f", phase={result.autopilot_phase_slug}"
-        ap_str += ")"
-    else:
-        ap_str = "inactive"
-    lines.append(f"Autopilot       : {ap_str}")
-
-    # Halt diary line
-    if result.last_halt is not None:
-        lh = result.last_halt
-        halt_str = ""
-        run_id = lh.get("run_id")
-        if run_id:
-            halt_str += f"run_id={run_id}"
-        age = result.last_halt_age_seconds
-        if age is not None:
-            if age < 120:
-                halt_str += f", halted {age}s ago"
-            elif age < 3600:
-                halt_str += f", halted {age // 60}m ago"
-            elif age < 86400:
-                halt_str += f", halted {age // 3600}h ago"
-            else:
-                halt_str += f", halted {age // 86400}d ago"
-        lines.append(f"Halt diary      : {halt_str}")
-        halt_reason = lh.get("halt_reason")
-        if halt_reason:
-            lines.append(f"                  reason={halt_reason}")
-        last_transition = lh.get("last_successful_transition")
-        if last_transition:
-            lines.append(f"                  last successful: {last_transition}")
-    else:
-        lines.append("Halt diary      : (none recent)")
+    lines.append(f"Execution mode  : {result.execution_mode}")
 
     # Next action line — always emitted (v0.7.2 H1).
     # JSON path unchanged: format_status_json still serializes
@@ -439,9 +324,7 @@ def format_status_human(result: StatusResult) -> str:
     if result.next_action:
         lines.append(f"Next action     : {result.next_action}")
     else:
-        if result.execution_mode != "manual":
-            reason = "autopilot active"
-        elif result.phase == "done":
+        if result.phase == "done":
             reason = "phase complete"
         else:
             reason = "no action determined"
@@ -476,10 +359,8 @@ def format_next_shell(result: NextResult) -> tuple[str, int]:
 
     Returns (stdout_text, exit_code). Per §3.9 line 590: prints stdout ONLY
     for agent-safe commands; otherwise prints nothing + exits 17.
-    Special: requires_human → ("", 17). no_action_during_autopilot → ("", 18).
+    Special: requires_human → ("", 17).
     """
-    if result.exit_code == 18:
-        return ("", 18)
     if result.requires_human:
         return ("", 17)
     if result.agent_safe and result.command:

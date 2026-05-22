@@ -647,29 +647,6 @@ def run(argv: list[str] | None = None) -> int:
         help="Print the lockfile payload and exit 0 without removing.",
     )
 
-    # ----- halt-diary admin verbs (design §5.3 + §12.7) -----
-    halt_diary_parser = subparsers.add_parser(
-        "halt-diary",
-        help="Halt-diary admin verbs (§5.3 + §12.7).",
-    )
-    halt_diary_sub = halt_diary_parser.add_subparsers(
-        dest="halt_diary_command", required=True
-    )
-    hd_clear = halt_diary_sub.add_parser(
-        "clear",
-        help=(
-            "Acknowledge and clear the last_halt diary entry. "
-            "TTY-required admin verb (§12.7)."
-        ),
-    )
-    hd_clear.add_argument(
-        "--by",
-        dest="by",
-        default=None,
-        metavar="EMAIL",
-        help="Acting user email (recorded in audit row; defaults to gitconfig).",
-    )
-
     # ----- harness status (§3.9) -----
     status_parser = subparsers.add_parser(
         "status",
@@ -691,8 +668,7 @@ def run(argv: list[str] | None = None) -> int:
         "--shell",
         action="store_true",
         help=(
-            "Stdout safe for shell execution; exit 17 if requires_human, "
-            "exit 18 if autopilot active."
+            "Stdout safe for shell execution; exit 17 if requires_human."
         ),
     )
     next_group.add_argument(
@@ -874,11 +850,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.session_command == "unlock":
             return cmd_session_unlock(args)
         raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
-    if args.command == "halt-diary":
-        from lib.halt_diary_cli import cmd_halt_diary_clear
-        if args.halt_diary_command == "clear":
-            return cmd_halt_diary_clear(args)
-        raise AssertionError(f"Unhandled halt-diary subcommand: {args.halt_diary_command}")
     if args.command == "status":
         from lib.status_next_cli import cmd_status
         return cmd_status(args)

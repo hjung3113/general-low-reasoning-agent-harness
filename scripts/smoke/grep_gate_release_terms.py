@@ -13,7 +13,7 @@ Forbidden terms (§7 line 1022):
   - chain --resume         — Model B removes resume semantics
   - chain --abort          — Model B removes abort semantics
   - containment_           — any containment_* field (renamed to network_guard_*)
-  - autopilot_budgets_remaining — renamed to cli_budgets_remaining
+  - autopilot_budgets_remaining — removed (budget system purged)
 
 Scanned paths (narrow: adapter-facing artifacts only):
   - .roo/commands/*.md
@@ -150,9 +150,9 @@ def main() -> int:
         sys.stderr.write(
             "\nFix: remove the listed deprecated terms from adapter-facing files.\n"
             "See design §7 line 1022 and §12.10 for the canonical term list.\n"
-            "Terms renamed: automation_mode→execution_mode, "
+            "Terms removed/renamed: automation_mode→execution_mode, "
             "containment_*→network_guard_*, "
-            "autopilot_budgets_remaining→cli_budgets_remaining\n"
+            "autopilot_budgets_remaining (removed)\n"
         )
         return 1
 
