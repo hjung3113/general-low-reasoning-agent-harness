@@ -158,6 +158,5 @@ Tier 4: upgrade (모두 의존)
 | `release_harness.py` | 27 | ✅ |
 | `show_phase_status.py` | 29 | ✅ |
 | `project_dashboard.py` | 10 | 🔄 (stub) |
-| `build_v094_fixture.py` | 423 | ❌ (legacy fixture) |
+| `build_v094_fixture.py` | 423 | ✅ (active test dep) |
 | `target_smoke_test.py` | 95 | ✅ |
-| `verify_adrs_accepted.py` | 113 | 🔄 (ADR 폐기 시 drop) |

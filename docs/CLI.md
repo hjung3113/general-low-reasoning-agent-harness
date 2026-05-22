@@ -61,9 +61,8 @@
 | `release_harness.py` | release-check wrapper (27 LOC) | KEEP |
 | `show_phase_status.py` | Phase status JSON (29 LOC) | KEEP |
 | `project_dashboard.py` | HTML dashboard stub (10 LOC) | DROP or expand |
-| `build_v094_fixture.py` | v0.9.4 fixture builder (423 LOC) | **DROP** (legacy) |
+| `build_v094_fixture.py` | v0.9.4 fixture builder (423 LOC) | KEEP (active test dep) |
 | `target_smoke_test.py` | Target smoke (unittest) (95 LOC) | KEEP |
-| `verify_adrs_accepted.py` | ADR `Status: Accepted` gate (113 LOC) | DROP if ADR 폐기 |
 
 ## Smoke scripts (`scripts/smoke/`)
 
