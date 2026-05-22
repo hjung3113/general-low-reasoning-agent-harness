@@ -1,6 +1,6 @@
 # Module Map — `scripts/lib/*.py`
 
-60개 모듈, 21,535 LOC. 카테고리 + 역할 + LOC + KEEP/DROP 판단.
+54개 파일 (50 modules + project_dashboard 4-file subpackage), 17,960 LOC. 카테고리 + 역할 + LOC + KEEP/DROP 판단.
 
 ## Legend
 
@@ -8,7 +8,7 @@
 - 🔄 SIMPLIFY — 유지하되 단순화
 - ❌ DROP — slim 빌드에서 제거
 
-## WORKFLOW_CORE (12 modules, 5,045 LOC)
+## WORKFLOW_CORE (12 modules, 4,542 LOC)
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
@@ -25,7 +25,7 @@
 | `session.py` | 222 | Session lock lifecycle (ADR-003a G1-B) | ✅ |
 | `transition.py` | 380 | 전이 표, validate_transition_with_state | ✅ |
 
-## INSTALL (13 modules, 4,390 LOC)
+## INSTALL (13 modules, 4,193 LOC)
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
@@ -43,7 +43,7 @@
 | `install_recovery.py` | 537 | `.staging-*` 회수 (T14b) | ✅ |
 | `roomodes_writer.py` | 63 | `.roomodes` R/W (logical base/profile split) | ✅ |
 
-## INFRA (11 modules, 2,819 LOC) — Phase 1 complete
+## INFRA (10 modules, 2,272 LOC) — Phase 1 complete
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
@@ -60,35 +60,34 @@
 
 **Removed**: fs_fence.py (390 LOC)
 
-## SECURITY (4 modules, 1,550 LOC) — Phase 1 complete
+## SECURITY (4 modules, 1,081 LOC) — Phase 2 complete
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
-| `audit.py` | 558 | audit.log writer, rotation orchestration | ✅ |
+| `audit.py` | 535 | audit.log writer, rotation orchestration | ✅ |
 | `audit_chain.py` | 126 | per-entry SHA256 chain stamping only; verify/walk path removed Phase 2 Item 5 | ✅ |
-| `audit_rotation.py` | 61 | Rotated file enumeration | ✅ |
-| `state_trust.py` | 388 | Audit oracle preflight (after_sha256 비교) | ✅ |
+| `audit_rotation.py` | 60 | Rotated file enumeration | ✅ |
+| `state_trust.py` | 360 | Audit oracle preflight (after_sha256 비교) | ✅ |
 
 **Removed in Phase 1**: secret_key (208), cli_deprecated (148), fs_fence (390), autopilot_guard (389 + assets), audit_verify_cli (235), release_trust (283, sec-7b) — ~1,653 LOC modules.
 
-## CLI_DISPATCH (5 modules, 2,097 LOC)
+## CLI_DISPATCH (3 modules, 1,448 LOC)
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
-| `phase_cli.py` | 825 | phase set/approve/reopen/next-pending, session unlock | ✅ |
-| `status_next_cli.py` | 491 | status/next/run CLI handlers | ✅ |
-| `state_cli.py` | 158 | state show/repair CLI | ✅ |
+| `phase_cli.py` | 801 | phase set/approve/reopen/next-pending, session unlock | ✅ |
+| `status_next_cli.py` | 490 | status/next/run CLI handlers | ✅ |
+| `state_cli.py` | 157 | state show/repair CLI | ✅ |
 
-## DIAGNOSTICS (8 modules, 3,606 LOC)
+## DIAGNOSTICS (5 modules, 2,547 LOC)
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
-| `check.py` | 1110 | 19종 invariant 검증 | ✅ (단순화 가능) |
-| `doctor.py` | 545 | Drift findings + render (markdown/json) | 🔄 |
-| `state_diagnostics.py` | 422 | Malformed-state diagnostic, schema 검증 | ✅ |
-| `state_repair.py` | 371 | Managed marker block 재생성 | ✅ |
-| `workflow_static_checks.py` | 119 | 설치된 하네스의 static check | ✅ |
-| `audit_verify_cli.py` | (235) | (SECURITY에 카운트) | — |
+| `check.py` | 1106 | 19종 invariant 검증 | ✅ (단순화 가능) |
+| `doctor.py` | 544 | Drift findings + render (markdown/json) | 🔄 |
+| `state_diagnostics.py` | 409 | Malformed-state diagnostic, schema 검증 | ✅ |
+| `state_repair.py` | 370 | Managed marker block 재생성 | ✅ |
+| `workflow_static_checks.py` | 118 | 설치된 하네스의 static check | ✅ |
 
 ## DEAD_LEGACY — Phase 2 제거 완료
 
@@ -133,7 +132,7 @@ Tier 4: upgrade (모두 의존)
 | sec-7b | release_trust.py orphan + EXIT constant | 283 | ✅ |
 | **Phase 1 Total** | (modules + tests + manifest + audit verbs) | **~3,930** | **✅** |
 
-**Module reduction**: 60 → 54 lib modules. **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→11 (fs_fence 제거). **DEAD_LEGACY** 2개 잔존 (Tier B).
+**Module reduction**: 60 → 54 files (50 modules + project_dashboard subpackage). **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→10 (fs_fence + worktree 제거). **DEAD_LEGACY** fully cleared (Phase 2).
 
 **Phase 2 Item 7 completion**: halt-diary + cli_budgets + autopilot scaffolding removed — ~816 LOC modules + ~1200 LOC tests. `halt_diary.py` (196 LOC), `halt_diary_cli.py` (128 LOC), `cli_budgets.py` (495 LOC) deleted. Schema fields `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network` removed. Audit verbs `phase.autopilot.*`, `halt_diary.clear` removed.
 
@@ -155,7 +154,7 @@ Tier 4: upgrade (모두 의존)
 
 | Script | LOC | Verdict |
 |---|---|---|
-| `harness.py` | 1031 | ✅ KEEP |
+| `harness.py` | 916 | ✅ KEEP |
 | `install_harness.py` | 238 | ✅ |
 | `upgrade_harness.py` | 193 | ✅ |
 | `uninstall_harness.py` | 358 | ✅ |

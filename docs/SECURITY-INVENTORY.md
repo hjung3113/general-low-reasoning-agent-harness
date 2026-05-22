@@ -19,10 +19,10 @@
 
 ### KEEP — SURVIVING MODULES
 
-- **audit.py** (558 LOC) — chain SHA256 stamping (state_trust oracle)
+- **audit.py** (535 LOC) — chain SHA256 stamping (state_trust oracle)
 - **audit_chain.py** (126 LOC) — per-entry chain stamp only; walk/verify removed Phase 2 Item 5
-- **audit_rotation.py** (61 LOC) — rotated file enumeration
-- **state_trust.py** (388 LOC) — audit oracle preflight (after_sha256 compare)
+- **audit_rotation.py** (60 LOC) — rotated file enumeration
+- **state_trust.py** (360 LOC) — audit oracle preflight (after_sha256 compare)
 
 ### LOAD-BEARING — DO NOT REMOVE
 
@@ -38,13 +38,13 @@
 
 ## KEPT MODULES (post-phase 1)
 
-### 1. Audit chain (`audit.py` 558 + `audit_chain.py` 126 + `audit_rotation.py` 61)
+### 1. Audit chain (`audit.py` 535 + `audit_chain.py` 126 + `audit_rotation.py` 60)
 
 Per-entry SHA256 chain (ADR D-3). `entry_hash = sha256(rfc8785(entry) + previous_hash)`. 10 MiB / 10k entries rotate with seam entry `audit.rotated`.
 
 **KEEP**: Core to state_trust oracle. Rotation orchestration essential (unbounded log prevention).
 
-### 2. State trust (`state_trust.py` 388)
+### 2. State trust (`state_trust.py` 360)
 
 Phase-state SHA256 vs audit oracle (`after_sha256`). Detects hand-edit. BOM/CRLF reject, canonical JSON re-emit.
 
@@ -125,5 +125,4 @@ Per v0.9.13 commit: low-perf AI agent, **no multi-user threat model**.
 **Removed in Phase 2**:
 - state_migrate.py + state_migrate_t04.py + migrate_state.py (v0→v2 migration — all state is now v2)
 
-**Deferred to future phase** (still present, not workflow-critical):
-- audit_verify (chain library `verify_chain`/`walk_chain` test-only callers)
+**Removed in Phase 2 Item 5**: `verify_chain`/`walk_chain` forensic path in audit_chain.py — write-path only retained (126 LOC).

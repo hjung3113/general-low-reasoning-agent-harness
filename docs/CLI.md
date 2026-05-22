@@ -30,7 +30,7 @@
 |---|---|---|
 | `--version v<X.Y.Z>` | global | Release version 오버라이드 |
 | `--target <dir>` | most | 타겟 프로젝트 디렉토리 |
-| `--dry-run` | init/upgrade/uninstall/migrate | Plan만 출력, 디스크 변경 없음 |
+| `--dry-run` | init/upgrade/uninstall | Plan만 출력, 디스크 변경 없음 |
 | `--force` | init/upgrade | Locally modified harness-owned 덮어쓰기 |
 | `--adopt-existing` | upgrade | 기존 매뉴얼 설치 흡수 |
 | `--adapters <list>` | init/upgrade | roo, opencode, both, none |
@@ -49,7 +49,7 @@
 
 | Script | Purpose | Removal? |
 |---|---|---|
-| `harness.py` | Main dispatcher (1031 LOC) | KEEP |
+| `harness.py` | Main dispatcher (916 LOC) | KEEP |
 | `harness_cli.py` (project root) | Console-script entry | KEEP |
 | `check_harness.py` | `check` wrapper (45 LOC) | KEEP |
 | `doctor_harness.py` | `doctor` wrapper (30 LOC) | KEEP, optional |

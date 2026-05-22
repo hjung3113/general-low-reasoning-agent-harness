@@ -9,9 +9,9 @@ general-low-reasoning-agent-harness/
 ├── harness_cli.py              # Console-script entry — sys.path 보강 후 scripts/harness.py:run() 호출
 ├── pyproject.toml              # name=general-low-reasoning-agent-harness, version=0.9.4
 │                               # deps: rfc8785, psutil. entrypoint: harness=harness_cli:main
-├── scripts/                    # 모든 Python 로직 (lib/ + 14개 top-level)
-│   ├── harness.py              # CLI dispatcher (1031 LOC, argparse subparsers)
-│   ├── lib/                    # 60개 모듈, ~21.5K LOC
+├── scripts/                    # 모든 Python 로직 (lib/ + 12개 top-level)
+│   ├── harness.py              # CLI dispatcher (916 LOC, argparse subparsers)
+│   ├── lib/                    # 54개 모듈, ~18K LOC
 │   └── smoke/                  # grep gates only (live-trial harness removed Phase 2)
 ├── harness/                    # 타겟에 심을 자원들
 │   ├── skeleton/clean/         # AGENTS.md + README.md 템플릿 (project-owned 복사)
@@ -22,24 +22,24 @@ general-low-reasoning-agent-harness/
 ├── .scratch/                   # 런타임 상태 (phase-state.json + journals + locks)
 ├── .planning/                  # 타겟에서 만드는 state/roadmap (이 repo엔 없음 — wipe됐음)
 ├── .githooks/                  # 4개 hook: main 브랜치 정책 강제
-├── tests/                      # 75개 테스트 파일 (60+ workflow, audit/security/infra)
+├── tests/                      # 64개 테스트 파일 (28 top-level + 36 subdirectory)
 └── docs/                       # (이 폴더 — 새로 작성됨)
 ```
 
-## 코드 카테고리 (53 lib 모듈, 17.5K LOC) — Phase 1 complete
+## 코드 카테고리 (50 lib 모듈, ~18K LOC) — Phase 2 complete
 
 | Category | Modules | LOC | Status |
 |---|---|---|---|
-| WORKFLOW_CORE | 12 | 5,045 | ✅ KEEP |
-| INSTALL | 13 | 4,390 | ✅ KEEP |
-| INFRA | 11 | 2,819 | ✅ KEEP (fs_fence removed) |
-| DIAGNOSTICS | 8 | 3,606 | 🔄 TRIM (smoke pending) |
-| SECURITY | 5 | 1,550 | ✅ KEEP (9→5 modules) |
-| CLI_DISPATCH | 3 | 1,474 | ✅ KEEP |
+| WORKFLOW_CORE | 12 | 4,542 | ✅ KEEP |
+| INSTALL | 13 | 4,193 | ✅ KEEP |
+| INFRA | 10 | 2,272 | ✅ KEEP (fs_fence removed) |
+| DIAGNOSTICS | 5 | 2,547 | ✅ KEEP |
+| SECURITY | 4 | 1,081 | ✅ KEEP (9→4 modules) |
+| CLI_DISPATCH | 3 | 1,448 | ✅ KEEP |
 
-**Total**: 53 lib + 12 scripts/*.py = 65 Python files, ~19K LOC.
+**Total**: 50 lib modules (54 files incl. project_dashboard subpackage) + 12 scripts/*.py = ~18K LOC.
 
-**Phase 1 reduction**: 60→53 modules, ~21.5K→17.5K LOC lib, ~980 test files removed.
+**Phase 1 reduction**: 60→53 modules. **Phase 2 reduction**: →50 modules (state_migrate×3, halt_diary, halt_diary_cli, cli_budgets removed).
 
 ## Tier dependency graph (no cycles) — Phase 1 updated
 
@@ -106,5 +106,5 @@ Manifest entry는 `adapter` 필드로 선택 필터링 (`select_entries()` in ma
 - `SECURITY-INVENTORY.md` — 모든 보안/trust 기능 + 제거 후보 ranking
 - `INSTALL-MODEL.md` — install/upgrade/manifest/adapter
 - `CLI.md` — 모든 subcommand 표
-- `MODULE-MAP.md` — 60 lib 모듈 카테고리 매핑
-- `TESTS.md` — 75 테스트 파일 카테고리
+- `MODULE-MAP.md` — 54 lib 파일 카테고리 매핑
+- `TESTS.md` — 64 테스트 파일 카테고리

@@ -1,6 +1,6 @@
 # Test Inventory
 
-75개 테스트 파일 (32 top-level + 43 subdirectory). 카테고리별 분류 + 제거 후보.
+64개 테스트 파일 (28 top-level + 36 subdirectory). 카테고리별 분류 + 제거 후보.
 
 ## Categories
 
@@ -11,7 +11,7 @@
 - **SMOKE** — E2E lifecycle
 - **LEGACY** — v0→v2 migration, deprecated fixtures
 
-## Top-level tests/test_*.py (32 files)
+## Top-level tests/test_*.py (28 files)
 
 | Test | Category | Status |
 |---|---|---|
@@ -43,13 +43,16 @@
 | `test_upgrade_dry_run.py` | WORKFLOW | ✅ |
 | `test_wrong_tree_resolution.py` | INFRA | ✅ |
 
-**Removed** (Phase 1): test_audit_verify_tail.py, test_audit_error_wording.py, test_phase_approve_no_nonce_strings.py, test_fixture_determinism.py, test_smoke_lifecycle.py.
+**Removed** (Phase 1): test_audit_verify_tail.py, test_audit_error_wording.py, test_phase_approve_no_nonce_strings.py.
+**Removed** (Phase 2 Item 4): test_smoke_lifecycle.py.
+**Note**: test_fixture_determinism.py is still present (not removed).
 
-## Test subdirectories (43 files)
+## Test subdirectories (36 files)
 
 | Dir | Files | Category | Purpose | Status |
 |---|---|---|---|---|
-| `audit/` | 5 | SECURITY | S06 chain-stamped audit writer, crash recovery matrix | ✅ |
+| `audit/` | 1 | SECURITY | S06 chain-stamped audit writer | ✅ |
+| `cli/` | 4 | WORKFLOW | phase reopen argparse, status/next CLI, roo modes | ✅ |
 | `crash/` | 1 | SECURITY | Crash recovery matrix (§3.8) | ✅ |
 | `dep_guard/` | 1 | INFRA | Runtime-dep import guard contract | ✅ |
 | `durable_fs/` | 1 | INFRA | Cross-platform durability primitives | ✅ |
@@ -62,11 +65,14 @@
 | `phase_reopen/` | 1 | WORKFLOW | Backward 전이 (§3.2) | ✅ |
 | `phase_set_done/` | 1 | WORKFLOW | Stale-approval validator (execute→done) | ✅ |
 | `phase_set_execute/` | 3 | WORKFLOW | Stale-approval validator (plan→execute) | ✅ |
-| `phase_state/` | 6 | WORKFLOW | forward() round-trips on §9.1 fixtures | ✅ |
+| `phase_state/` | 3 | WORKFLOW | forward() round-trips on §9.1 fixtures | ✅ |
 | `phase_txn/` | 3 | WORKFLOW | §9.1 fixtures dispatch | ✅ |
 | `safe_open/` | 1 | INFRA | O_NOFOLLOW race-safe open | ✅ |
+| `slash/` | 0 | — | Empty stub (content removed Phase 1) | — |
+| `smoke/` | 3 | INFRA | grep_gate smoke tests | ✅ |
 
-**Removed** (Phase 1): cli/ (5 files), autopilot/, phase_autopilot/, fsd_wrappers/, cycle1_fixC/, ci_provenance/, release_smoke/, slash/ (1 file), smoke/ (3 files) — ~20 test files total.
+**Removed** (Phase 1): autopilot/, phase_autopilot/, fsd_wrappers/, cycle1_fixC/, ci_provenance/, release_smoke/ — ~15 test files total.
+**Removed** (Phase 2 Item 4): tests/smoke/test_smoke_lifecycle.py.
 **Removed** (Phase 2 Item 7): halt_diary/ test dir — ~1200 LOC tests.
 
 ## Phase 1 Completion: Test File Removal
