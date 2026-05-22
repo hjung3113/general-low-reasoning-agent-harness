@@ -79,7 +79,8 @@ _FIX_GITCONFIG = (
 )
 _FIX_APPROVER_MEMBERSHIP = (
     "Fix: only emails listed in `.harness/install-record.json approvers[]` "
-    "may approve; re-run `harness install` or pass "
+    "may approve; ask the install owner to add your email, re-run "
+    "`harness init --approver-email <your-email>`, or pass "
     "`--override-identity --reason <text>`"
 )
 _FIX_AUTOPILOT = (
@@ -88,12 +89,13 @@ _FIX_AUTOPILOT = (
 )
 _FIX_STATE_TRUST = (
     "Fix: inspect .harness/audit.log manually; "
-    "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
-    "or re-run `harness install`"
+    "if intentional, restore via `git checkout -- .scratch/phase-state.json`, "
+    "or re-apply the change via `harness phase set <phase> --stdin-json` "
+    "(which updates the audit chain)"
 )
 _FIX_GITCONFIG_MUTATED = (
-    "Fix: pass `--by <email>` explicitly OR re-run `harness install` "
-    "to record the updated gitconfig email (§12.6 gitconfig fingerprint)"
+    "Fix: pass `--by <email>` explicitly, OR re-run `harness init` "
+    "with the updated email to record the gitconfig fingerprint (§12.6)"
 )
 _FIX_OVERRIDE_REASON_MISSING = (
     "Fix: pass `--reason \"<text>\"` together with `--override-identity` "

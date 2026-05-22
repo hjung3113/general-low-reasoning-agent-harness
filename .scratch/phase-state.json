@@ -1,8 +1,9 @@
 {
   "acceptance_criteria": [
-    "Reviewer P1 findings for adapter alias, gate enforcement, release evidence, and core neutrality are addressed.",
-    "README documents post-install commands and ready-to-use prompts.",
-    "Release verification evidence records source checks, target matrix smoke, adversarial review, commit, and push."
+    "Phase 2 strip items 1-5, 7, 8 landed with passing commits.",
+    "Docs synced to post-strip reality (eeab5b4).",
+    "Manifest references only existing files.",
+    "Phase-state pointers resolve to existing canonical docs."
   ],
   "allowed_paths": [
     "README.md",
@@ -18,34 +19,33 @@
     "pyproject.toml",
     "scripts/"
   ],
-  "approved": true,
+  "approved": false,
   "approved_at": "2026-05-18T16:20:23.000000000Z",
   "approved_by": "user",
   "auto_selected": [],
   "automation_mode": "manual",
   "blocked_paths": [],
   "checkpoint_path": ".planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md",
-  "current_checkpoint": "CP-02-02",
-  "next_action": "Execute Phase 2 v0.8.0 minimal workflow implementation plan.",
+  "current_checkpoint": "CP-02-08",
+  "next_action": "Define next phase or open new plan via `harness phase set plan --stdin-json`.",
   "notes": [
-    "This is a new repository copy created from the previous harness project.",
-    "Core must remain stack-neutral and client-neutral.",
-    "Skill packs are generic composable plugins."
+    "Phase 2 v0.8.0 minimal workflow strip complete.",
+    "Core remains stack-neutral and client-neutral.",
+    "Skill packs remain generic composable plugins."
   ],
-  "phase": "execute",
+  "phase": "done",
   "plan_finalized_at": "2026-05-18T16:19:28.575177000Z",
   "plan_id": "v0.8.0-minimal-workflow",
   "plan_path": ".planning/phases/02-v0.8.0-minimal-workflow/02-01-PLAN.md",
   "review": [],
   "state_path": ".planning/STATE.md",
   "state_schema_version": 2,
-  "summary": "Phase 2 v0.8.0 minimal workflow implementation",
-  "updated_at": "2026-05-18T16:41:24.544312000Z",
+  "summary": "Phase 2 v0.8.0 minimal workflow strip — done",
+  "updated_at": "2026-05-22T00:00:00.000000000Z",
   "updated_by": "hjung3113@gmail.com",
   "verification": [
-    "python3 -m unittest scripts/test_harness.py",
+    "python3 -m unittest scripts.tests.test_harness",
     "python3 scripts/harness.py check",
-    "python3 scripts/harness.py check --worktree",
-    "python3 scripts/release_smoke_test.py"
+    "python3 scripts/harness.py check --worktree"
   ]
 }

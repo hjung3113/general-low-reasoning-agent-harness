@@ -55,14 +55,18 @@ _BOM = b"\xef\xbb\xbf"
 _FIX_AUDIT = "Fix: inspect .harness/audit.log manually"
 _FIX_REPAIR_MANUAL = (
     "if the mismatch is intentional, restore via "
-    "'git checkout -- .scratch/phase-state.json' or re-run 'harness install'"
+    "'git checkout -- .scratch/phase-state.json', or re-apply the change via "
+    "'harness phase set <phase> --stdin-json' (which updates the audit chain)"
 )
 _FIX_STRIP_BOM = "Fix: run 'harness repair --strip-bom .scratch/phase-state.json'"
 _FIX_CRLF = (
     "Fix: re-save .scratch/phase-state.json with LF line endings "
     "(check .gitattributes / editor settings); see design §2.3"
 )
-_FIX_RECOVER = "Fix: run 'harness recover' before any state-mutating verb"
+_FIX_RECOVER = (
+    "Fix: restore .scratch/phase-state.json via "
+    "'git checkout -- .scratch/phase-state.json' before any state-mutating verb"
+)
 
 
 class StateTrustError(OSError):

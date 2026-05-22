@@ -198,7 +198,7 @@ def run_reopen(
     except FileNotFoundError:
         print(
             f"error: phase reopen refused: {install_record_path} not found. "
-            f"Fix: re-run `harness install`",
+            f"Fix: re-run `harness init` to bootstrap the install record",
             file=sys.stderr,
         )
         return ReopenResult(exit_code=6, sub_reason="install_record_missing")

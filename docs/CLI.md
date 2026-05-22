@@ -53,9 +53,9 @@
 | `harness_cli.py` (project root) | Console-script entry | KEEP |
 | `check_harness.py` | `check` wrapper (45 LOC) | KEEP |
 | `doctor_harness.py` | `doctor` wrapper (30 LOC) | KEEP, optional |
-| `install_harness.py` | Interactive installer (238 LOC) | KEEP |
-| `upgrade_harness.py` | Target-local upgrade bootstrapper (193 LOC) | KEEP |
-| `uninstall_harness.py` | Uninstall flow (358 LOC) | KEEP |
+| `install_harness.py` | Interactive installer (259 LOC) | KEEP |
+| `upgrade_harness.py` | Target-local upgrade bootstrapper (189 LOC) | KEEP |
+| `uninstall_harness.py` | Uninstall flow (376 LOC) | KEEP |
 | `release.py` | Develop→main merge, tag, push (217 LOC) | KEEP (release ops) |
 | `release_harness.py` | release-check wrapper (27 LOC) | KEEP |
 | `show_phase_status.py` | Phase status JSON (29 LOC) | KEEP |
@@ -88,7 +88,9 @@ Live-trial harness removed Phase 2. Remaining modules are diagnostics gates only
 
 ```
 harness init --target <dir> [--profiles ... --packs ... --adapters ...]
-harness upgrade --target <dir> [--dry-run --force]
+harness upgrade --target <dir> [--source <dir> | --repo <url> --ref <git-ref>]
+                               [--dry-run --force --adopt-existing]
+                               [--adapters ... --profiles ... --packs ...]
 harness uninstall --target <dir>
 harness check [--target <dir> --worktree --verify-hashes]
 harness doctor [--target <dir>]

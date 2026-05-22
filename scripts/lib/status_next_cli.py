@@ -178,7 +178,8 @@ def _read_state_with_preflight(
         except _state_trust.StateEmptyError as exc:
             print(
                 f"error: harness status/next: state file empty (crash artefact): {exc}\n"
-                f"Fix: run 'harness recover' before any state-mutating verb.",
+                f"Fix: restore .scratch/phase-state.json via 'git checkout -- .scratch/phase-state.json' "
+                f"before any state-mutating verb.",
                 file=sys.stderr,
             )
             return None, 14
@@ -198,7 +199,7 @@ def _read_state_with_preflight(
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             print(
                 f"error: harness status/next: state file not parseable: {exc}\n"
-                f"Fix: run 'harness recover'",
+                f"Fix: restore via 'git checkout -- .scratch/phase-state.json'",
                 file=sys.stderr,
             )
             return None, 5

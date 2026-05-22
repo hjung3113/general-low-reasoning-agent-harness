@@ -25,24 +25,21 @@ discuss → plan → execute → done
 
 **규칙**: forward edge → approval 필요. backward edge → `--reset-approval` 필요.
 
-### Execution modes (v2 schema)
+### Execution mode (post Phase 2 Item 7)
 
-```python
-EXECUTION_MODES = {"manual", "phase_autopilot", "chain_autopilot"}
-```
+Autopilot 제거. 모든 execution은 `manual`로 고정.
 
-Legacy `automation_mode` (v0.6.1) 자동 마이그레이션: chain→phase_autopilot, auto→chain_autopilot.
+`scripts/lib/phase_state.py:27-35` 의 `coerce_legacy_execution_mode()` 는 legacy 값(`phase_autopilot`, `chain_autopilot`, `auto`, `chain`)을 항상 `"manual"` 로 접어 넣는다.
 
 ### State file: `.scratch/phase-state.json`
 
-v2 필드 (`phase_state.py:42-61`):
+v2 필드 (현재):
 ```
-execution_mode (always "manual"; autopilot to be redesigned),
 execute_attempt_started_at, plan_finalized_at,
 draft_verification, draft_allowed_paths
 ```
 
-**Removed (Phase 2 Item 7)**: `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network`, `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`.
+**Removed (Phase 2 Item 7)**: `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network`, `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, plus `execution_mode` enum reduced to `{manual}`.
 
 ### Stale-approval check (§3.6)
 
@@ -154,7 +151,8 @@ Boolean gates:
 
 - 0 = agent_safe (concrete command 추천)
 - 17 = human_action_required
-- 18 = no_action_during_autopilot
+
+(Exit code 18 `no_action_during_autopilot` removed in Phase 2 Item 7 alongside autopilot.)
 
 ## 7. Check command (`check.py`, 1110 LOC)
 
@@ -295,7 +293,8 @@ Exit: 0 / 3 (locked) / 14 (undecidable).
 | 10 | EXIT_STATE_AUDIT_MISMATCH | state trust failed |
 | 14 | EXIT_CRASH_RECOVERY_UNDECIDABLE | manual intervention |
 | 17 | EXIT_NON_TTY | TTY-only verb hit non-TTY |
-| 18 | EXIT_NO_ACTION_DURING_AUTOPILOT | autopilot active |
+
+Exit 18 (`EXIT_NO_ACTION_DURING_AUTOPILOT`) removed in Phase 2 Item 7.
 
 ## Workflow invariants (요약) — Phase 1 complete
 

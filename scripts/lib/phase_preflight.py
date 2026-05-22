@@ -44,12 +44,14 @@ FIX_GITCONFIG = (
 )
 FIX_APPROVER_MEMBERSHIP = (
     "Fix: only emails listed in `.harness/install-record.json approvers[]` "
-    "may run this verb; re-run `harness install`"
+    "may run this verb; ask the install owner to add your email, or re-run "
+    "`harness init` with `--approver-email <your-email>` to rebootstrap"
 )
 FIX_STATE_TRUST = (
     "Fix: inspect .harness/audit.log manually; "
-    "if intentional, restore via `git checkout -- .scratch/phase-state.json` "
-    "or re-run `harness install`"
+    "if intentional, restore via `git checkout -- .scratch/phase-state.json`, "
+    "or re-apply the change via `harness phase set <phase> --stdin-json` "
+    "(which updates the audit chain)"
 )
 
 

@@ -702,7 +702,7 @@ def check_consistency(
         )
 
     document_paths = {document.path for document in documents}
-    for required in ("README.md", "AGENTS.md", "docs/phase-gate-harness.md"):
+    for required in ("README.md", "AGENTS.md"):
         if required not in document_paths:
             warnings.append(
                 DashboardWarning(

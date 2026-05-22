@@ -219,9 +219,30 @@ def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--adapters", default="roo")
-    parser.add_argument("--profiles", default="generic")
-    parser.add_argument("--packs", default=None)
+    parser.add_argument(
+        "--adapters",
+        default="roo",
+        choices=[name for name, _ in ADAPTER_OPTIONS],
+        help="Adapter selection: roo | opencode | both | none (default: roo).",
+    )
+    parser.add_argument(
+        "--profiles",
+        default="generic",
+        help=(
+            "Comma-separated profile names (default: generic). "
+            "Run with --interactive to see the live list, "
+            "or inspect harness/profiles/."
+        ),
+    )
+    parser.add_argument(
+        "--packs",
+        default=None,
+        help=(
+            "Comma-separated skill pack names. "
+            "When omitted, packs are auto-derived from --profiles + --db. "
+            "Run with --interactive to see the live list."
+        ),
+    )
     parser.add_argument("--version", dest="release_version", default=None)
     parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
