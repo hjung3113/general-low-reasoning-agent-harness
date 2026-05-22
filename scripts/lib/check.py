@@ -52,10 +52,6 @@ from lib.workflow_static_checks import (
     verification_placeholder_reason,
 )
 from lib.managed_block import parse_blocks
-from lib.manifest_reconciler import (
-    verify_install_record_integrity as _verify_install_record_integrity,
-    verify_manifest_chain as _verify_manifest_chain,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -715,21 +711,7 @@ def check_installed_target(
     installed_path = target / INSTALL_STATE
     if not installed_path.exists():
         raise SystemExit(f"Target is missing {INSTALL_STATE}")
-    # P5-P1-3: verify installed-manifest chain hash on read (§6 integrity).
-    # Chain mismatch is logged as a WARNING to avoid masking other check
-    # failures (policy mismatch, retired files, etc.) that are reported via
-    # their own specific error messages.  The warning is printed to stderr so
-    # operators are alerted; BOM / parse errors still raise exit 5 (hard stop).
-    from lib.manifest_reconciler import ManifestChainTamperedError as _MCTE
-    try:
-        _verify_install_record_integrity(target)
-    except _MCTE as _ce:
-        import sys as _sys
-        _sys.stderr.write(
-            f"WARNING: installed-manifest chain hash mismatch "
-            f"(possible tampering or legacy record). {_ce}\n"
-        )
-    # Returns False for fresh installs (no manifest → skip chain check).
+    # v0.9.13: chain hash verification removed.
     installed = load_state_json(installed_path)
     if installed.get("version") is None:
         raise SystemExit("Target install state is missing version.")

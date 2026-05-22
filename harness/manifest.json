@@ -777,13 +777,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/release_smoke_test.py",
-      "source": "scripts/release_smoke_test.py",
-      "policy": "harness-owned",
-      "owner": "harness",
-      "note": "S13 \u00a712.10 release smoke case dispatcher + 5 fundamental cases (step 1)."
-    },
-    {
       "path": "scripts/show_phase_status.py",
       "source": "scripts/show_phase_status.py",
       "policy": "harness-owned"
@@ -1375,13 +1368,6 @@
       "policy": "harness-owned",
       "owner": "harness",
       "note": "Windows degraded network guard \u2014 git network-subcommand deny shim wrapper (\u00a75.2 S10d). PATH-prepend installer deferred."
-    },
-    {
-      "path": "scripts/smoke/verify_fix_lines.py",
-      "source": "scripts/smoke/verify_fix_lines.py",
-      "policy": "harness-owned",
-      "owner": "harness",
-      "note": "S16 Fix: enforcer \u2014 verifies every non-zero \u00a73.4 exit emits Fix: to stderr (\u00a73.9)."
     }
   ],
   "removed_in_version": [

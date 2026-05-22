@@ -74,9 +74,7 @@ from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
 from lib.release_trust import UpgradeTrustError, file_sha256_at_commit, verify_release_tag
 from lib.manifest_reconciler import (
     ReconcileDecision,
-    compute_manifest_hash_chain,
     reconcile_install as _reconcile_install,
-    verify_manifest_chain as _verify_manifest_chain,
 )
 from lib.manifest_v2 import read_manifest as _read_manifest_v2
 from lib.state import now_utc as _now_utc
@@ -176,90 +174,19 @@ def install_state_migration_report(before: dict, after: dict) -> list[str]:
 def _read_target_trust_origin(target: Path) -> str | None:
     """Return trust_origin from the target's existing installed manifest, or None.
 
-    δ-P1-1: distinguishes "file absent" (returns None) from "file present but
-    unparseable / missing keys" (raises UpgradeTrustError with
-    sub_reason="target_manifest_corrupted").  A corrupted install-state.json
-    must NOT silently mask a prior signed_tag install and allow a downgrade.
-
-    B3-Fix-1 / B-2 (Cycle-2): When installed_files_chain_hash is present,
-    ALWAYS verify the chain hash — regardless of whether trust fields are present.
-    Deleting trust fields no longer bypasses chain verification.
-    Old v1 records without the hash field are accepted without chain verification.
+    v0.9.13: chain-hash tamper-detection removed. Just read the file and return
+    its trust_origin, or None when absent / unparseable.
     """
-    from lib.state import INSTALL_STATE as _IS  # avoid circular at module level
-    from lib.release_trust import UpgradeTrustError as _UTE  # local import — avoid circular
+    from lib.state import INSTALL_STATE as _IS
     p = target / _IS
     if not p.exists():
         return None
-    # File is present — parse it.  Any failure here is suspicious (corruption /
-    # tampering) and must be reported rather than silently swallowed.
     try:
-        text = p.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise _UTE(
-            "target_manifest_corrupted",
-            f"install-state.json unreadable: {exc}",
-        ) from exc
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise _UTE(
-            "target_manifest_corrupted",
-            f"install-state.json is not valid JSON: {exc}",
-        ) from exc
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
     if not isinstance(data, dict):
-        raise _UTE(
-            "target_manifest_corrupted",
-            "install-state.json top-level value is not a JSON object",
-        )
-    # B-2 (Cycle-2): verify chain hash to prevent trust-field deletion bypass.
-    #
-    # Attack vector: manifest has trust_origin=signed_tag + new-format chain hash
-    # (B-1: hash covers trust fields).  Attacker deletes trust_origin from file →
-    # old B3-Fix-1 would skip verification (has_trust_provenance=False) → returns
-    # None → downgrade guard disabled.
-    #
-    # Fix: verify when chain_hash is present AND the manifest appears to be a
-    # release-stamped record (has release_tag or has trust_origin="signed_tag").
-    # Dev/init manifests (trust_origin=dev_unsigned, no release_tag) are excluded
-    # to preserve backward compat with the test pattern of modifying init manifests.
-    #
-    # Security note: an attacker who deletes ALL trust fields from a signed_tag
-    # manifest causes trust_origin to return None (not "signed_tag"), so the
-    # existing-trust downgrade guard at line ~281 will not fire — the upgrade
-    # proceeds with dev_unsigned rather than refusing.  This is acceptable for
-    # internal-share-stable; the full defense is B-1+B-2+signed CI workflow.
-    stored_chain_hash = data.get("installed_files_chain_hash")
-    is_signed_release_manifest = (
-        data.get("trust_origin") == "signed_tag"
-        or data.get("release_tag") is not None
-    )
-    if stored_chain_hash and is_signed_release_manifest:
-        installed_files: dict = data.get("files", {})
-        recomputed_chain_manifest: dict = {
-            "release_commit": data.get("release_commit"),
-            "release_tag": data.get("release_tag"),
-            "schema_version": data.get("schema_version", 2),
-            "harness_version": data.get("harness_version", ""),
-            "files": {
-                p_str: {
-                    "installed_sha256": v.get("installed_sha256", ""),
-                    "current_sha256": v.get("current_sha256", ""),
-                }
-                for p_str, v in installed_files.items()
-                if isinstance(v, dict) and "installed_sha256" in v
-            },
-            "removed_in_version": [],
-            "trust_origin": data.get("trust_origin"),
-        }
-        expected_hash = compute_manifest_hash_chain(recomputed_chain_manifest)
-        if expected_hash != stored_chain_hash:
-            raise _UTE(
-                "target_manifest_corrupted",
-                f"install-state.json chain hash mismatch — possible tampering. "
-                f"Expected {expected_hash!r}, stored {stored_chain_hash!r}",
-            )
-    # trust_origin may legitimately be absent (old v1 records) — that's fine.
+        return None
     return data.get("trust_origin")
 
 def _emit_trust_audit(
@@ -400,95 +327,6 @@ def _build_release_manifest_v2(
     return release_manifest
 
 
-def _emit_rechain_audit(
-    *,
-    installed: dict,
-    installed_files: dict,
-    previous_chain_hash: str,
-    new_chain_hash: str,
-) -> None:
-    """Emit ``release.trust.rechained`` when the chain hash changed during upgrade.
-
-    T16 trigger logic:
-      1. Classify cause: count entries in installed_files whose path is in the
-         set of 35 modules missing from the v0.9.4 manifest (BUG-1).  If any
-         match → cause = ``"v094_manifest_gap_remediation"``; otherwise →
-         ``"manifest_evolution"``.
-      2. Idempotency guard: read ``installed["rechain_log"]`` (list of prior
-         (previous_chain_hash, new_chain_hash) tuples stored as dicts).  If the
-         exact (prev, new) pair already appears, skip — no double-emit.
-      3. Call ``release_trust.record_rechain(...)`` which calls ``audit_append``.
-      4. Append the record to ``installed["rechain_log"]`` so the next upgrade
-         run with the same chain delta is idempotent.
-
-    This helper is called from ``_stamp_installed_manifest_v2`` and must NOT
-    raise — it is best-effort (audit never aborts the upgrade).
-    """
-    import datetime as _dt
-
-    try:
-        from lib.release_trust import classify_rechain_cause, record_rechain
-    except ImportError:
-        return  # best-effort
-
-    # 1. Classify cause
-    added_paths = list(installed_files.keys())
-    cause, module_count_added = classify_rechain_cause(added_paths)
-
-    # 2. Idempotency guard
-    rechain_log: list = installed.setdefault("rechain_log", [])
-    for prior in rechain_log:
-        if (
-            isinstance(prior, dict)
-            and prior.get("previous_chain_hash") == previous_chain_hash
-            and prior.get("new_chain_hash") == new_chain_hash
-        ):
-            return  # already emitted for this (prev, new) pair; skip
-
-    # 3. Resolve actor (best-effort)
-    actor = "system"
-    try:
-        import subprocess as _sp
-        result = _sp.run(
-            ["git", "config", "user.email"],
-            capture_output=True, text=True, timeout=2.0,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            actor = result.stdout.strip()
-    except Exception:
-        pass
-
-    # 4. Emit audit row
-    # NOTE: target is not available directly in _stamp_installed_manifest_v2;
-    # record_rechain accepts the target dir. We retrieve it from _emit_trust_audit
-    # callers instead — but _stamp_installed_manifest_v2 does not receive target.
-    # Workaround: record_rechain accepts target=None and falls back gracefully.
-    # The upgrade() function wire-in below passes target explicitly.
-    #
-    # This helper is only called from upgrade() (see UPGRADE_RECHAIN_TARGET
-    # set by the caller in _stamp_installed_manifest_v2_with_target).
-    # We store the (prev, new, cause, at_iso) in rechain_log immediately.
-    now_iso = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rechain_log.append({
-        "previous_chain_hash": previous_chain_hash,
-        "new_chain_hash": new_chain_hash,
-        "cause": cause,
-        "at_iso": now_iso,
-        "actor": actor,
-    })
-
-    # record_rechain is called by the upgrade() wire-in with the resolved target.
-    # We store the pending record; upgrade() will call record_rechain after
-    # _stamp_installed_manifest_v2 returns (see the wire-in block in upgrade()).
-    installed["_pending_rechain"] = {
-        "previous_chain_hash": previous_chain_hash,
-        "new_chain_hash": new_chain_hash,
-        "cause": cause,
-        "module_count_added": module_count_added,
-        "actor": actor,
-    }
-
-
 def _stamp_installed_manifest_v2(
     installed: dict,
     *,
@@ -552,46 +390,10 @@ def _stamp_installed_manifest_v2(
         print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
         print("====================================================================", file=_sys.stderr)
 
-    # T16: capture the previous chain hash BEFORE rebuilding, so we can detect
-    # whether the upgrade caused a chain delta and emit a release.trust.rechained
-    # audit row with the correct cause classification.
-    previous_chain_hash: str = installed.get("installed_files_chain_hash") or ""
-
-    # B3-Fix-1: persist trust provenance fields so subsequent upgrades can
-    # read back trust_origin and enforce downgrade protection, and so chain
-    # hash covers these fields (tampering is chain-hash-detected).
+    # v0.9.13: chain hash + rechain audit removed. Just persist trust fields.
     for key in ("trust_origin", "release_tag", "release_commit"):
         if key in release_manifest:
             installed[key] = release_manifest[key]
-
-    # Compute and stamp installed_files_chain_hash
-    # B3-Fix-1: include trust_origin, release_tag, release_commit in canonical
-    # input so tampering with any of these fields is chain-hash-detected.
-    chain_manifest: dict[str, object] = {
-        "release_commit": installed.get("release_commit"),
-        "release_tag": installed.get("release_tag"),
-        "schema_version": 2,
-        "harness_version": harness_version,
-        "files": {
-            p: {"installed_sha256": v.get("installed_sha256", ""), "current_sha256": v.get("current_sha256", "")}
-            for p, v in installed_files.items()
-            if isinstance(v, dict) and "installed_sha256" in v
-        },
-        "removed_in_version": [],
-        "trust_origin": installed.get("trust_origin"),
-    }
-    new_chain_hash = compute_manifest_hash_chain(chain_manifest)
-    installed["installed_files_chain_hash"] = new_chain_hash
-
-    # T16: emit release.trust.rechained when the chain hash changed, with
-    # idempotency guard via rechain_log[] stored in the installed manifest.
-    if previous_chain_hash and new_chain_hash and previous_chain_hash != new_chain_hash:
-        _emit_rechain_audit(
-            installed=installed,
-            installed_files=installed_files,
-            previous_chain_hash=previous_chain_hash,
-            new_chain_hash=new_chain_hash,
-        )
 
 
 def upgrade(
@@ -907,23 +709,6 @@ def upgrade(
                 f"WARNING: prior installed-manifest unreadable: {_e}\n"
             )
             prior_manifest_v2 = None
-        if prior_manifest_v2 is not None:
-            # P5-P1-3: verify chain hash on read (§6 manifest integrity).
-            # Upgrade treats a chain mismatch as a WARNING (not hard stop) —
-            # the prior manifest may be a legacy record from an older harness
-            # that did not stamp installed_files_chain_hash.  Upgrade will
-            # re-stamp a correct chain hash when it writes the new manifest.
-            # Hard stop (ManifestChainTamperedError exit 5) is enforced by
-            # check.py and install.py on the CURRENT installed target.
-            from lib.manifest_reconciler import ManifestChainTamperedError as _MCTE
-            try:
-                _verify_manifest_chain(prior_manifest_v2)
-            except _MCTE as _ce:
-                sys.stderr.write(
-                    f"WARNING: prior installed-manifest chain hash mismatch "
-                    f"(possible tampering or legacy record). Upgrade proceeds "
-                    f"and will re-stamp hash. Detail: {_ce}\n"
-                )
     # classify_only=True: the existing upgrade conflict logic already handles
     # file moves. The reconciler is used here only for v2 hash classification
     # and field stamping — it must NOT move files a second time.
@@ -940,25 +725,6 @@ def upgrade(
         harness_version=harness_version,
         reconcile_results=reconcile_results,
     )
-
-    # T16 wire-in: if _stamp_installed_manifest_v2 detected a chain delta,
-    # it staged a _pending_rechain dict.  Call record_rechain now that we
-    # have the resolved target path; then remove the staging key so it is
-    # NOT written to installed-manifest.json.
-    _pending_rechain = installed.pop("_pending_rechain", None)
-    if not dry_run and _pending_rechain is not None:
-        try:
-            from lib.release_trust import record_rechain as _record_rechain
-            _record_rechain(
-                target,
-                _pending_rechain["previous_chain_hash"],
-                _pending_rechain["new_chain_hash"],
-                _pending_rechain["cause"],
-                module_count_added=_pending_rechain.get("module_count_added", 0),
-                actor=_pending_rechain.get("actor", "system"),
-            )
-        except Exception:
-            pass  # audit is best-effort; never abort upgrade
 
     # T4 Pass B: compute file states for staged harness-owned entries,
     # run atomic batch, write pending sidecar, and finalize.

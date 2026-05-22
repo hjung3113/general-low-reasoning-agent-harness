@@ -262,9 +262,10 @@ def reconcile_install(
     return results
 
 
-# ---------------------------------------------------------------------------
-# compute_manifest_hash_chain
-# ---------------------------------------------------------------------------
+# v0.9.13: chain-hash machinery kept here as no-op shims so older callers
+# (build_v094_fixture.py, legacy tests) still import cleanly. They produce
+# / accept hashes but nothing else in the system reads them.
+
 
 def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     """Compute a deterministic chain hash for the manifest (§6 manifest hash chain).
