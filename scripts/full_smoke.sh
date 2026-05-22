@@ -7,7 +7,6 @@ set +e  # don't abort on individual failures; capture each
 REPO="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd || pwd)"
 [ -d "$REPO/scripts" ] || REPO="/Users/hyojung/Desktop/2026/general-low-reasoning-agent-harness"
 export PYTHONPATH="$REPO/scripts"
-export HARNESS_INSTALL_APPROVER="smoke@example.com"
 HARNESS="python3 $REPO/scripts/harness.py"
 SMOKE_ROOT=/tmp/v098-smoke
 rm -rf "$SMOKE_ROOT" && mkdir -p "$SMOKE_ROOT"
@@ -110,10 +109,6 @@ assert_contains "1f-refusal-message" "$SMOKE_ROOT/1f-double-init-refused.stderr"
 T=$SMOKE_ROOT/t1g && mkdir -p $T
 run "1g-init-approver-flag" 0 "$HARNESS init --target $T --profile generic --adapter roo --approver-email test@example.com"
 
-# 1h approver from env
-T=$SMOKE_ROOT/t1h && mkdir -p $T
-run "1h-init-approver-env" 0 "HARNESS_INSTALL_APPROVER=env@example.com $HARNESS init --target $T --profile generic --adapter roo"
-
 echo ""
 echo "=============================================="
 echo "Tier 2 — upgrade matrix"
@@ -154,9 +149,8 @@ if [ -z "$DEV_REF" ]; then
     PASS=$((PASS+1)); echo "SKIP [2d-signed-to-dev-no-refusal] no untagged commit available"
 else
     git -C "$REPO" worktree add "$DEV_WT" "$DEV_REF" 2>/dev/null
-    # v0.9.13: trust-downgrade refusal removed; upgrade proceeds with advisory.
-    run "2d-signed-to-dev-advisory" 0 "PYTHONPATH=$DEV_WT/scripts python3 $DEV_WT/scripts/harness.py upgrade --target $T"
-    assert_contains "2d-advisory-msg" "$SMOKE_ROOT/2d-signed-to-dev-advisory.stderr" "trust-downgrade is no longer refused"
+    # v0.9.13: trust-downgrade refusal removed; upgrade just succeeds.
+    run "2d-signed-to-dev-no-refusal" 0 "PYTHONPATH=$DEV_WT/scripts python3 $DEV_WT/scripts/harness.py upgrade --target $T"
 fi
 
 # 2e v0.9.6 → v0.9.7 (signed→signed) real upgrade
@@ -260,20 +254,13 @@ run "5b-session-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harne
 # 5c halt-diary help
 run "5c-halt-diary-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py halt-diary --help"
 
-# 5d approve-nonce help
-run "5d-approve-nonce-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py approve-nonce --help"
-
 # 5e migrate help
 run "5e-migrate-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py migrate --help"
 
 # 5f install help (advanced)
 run "5f-install-help" 0 "HARNESS_ADVANCED=1 $HARNESS install --help"
 
-# 5g fsd-run-phase help
-run "5g-fsd-run-phase-help" 0 "HARNESS_ADVANCED=1 $HARNESS fsd-run-phase --help"
-
-# 5h fsd-run-all help
-run "5h-fsd-run-all-help" 0 "HARNESS_ADVANCED=1 $HARNESS fsd-run-all --help"
+# v0.9.13: fsd-run-* removed (autopilot gone)
 
 # 5i normal user surface (next/run/check) hidden by default
 run "5i-normal-help" 0 "$HARNESS"

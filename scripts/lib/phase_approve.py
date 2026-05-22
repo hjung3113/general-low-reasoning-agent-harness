@@ -223,10 +223,6 @@ def _load_install_record(path: Path) -> dict:
     return _phase_preflight.load_install_record(path)
 
 
-def _approvers_emails(install_record: Mapping) -> list[str]:
-    return _phase_preflight.approvers_emails(install_record)
-
-
 def _now_iso_z() -> str:
     return _phase_preflight.now_iso_z()
 

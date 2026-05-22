@@ -90,12 +90,11 @@ def resolve_approver_email(
 
     Priority:
       1. ``cli_flag``                       → source = "cli-flag"
-      2. ``HARNESS_INSTALL_APPROVER`` env   → source = "env"
-      3. ``git config user.email``          → source = "git-config"
-      4. ``<getpass.getuser>@<hostname>``   → source = "auto"
-      5. ``"local@harness"`` constant       → source = "auto"
+      2. ``git config user.email``          → source = "git-config"
+      3. ``<getpass.getuser>@<hostname>``   → source = "auto"
+      4. ``"local@harness"`` constant       → source = "auto"
 
-    Invalid CLI/env values fall through to the next source instead of aborting.
+    Invalid CLI values fall through to the next source instead of aborting.
     """
     _env = env if env is not None else os.environ
 
@@ -104,13 +103,6 @@ def resolve_approver_email(
             return _sanitize_approver_email(cli_flag), "cli-flag"
         except ValueError:
             pass  # v0.9.9: invalid flag → fall through
-
-    env_val = _env.get("HARNESS_INSTALL_APPROVER", "")
-    if env_val:
-        try:
-            return _sanitize_approver_email(env_val), "env"
-        except ValueError:
-            pass  # v0.9.9: invalid env → fall through
 
     try:
         result = subprocess.run(
@@ -201,13 +193,11 @@ def write_install_record(
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     record: dict = {
-        "schema_version": 1,
+        "schema_version": 2,
         "harness_version": harness_version,
         "installed_at_iso": now_iso,
         "bootstrap_source": bootstrap_source,
-        "approvers": [
-            {"email": approver_email, "added_at": now_iso, "source": "bootstrap"},
-        ],
+        "installer_email": approver_email,
         "source_provenance": {"commit": commit_sha, "tag": tag_val, "dirty": is_dirty},
     }
 

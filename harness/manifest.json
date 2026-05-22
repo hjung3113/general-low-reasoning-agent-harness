@@ -824,16 +824,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/approval_nonce.py",
-      "source": "scripts/lib/approval_nonce.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/approve_nonce_cli.py",
-      "source": "scripts/lib/approve_nonce_cli.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/atomic_io.py",
       "source": "scripts/lib/atomic_io.py",
       "policy": "harness-owned"
@@ -874,11 +864,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/ci_provenance.py",
-      "source": "scripts/lib/ci_provenance.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/cli_budgets.py",
       "source": "scripts/lib/cli_budgets.py",
       "policy": "harness-owned"
@@ -906,11 +891,6 @@
     {
       "path": "scripts/lib/fs_fence.py",
       "source": "scripts/lib/fs_fence.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/fsd_wrappers.py",
-      "source": "scripts/lib/fsd_wrappers.py",
       "policy": "harness-owned"
     },
     {
@@ -966,16 +946,6 @@
     {
       "path": "scripts/lib/phase_approve.py",
       "source": "scripts/lib/phase_approve.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/phase_autopilot.py",
-      "source": "scripts/lib/phase_autopilot.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/phase_autopilot_cli.py",
-      "source": "scripts/lib/phase_autopilot_cli.py",
       "policy": "harness-owned"
     },
     {

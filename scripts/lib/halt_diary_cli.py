@@ -38,8 +38,13 @@ HARNESS_DIR = Path(".harness")
 
 def _cwd_repo_root() -> Path:
     """Walk up from CWD to the first .git/.harness ancestor."""
-    from .phase_autopilot_cli import _walk_up_for_repo_root
-    return _walk_up_for_repo_root(Path.cwd())
+    cwd = Path.cwd().resolve()
+    for ancestor in (cwd, *cwd.parents):
+        if (ancestor / ".harness").is_dir() or (ancestor / ".git").exists():
+            return ancestor
+    raise FileNotFoundError(
+        "no .harness/.git ancestor found from " + str(cwd)
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -332,43 +332,15 @@ def _build_release_manifest_v2(
         or harness_version.endswith(".dev0")
     )
 
-    allow_unsigned = os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV", "") == "1"
-
-    # ── Early trust-downgrade guard ─────────────────────────────────────────
-    # If the target's existing manifest is already signed_tag and the new build
-    # would be dev_unsigned, refuse immediately — before any file access.
-    # δ-P1-1: _read_target_trust_origin now raises UpgradeTrustError on
-    # corruption rather than silently returning None.
-    existing_trust_origin = _read_target_trust_origin(target) if target is not None else None
-    if is_dev_version or allow_unsigned:
-        # v0.9.13: trust-downgrade refusal removed entirely. This is an
-        # internal single-user dev tool — the refusal was workflow theater
-        # against a threat model (attacker swaps signed harness for dev)
-        # that does not apply. Quiet advisory only when transitioning
-        # signed_tag → dev_unsigned so the operator still sees what's
-        # happening in the audit log.
-        if existing_trust_origin == "signed_tag":
-            _emit_trust_audit(
-                "release.trust.bypassed",
-                target=target,
-                sub_reason="trust_downgrade_bypassed",
-                target_path=str(target) if target else None,
-            )
-            sys.stderr.write(
-                "advisory: upgrading from signed_tag → dev_unsigned. "
-                "(v0.9.13: internal single-user tool; trust-downgrade is no longer refused.)\n"
-            )
-
+    # v0.9.13: bypass envs / TTY confirm / trust-downgrade refusal all
+    # removed. Internal single-user tool: never refuse on trust grounds.
     if is_dev_version:
-        # Dev checkout: working-tree path without tag verification.
         trust_origin = "dev_unsigned"
     else:
-        # Release build: attempt SSH-signed-tag verification.
         tag = "v" + harness_version
         try:
             commit_sha = verify_release_tag(root, tag)
             trust_origin = "signed_tag"
-            # δ-P1-2: emit release.trust.verified on success.
             _emit_trust_audit(
                 "release.trust.verified",
                 target=target,
@@ -377,85 +349,18 @@ def _build_release_manifest_v2(
                 target_path=str(target) if target else None,
             )
         except UpgradeTrustError as _te:
-            # tag_not_found counts as tag_signature_invalid for bypass purposes.
-            if _te.sub_reason in ("tag_signature_invalid", "tag_not_found"):
-                if allow_unsigned and existing_trust_origin != "signed_tag":
-                    # δ-P1-4: TTY confirmation when a target manifest already exists.
-                    # This ensures the operator is aware they are bypassing trust.
-                    target_manifest_exists = existing_trust_origin is not None
-                    bypass_tty_confirm = (
-                        os.environ.get("HARNESS_BYPASS_TTY_CONFIRM", "") == "1"
-                    )
-                    if target_manifest_exists and not bypass_tty_confirm:
-                        import sys as _sys_tty
-                        if not _sys_tty.stdin.isatty():
-                            _emit_trust_audit(
-                                "release.trust.refused",
-                                target=target,
-                                sub_reason="bypass_requires_tty_confirm",
-                                target_path=str(target) if target else None,
-                            )
-                            raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from UpgradeTrustError(
-                                "bypass_requires_tty_confirm",
-                                "HARNESS_ALLOW_UNSIGNED_DEV bypass requested but stdin is "
-                                "not a TTY and HARNESS_BYPASS_TTY_CONFIRM is not set. "
-                                "Refuse for safety.",
-                            )
-                        _sys_tty.stderr.write(
-                            "Trust-root bypass requested. Continue? [y/N] "
-                        )
-                        _sys_tty.stderr.flush()
-                        try:
-                            answer = input()
-                        except EOFError:
-                            answer = ""
-                        import re as _re
-                        if not _re.match(r"^[Yy]$", answer.strip()):
-                            _emit_trust_audit(
-                                "release.trust.refused",
-                                target=target,
-                                sub_reason="bypass_requires_tty_confirm",
-                                target_path=str(target) if target else None,
-                            )
-                            raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from UpgradeTrustError(
-                                "bypass_requires_tty_confirm",
-                                "User declined TTY confirmation for HARNESS_ALLOW_UNSIGNED_DEV bypass.",
-                            )
-                    # Bypass accepted — warn and proceed.
-                    sys.stderr.write(
-                        f"WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — skipping SSH tag "
-                        f"verification for {tag!r} ({_te.sub_reason}). "
-                        f"trust_origin will be dev_unsigned.\n"
-                    )
-                    trust_origin = "dev_unsigned"
-                    commit_sha = None
-                    # C-2 (Cycle-2): emit release.trust.bypassed ONCE here with bypass_source.
-                    # Determine source: cli_flag (set by harness.py when --allow-unsigned-dev
-                    # was passed) vs env_var (HARNESS_ALLOW_UNSIGNED_DEV set directly).
-                    _bypass_src = (
-                        "cli_flag"
-                        if os.environ.get("HARNESS_ALLOW_UNSIGNED_DEV_SOURCE") == "cli_flag"
-                        else "env_var"
-                    )
-                    _emit_trust_audit(
-                        "release.trust.bypassed",
-                        target=target,
-                        reason=_te.sub_reason,
-                        bypass_source=_bypass_src,
-                        target_path=str(target) if target else None,
-                    )
-                else:
-                    _emit_trust_audit(
-                        "release.trust.refused",
-                        target=target,
-                        sub_reason=_te.sub_reason,
-                        target_path=str(target) if target else None,
-                    )
-                    raise SystemExit(EXIT_RELEASE_TRUST_INVALID) from _te
-            else:
-                # trust_downgrade_refused or unknown — propagate directly.
-                # Audit row already emitted above for trust_downgrade_refused.
-                raise
+            sys.stderr.write(
+                f"advisory: tag {tag!r} not verified ({_te.sub_reason}); "
+                f"proceeding with trust_origin=dev_unsigned.\n"
+            )
+            trust_origin = "dev_unsigned"
+            commit_sha = None
+            _emit_trust_audit(
+                "release.trust.bypassed",
+                target=target,
+                reason=_te.sub_reason,
+                target_path=str(target) if target else None,
+            )
 
     # ── Compute file hashes ─────────────────────────────────────────────────
     files: dict[str, object] = {}
