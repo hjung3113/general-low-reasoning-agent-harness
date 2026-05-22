@@ -151,10 +151,12 @@ git worktree remove "$DEV_WT" 2>/dev/null
 # Pick the most recent commit on develop NOT pointed at by any release tag.
 DEV_REF=$(git -C "$REPO" rev-list HEAD --not $(git -C "$REPO" for-each-ref --format='%(refname)' refs/tags) 2>/dev/null | head -1)
 if [ -z "$DEV_REF" ]; then
-    PASS=$((PASS+1)); echo "SKIP [2d-signed-to-dev-refused] no untagged commit available"
+    PASS=$((PASS+1)); echo "SKIP [2d-signed-to-dev-no-refusal] no untagged commit available"
 else
     git -C "$REPO" worktree add "$DEV_WT" "$DEV_REF" 2>/dev/null
-    run "2d-signed-to-dev-refused" 15 "PYTHONPATH=$DEV_WT/scripts python3 $DEV_WT/scripts/harness.py upgrade --target $T"
+    # v0.9.13: trust-downgrade refusal removed; upgrade proceeds with advisory.
+    run "2d-signed-to-dev-advisory" 0 "PYTHONPATH=$DEV_WT/scripts python3 $DEV_WT/scripts/harness.py upgrade --target $T"
+    assert_contains "2d-advisory-msg" "$SMOKE_ROOT/2d-signed-to-dev-advisory.stderr" "trust-downgrade is no longer refused"
 fi
 
 # 2e v0.9.6 → v0.9.7 (signed→signed) real upgrade

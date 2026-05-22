@@ -431,31 +431,22 @@ def run_approve(
         override_reason_clean = reason_str.strip()
         by_source = "override_identity"
 
-    # ---------- Step 3: install-record approvers membership ----------
+    # ---------- Step 3: install-record presence (membership removed v0.9.13) ----------
+    # v0.9.13: approver-membership check fully removed. This is an internal
+    # single-user dev tool (memory feedback_internal_only_threat_model). The
+    # "approvers list" was workflow theater inherited from a multi-approver
+    # design that nobody uses. The install-record file existence is still
+    # checked because downstream forensic code reads it (audit row builder,
+    # check_installed_target), but no email comparison happens.
     try:
         install_record = _load_install_record(install_record_path)
     except FileNotFoundError:
         print(
             f"error: phase approve refused: {install_record_path} not found. "
-            f"Fix: re-run `harness install`",
+            f"Fix: re-run `harness init` to recreate it",
             file=sys.stderr,
         )
         return ApproveResult(exit_code=6, sub_reason="install_record_missing")
-
-    approvers = _approvers_emails(install_record)
-    # v0.9.9: approver-membership check is now advisory only. This is an
-    # internal single-user dev tool (memory feedback_internal_only_threat_model);
-    # the "approvers list" was workflow theater rather than security. The
-    # check remains in place for forensic visibility — a mismatch logs a
-    # warning to stderr but no longer blocks approve. Install-record bootstrap
-    # source "auto" (no real email available) is always treated as a match.
-    _ir_source = install_record.get("bootstrap_source", "")
-    if _ir_source != "auto" and resolved.lower() not in approvers:
-        sys.stderr.write(
-            f"advisory: phase approve identity {resolved!r} is not in "
-            f"install-record approvers[]={approvers!r}. Proceeding anyway "
-            f"(v0.9.9: internal single-user threat model).\n"
-        )
 
     # ---------- Steps 4+5+6+7+8: under primary lock ----------
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)

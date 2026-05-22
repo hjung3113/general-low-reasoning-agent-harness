@@ -132,14 +132,26 @@ def verify_release_tag(repo_root: Path, tag: str) -> str:
             f"allowed_signers path {allowed_signers} escapes repo root {repo_root}",
         )
 
-    # Step 1: check the tag exists at all.
+    # v0.9.13: SSH signature verification removed. This is an internal
+    # single-user dev tool (feedback_internal_only_threat_model).
+    # `git verify-tag` spawned `ssh-keygen -Y verify`, which on Windows
+    # could hang indefinitely on a stalled ssh-agent and contributed
+    # nothing real to the threat model. Now we just resolve the tag to a
+    # commit SHA via `git rev-list` and return it; the SSH verify step
+    # plus the rev-list TOCTOU re-check are gone.
+
     check = _run(["git", "rev-list", "-n", "1", tag], cwd=repo_root)
     if check.returncode != 0:
         raise UpgradeTrustError(
             "tag_not_found",
             f"git rev-list -n 1 {tag!r} returned non-zero",
         )
+    pre_verify_sha = check.stdout.strip()
+    if not pre_verify_sha:
+        raise UpgradeTrustError("tag_not_found", "could not resolve tag to commit SHA")
+    return pre_verify_sha
 
+    # Dead code below — left in place for reference; never executes.
     # Step 2: verify SSH signature.
     # B3-Fix-5: inject BOTH gpg.format=ssh AND gpg.ssh.allowedSignersFile via
     # GIT_CONFIG_PARAMETERS so that user or system gitconfig with gpg.format=openpgp

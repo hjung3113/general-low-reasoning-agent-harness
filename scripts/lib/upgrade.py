@@ -341,65 +341,23 @@ def _build_release_manifest_v2(
     # corruption rather than silently returning None.
     existing_trust_origin = _read_target_trust_origin(target) if target is not None else None
     if is_dev_version or allow_unsigned:
-        # Might end up as dev_unsigned; check downgrade now.
+        # v0.9.13: trust-downgrade refusal removed entirely. This is an
+        # internal single-user dev tool — the refusal was workflow theater
+        # against a threat model (attacker swaps signed harness for dev)
+        # that does not apply. Quiet advisory only when transitioning
+        # signed_tag → dev_unsigned so the operator still sees what's
+        # happening in the audit log.
         if existing_trust_origin == "signed_tag":
-            # v0.9.12: per feedback_internal_only_threat_model, this is an
-            # internal single-user dev tool. The trust-downgrade refusal was
-            # designed to block an attacker substituting an unsigned harness
-            # for a signed one — but on this threat model the attacker would
-            # already need write access to the user's checkout. The refusal
-            # is therefore workflow friction, not a security control. Honor
-            # HARNESS_ALLOW_UNSIGNED_DEV=1 / --allow-unsigned-dev to bypass.
-            if allow_unsigned:
-                sys.stderr.write(
-                    "WARNING: HARNESS_ALLOW_UNSIGNED_DEV=1 — bypassing "
-                    "trust-downgrade refusal (signed_tag → dev_unsigned). "
-                    "Audit row release.trust.bypassed will be emitted.\n"
-                )
-                _emit_trust_audit(
-                    "release.trust.bypassed",
-                    target=target,
-                    sub_reason="trust_downgrade_bypassed",
-                    target_path=str(target) if target else None,
-                )
-            else:
-                _emit_trust_audit(
-                    "release.trust.refused",
-                    target=target,
-                    sub_reason="trust_downgrade_refused",
-                    target_path=str(target) if target else None,
-                )
-                # v0.9.12: print actionable bypass + recovery instructions
-                # to stderr BEFORE raising SystemExit. Previously rc=15 left
-                # the operator with no on-screen indication of how to proceed.
-                sys.stderr.write(
-                    "\n"
-                    "error: trust-downgrade refused (rc=15).\n"
-                    f"  target was installed from a signed release tag\n"
-                    "  source checkout is dev (not on a release tag, or dirty worktree)\n"
-                    "\n"
-                    "두 가지 회피 (둘 중 하나 선택):\n"
-                    "\n"
-                    "  1) 소스를 release tag 로 체크아웃 (권장):\n"
-                    "       git fetch --tags\n"
-                    "       git checkout v0.9.11   # 또는 최신 태그\n"
-                    "       python3 scripts/harness.py upgrade --target <target>\n"
-                    "\n"
-                    "  2) dev 강제 (내부 도구 — 보안 영향 없음):\n"
-                    "       HARNESS_ALLOW_UNSIGNED_DEV=1 \\\n"
-                    "         python3 scripts/harness.py upgrade --target <target> --allow-unsigned-dev\n"
-                    "\n"
-                    "[Trust-downgrade refused. Either check out a release tag, or set\n"
-                    " HARNESS_ALLOW_UNSIGNED_DEV=1 + --allow-unsigned-dev to bypass.]\n"
-                )
-                _te_downgrade = UpgradeTrustError(
-                    "trust_downgrade_refused",
-                    "target manifest already has trust_origin=signed_tag; "
-                    "refusing downgrade to dev_unsigned. "
-                    "Use HARNESS_ALLOW_UNSIGNED_DEV=1 + --allow-unsigned-dev to bypass, "
-                    "or check out a release tag.",
-                )
-                raise SystemExit(_te_downgrade.exit_code) from _te_downgrade
+            _emit_trust_audit(
+                "release.trust.bypassed",
+                target=target,
+                sub_reason="trust_downgrade_bypassed",
+                target_path=str(target) if target else None,
+            )
+            sys.stderr.write(
+                "advisory: upgrading from signed_tag → dev_unsigned. "
+                "(v0.9.13: internal single-user tool; trust-downgrade is no longer refused.)\n"
+            )
 
     if is_dev_version:
         # Dev checkout: working-tree path without tag verification.
