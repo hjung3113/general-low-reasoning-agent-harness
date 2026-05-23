@@ -1,6 +1,7 @@
 """Managed append-block plumbing: parse, render, and merge marker-delimited blocks."""
 from __future__ import annotations
 
+import difflib
 import hashlib
 import re
 import sys
@@ -8,6 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lib.manifest import ManifestEntry
+
+# ---------------------------------------------------------------------------
+# Diff cap: when falling back to whole-file diff (malformed markers), we cap
+# the diff output at ~200 lines / ~5 KB so a megabyte destination file doesn't
+# flood stderr. The managed-block diff (parse succeeds) is uncapped because it
+# is already scoped to the block, which is always small.
+# ---------------------------------------------------------------------------
+_FALLBACK_DIFF_MAX_LINES = 200
+_FALLBACK_DIFF_MAX_BYTES = 5_000
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +151,80 @@ def replace_block(text: str, parsed: ParsedAppendBlock, block: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Conflict diff helper
+# ---------------------------------------------------------------------------
+
+def _managed_append_conflict_diff(destination: Path, plan: "AppendBlockPlan", entry: "ManifestEntry") -> str:
+    """Return a unified-diff string for a managed-append conflict.
+
+    When parse succeeds (destination has a valid managed block), diffs the
+    current block text vs the proposed block — scoped, never huge.
+
+    When parse fails (malformed markers), falls back to a whole-file diff
+    capped at _FALLBACK_DIFF_MAX_LINES / _FALLBACK_DIFF_MAX_BYTES to avoid
+    flooding stderr with multi-megabyte files.
+    """
+    proposed_lines = plan.proposed_block.splitlines(keepends=True)
+
+    # Try to parse the current block (parse succeeds → scoped diff).
+    try:
+        dest_text = destination.read_text(encoding="utf-8")
+        parsed = parse_append_block(dest_text, entry.path.as_posix())
+        if parsed is not None:
+            current_lines = parsed.text.splitlines(keepends=True)
+            diff = list(difflib.unified_diff(
+                current_lines,
+                proposed_lines,
+                fromfile="current:" + str(destination),
+                tofile="proposed:" + str(entry.path),
+            ))
+            return "".join(diff)
+        # No block present — fall through to whole-file fallback.
+        current_text = dest_text
+        label = "whole-file (no managed block found)"
+    except (ValueError, OSError):
+        # Malformed markers or unreadable file — fall through to whole-file.
+        try:
+            current_text = destination.read_text(encoding="utf-8")
+        except OSError:
+            current_text = ""
+        label = "whole-file (malformed markers)"
+
+    # Whole-file fallback: cap to avoid megabyte output.
+    current_text_capped = current_text
+    truncated = False
+    if len(current_text.encode("utf-8")) > _FALLBACK_DIFF_MAX_BYTES:
+        current_text_capped = current_text.encode("utf-8")[:_FALLBACK_DIFF_MAX_BYTES].decode("utf-8", errors="replace")
+        truncated = True
+
+    current_lines = current_text_capped.splitlines(keepends=True)
+    diff_lines = list(difflib.unified_diff(
+        current_lines,
+        proposed_lines,
+        fromfile=f"current ({label}):" + str(destination),
+        tofile="proposed:" + str(entry.path),
+    ))
+    if len(diff_lines) > _FALLBACK_DIFF_MAX_LINES:
+        diff_lines = diff_lines[:_FALLBACK_DIFF_MAX_LINES]
+        diff_lines.append(f"\n... (diff truncated at {_FALLBACK_DIFF_MAX_LINES} lines)\n")
+    elif truncated:
+        diff_lines.append(f"\n... (current file truncated at {_FALLBACK_DIFF_MAX_BYTES} bytes for diff)\n")
+
+    return "".join(diff_lines)
+
+
+# ---------------------------------------------------------------------------
 # Write / plan
 # ---------------------------------------------------------------------------
 
 def write_managed_append(*, source: Path, destination: Path, entry: ManifestEntry) -> str:
     plan = plan_managed_append(source=source, destination=destination, entry=entry, installed_info={})
     if plan.conflict:
+        diff = _managed_append_conflict_diff(destination, plan, entry)
+        if diff:
+            sys.stderr.write(diff)
+            if not diff.endswith("\n"):
+                sys.stderr.write("\n")
         raise SystemExit(f"Refusing to write malformed managed-append destination: {entry.path}")
     if plan.updated_text is not None:
         _write_text_file(destination, plan.updated_text)
