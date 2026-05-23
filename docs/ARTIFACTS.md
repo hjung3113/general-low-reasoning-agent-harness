@@ -5,10 +5,11 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **179**  
-- `harness-owned`: 152
+Total files: **181**  
+- `harness-owned`: 153
 - `managed-append`: 2
 - `project-owned`: 25
+- `seed`: 1
 
 ## 1. Installed Files
 
@@ -31,6 +32,7 @@ Total files: **179**
 | `.agents/skills/tech-typescript/SKILL.md`                        | `harness-owned`  | `harness/skill-packs/tech-typescript/tech-typescript/SKILL.md`                     | pack:tech-typescript          |            | tech-typescript          |          |
 | `.agents/skills/verification-contract/SKILL.md`                  | `harness-owned`  | `harness/skill-packs/workflow-core/verification-contract/SKILL.md`                 | pack:workflow-core            |            | workflow-core            |          |
 | `.agents/skills/workflow-code-review/SKILL.md`                   | `harness-owned`  | `harness/skill-packs/workflow-code-review/workflow-code-review/SKILL.md`           | pack:workflow-code-review     |            | workflow-code-review     |          |
+| `.agents/skills/workflow-codebase-recon/SKILL.md`                | `harness-owned`  | `harness/skill-packs/workflow-codebase-recon/workflow-codebase-recon/SKILL.md`     | pack:workflow-codebase-recon  |            | workflow-codebase-recon  |          |
 | `.agents/skills/workflow-db-context/SKILL.md`                    | `harness-owned`  | `harness/skill-packs/workflow-db-context/workflow-db-context/SKILL.md`             | pack:workflow-db-context      |            | workflow-db-context      |          |
 | `.agents/skills/workflow-debugging/SKILL.md`                     | `harness-owned`  | `harness/skill-packs/workflow-debugging/workflow-debugging/SKILL.md`               | pack:workflow-debugging       |            | workflow-debugging       |          |
 | `.agents/skills/workflow-etl/SKILL.md`                           | `harness-owned`  | `harness/skill-packs/workflow-etl/workflow-etl/SKILL.md`                           | pack:workflow-etl             |            | workflow-etl             |          |
@@ -59,6 +61,7 @@ Total files: **179**
 | `.planning/ROADMAP.md`                                           | `project-owned`  | `harness/skeleton/clean/.planning/ROADMAP.md`                                      |                               |            |                          |          |
 | `.planning/STATE.md`                                             | `project-owned`  | `harness/skeleton/clean/.planning/STATE.md`                                        |                               |            |                          |          |
 | `.planning/VERIFICATION.md`                                      | `project-owned`  | `harness/skeleton/clean/.planning/VERIFICATION.md`                                 |                               |            |                          |          |
+| `.planning/codebase-recon.md`                                    | `seed`           | `harness/skeleton/clean/.planning/codebase-recon.md`                               |                               |            | workflow-codebase-recon  |          |
 | `.planning/codebase/ARCHITECTURE.md`                             | `project-owned`  | `harness/skeleton/clean/.planning/codebase/ARCHITECTURE.md`                        |                               |            |                          |          |
 | `.planning/codebase/CONCERNS.md`                                 | `project-owned`  | `harness/skeleton/clean/.planning/codebase/CONCERNS.md`                            |                               |            |                          |          |
 | `.planning/codebase/CONVENTIONS.md`                              | `project-owned`  | `harness/skeleton/clean/.planning/codebase/CONVENTIONS.md`                         |                               |            |                          |          |
@@ -208,6 +211,7 @@ Pack metadata from `harness/manifest.json` `packs` section.
 | `tech-tailwind`            | tech     |                     | tailwind styling; responsive utility conventions                                                                                                |
 | `tech-typescript`          | tech     |                     | typecheck; typed module boundaries                                                                                                              |
 | `workflow-code-review`     | workflow |                     | defect review; verification review; scope review                                                                                                |
+| `workflow-codebase-recon`  | workflow |                     | codebase orientation; tech stack detection; directory structure mapping                                                                         |
 | `workflow-core`            | workflow |                     | evidence research; skill composition; ecosystem skill research; verification contract; risk review; multi-agent review; release readiness audit |
 | `workflow-db-context`      | workflow |                     | needs-db-context; database shape gating; database verification readiness                                                                        |
 | `workflow-debugging`       | workflow |                     | reproduce failures; minimize cases; instrument and regress                                                                                      |

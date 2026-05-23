@@ -258,7 +258,7 @@ def install(
     existing = [
         str(entry.path)
         for entry, _, destination in destinations
-        if entry.policy not in {"managed-append", "project-owned"} and (destination.exists() or destination.is_symlink())
+        if entry.policy not in {"managed-append", "project-owned", "seed"} and (destination.exists() or destination.is_symlink())
     ]
     # v0.9.12: detect half-installed state — files present but no manifest.
     # Common cause: previous init hit a mid-flow PermissionError between
@@ -372,12 +372,12 @@ def install(
     reporter.start("staging files", _staging_total)
     _staged_count = 0
 
-    # Phase 1: stage harness-owned; managed-append + project-owned handled in-place.
+    # Phase 1: stage harness-owned; managed-append + project-owned + seed handled in-place.
     staging_map: dict[Path, Path] = {}  # entry.path -> staged path
     for entry, source, destination in destinations:
         if entry.policy == "managed-append":
             write_managed_append(source=source, destination=destination, entry=entry)
-        elif entry.policy == "project-owned" and destination.exists():
+        elif entry.policy in {"project-owned", "seed"} and destination.exists():
             continue
         elif entry.policy == "harness-owned":
             # Stage to staging dir (will be atomically renamed in Phase 4).
@@ -388,7 +388,7 @@ def install(
             _staged_count += 1
             reporter.tick(_staged_count)
         else:
-            # project-owned scaffold file (destination doesn't exist yet): write directly.
+            # project-owned or seed scaffold file (destination doesn't exist yet): write directly.
             write_copy(source, destination)
 
     # Phase 2: compose payload from staged hashes.
@@ -434,7 +434,7 @@ def install(
             )
         # Fallback: copy directly without staging dance.
         for entry, source, destination in destinations:
-            if entry.policy not in {"managed-append", "project-owned"}:
+            if entry.policy not in {"managed-append", "project-owned", "seed"}:
                 staged = staging_map.get(entry.path)
                 if staged is not None and staged.exists():
                     write_copy(staged, destination)

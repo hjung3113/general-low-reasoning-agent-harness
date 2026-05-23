@@ -392,6 +392,61 @@ class _HintingArgumentParser(argparse.ArgumentParser):
         super().error(message)
 
 
+def cmd_recon(args) -> int:  # type: ignore[no-untyped-def]
+    """Handler for ``harness recon``."""
+    from lib.recon import (
+        build_recon_doc,
+        compute_unified_diff,
+        TEMPLATE_PATH_RELATIVE,
+    )
+
+    target = Path(args.target) if args.target else Path.cwd()
+    target = target.resolve()
+
+    scope: list[str] | None = None
+    if getattr(args, "scope", None):
+        scope = [s.strip() for s in args.scope.split(",") if s.strip()]
+
+    recon_path = target / ".planning" / "codebase-recon.md"
+
+    # Read existing content (or empty string if not present)
+    existing_text: str | None = None
+    if recon_path.exists():
+        existing_text = recon_path.read_text(encoding="utf-8")
+
+    # Load template from harness source tree
+    template_text: str | None = None
+    harness_root = repo_root()
+    template_path = harness_root / TEMPLATE_PATH_RELATIVE
+    if template_path.exists():
+        template_text = template_path.read_text(encoding="utf-8")
+
+    new_text = build_recon_doc(
+        root=target,
+        scope=scope,
+        existing_text=existing_text,
+        template_text=template_text,
+    )
+
+    if args.dry_run:
+        old_text = existing_text if existing_text is not None else ""
+        diff = compute_unified_diff(old_text, new_text)
+        if diff:
+            sys.stdout.write(diff)
+        else:
+            sys.stdout.write("(no changes)\n")
+        return 0
+
+    # Ensure .planning/ directory exists
+    recon_path.parent.mkdir(parents=True, exist_ok=True)
+
+    recon_path.write_text(new_text, encoding="utf-8")
+
+    action = "updated" if existing_text is not None else "created"
+    print(f"harness recon: {action} {recon_path.relative_to(target)}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     """Entry point alias for `run()` — used by harness_cli.py console script."""
     return run()
@@ -679,6 +734,39 @@ def run(argv: list[str] | None = None) -> int:
         help="Run the next safe workflow step; stops for human approval.",
     )
 
+    # ----- harness recon (M9-3) -----
+    recon_parser = subparsers.add_parser(
+        "recon",
+        help=(
+            "Auto-populate sections 2-4 of .planning/codebase-recon.md "
+            "(tech stack, dir tree, existing docs). "
+            "Sections 1 and 5 are left for the user. "
+            "File is created from template if absent."
+        ),
+    )
+    recon_parser.add_argument(
+        "--target",
+        type=Path,
+        default=None,
+        help="Project root directory to scan (default: cwd).",
+    )
+    recon_parser.add_argument(
+        "--scope",
+        default=None,
+        help=(
+            "Comma-separated subdirectory names to restrict the depth-2 "
+            "directory tree scan (e.g. src,lib). Default: all top-level dirs."
+        ),
+    )
+    recon_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Print the intended unified diff to stdout without writing "
+            ".planning/codebase-recon.md."
+        ),
+    )
+
     args = parser.parse_args(argv)
     root = repo_root()
     command_root = root
@@ -851,6 +939,8 @@ def run(argv: list[str] | None = None) -> int:
     if args.command == "run":
         from lib.status_next_cli import cmd_run
         return cmd_run(args)
+    if args.command == "recon":
+        return cmd_recon(args)
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
