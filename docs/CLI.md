@@ -61,7 +61,7 @@
 | `show_phase_status.py` | Phase status JSON (29 LOC) | KEEP |
 | `project_dashboard.py` | HTML dashboard stub (10 LOC) | DROP or expand |
 | `build_v094_fixture.py` | v0.9.4 fixture builder (423 LOC) | KEEP (active test dep) |
-| `target_smoke_test.py` | Target smoke (unittest) (95 LOC) | KEEP |
+| `target_smoke_test.py` | Template: smoke tests for initialized targets (95 LOC). Distributed as `scripts/test_harness.py` during `harness init`. | KEEP |
 
 ## Smoke scripts (`scripts/smoke/`)
 
