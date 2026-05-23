@@ -33,11 +33,8 @@ if str(SCRIPTS_DIR) not in sys.path:
 HARNESS_PY = str(SCRIPTS_DIR / "harness.py")
 _PYTHON = sys.executable
 
-# Env to bypass SSH tag verification and TTY confirm in subprocess calls
 _DEV_ENV = {
     **os.environ,
-    "HARNESS_ALLOW_UNSIGNED_DEV": "1",
-    "HARNESS_BYPASS_TTY_CONFIRM": "1",
 }
 
 

@@ -118,9 +118,6 @@ def test_upgrade_produces_correct_manifest(tmp_path, monkeypatch):
     monkeypatch.setattr(_upg, "_build_release_manifest_v2", lambda **kw: {
         "schema_version": 2,
         "harness_version": "0.9.7-test",
-        "trust_origin": "dev_unsigned",
-        "release_tag": None,
-        "release_commit": None,
         "files": {"scripts/harness.py": {
             "installed_sha256": "abc",
             "current_sha256": "abc",
@@ -340,9 +337,6 @@ def test_pending_sidecar_bytes_equal_final_manifest(tmp_path, monkeypatch):
     monkeypatch.setattr(_upg_mod, "_build_release_manifest_v2", lambda **kw: {
         "schema_version": 2,
         "harness_version": "0.9.7-test",
-        "trust_origin": "dev_unsigned",
-        "release_tag": None,
-        "release_commit": None,
         "files": {"scripts/harness.py": {
             "installed_sha256": "abc",
             "current_sha256": "abc",

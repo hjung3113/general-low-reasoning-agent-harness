@@ -57,7 +57,7 @@ def is_git_worktree_dirty(root: Path) -> bool:
         return True
 
 
-def exact_release_tag_version(root: Path) -> str | None:
+def exact_git_tag_version(root: Path) -> str | None:
     try:
         tag = git_output(root, ["git", "describe", "--tags", "--exact-match"])
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -84,7 +84,7 @@ def git_source_provenance(root: Path) -> dict[str, str] | None:
         return None
     if not repo:
         return None
-    tag = exact_release_tag_version(root)
+    tag = exact_git_tag_version(root)
     if tag:
         ref = f"v{tag}"
     else:
@@ -122,7 +122,7 @@ def resolve_harness_version(
     env_version = env.get("HARNESS_VERSION")
     if env_version:
         return normalize_release_version(env_version)
-    tag_version = exact_release_tag_version(root)
+    tag_version = exact_git_tag_version(root)
     if tag_version and not is_git_worktree_dirty(root):
         return tag_version
     return development_version(root)
@@ -130,7 +130,7 @@ def resolve_harness_version(
 
 def release_check(*, root: Path, expected_version: str | None = None, require_origin_main: bool = False) -> str:
     from harness import load_manifest_data  # lazy – avoids circular import
-    tag_version = exact_release_tag_version(root)
+    tag_version = exact_git_tag_version(root)
     if tag_version is None:
         raise SystemExit("Release check requires HEAD to be on an exact vMAJOR.MINOR.PATCH tag.")
     if expected_version is not None and normalize_release_version(expected_version) != tag_version:

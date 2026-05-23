@@ -172,9 +172,9 @@ class AuditLogTests(unittest.TestCase):
                 events.append("lock")
             return real_flock(fd, op)
 
-        def trace_rotate(p):
+        def trace_rotate(p, *, fd):
             events.append("rotate")
-            return real_rotate(p)
+            return real_rotate(p, fd=fd)
 
         original = audit_mod.ROTATION_BYTES
         audit_mod.ROTATION_BYTES = 256

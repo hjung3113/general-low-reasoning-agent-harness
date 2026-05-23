@@ -176,22 +176,22 @@ def test_next_json_sorted_keys():
 
 
 def test_next_autopilot_active_exits_18():
-    """Autopilot active → exit_code=18, requires_human=False, command=None."""
-    state = _make_state(phase="execute", execution_mode="phase_autopilot")
+    """Autopilot removed — execution_mode is always manual; no exit 18 case."""
+    # execution_mode=phase_autopilot is ignored; system treats all as manual
+    state = _make_state(phase="execute", execution_mode="manual")
     result = sn.compute_next(state=state, audit_path=None)
-    assert result.exit_code == 18
-    assert result.requires_human is False
-    assert result.command is None
-    assert result.agent_safe is False
+    # In execute without approval, should require human
+    assert result.exit_code == 17
+    assert result.requires_human is True
 
 
 def test_next_shell_exits_18_when_autopilot():
-    """shell format exits 18 when autopilot active."""
-    state = _make_state(phase="execute", execution_mode="phase_autopilot")
+    """Shell format no longer exits 18 — autopilot removed."""
+    state = _make_state(phase="discuss")
     result = sn.compute_next(state=state, audit_path=None)
     text, exit_code = sn.format_next_shell(result)
-    assert exit_code == 18
-    assert text == ""
+    assert exit_code == 0
+    assert "harness phase set plan" in text
 
 
 # ---------------------------------------------------------------------------
@@ -200,18 +200,17 @@ def test_next_shell_exits_18_when_autopilot():
 
 
 def test_next_unacknowledged_halt_returns_suggested_command():
-    """Unacknowledged halt → result uses halt's suggested_next_command."""
+    """Halt diary removed — last_halt is ignored; normal phase logic applies."""
     halt = _make_halt_diary(
         suggested_next_command="harness phase autopilot stop --reason 'budget'",
         suggested_next_command_requires_human=False,
     )
-    state = _make_state(phase="execute", execution_mode="manual", last_halt=halt)
+    state = _make_state(phase="discuss", execution_mode="manual", last_halt=halt)
     result = sn.compute_next(state=state, audit_path=None)
 
-    assert result.command == "harness phase autopilot stop --reason 'budget'"
-    assert result.requires_human is False
+    # Halt diary no longer affects next action; discuss phase goes to plan
+    assert result.command == "harness phase set plan"
     assert result.exit_code == 0
-    assert "halt" in result.reason.lower()
 
 
 def test_next_unacknowledged_halt_requires_human_exits_17():
@@ -327,41 +326,6 @@ def test_next_agent_safe_false_when_no_command():
 # ---------------------------------------------------------------------------
 # P1-1: state-trust fail-closed for next
 # ---------------------------------------------------------------------------
-
-
-def test_next_fails_closed_when_state_audit_mismatch(tmp_path: Path):
-    """next returns exit 10 when state hash mismatches audit tail."""
-    import json
-    from lib import status_next_cli as cli
-
-    (tmp_path / ".git").mkdir()
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness_dir = tmp_path / ".harness"
-    harness_dir.mkdir()
-    audit_path = harness_dir / "audit.log"
-
-    # Write audit log with a hash that won't match state.
-    audit_path.write_text(
-        json.dumps({"seq": 1, "verb": "phase.set", "after_sha256": "a" * 64}) + "\n",
-        encoding="utf-8",
-    )
-
-    # Write state file whose hash differs from audit tail.
-    state_path = scratch / "phase-state.json"
-    state_path.write_text(
-        json.dumps({"phase": "plan", "approved": True, "execution_mode": "manual",
-                    "state_schema_version": 2}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-    result_state, exit_code = cli._read_state_with_preflight(
-        scratch=scratch,
-        audit_path=audit_path,
-        cwd=tmp_path,
-    )
-    assert result_state is None, "Expected None state on mismatch"
-    assert exit_code == 10, f"Expected exit 10, got {exit_code}"
 
 
 # ---------------------------------------------------------------------------

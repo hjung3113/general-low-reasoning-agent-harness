@@ -24,7 +24,7 @@ from lib.version import (
     normalize_release_version,
     git_output,
     is_git_worktree_dirty,
-    exact_release_tag_version,
+    exact_git_tag_version,
     development_version,
     git_source_provenance,
     source_provenance,
@@ -201,7 +201,7 @@ HARNESS_VERSION = "0.0.0-dev+unknown"
 __all__ = [
     # version
     "repo_root", "upgrade_source_root", "normalize_release_version", "git_output",
-    "is_git_worktree_dirty", "exact_release_tag_version", "development_version",
+    "is_git_worktree_dirty", "exact_git_tag_version", "development_version",
     "git_source_provenance", "source_provenance", "resolve_harness_version",
     "release_check", "readme_release_versions", "check_readme_release_versions",
     "README_RELEASE_VERSION",
@@ -409,42 +409,23 @@ def _normal_help() -> str:
         "  harness next   Show the next safe action.\n"
         "  harness run    Run the next safe workflow step; stops for approval.\n"
         "  harness check  Validate the harness and project workflow state.\n\n"
-        "Advanced/debug commands are hidden from the normal path. "
-        "Set HARNESS_ADVANCED=1 to show the full command surface.\n"
+        "Advanced commands (hidden by default):\n"
+        "  init, upgrade, uninstall, install, doctor, release-check,\n"
+        "  state, phase, session, status\n\n"
+        "Show advanced help:\n"
+        "  HARNESS_ADVANCED=1 harness --help\n"
     )
 
 
 def run(argv: list[str] | None = None) -> int:
     global HARNESS_VERSION
 
-    # S07: check for deprecated flags BEFORE argparse sees them (§3.3, §3.4).
-    # --chain / --auto are detected anywhere in argv; halt with exit 13 +
-    # structured hint + audit entry verb=cli.deprecated_flag.
     _check_argv = argv if argv is not None else sys.argv[1:]
     if os.environ.get("HARNESS_ADVANCED") != "1" and (
         not _check_argv or _check_argv in (["-h"], ["--help"])
     ):
         sys.stdout.write(_normal_help())
         return 0
-    try:
-        from lib.cli_deprecated import check_deprecated_flags, print_and_exit
-        _dep_err = check_deprecated_flags(
-            _check_argv,
-            audit_path=None,  # no audit path here; audit written only if repo-root available
-        )
-        if _dep_err is not None:
-            # Try to write audit to the default .harness/audit.log if we can find the repo root
-            try:
-                _repo = repo_root()
-                _audit_path = _repo / ".harness" / "audit.log"
-                from lib.cli_deprecated import _write_audit_entry
-                _write_audit_entry(_dep_err.flag, _dep_err.hint, audit_path=_audit_path)
-            except Exception:
-                pass
-            print_and_exit(_dep_err)
-            return 13  # unreachable — print_and_exit calls sys.exit
-    except ImportError:
-        pass  # cli_deprecated not available in this installation (older target)
 
     parser = _HintingArgumentParser(description=__doc__)
     parser.add_argument(
@@ -585,29 +566,6 @@ def run(argv: list[str] | None = None) -> int:
     state_repair_p = state_sub.add_parser("repair", help="Canonicalize managed marker blocks.")
     state_repair_p.add_argument("--root", type=Path, default=None)
 
-    # `harness migrate state ...` -- thin delegator to scripts/migrate_state.py
-    # (T0-1 CC1). All flags are forwarded verbatim.
-    migrate_parser = subparsers.add_parser(
-        "migrate",
-        help="Migrate harness state files between schema versions.",
-    )
-    migrate_sub = migrate_parser.add_subparsers(dest="migrate_command", required=True)
-    migrate_state_p = migrate_sub.add_parser(
-        "state",
-        help="Migrate .scratch/phase-state.json between v0 and v2 (ADR-001).",
-    )
-    mig_mode = migrate_state_p.add_mutually_exclusive_group(required=True)
-    mig_mode.add_argument("--forward", action="store_true",
-                          help="Apply v0 -> v2 transformation.")
-    mig_mode.add_argument("--reverse", action="store_true",
-                          help="Apply v2 -> v0 transformation.")
-    mig_mode.add_argument("--resume", action="store_true",
-                          help="Resume from sidecar after crash.")
-    migrate_state_p.add_argument("--target", default=".scratch/phase-state.json",
-                                 help="Path to phase-state file.")
-    migrate_state_p.add_argument("--dry-run", action="store_true",
-                                 help="Print canonical transformed output to stdout; no disk mutation.")
-
     # ----- phase lifecycle verbs (ADR-003a Artifact 1, T0-3) -----
     phase_parser = subparsers.add_parser(
         "phase",
@@ -692,51 +650,6 @@ def run(argv: list[str] | None = None) -> int:
         help="Print the lockfile payload and exit 0 without removing.",
     )
 
-    # harness verify --audit [--fixture <dir>] (design §12.7, §12.9, S06)
-    verify_parser = subparsers.add_parser(
-        "verify",
-        help="Verify audit log chain integrity (§2.2, §12.7).",
-    )
-    verify_parser.add_argument(
-        "--audit",
-        action="store_true",
-        required=True,
-        help="Verify the audit log chain.",
-    )
-    verify_parser.add_argument(
-        "--fixture",
-        dest="verify_fixture",
-        default=None,
-        metavar="DIR",
-        help=(
-            "Override source to verify from <DIR>/audit.log + rotation files. "
-            "Anchor checks are skipped (§12.9)."
-        ),
-    )
-
-    # ----- halt-diary admin verbs (design §5.3 + §12.7) -----
-    halt_diary_parser = subparsers.add_parser(
-        "halt-diary",
-        help="Halt-diary admin verbs (§5.3 + §12.7).",
-    )
-    halt_diary_sub = halt_diary_parser.add_subparsers(
-        dest="halt_diary_command", required=True
-    )
-    hd_clear = halt_diary_sub.add_parser(
-        "clear",
-        help=(
-            "Acknowledge and clear the last_halt diary entry. "
-            "TTY-required admin verb (§12.7)."
-        ),
-    )
-    hd_clear.add_argument(
-        "--by",
-        dest="by",
-        default=None,
-        metavar="EMAIL",
-        help="Acting user email (recorded in audit row; defaults to gitconfig).",
-    )
-
     # ----- harness status (§3.9) -----
     status_parser = subparsers.add_parser(
         "status",
@@ -758,8 +671,7 @@ def run(argv: list[str] | None = None) -> int:
         "--shell",
         action="store_true",
         help=(
-            "Stdout safe for shell execution; exit 17 if requires_human, "
-            "exit 18 if autopilot active."
+            "Stdout safe for shell execution; exit 17 if requires_human."
         ),
     )
     next_group.add_argument(
@@ -793,11 +705,18 @@ def run(argv: list[str] | None = None) -> int:
             "(e.g., --pre-commit)"
         )
     if args.command == "init":
+        raw_adapters = parse_scope(args.adapters, default={"roo"})
+        for adapter in raw_adapters:
+            if adapter not in KNOWN_ADAPTERS:
+                raise SystemExit(f"unknown harness scope requested: adapter: {adapter}")
         raw_profiles = parse_scope(args.profiles, default={"generic"})
         profiles_resolved = normalize_profiles(list(raw_profiles))
         if args.packs is not None:
             # User explicitly provided --packs: honour it as-is.
             final_packs: set[str] = parse_scope(args.packs, default={"workflow-core"})
+            for pack in final_packs:
+                if pack not in KNOWN_PACKS:
+                    raise SystemExit(f"unknown harness scope requested: pack: {pack}")
         else:
             # Auto-derive packs from profile defaults + optional db axis.
             auto_packs: set[str] = set()
@@ -824,7 +743,7 @@ def run(argv: list[str] | None = None) -> int:
             root=root,
             target=args.target,
             dry_run=args.dry_run,
-            adapters=parse_scope(args.adapters, default={"roo"}),
+            adapters=raw_adapters,
             profiles=set(profiles_resolved),
             packs=final_packs,
             approver_email=_approver_email,
@@ -920,22 +839,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.state_command == "repair":
             return state_run_repair(root=state_root, stream=sys.stdout)
         raise AssertionError(f"Unhandled state subcommand: {args.state_command}")
-    if args.command == "migrate":
-        if args.migrate_command == "state":
-            # Forward args to scripts/migrate_state.py:main().
-            import migrate_state as _migrate_state
-            forwarded: list[str] = []
-            if args.forward:
-                forwarded.append("--forward")
-            elif args.reverse:
-                forwarded.append("--reverse")
-            elif args.resume:
-                forwarded.append("--resume")
-            forwarded.extend(["--target", str(args.target)])
-            if args.dry_run:
-                forwarded.append("--dry-run")
-            return _migrate_state.main(forwarded)
-        raise AssertionError(f"Unhandled migrate subcommand: {args.migrate_command}")
     if args.command == "phase":
         from lib.phase_cli import (
             cmd_phase_set,
@@ -957,14 +860,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.session_command == "unlock":
             return cmd_session_unlock(args)
         raise AssertionError(f"Unhandled session subcommand: {args.session_command}")
-    if args.command == "halt-diary":
-        from lib.halt_diary_cli import cmd_halt_diary_clear
-        if args.halt_diary_command == "clear":
-            return cmd_halt_diary_clear(args)
-        raise AssertionError(f"Unhandled halt-diary subcommand: {args.halt_diary_command}")
-    if args.command == "verify":
-        from lib.audit_verify_cli import cmd_verify_audit
-        return cmd_verify_audit(args, root)
     if args.command == "status":
         from lib.status_next_cli import cmd_status
         return cmd_status(args)

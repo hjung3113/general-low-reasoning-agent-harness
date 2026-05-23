@@ -96,7 +96,7 @@ class HarnessToolTests(unittest.TestCase):
 
         with mock.patch.object(version, "git_output") as git_output:
             git_output.return_value = "1.2.3"
-            self.assertIsNone(harness.exact_release_tag_version(root))
+            self.assertIsNone(harness.exact_git_tag_version(root))
 
         def fake_git_output(_: Path, command: list[str]) -> str:
             if command == ["git", "describe", "--tags", "--exact-match"]:
@@ -195,10 +195,7 @@ class HarnessToolTests(unittest.TestCase):
             installed["source"] = str(source)
             installed_path.write_text(json.dumps(installed), encoding="utf-8")
 
-            with mock.patch.object(harness, "repo_root", return_value=target), mock.patch.dict(
-                os.environ,
-                {"HARNESS_ALLOW_UNSIGNED_DEV": "1", "HARNESS_BYPASS_TTY_CONFIRM": "1"},
-            ):
+            with mock.patch.object(harness, "repo_root", return_value=target):
                 result = harness.run(["--version", "v9.8.8", "upgrade", "--target", str(target), "--dry-run"])
 
             self.assertEqual(0, result)
@@ -229,8 +226,6 @@ class HarnessToolTests(unittest.TestCase):
                 text=True,
                 env={
                     **os.environ,
-                    "HARNESS_ALLOW_UNSIGNED_DEV": "1",
-                    "HARNESS_BYPASS_TTY_CONFIRM": "1",
                 },
             )
 
@@ -1412,7 +1407,7 @@ progress:
             command.parent.mkdir(parents=True)
             command.write_text("project command", encoding="utf-8")
 
-            with self.assertRaisesRegex(SystemExit, "Refusing to overwrite"):
+            with self.assertRaisesRegex(SystemExit, "half-installed state"):
                 harness.run(["init", "--target", str(target)])
 
             self.assertEqual("project command", command.read_text(encoding="utf-8"))
@@ -1483,6 +1478,9 @@ progress:
             self.assertFalse((outside_dir / "nested/file.txt").exists())
 
     def test_upgrade_preserves_project_owned_state_and_reports_conflicts(self) -> None:
+        # v0.9.12 contract: harness-owned files reset to canonical on upgrade;
+        # user bytes are backed up to .harness/conflicts/<path>.user-backup-<runid>.
+        # project-owned files (e.g. .planning/STATE.md) are preserved untouched.
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
             harness.run(["init", "--target", str(target)])
@@ -1493,10 +1491,13 @@ progress:
 
             result = harness.run(["upgrade", "--target", str(target)])
 
-            self.assertEqual(1, result)
+            self.assertEqual(0, result)
             self.assertEqual("real project state", state.read_text(encoding="utf-8"))
-            self.assertEqual("local command edit", command.read_text(encoding="utf-8"))
-            self.assertTrue((target / ".harness/conflicts/.roo/commands/simple.md.new").exists())
+            # harness-owned file restored to canonical; user copy backed up.
+            self.assertNotEqual("local command edit", command.read_text(encoding="utf-8"))
+            backups = list((target / ".harness/conflicts/.roo/commands").glob("simple.md.user-backup-*"))
+            self.assertTrue(backups, "expected user-backup file under .harness/conflicts/")
+            self.assertEqual("local command edit", backups[0].read_text(encoding="utf-8"))
 
     def test_upgrade_migrates_unmodified_legacy_managed_gitignore_to_marker_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2187,13 +2188,10 @@ progress:
         active_surfaces = [
             *self._markdown_files(root / ".opencode/commands"),
             *self._markdown_files(root / ".roo"),
-            root / "AGENTS.md",
-            root / "README.md",
-            root / "docs/protocol-spec.md",
-            root / "docs/phase-gate-harness.md",
             root / "harness/skeleton/clean/AGENTS.md",
             root / "harness/skeleton/clean/README.md",
         ]
+        active_surfaces = [p for p in active_surfaces if p.exists()]
         contradictory = []
         contradictory_phrases = (
             "Fresh sessions must read",
@@ -2672,67 +2670,6 @@ progress:
             for phrase in required_phrases[filename]:
                 self.assertIn(phrase, text)
 
-    def test_root_readme_documents_phase_commands(self) -> None:
-        readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
-        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
-
-        # Content that belongs in README (source-project focused)
-        for phrase in (
-            "사용 시나리오 빠른 선택",
-            "core-only 하네스",
-            "Roo + OpenCode 동시 지원",
-            "source repository에는 `.agents/skills/**`가 없어도 정상입니다",
-            "tech-csharp",
-            "tech-mssql",
-            "workflow-etl",
-            "tech-react",
-            "tech-typescript",
-            "tech-tailwind",
-        ):
-            self.assertIn(phrase, readme)
-
-        # Content moved to USER_MANUAL (end-user focused)
-        for phrase in (
-            "discuss -> plan -> execute -> done",
-            "지원 환경과 명령 표기",
-            "클라이언트별 커맨드 모델",
-            "skill pack은 플러그인입니다",
-            "OpenCode adapter는 의도적으로 phase primitive만 제공합니다",
-            "repository-evidence-research",
-            "skill-plugin-composition",
-            "verification-contract",
-            "integration-boundary",
-        ):
-            self.assertIn(phrase, manual)
-
-    def test_root_readme_documents_user_use_cases_prompts_and_platform_variants(self) -> None:
-        readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
-        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
-
-        # Content that belongs in README (install/source-project focused)
-        for phrase in (
-            "Windows PowerShell",
-            "py -3 scripts/harness.py check",
-            "새 프로젝트에 기본 가드레일만 넣기",
-            "OpenCode만 쓰기",
-            "버그 진단",
-            "보안/권한/secret 변경",
-            "하네스 업그레이드",
-        ):
-            self.assertIn(phrase, readme)
-
-        # Content moved to USER_MANUAL (end-user workflow focused)
-        for phrase in (
-            "`scripts/codex-cloud-setup.sh`는 Linux/macOS shell용입니다",
-            "`/phase-discuss`",
-            "`.opencode/commands/execute.md`",
-            "OpenCode에서 버그 수정",
-            "Windows 사용자에게 적용",
-            "active phase docs는 다음 순서로 해석합니다",
-            "workflow-debugging,workflow-tdd",
-        ):
-            self.assertIn(phrase, manual)
-
     def test_opencode_commands_document_core_adapter_contract(self) -> None:
         root = harness.repo_root()
         required = {
@@ -2775,54 +2712,6 @@ progress:
             text = (root / ".opencode/commands" / filename).read_text(encoding="utf-8")
             for phrase in phrases:
                 self.assertIn(phrase, text, filename)
-
-    def test_readme_documents_unified_profiles_and_db_flag(self) -> None:
-        readme = (harness.repo_root() / "README.md").read_text(encoding="utf-8")
-        manual = (harness.repo_root() / "docs/USER_MANUAL.md").read_text(encoding="utf-8")
-
-        # Content that belongs in README (install/source-project focused)
-        for phrase in (
-            "python3 scripts/harness.py init --target /path/to/project --adapters none",
-            "python3 scripts/harness.py init --target /path/to/project --adapters opencode",
-            "python3 scripts/harness.py init --target /path/to/project --adapters both",
-            "python3 scripts/harness.py check --worktree",
-            "`dotnet-etl`",
-            "`react-web`",
-            "workflow-tdd",
-            "workflow-debugging",
-            "workflow-code-review",
-            "workflow-security-review",
-        ):
-            self.assertIn(phrase, readme)
-
-        # Content moved to USER_MANUAL (end-user focused)
-        for phrase in (
-            "`.planning/**`은 canonical memory입니다",
-            "`.scratch/phase-state.json`은 현재 작업을 열거나 막는 live gate일 뿐입니다",
-            "push 전에 서브에이전트 적대적 리뷰를 해줘",
-            "`--db mssql` 또는 `--db postgresql`",
-            "workflow-skill-authoring",
-        ):
-            self.assertIn(phrase, manual)
-
-    def test_core_docs_are_client_neutral_and_document_done_audit_mode(self) -> None:
-        root = harness.repo_root()
-        phase_gate = (root / "docs/phase-gate-harness.md").read_text(encoding="utf-8")
-        protocol = (root / "docs/protocol-spec.md").read_text(encoding="utf-8")
-
-        for phrase in (
-            "Roo and OpenCode are adapters over the same state machine",
-            "What Adapters Can Enforce",
-            "What Adapters Cannot Enforce Alone",
-            "`check --worktree` also accepts `phase=done` for post-completion audit work",
-        ):
-            self.assertIn(phrase, phase_gate)
-        for phrase in (
-            "Resolve active phase docs deterministically",
-            "OpenCode intentionally ships phase primitives",
-            "Workflow specialization comes from installed `.agents/skills/**` packs",
-        ):
-            self.assertIn(phrase, protocol)
 
     def test_init_installs_phase_commands_from_manifest_sources(self) -> None:
         root = harness.repo_root()
@@ -3510,18 +3399,6 @@ class PhaseStateCheckerV2Tests(unittest.TestCase):
             path = self._write_state(Path(tmpdir), self._base_done_v2())
             harness.check_phase_state_semantics(path)
 
-    # T-7: rejects v0 state with migration prompt
-    def test_check_rejects_v0_state_with_migration_prompt(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state = self._base_done_v2()
-            del state["state_schema_version"]
-            path = self._write_state(Path(tmpdir), state)
-            with self.assertRaises(SystemExit) as ctx:
-                harness.check_phase_state_semantics(path)
-            msg = str(ctx.exception)
-            self.assertIn("state_schema_version", msg)
-            self.assertIn("python3 scripts/harness.py migrate state --forward", msg)
-
     # T-8: done does not require approved=false
     def test_check_done_does_not_require_approved_false(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3688,29 +3565,6 @@ class ChangelogStructureTests(unittest.TestCase):
         self.assertIn("state_schema_version", body)
         # Ledger L12 — migrator --resume verb mention required.
         self.assertIn("--resume", body)
-
-
-class HarnessMigrateSubparserTests(unittest.TestCase):
-    """T0-1 CC1: `harness migrate state --forward` must delegate to migrate_state.py."""
-
-    def test_harness_migrate_state_forward_invocation(self) -> None:
-        # Copy the v0 fixture into a temp dir and invoke the wrapper CLI
-        # through `harness.py migrate state --forward --dry-run`.
-        fixtures = REPO_ROOT / "scripts" / "fixtures" / "migrate"
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp = Path(tmpdir)
-            target = tmp / "phase-state.json"
-            target.write_bytes((fixtures / "phase_state_v0_input.json").read_bytes())
-            result = subprocess.run(
-                [sys.executable, str(REPO_ROOT / "scripts" / "harness.py"),
-                 "migrate", "state", "--forward", "--dry-run",
-                 "--target", str(target)],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(result.returncode, 0,
-                             msg=f"stderr={result.stderr}\nstdout={result.stdout}")
-            expected = (fixtures / "phase_state_v0_to_v2_golden.json").read_text(encoding="utf-8")
-            self.assertEqual(result.stdout, expected)
 
 
 class GitignoreInvariantsTests(unittest.TestCase):

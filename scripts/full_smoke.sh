@@ -195,8 +195,6 @@ run "3h-state-show-json" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/ha
 # 3i state repair (no-op on healthy install)
 run "3i-state-repair-noop" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py state repair"
 
-# 3j verify --audit
-run "3j-verify-audit" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py verify --audit"
 
 echo ""
 echo "=============================================="
@@ -251,12 +249,6 @@ run "5a-phase-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness
 # 5b session help
 run "5b-session-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py session --help"
 
-# 5c halt-diary help
-run "5c-halt-diary-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py halt-diary --help"
-
-# 5e migrate help
-run "5e-migrate-help" 0 "cd $T && PYTHONPATH=$T/scripts python3 $T/scripts/harness.py migrate --help"
-
 # 5f install help (advanced)
 run "5f-install-help" 0 "HARNESS_ADVANCED=1 $HARNESS install --help"
 
@@ -305,9 +297,6 @@ assert_contains "6f-final-tick" "/tmp/v098-smoke/6f-stderr.txt" "finalizing"
 
 # 6g release-check with --expected-version (should fail on dev source)
 run "6g-release-check-expected" 1 "$HARNESS release-check --expected-version v0.9.8"
-
-# 6h migrate help variants
-run "6h-migrate-state-help" 0 "HARNESS_ADVANCED=1 $HARNESS migrate state --help"
 
 # 6j phase verb subcommand discovery
 T=$SMOKE_ROOT/t6j && mkdir -p $T

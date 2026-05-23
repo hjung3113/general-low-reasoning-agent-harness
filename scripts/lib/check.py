@@ -870,7 +870,7 @@ def check_phase_state_semantics(path: Path) -> None:
     if state.get("state_schema_version") != 2:
         raise SystemExit(
             f"{path} missing or stale state_schema_version (expected 2). "
-            f"Run: python3 scripts/harness.py migrate state --forward"
+            f"Update state_schema_version to 2 and ensure required fields are present."
         )
     for key in ("updated_at",):
         if not UTC_TIMESTAMP.fullmatch(str(state.get(key, ""))):
@@ -882,17 +882,14 @@ def check_phase_state_semantics(path: Path) -> None:
         raise SystemExit(f"{path} automation_mode must be manual, auto, or chain. Fix: re-run `harness phase set <phase> --stdin-json` with \"automation_mode\": \"manual\" (or \"auto\"/\"chain\") in the JSON payload")
     # S01-A.2: execution_mode is the v0.7 canonical replacement for the
     # legacy automation_mode alias (design §1.1). It is optional on
-    # legacy state_schema_version=2 records that pre-date the S01 slice;
-    # `harness migrate state --forward` is what upgrades them. When
-    # present, it MUST be inside the enum — fail closed to defeat
+    # legacy state_schema_version=2 records that pre-date the S01 slice.
+    # When present, it MUST be inside the enum — fail closed to defeat
     # hand-edited or forged values (state-trust preflight lands in S01-E).
     if "execution_mode" in state:
-        from lib.phase_state import EXECUTION_MODES  # local import: avoids cycle
         execution_mode = state["execution_mode"]
-        if execution_mode not in EXECUTION_MODES:
+        if execution_mode != "manual":
             raise SystemExit(
-                f"{path} execution_mode must be one of "
-                f"{sorted(EXECUTION_MODES)}; got {execution_mode!r}."
+                f"{path} execution_mode must be 'manual'; got {execution_mode!r}."
             )
     auto_selected = state.get("auto_selected")
     if not isinstance(auto_selected, list):
@@ -1042,7 +1039,7 @@ def check_phase_state_semantics(path: Path) -> None:
             )
         # T0-4 SecM4: when evidence_path is non-empty, reject traversal
         # segments, absolute paths, and URL schemes. The empty string is
-        # accepted as a migration sentinel (see state_migrate_t04).
+        # accepted (legacy sentinel).
         ev = entry["evidence_path"]
         if ev:
             ev_segments = ev.replace("\\", "/").split("/")

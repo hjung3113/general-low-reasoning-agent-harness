@@ -80,14 +80,6 @@ def env(tmp_path: Path) -> dict:
         "draft_allowed_paths": None,
         "execute_attempt_started_at": "2026-05-21T08:05:00Z",
         "plan_finalized_at": "2026-05-21T07:55:00Z",
-        "last_halt": None,
-        "last_halt_history": [],
-        "autopilot_run_id": None,
-        "autopilot_mode": None,
-        "autopilot_phase_slug": None,
-        "autopilot_start_entry_hash": None,
-        "autopilot_allow_network": False,
-        "cli_budgets_remaining": None,
     }
     lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
     try:

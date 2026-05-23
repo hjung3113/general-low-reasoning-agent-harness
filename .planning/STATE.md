@@ -1,35 +1,36 @@
 ---
 planning_doc_schema_version: 1
 progress:
-  total_phases: 2
-  completed_phases: 1
-  percent: 50
+  total_phases: 7
+  completed_phases: 3
+  percent: 42
 ---
 
-# STATE - General Low-Reasoning Agent Harness
+# Project State
 
-## Current Position
+- **Milestone**: 3 - Post-strip coherence (complete)
+- **Checkpoint**: CP-03-05 - manifest+skeleton sweep
+- **Checkpoint file**: `.planning/phases/03-post-strip-coherence/03-CHECKPOINTS.md`
 
-- **Phase**: 2 - v0.8.0 Minimal Workflow Release.
-- **Plan**: Phase 1 implementation is complete. Phase 2 has a four-command navigator workflow design and implementation plan prepared.
-- **Status**: Phase 1 release work is complete. Phase 2 is entering execute based on the user's explicit instruction to reduce the exact-phrase approval deadlock and proceed.
-- **Progress**: Phase 1: 1/1 plan complete; Phase 2: 0/1 plan executed; 1/2 phases complete overall.
+## Active Workstreams
 
-## Active Checkpoint
+- Milestone 4 — Audit + state-trust strip (queued). Issues #8-#11. From ADR-0004/0005.
+- Milestone 5 — Approval simplification (queued). Issues #12-#13. From G6 grill.
+- Milestone 6 — Artifact contract (queued). Issues #14, #15, #17. From G7.
+- Milestone 7 — skill-pack audit (queued). Issue #16. From G1.
 
-- **Checkpoint**: CP-02-02 - contract and behavior.
-- **Checkpoint file**: `.planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md`.
-- **Restart instruction**: Read this file, `ROADMAP.md`, `.planning/codebase/**`, `.planning/phases/02-v0.8.0-minimal-workflow/02-CONTEXT.md`, `.planning/phases/02-v0.8.0-minimal-workflow/02-01-PLAN.md`, then `.scratch/phase-state.json`. Continue only if the live gate names Phase 2 with `phase=execute` and `approved=true`.
+## Canonical Docs
 
-## Decisions In Force
+- `docs/ARCHITECTURE.md` — system architecture
+- `docs/WORKFLOW.md` — workflow state machine
+- `docs/CLI.md` — CLI reference
+- `docs/MODULE-MAP.md` — module index
+- `docs/SECURITY-INVENTORY.md` — security posture
+- `docs/TESTS.md` — test layout
+- `docs/INSTALL-MODEL.md` — install/upgrade model
 
-- Core protocol is client-neutral and stack-neutral.
-- Roo and OpenCode are adapters.
-- Skill packs are generic plugins selected per request.
-- Stack-specific assumptions are not core.
-- v0.8.0 normal user-facing workflow is capped at `harness`, `harness next`, `harness run`, and `harness check`.
-- `HARNESS_MACHINE=1` is the v0.8 adapter/machine trigger for high-level JSON contracts.
+## Milestone History
 
-## Next Action
-
-Finish Phase 2 execute gate setup, then start implementation Task 1: high-level `HARNESS_MACHINE=1 harness next/run/check` JSON contract goldens.
+- 01 — security strip (sec-1 ~ sec-7b)
+- 02 — minimal workflow strip (item-1 ~ item-8, excluding item-6)
+- 03 — post-strip coherence (M3-1..M3-5 complete)

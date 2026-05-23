@@ -121,16 +121,15 @@ def _ensure_state_schema_version(data: dict) -> None:
     """Stamp ``state_schema_version=2`` on the state, or refuse with exit 5.
 
     Contract: CONTRACT-PIN §7 L2 + ADR-001 Decision L2 require every v2 state
-    write to carry ``state_schema_version=2``. The canonical producer is
-    ``scripts/lib/state_migrate.py:forward`` (see MIGRATOR doc). Prior to
-    this stamp, ``phase set`` / ``phase approve`` silently omitted the field,
+    write to carry ``state_schema_version=2``. Prior to this stamp,
+    ``phase set`` / ``phase approve`` silently omitted the field,
     forcing the smoke comparator to use an ``<ANY>`` sentinel for the field
     (see 02b-11 commit bab5c5d). Mutates ``data`` in-place.
 
     Semantics:
     - field absent  -> stamp to 2.
     - field == 2    -> no-op.
-    - field == N!=2 -> exit 5 with a remediation line naming the migrator.
+    - field == N!=2 -> exit 5 with an error message.
     """
     current = data.get("state_schema_version")
     if current is None:
@@ -140,7 +139,7 @@ def _ensure_state_schema_version(data: dict) -> None:
         return
     print(
         f"error: state_schema_version={current!r} expected {_EXPECTED_STATE_SCHEMA_VERSION}; "
-        f"run 'harness migrate state --forward' first",
+        f"update state_schema_version to {_EXPECTED_STATE_SCHEMA_VERSION} manually",
         file=sys.stderr,
     )
     sys.exit(EXIT_UNPARSEABLE_JSON)
@@ -238,23 +237,6 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
         )
         return EXIT_INVALID_TRANSITION
 
-    # P1-2: wall-seconds budget check AFTER state load, BEFORE any mutation.
-    # Acquires primary lock briefly for the halt-commit if needed; released immediately.
-    if state.get("execution_mode", "manual") != "manual":
-        from scripts.lib import cli_budgets as _cli_budgets_mod
-        from scripts.lib import phase_lock as _phase_lock_mod
-        _primary_lock = _phase_lock_mod.acquire_primary(SCRATCH_DIR, timeout_s=5.0)
-        try:
-            _halt_exit = _cli_budgets_mod.wall_seconds_check_and_maybe_halt(
-                before_state=state,
-                scratch_root=SCRATCH_DIR,
-                audit_path=AUDIT_PATH,
-                lock_handle=_primary_lock,
-            )
-        finally:
-            _phase_lock_mod.release_primary(_primary_lock)
-        if _halt_exit is not None:
-            return _halt_exit
     approved = bool(state.get("approved"))
     reset_approval = bool(getattr(args, "reset_approval", False))
 
@@ -448,11 +430,6 @@ def _do_phase_set(args) -> int:  # type: ignore[no-untyped-def]
     new_state = _phase_state.stamp_transition_timestamps(
         new_state, to_phase=target, now_iso=new_state["updated_at"]
     )
-
-    # P1-1: apply file_mutation_ops decrement (caller-contract per §3.5).
-    if new_state.get("execution_mode", "manual") != "manual":
-        from scripts.lib.phase_txn import with_budget_decrement as _with_budget_decrement
-        new_state = _with_budget_decrement(new_state)
 
     _write_state_atomic(new_state)
     after_hash = compute_state_hash(STATE_PATH)
@@ -797,7 +774,7 @@ def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
 
     Delegates to ``phase_reopen.run_reopen`` which enforces the §3.2
     TTY gate, identity resolution, install-record membership,
-    state-trust preflight, and the halt-diary / reset-matrix mutation.
+    state-trust preflight, and the backward-transition reset.
     """
     _probe_harness_writable()
 

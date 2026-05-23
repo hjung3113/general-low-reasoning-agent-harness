@@ -74,14 +74,6 @@ class TestRow1Quiescent:
         assert result.exit_code == 0
         assert result.decision == "quiescent"
 
-    def test_01_chain_verifies(self, tmp_path):
-        """After recovery, chain verifier accepts the audit log."""
-        from lib.audit_chain import verify_chain
-        scratch, audit_path = _setup_fixture("01_quiescent", tmp_path)
-        _recover(scratch, audit_path)
-        result = verify_chain(audit_path)
-        assert result.ok is True
-
 
 # ---------------------------------------------------------------------------
 # Row 2: orphan tmp (J=0, T=1, A=0)
@@ -252,23 +244,3 @@ class TestRow13MalformedJournal:
         assert result.row == 13
         assert result.exit_code == 14
 
-
-# ---------------------------------------------------------------------------
-# Chain verifier integration: after successful recovery, chain must verify
-# ---------------------------------------------------------------------------
-
-class TestChainVerifierAfterRecovery:
-    @pytest.mark.parametrize("fixture_name", [
-        "01_quiescent",
-        "02_orphan_tmp",
-        "05_journal_only_before",
-        "06_journal_and_tmp_before",
-    ])
-    def test_chain_ok_after_recovery(self, fixture_name, tmp_path):
-        """Fixtures where audit.log has no chained entries are trivially ok."""
-        from lib.audit_chain import verify_chain
-        scratch, audit_path = _setup_fixture(fixture_name, tmp_path)
-        _recover(scratch, audit_path)
-        result = verify_chain(audit_path)
-        # v1 entries (no chain fields) are tolerated
-        assert result.ok is True

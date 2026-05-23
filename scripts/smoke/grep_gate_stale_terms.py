@@ -32,14 +32,12 @@ Usage
 
 Scoping rationale (§C of S14)
 ------------------------------
-* ``automation_mode`` — legitimately referenced by migration code
-  (``scripts/lib/state_migrate.py``, ``scripts/lib/phase_state.py``) and
-  legacy validator (``scripts/lib/check.py``). Checked only in
+* ``automation_mode`` — legitimately referenced by legacy-validation code
+  (``scripts/lib/phase_state.py``, ``scripts/lib/check.py``). Checked only in
   adapter-facing files (``.roo/``, ``.opencode/``, ``docs/superpowers/``
   minus exempted specs).
 
-* ``--chain`` / ``--auto`` (deprecated harness CLI flags) — detected by
-  ``scripts/lib/cli_deprecated.py`` (explicitly exempted). Roo workflow
+* ``--chain`` / ``--auto`` (deprecated harness CLI flags) — Roo workflow
   skills, rules, and plans legitimately describe these flags as
   *prompt-level controls* (NOT as harness CLI invocations). Checked only
   in slash-command Markdown files (``.roo/commands/*.md``,
@@ -56,9 +54,7 @@ Scoping rationale (§C of S14)
   adapter-facing files plus ``scripts/lib/`` minus the above exemptions.
 
 * Launcher strings (``python3 scripts/harness.py`` etc.) — checked in
-  slash-command Markdown only (adapter commands), NOT in
-  ``scripts/lib/smoke_lifecycle.py`` (backward-compat parser),
-  ``scripts/smoke/runner.py`` (legacy command normalizer), or historical
+  slash-command Markdown only (adapter commands), NOT in historical
   planning docs.
 
 Consolidation (§A of S14)
@@ -159,19 +155,9 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
         "docs/adr/2026-05-17-approver-provenance-and-execution-mode.md",
         "docs/adr/2026-05-17-audit-canonicalization-locking-and-state-trust.md",
         "docs/adr/2026-05-17-autopilot-guards-and-manual-handoff.md",
-        # cli_deprecated.py — the S07 deprecation detector MUST reference
-        # --chain / --auto in order to detect them at argv-parse time.
-        "scripts/lib/cli_deprecated.py",
         # phase_approve.py — HARNESS_HUMAN appears only in security comments
         # explicitly stating the env var is NOT consulted (Round-4 BLOCK fix).
         "scripts/lib/phase_approve.py",
-        # smoke_lifecycle.py — contains a regex / docstring that documents the
-        # legacy `python3 scripts/harness.py` form for backward-compat parsing
-        # of old command markdown files.
-        "scripts/lib/smoke_lifecycle.py",
-        # runner.py — normalizes the legacy form from LLM responses to
-        # [sys.executable, HARNESS, ...]; backward-compat shim.
-        "scripts/smoke/runner.py",
         # v0.8.0_todo ux-polish spec — forward-looking note that mentions
         # the old slash name as a problem statement; deferred/historical.
         "docs/superpowers/specs/v0.8.0_todo/2026-05-17-ux-polish.md",
@@ -182,34 +168,19 @@ EXEMPT_PATHS: frozenset[str] = frozenset(
 # that term only}.  Used when a file is mostly clean but has one legitimate
 # reference to a single term.
 TERM_EXEMPT_PATHS: dict[str, frozenset[str]] = {
-    # automation_mode: migration and legacy-validation code that MUST reference
-    # the old field name in order to forward-migrate state from v1→v2.
+    # automation_mode: legacy-validation/coercion code that MUST reference
+    # the old field name to handle pre-v2 state files.
     "automation_mode": frozenset(
         {
             "scripts/lib/phase_state.py",      # _load_state: legacy coercion §1.1
-            "scripts/lib/state_migrate.py",    # forward/reverse migration
             "scripts/lib/check.py",            # legacy validator (automation_mode field)
             "scripts/lib/planning_status.py",  # display: reads legacy field
             "scripts/lib/project_dashboard/renderer.py",  # display: reads legacy field
         }
     ),
-    # multi_step_scenario.py prompt uses the old form to show the LLM both
-    # accepted command forms; this is intentional for backward compat.
-    "python3 scripts/harness.py": frozenset(
-        {
-            "scripts/smoke/multi_step_scenario.py",
-        }
-    ),
-    "python scripts/harness.py": frozenset(
-        {
-            "scripts/smoke/multi_step_scenario.py",
-        }
-    ),
     # --auto / --chain: Roo workflow prompt-level flags (NOT harness CLI flags).
     # .roo/commands/README.md and phase-execute.md are the canonical reference
-    # docs that DEFINE these Roo prompt flags (§4 Automation Flags). They
-    # must not be confused with the deprecated harness.py --auto / --chain CLI
-    # flags detected by scripts/lib/cli_deprecated.py.
+    # docs that DEFINE these Roo prompt flags (§4 Automation Flags).
     "--auto": frozenset(
         {
             ".roo/commands/README.md",
@@ -341,7 +312,6 @@ _FULL_CATEGORIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
         SLASH_CMD_GLOBS,
     ),
     # 2. Deprecated CLI flags — only in slash-command Markdown.
-    #    (scripts/lib/cli_deprecated.py is globally exempted)
     (
         "deprecated-cli-flags-in-slash-cmds",
         ("--chain", "--auto"),
@@ -395,9 +365,9 @@ def run_full() -> int:
         sys.stderr.write(
             "\nFix: remove the listed strings from the installed artifacts.\n"
             "See design §9 line 1117 for the canonical forbidden-term list.\n"
-            "Terms renamed: automation_mode→execution_mode, "
+            "Terms removed/renamed: automation_mode→execution_mode, "
             "containment_*→network_guard_*, "
-            "autopilot_budgets_remaining→cli_budgets_remaining, "
+            "autopilot_budgets_remaining (removed), "
             "HARNESS_HUMAN→gitconfig-based identity.\n"
             "Alternative launchers must not appear in adapter slash-command bodies.\n"
         )

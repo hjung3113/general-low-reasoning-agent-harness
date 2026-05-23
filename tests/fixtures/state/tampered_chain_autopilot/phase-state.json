@@ -1,11 +1,8 @@
 {
   "phase": "discuss",
-  "approved": false,
-  "auto_selected": [],
-  "automation_mode": "manual",
-  "execution_mode": "chain_autopilot",
+  "approved": true,
+  "execution_mode": "manual",
   "state_schema_version": 2,
-  "verification": [],
   "updated_at": "2026-05-15T00:00:00.000000000Z",
-  "updated_by": "test"
+  "updated_by": "tampered"
 }

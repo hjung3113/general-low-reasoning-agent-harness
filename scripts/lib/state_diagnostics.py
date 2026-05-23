@@ -16,11 +16,9 @@ Contract:
   writing a single-line `error:` diagnostic to stderr that names the file
   path and (when available) line:column, with a one-line remediation hint.
 - Remediation hint precedence (most-specific first):
-    1. If a sidecar `<basename>.pre-repair.*.bak.resume.json` exists under
-       `.harness/backups/`, recommend `harness migrate state --resume`.
-    2. Else if at least one `<basename>.pre-repair.*.bak` exists under
+    1. If at least one `<basename>.pre-repair.*.bak` exists under
        `.harness/backups/`, recommend restoring from the newest backup.
-    3. Else use the ADR-005 / ADR-003a Artifact 1 default template.
+    2. Else use the ADR-005 / ADR-003a Artifact 1 default template.
 """
 from __future__ import annotations
 
@@ -111,17 +109,7 @@ def _remediation_hint(path: Path) -> str:
     if not backups_dir.is_dir():
         return _DEFAULT_HINT
     basename = path.name
-    sidecar_glob = f"{basename}.pre-repair.*.bak.resume.json"
     bak_glob = f"{basename}.pre-repair.*.bak"
-    try:
-        sidecars = sorted(backups_dir.glob(sidecar_glob))
-    except OSError:
-        sidecars = []
-    if sidecars:
-        return (
-            "run 'harness migrate state --resume' to continue from the most "
-            "recent in-progress migration."
-        )
     try:
         baks = sorted(p for p in backups_dir.glob(bak_glob) if not p.name.endswith(".resume.json"))
     except OSError:
@@ -194,7 +182,7 @@ def _emit_and_exit(path: Path, summary: str, *, hint: str | None = None) -> None
     if not hint.startswith("Fix:"):
         print(
             f"Fix: repair or restore {path.name} "
-            "(e.g. 'harness migrate state --forward' or restore from .harness/backups/).",
+            "(restore from .harness/backups/).",
             file=sys.stderr,
         )
     raise SystemExit(EXIT_UNPARSEABLE_JSON)

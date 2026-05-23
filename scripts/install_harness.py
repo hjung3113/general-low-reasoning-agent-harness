@@ -219,14 +219,45 @@ def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--adapters", default="roo")
-    parser.add_argument("--profiles", default="generic")
-    parser.add_argument("--packs", default=None)
+    parser.add_argument(
+        "--adapters",
+        default="roo",
+        help=(
+            "Adapter selection (default: roo). Accepts a single keyword "
+            "(roo | opencode | both | none) or a comma-separated list "
+            "(e.g. 'roo,opencode')."
+        ),
+    )
+    parser.add_argument(
+        "--profiles",
+        default="generic",
+        help=(
+            "Comma-separated profile names (default: generic). "
+            "Run with --interactive to see the live list, "
+            "or inspect harness/profiles/."
+        ),
+    )
+    parser.add_argument(
+        "--packs",
+        default=None,
+        help=(
+            "Comma-separated skill pack names. "
+            "When omitted, packs are auto-derived from --profiles + --db. "
+            "Run with --interactive to see the live list."
+        ),
+    )
     parser.add_argument("--version", dest="release_version", default=None)
     parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     if args.interactive:
-        args = prompt_interactive(args)
+        try:
+            args = prompt_interactive(args)
+        except EOFError:
+            parser.error(
+                "--interactive ran out of input. stdin is closed or empty; "
+                "either run from a TTY, pipe the answers, or drop --interactive "
+                "and pass flags (--target/--adapters/--profiles/--packs) explicitly."
+            )
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     delegated = build_harness_argv(args)

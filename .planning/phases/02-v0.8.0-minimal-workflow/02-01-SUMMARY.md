@@ -1,13 +1,5 @@
-# Phase 2 Summary - v0.8.0 Minimal Workflow Release
+# Milestone 02 — Summary
 
-## Status
+Minimal workflow strip series complete. Removed ~10k LOC of unused autopilot, security, migration, smoke driver, and audit-walk scaffolding.
 
-Execute started.
-
-## Approval Context
-
-The user explicitly rejected the exact-phrase approval deadlock and instructed the agent to proceed by another route or reduce that enforcement. The live gate was moved to Phase 2 execute to allow implementation of the v0.8.0 minimal workflow plan.
-
-## Current Work
-
-Start with Task 1 from `docs/superpowers/plans/2026-05-19-v0.8.0-minimal-workflow.md`: high-level `HARNESS_MACHINE=1 harness next/run/check` JSON contract goldens.
+See `02-01-PLAN.md` for item list and `02-CHECKPOINTS.md` for commit map.

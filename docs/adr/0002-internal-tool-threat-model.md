@@ -1,0 +1,5 @@
+# Internal-tool threat model — no external attacker
+
+The harness is treated as an internal-only tool used by trusted developers and agents on trusted machines. The threat model **excludes** external attackers, supply-chain takeover, tampered manifests in transit, and adversarial target repos. Defenses against those scenarios are deliberately omitted or weakened where they cost UX.
+
+This stance underwrote the Milestone 1 security strip: removal of HMAC key handling (`secret_key`), SSH-signed tag verification on releases, `trust_origin` / `release_trust` checks, `audit_verify_cli`, and `autopilot_guard` (~3,900 LOC across nine modules + tests). Each of those defended against scenarios that don't apply to an internal tool, so their cost (config drift, false positives, key management overhead) was pure friction. The standing rule for new work: if a security control assumes an external attacker, justify it explicitly or skip it. Reversing this means the harness would need a documented threat model covering at minimum distribution integrity and adversarial targets — not a small undertaking.

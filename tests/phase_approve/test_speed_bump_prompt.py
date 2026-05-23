@@ -50,7 +50,7 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
     nonce_dir = tmp_path / "nonces"
     nonce_dir.mkdir()
 
-    # Bootstrap scratch state so state_trust preflight passes
+    # Bootstrap scratch state
     seed_scratch(scratch, audit_path)
 
     captured = {}
@@ -71,7 +71,6 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_OK
@@ -125,7 +124,7 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
     nonce_dir = tmp_path / "nonces"
     nonce_dir.mkdir()
 
-    # Bootstrap scratch state so state_trust preflight passes
+    # Bootstrap scratch state
     seed_scratch(scratch, audit_path)
 
     result = phase_approve.run_approve(
@@ -138,7 +137,6 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_OK
@@ -183,7 +181,6 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_WRONG_PHASE_FOR_VERB
@@ -218,7 +215,6 @@ def test_phase_approve_in_discuss_phase_refuses(tmp_path, monkeypatch):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
 
     assert result.exit_code == exitcodes.EXIT_WRONG_PHASE_FOR_VERB
@@ -260,7 +256,6 @@ def test_cancel_prints_stderr_message(tmp_path, monkeypatch, capsys):
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
     captured = capsys.readouterr()
     assert result.exit_code == exitcodes.EXIT_OK
@@ -282,7 +277,6 @@ def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
     monkeypatch.setenv("HARNESS_SMOKE_BYPASS_SPEED_BUMP", "1")
     monkeypatch.setenv("HARNESS_SMOKE_TEST", "1")
     scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
-    # seed_scratch writes canonical state; use skip_state_trust_preflight=True
     # because seed_scratch intentionally does NOT write an audit chain entry.
     seed_scratch(scratch, audit_path)
     result = phase_approve.run_approve(
@@ -295,7 +289,6 @@ def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",
-        skip_state_trust_preflight=True,
     )
     assert result.exit_code == exitcodes.EXIT_OK
     assert result.sub_reason == "approved"

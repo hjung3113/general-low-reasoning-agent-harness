@@ -59,6 +59,31 @@ INSTALL_RECORD_NAME = "install-record.json"
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _manual_cleanup_cmd() -> str:
+    if _is_windows():
+        return "Remove-Item -Recurse -Force .harness"
+    return "rm -rf .harness"
+
+
+def _permission_recovery_cmds() -> str:
+    if _is_windows():
+        return (
+            "takeown /F .harness /R /A\n"
+            "  icacls .harness /grant \"$env:USERNAME:(F)\" /T\n"
+            "  Remove-Item -Recurse -Force .harness\n"
+            "  python scripts\\harness.py init --target ."
+        )
+    return (
+        "sudo chown -R \"$(id -un)\" .harness\n"
+        "  rm -rf .harness\n"
+        "  python3 scripts/harness.py init --target ."
+    )
+
+
 def _sanitize_approver_email(raw: str) -> str:
     """Sanitize a candidate approver email (codex M-6).
 
@@ -313,8 +338,7 @@ def install(
                 f"       python3 scripts/harness.py init --target {target} --force\n"
                 f"\n"
                 f"  2) 또는 수동 정리:\n"
-                f"       Remove-Item -Recurse -Force .harness   # PowerShell\n"
-                f"       rm -rf .harness                         # bash\n"
+                f"       {_manual_cleanup_cmd()}\n"
                 f"     그 후 다시 init.\n"
                 f"\n"
                 f"[Half-installed state detected. Re-run with --force, or delete "
@@ -527,14 +551,6 @@ def install(
         pass
     _rmdir_recursive_quiet(staging_dir)
 
-    # B3-Fix-3: stamp trust_origin on fresh install so subsequent upgrades can
-    # enforce downgrade protection.
-    _stamp_install_trust_origin(
-        root=root,
-        target=target,
-        harness_version=harness_version,
-    )
-
     # T7 / NEW-1: write .harness/install-record.json so `phase approve` works immediately.
     if approver_email is not None and approver_bootstrap_source is not None:
         write_install_record(
@@ -546,75 +562,6 @@ def install(
         )
 
     print(f"installed harness v{harness_version} → {target} ({len(destinations)} planned writes). Next: cd {target} && python3 scripts/harness.py check")
-
-
-def _stamp_install_trust_origin(
-    *,
-    root: Path,
-    target: Path,
-    harness_version: str,
-) -> None:
-    """B3-Fix-3: stamp trust_origin/release_tag/release_commit on the fresh install record.
-
-    For release builds: calls verify_release_tag; on success stamps trust_origin=signed_tag.
-    For dev builds (0.0.0-dev+...): stamps trust_origin=dev_unsigned immediately.
-    On verification failure: stamps trust_origin=dev_unsigned if HARNESS_ALLOW_UNSIGNED_DEV=1,
-    otherwise exits with EXIT_RELEASE_TRUST_INVALID to fail closed.
-    """
-    from lib.state import INSTALL_STATE, write_json, read_install_state
-
-    is_dev_version = (
-        harness_version.startswith("0.0.0-dev+")
-        or harness_version == "0.0.0-dev+unknown"
-        or harness_version.endswith(".dev0")
-    )
-
-    trust_origin: str
-    release_tag: str | None = None
-    release_commit: str | None = None
-
-    if is_dev_version:
-        trust_origin = "dev_unsigned"
-    else:
-        from lib.release_trust import UpgradeTrustError, verify_release_tag
-        tag = "v" + harness_version
-        try:
-            release_commit = verify_release_tag(root, tag)
-            release_tag = tag
-            trust_origin = "signed_tag"
-        except UpgradeTrustError:
-            # v0.9.13: never refuse on trust; fall back to dev_unsigned.
-            trust_origin = "dev_unsigned"
-
-    install_state_path = target / INSTALL_STATE
-    state: dict = read_install_state(target)
-    state["trust_origin"] = trust_origin
-    if release_tag is not None:
-        state["release_tag"] = release_tag
-    if release_commit is not None:
-        state["release_commit"] = release_commit
-    write_json(install_state_path, state)
-
-    # B-4 (Cycle-2): emit release.trust.bypassed audit row when trust_origin=dev_unsigned
-    # at install time (symmetric with upgrade path — forensic visibility).
-    if trust_origin == "dev_unsigned":
-        try:
-            import datetime as _dt
-            from lib.audit import audit_append as _aa
-            _audit_path = target / ".harness" / "audit.log"
-            _aa(
-                {
-                    "verb": "release.trust.bypassed",
-                    "at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "args": {
-                        "bypass_source": "install_path",
-                        "reason": "tag_not_found" if not release_tag else "tag_signature_invalid",
-                    },
-                },
-                audit_path=_audit_path,
-            )
-        except Exception:
-            pass  # audit failure is non-fatal
 
 
 class InstallFailed(RuntimeError):
@@ -678,15 +625,12 @@ def _preflight_target_writable(target: Path) -> None:
         raise SystemExit(
             f"error: harness init refused — .harness/ exists but is not writable: {exc}\n"
             f"\n"
-            f"흔한 원인: 이전 install 이 관리자 권한으로 돌아 .harness/ 가 다른 사용자 소유.\n"
-            f"대처 (Windows PowerShell):\n"
-            f"  takeown /F .harness /R /A\n"
-            f"  icacls .harness /grant \"$env:USERNAME:(F)\" /T\n"
-            f"  Remove-Item -Recurse -Force .harness\n"
-            f"  python3 scripts\\harness.py init --target .\n"
+            f"흔한 원인: 이전 install 이 관리자/다른 사용자 권한으로 돌아 .harness/ 소유권 다름.\n"
+            f"대처:\n"
+            f"  {_permission_recovery_cmds()}\n"
             f"\n"
             f"[.harness/ exists but current user has no write permission. "
-            f"takeown + icacls + delete then retry.]"
+            f"Fix ownership/perms then delete and retry.]"
         ) from exc
 
 

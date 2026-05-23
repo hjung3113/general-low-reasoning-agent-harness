@@ -71,7 +71,7 @@ def display_phase_id(phase_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 STATE_PHASE_RE = re.compile(
-    r"-\s*\*\*Phase\*\*:\s*(?P<number>\d+[a-z]?)\s*-\s*(?P<title>[^\n]+?)\.?\s*$",
+    r"-\s*\*\*(?:Phase|Milestone)\*\*:\s*(?P<number>\d+[a-z]?)\s*-\s*(?P<title>[^\n]+?)\.?\s*$",
     re.MULTILINE,
 )
 
@@ -81,7 +81,7 @@ STATE_CHECKPOINT_RE = re.compile(
 )
 
 ROADMAP_BULLET_RE = re.compile(
-    r"^- \[(?P<mark>[ xX])\] \*\*Phase\s+(?P<number>\d+[a-z]?):\s*(?P<title>[^*]+)\*\*"
+    r"^- \[(?P<mark>[ xX])\] \*\*(?:Phase|Milestone)\s+(?P<number>\d+[a-z]?):\s*(?P<title>[^*]+)\*\*"
     r"(?:[^\S\n]*-[^\S\n]*(?P<summary>[^\n]*))?$",
     re.MULTILINE,
 )

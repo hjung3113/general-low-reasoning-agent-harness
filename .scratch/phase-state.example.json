@@ -1,24 +1,20 @@
 {
   "phase": "execute",
   "state_schema_version": 2,
-  "plan_id": "phase-gate-docs-001",
+  "plan_id": "example-plan-001",
   "approved": true,
   "approved_by": "human",
   "approved_at": "2026-05-11T09:00:00Z",
-  "summary": "Add a Roo discuss-plan-execute phase gate harness.",
-  "plan_path": "docs/phase-gate-harness.md",
+  "summary": "Example execute-phase state showing the v2 schema shape.",
+  "plan_path": ".planning/phases/01-example/01-01-PLAN.md",
   "state_path": ".planning/STATE.md",
-  "checkpoint_path": ".planning/phases/01-document-centered-phase-continuity/01-CHECKPOINTS.md",
+  "checkpoint_path": ".planning/phases/01-example/01-CHECKPOINTS.md",
   "current_checkpoint": "CP-example-execute",
   "next_action": "Run the approved verification commands and update the active phase summary.",
   "allowed_paths": [
-    ".roo/skills/workflow-phase-gate/",
-    ".roo/rules/phase-gate.md",
-    "docs/phase-gate-harness.md",
     ".scratch/phase-state.schema.json",
     ".scratch/phase-state.example.json",
-    "README.md",
-    ".roo/skills/README.md"
+    ".planning/"
   ],
   "blocked_paths": [
     "src/",

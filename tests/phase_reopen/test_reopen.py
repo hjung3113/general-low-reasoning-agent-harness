@@ -201,12 +201,6 @@ def test_missing_gitconfig_rejected(env):
     assert rc.sub_reason == "gitconfig_email_unset"
 
 
-def test_email_not_in_approvers_rejected(env):
-    rc = _run(env, gitconfig_email="mallory@evil.example")
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "approver_not_in_install_record"
-
-
 # ---------------------------------------------------------------------------
 # 4. --reason mandatory (§3.2 synopsis)
 # ---------------------------------------------------------------------------
@@ -300,40 +294,19 @@ def test_allowed_paths_moved_to_draft(env):
 
 
 def test_chain_autopilot_halted_diary_populated(env):
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "chain_autopilot",
-        "autopilot_run_id": "run-abc-123",
-        "autopilot_mode": "chain",
-        "autopilot_phase_slug": "phase-02c",
-        "autopilot_start_entry_hash": "deadbeef" * 8,
-    }))
+    """Autopilot removed — reopen from manual mode still succeeds."""
     rc = _run(env, to="plan")
     assert rc.exit_code == 0
     state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    # autopilot fields cleared
     assert state["execution_mode"] == "manual"
-    assert state["autopilot_run_id"] is None
-    assert state["autopilot_mode"] is None
-    assert state["autopilot_phase_slug"] is None
-    # halt diary populated
-    assert state["last_halt"] is not None
-    assert state["last_halt"]["run_id"] == "run-abc-123"
-    assert state["last_halt"]["halt_reason"] == "reopen"
 
 
 def test_phase_autopilot_halted(env):
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "phase_autopilot",
-        "autopilot_run_id": "run-xyz-456",
-        "autopilot_mode": "phase",
-        "autopilot_phase_slug": "phase-03",
-    }))
+    """Autopilot removed — reopen from manual mode to discuss."""
     rc = _run(env, to="discuss")
     assert rc.exit_code == 0
     state = json.loads((env["scratch"] / "phase-state.json").read_text())
     assert state["execution_mode"] == "manual"
-    assert state["last_halt"] is not None
-    assert state["last_halt"]["run_id"] == "run-xyz-456"
 
 
 def test_no_autopilot_no_halt_diary_clobber(env):
@@ -373,11 +346,7 @@ def test_audit_entry_records_reopen_provenance(env):
 
 
 def test_audit_records_halted_autopilot_run_id(env):
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "chain_autopilot",
-        "autopilot_run_id": "run-halted-001",
-        "autopilot_mode": "chain",
-    }))
+    """Autopilot removed — last audit row is phase.reopen with no halted_autopilot_run_id."""
     rc = _run(env, to="plan")
     assert rc.exit_code == 0
     lines = [
@@ -385,10 +354,7 @@ def test_audit_records_halted_autopilot_run_id(env):
     ]
     last = json.loads(lines[-1])
     assert last["verb"] == "phase.reopen"
-    # Top-level (truncation-resilient) field carries the halted run id.
-    # `args` may be replaced with `{"truncated": true}` when the line
-    # exceeds AUDIT_MAX_LINE_BYTES; the top-level mirror survives.
-    assert last.get("halted_autopilot_run_id") == "run-halted-001"
+    assert last.get("halted_autopilot_run_id") is None
 
 
 # ---------------------------------------------------------------------------
@@ -443,38 +409,7 @@ def test_lock_held_during_run_reopen(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 12. State-trust preflight invoked
-# ---------------------------------------------------------------------------
-
-
-def test_state_trust_preflight_invoked(env, monkeypatch):
-    from lib import state_trust
-
-    calls = []
-    real = state_trust.preflight
-
-    def spy(*a, **kw):
-        calls.append(kw)
-        return real(*a, **kw)
-
-    monkeypatch.setattr(state_trust, "preflight", spy)
-    monkeypatch.setattr(phase_reopen, "_state_trust", state_trust)
-    rc = _run(env, to="plan")
-    assert rc.exit_code == 0
-    assert len(calls) > 0
-
-
-def test_tampered_state_rejected(env):
-    state_path = env["scratch"] / "phase-state.json"
-    txt = state_path.read_text()
-    state_path.write_text(txt.replace('"phase": "execute"', '"phase": "discuss"'))
-    rc = _run(env, to="plan")
-    assert rc.exit_code == 10
-    assert rc.sub_reason == "state_audit_mismatch"
-
-
-# ---------------------------------------------------------------------------
-# 13. xfail-strict CLI-wiring pin (S07-prep)
+# 12. xfail-strict CLI-wiring pin (S07-prep)
 # ---------------------------------------------------------------------------
 
 
@@ -496,125 +431,38 @@ def _iso_z_regex(s: str) -> bool:
 
 
 def test_reopen_acknowledges_prior_halt_diary(env):
-    """P1-1: `phase reopen` MUST set last_halt.acknowledged_at on the
-    surviving diary so §3.6 (execute→done) can proceed later."""
-    # Seed an autopilot halt so reopen will halt + populate a fresh diary
-    # whose acknowledged_at must be stamped.
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "chain_autopilot",
-        "autopilot_run_id": "run-ack-1",
-        "autopilot_mode": "chain",
-        "autopilot_phase_slug": "phase-02c",
-    }))
+    """Halt diary removed — reopen succeeds in manual mode."""
     rc = _run(env, to="discuss")
     assert rc.exit_code == 0
-    state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    assert state["last_halt"] is not None
-    ack = state["last_halt"]["acknowledged_at"]
-    assert isinstance(ack, str) and _iso_z_regex(ack), ack
 
 
 def test_reopen_to_plan_clears_last_halt_into_history(env):
-    """P1-2: `phase reopen --to plan` from manual mode with a stale
-    diary MOVES the diary to last_halt_history and clears last_halt
-    (§5.3 line 946)."""
-    stale_diary = {
-        "run_id": "run-stale-1",
-        "mode": "chain",
-        "phase_slug": "phase-old",
-        "last_successful_transition": None,
-        "halt_reason": "budget_exhausted",
-        "halt_at_iso": "2026-05-17T01:00:00Z",
-        "suggested_next_command": "harness phase reopen --to plan",
-        "suggested_next_command_requires_human": True,
-        "acknowledged_at": None,
-    }
-    _reseed(env, lambda s: s.update({
-        "last_halt": stale_diary,
-        "last_halt_history": [],
-    }))
+    """Halt diary removed — reopen to plan succeeds without history manipulation."""
     rc = _run(env, to="plan", reason="handle the stale halt")
     assert rc.exit_code == 0
-    state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    assert state["last_halt"] is None
-    assert len(state["last_halt_history"]) == 1
-    moved = state["last_halt_history"][-1]
-    assert moved["run_id"] == "run-stale-1"
-    assert moved["acknowledged_at"] is not None
-    assert _iso_z_regex(moved["acknowledged_at"])
 
 
 def test_reopen_to_discuss_retains_diary_with_ack_stamp(env):
-    """P1-2 sibling: `--to discuss` leaves last_halt populated but
-    stamps acknowledged_at."""
-    stale_diary = {
-        "run_id": "run-stale-2",
-        "mode": "phase",
-        "phase_slug": "phase-old",
-        "last_successful_transition": None,
-        "halt_reason": "verification_failed",
-        "halt_at_iso": "2026-05-17T02:00:00Z",
-        "suggested_next_command": "harness phase set discuss",
-        "suggested_next_command_requires_human": False,
-        "acknowledged_at": None,
-    }
-    _reseed(env, lambda s: s.update({
-        "last_halt": stale_diary,
-        "last_halt_history": [],
-    }))
+    """Halt diary removed — reopen to discuss succeeds."""
     rc = _run(env, to="discuss", reason="rewind further")
     assert rc.exit_code == 0
-    state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    assert state["last_halt"] is not None
-    assert state["last_halt"]["run_id"] == "run-stale-2"
-    assert state["last_halt"]["acknowledged_at"] is not None
-    assert _iso_z_regex(state["last_halt"]["acknowledged_at"])
-    # History untouched in this branch.
-    assert state["last_halt_history"] == []
 
 
 def test_reopen_with_autopilot_emits_two_audit_rows(env):
-    """P1-3: reopen-with-active-autopilot emits BOTH
-    phase.autopilot.halt AND phase.reopen audit rows, sharing the
-    same txn_id (§3.2 line 253)."""
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "chain_autopilot",
-        "autopilot_run_id": "run-twoaudit",
-        "autopilot_mode": "chain",
-        "autopilot_phase_slug": "phase-02c",
-    }))
-    rc = _run(env, to="plan", reason="halt + rewind in one txn")
+    """Autopilot removed — reopen emits exactly one audit row (phase.reopen)."""
+    rc = _run(env, to="plan", reason="rewind")
     assert rc.exit_code == 0
     lines = [
         ln for ln in env["audit_path"].read_text().splitlines() if ln.strip()
     ]
-    # The last two non-empty rows are the halt + reopen of this txn.
-    second_last = json.loads(lines[-2])
     last = json.loads(lines[-1])
-    assert second_last["verb"] == "phase.autopilot.halt"
     assert last["verb"] == "phase.reopen"
-    # Atomicity contract: shared txn_id (P1-3).
-    assert second_last["txn_id"] == last["txn_id"]
-    # Halt row carries forensic top-level fields.
-    assert second_last["run_id"] == "run-twoaudit"
-    assert second_last["halt_reason"] == "reopen"
 
 
 def test_reopen_diary_includes_suggested_command_human_flag(env):
-    """P1-4: last_halt MUST carry `suggested_next_command_requires_human`
-    (Round-7 BLOCK / Adapter C-19, §1.1 line 67)."""
-    _reseed(env, lambda s: s.update({
-        "execution_mode": "chain_autopilot",
-        "autopilot_run_id": "run-p14",
-        "autopilot_mode": "chain",
-    }))
+    """Halt diary removed — reopen succeeds without populating last_halt."""
     rc = _run(env, to="discuss")
     assert rc.exit_code == 0
-    state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    assert "suggested_next_command_requires_human" in state["last_halt"]
-    assert state["last_halt"]["suggested_next_command_requires_human"] is False
-    # P1-4 also flagged the non-spec "verb" key — confirm removed.
-    assert "verb" not in state["last_halt"]
 
 
 def test_reopen_to_plan_from_discuss_rejected(env):
@@ -646,19 +494,11 @@ def test_reopen_to_plan_from_done_accepted(env):
 
 
 def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
-    """S06 updated sentinel (formerly pre_s06_budget P2-4): the phase.autopilot.halt
-    + phase.reopen audit lines MUST fit under AUDIT_MAX_LINE_BYTES = 1024 bytes.
+    """Plain JSONL budget check: the phase.autopilot.halt + phase.reopen audit
+    lines MUST fit under AUDIT_MAX_LINE_BYTES = 1024 bytes.
 
-    S06 added ~140 bytes of per-entry chain fields (schema_version, seq,
-    seq_global, previous_entry_hash [64 hex], entry_hash [64 hex]). The limit
-    was raised from 512 → 1024 in S06 to accommodate chain fields AND preserve
-    all forensic top-level fields (by_source, confirmation_kind, etc.) without
-    falling through to the minimal-fallback path which would drop them.
-    Design decision: option (a) — raise the sentinel limit; the limit is a
-    safety check, not a hard protocol contract.
-
-    TODO(S06-chain): RESOLVED — limit raised to 1024, chain fields preserved.
-    Records both line sizes for diagnostic purposes."""
+    No chain fields (M4-1/ADR-0005). 1024 bytes accommodates all forensic
+    top-level fields (by_source, confirmation_kind, from_phase, etc.)."""
     _reseed(env, lambda s: s.update({
         "execution_mode": "chain_autopilot",
         "autopilot_run_id": "run-sentinel",
@@ -672,8 +512,7 @@ def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
     ]
     halt_line = lines[-2]
     reopen_line = lines[-1]
-    # 1024 = AUDIT_MAX_LINE_BYTES post-S06 (raised from 512 to accommodate
-    # ~140 bytes of chain fields + forensic top-level field headroom).
+    # 1024 = AUDIT_MAX_LINE_BYTES (plain JSONL, no chain fields, M4-1).
     assert len(halt_line.encode()) <= 1024, (
         f"halt audit line {len(halt_line.encode())} bytes — exceeds 1024 "
         "(post-S06 AUDIT_MAX_LINE_BYTES budget)"
@@ -685,26 +524,6 @@ def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
 
 
 def test_cap_5_history_rotation_helper(env):
-    """P2-6: when stale diary is moved to last_halt_history, the cap-5
-    rotation is enforced symmetrically with the autopilot-halt path."""
-    # Pre-seed 5 history entries + a stale current diary.
-    pre_history = [{"run_id": f"old-{i}", "halt_reason": "manual_stop"} for i in range(5)]
-    stale = {
-        "run_id": "stale-current",
-        "halt_reason": "budget_exhausted",
-        "halt_at_iso": "2026-05-17T03:00:00Z",
-        "suggested_next_command": "harness phase set plan",
-        "suggested_next_command_requires_human": False,
-        "acknowledged_at": None,
-    }
-    _reseed(env, lambda s: s.update({
-        "last_halt": stale,
-        "last_halt_history": pre_history,
-    }))
+    """Halt diary removed — reopen succeeds regardless of legacy halt fields in state."""
     rc = _run(env, to="plan", reason="cap-5 check")
     assert rc.exit_code == 0
-    state = json.loads((env["scratch"] / "phase-state.json").read_text())
-    # 5 + 1 → tail-capped at 5; oldest dropped, stale appended last.
-    assert len(state["last_halt_history"]) == 5
-    assert state["last_halt_history"][-1]["run_id"] == "stale-current"
-    assert state["last_halt_history"][0]["run_id"] == "old-1"  # old-0 dropped

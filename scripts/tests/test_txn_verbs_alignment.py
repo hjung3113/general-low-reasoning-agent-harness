@@ -91,12 +91,7 @@ class TestTxnVerbsAlignment(unittest.TestCase):
         """Core txn verbs must always be in _TXN_VERBS (explicit drift guard)."""
         core = {
             "phase.approve",
-            "phase.autopilot.start",
-            "phase.autopilot.stop",
-            "phase.autopilot.halt",
-            "phase.autopilot.halt.budget",
-            "phase.budget.halt",
-            "halt_diary.clear",
+            "phase.reopen",
         }
         missing = core - _TXN_VERBS
         self.assertEqual(missing, set(),
@@ -107,8 +102,8 @@ class TestTxnVerbsAlignment(unittest.TestCase):
         self.assertIn("phase.reopen", _TXN_VERBS)
 
     def test_recover_pending_in_txn_verbs(self) -> None:
-        """phase.autopilot.start.recover_pending is a txn verb."""
-        self.assertIn("phase.autopilot.start.recover_pending", _TXN_VERBS)
+        """Autopilot removed — phase.approve is a txn verb (guard against regression)."""
+        self.assertIn("phase.approve", _TXN_VERBS)
 
     def test_txn_verbs_are_strings(self) -> None:
         """All elements of _TXN_VERBS must be strings (no typos yielding non-str)."""

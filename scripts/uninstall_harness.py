@@ -79,7 +79,15 @@ def parse_selection(value: str) -> set[str]:
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", type=Path, default=None)
-    parser.add_argument("--select", default="")
+    parser.add_argument(
+        "--select",
+        default="",
+        help=(
+            "Comma-separated uninstall scopes (numeric codes): "
+            "1=roo, 2=opencode, 3=runtime, 4=core, 5=docs. "
+            "Example: --select 1,3"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--interactive", action="store_true")
     parser.add_argument(
@@ -123,7 +131,14 @@ def run(argv: list[str] | None = None) -> int:
             remove_install_state=args.remove_install_state_only or args.remove_all,
         )
     if args.interactive:
-        args = prompt_interactive(args)
+        try:
+            args = prompt_interactive(args)
+        except EOFError:
+            parser.error(
+                "--interactive ran out of input. stdin is closed or empty; "
+                "either run from a TTY, pipe the answers, or drop --interactive "
+                "and pass --target / --select explicitly."
+            )
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     selected = parse_selection(args.select)
@@ -234,6 +249,16 @@ def _remove_path_tuples(
     import shutil
 
     target = target.resolve()
+    # Safety guard: refuse to silently no-op on a non-harness directory.
+    # Without this, `--remove-all` on an unrelated path prints "removed=0"
+    # and returns success, masking user error.
+    sentinel = target / harness.INSTALL_STATE
+    if not sentinel.exists() and not (target / ".scratch/phase-state.json").exists():
+        raise SystemExit(
+            f"Refusing to run path-tuple uninstall: {target} does not look like "
+            f"a harness install (no {harness.INSTALL_STATE} and no .scratch/phase-state.json). "
+            f"Re-check --target."
+        )
     selected: list[str] = []
     if remove_state:
         selected.extend(STATE_FILE_PATHS)

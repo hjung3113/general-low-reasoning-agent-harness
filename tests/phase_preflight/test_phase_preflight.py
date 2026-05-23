@@ -3,13 +3,15 @@
 Design refs:
   - §3.1 / §3.2 — shared preflight helpers used by `phase approve` and
                    `phase reopen` (and future §S07 verbs).
-  - §2.6         — state-trust preflight taxonomy.
   - §3.9         — every error MUST carry a Fix: line.
 
 These are smoke tests, not exhaustive coverage (the `phase_approve` and
 `phase_reopen` suites exercise the helpers end-to-end). The goal is to pin
 the public surface of the extracted module so regressions in the shared
 helpers surface here rather than leaking into verb-specific test failures.
+
+Note: `run_state_trust_preflight` and `StateTrustPreflightError` were removed
+in M4-3 (#10) per ADR-0002 (no attacker model) and ADR-0005 (plain JSONL).
 """
 
 from __future__ import annotations
@@ -50,8 +52,6 @@ def test_default_gitconfig_email_lookup_returns_string():
 
 
 def test_default_gitconfig_email_lookup_strips_whitespace():
-    # Can't guarantee a real git config is present; at minimum the return
-    # value must be a stripped string (no leading/trailing whitespace).
     result = phase_preflight.default_gitconfig_email_lookup()
     assert result == result.strip()
 
@@ -114,7 +114,6 @@ def test_approvers_emails_skips_entries_with_empty_email():
 @pytest.mark.parametrize("const_name", [
     "FIX_GITCONFIG",
     "FIX_APPROVER_MEMBERSHIP",
-    "FIX_STATE_TRUST",
 ])
 def test_fix_line_constant_present_and_non_empty(const_name):
     val = getattr(phase_preflight, const_name)
@@ -123,89 +122,7 @@ def test_fix_line_constant_present_and_non_empty(const_name):
 
 
 # ---------------------------------------------------------------------------
-# run_state_trust_preflight — taxonomy
-# ---------------------------------------------------------------------------
-
-
-def test_run_state_trust_preflight_ok_with_no_state_file(tmp_path: Path):
-    """Empty scratch dir → no state file → preflight returns None (no state
-    to verify yet; the caller handles the missing-state case separately).
-    This pins the 'no-state = OK for preflight' contract."""
-    from lib import phase_lock
-
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    audit_path = tmp_path / "audit.log"
-
-    lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
-    try:
-        result = phase_preflight.run_state_trust_preflight(
-            scratch=scratch,
-            audit_path=audit_path,
-            lock=lock,
-        )
-        assert result is None  # successful preflight → None
-    finally:
-        phase_lock.release_primary(lock)
-
-
-def test_run_state_trust_preflight_raises_on_tampered_state(tmp_path: Path):
-    """Tampered state (content diverges from audit tail) → StateTrustPreflightError."""
-    from lib import phase_lock, phase_txn
-
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness = tmp_path / ".harness"
-    harness.mkdir()
-    audit_path = harness / "audit.log"
-
-    # Seed a valid state so the audit tip hash is set.
-    seed_state = {"phase": "plan", "approved": False, "state_schema_version": 2}
-    lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
-    try:
-        req = phase_txn.TxnRequest(
-            action="phase.set",
-            before_state=None,
-            after_state=seed_state,
-            audit_entry_draft={"verb": "phase.set", "by": "seed", "args": {}},
-        )
-        phase_txn.commit_transaction(
-            scratch, lock=lock, request=req, audit_path=audit_path
-        )
-    finally:
-        phase_lock.release_primary(lock)
-
-    # Tamper: change a field in the state file directly.
-    state_path = scratch / "phase-state.json"
-    txt = state_path.read_text()
-    state_path.write_text(txt.replace('"plan"', '"execute"'))
-
-    lock2 = phase_lock.acquire_primary(scratch, timeout_s=2.0)
-    try:
-        with pytest.raises(phase_preflight.StateTrustPreflightError) as exc_info:
-            phase_preflight.run_state_trust_preflight(
-                scratch=scratch,
-                audit_path=audit_path,
-                lock=lock2,
-            )
-        err = exc_info.value
-        assert err.exit_code == 10
-        assert err.sub_reason == "state_audit_mismatch"
-    finally:
-        phase_lock.release_primary(lock2)
-
-
-# ---------------------------------------------------------------------------
-# StateTrustPreflightError is an Exception subclass
-# ---------------------------------------------------------------------------
-
-
-def test_state_trust_preflight_error_is_exception():
-    assert issubclass(phase_preflight.StateTrustPreflightError, Exception)
-
-
-# ---------------------------------------------------------------------------
-# __all__ pin — P2-3 public surface contract
+# __all__ pin — M4 post-strip public surface
 # ---------------------------------------------------------------------------
 
 
@@ -213,13 +130,10 @@ def test_all_exports_present():
     expected = {
         "FIX_GITCONFIG",
         "FIX_APPROVER_MEMBERSHIP",
-        "FIX_STATE_TRUST",
         "now_iso_z",
         "default_gitconfig_email_lookup",
         "load_install_record",
         "approvers_emails",
-        "StateTrustPreflightError",
-        "run_state_trust_preflight",
     }
     assert expected.issubset(set(phase_preflight.__all__)), (
         f"Missing from __all__: {expected - set(phase_preflight.__all__)}"

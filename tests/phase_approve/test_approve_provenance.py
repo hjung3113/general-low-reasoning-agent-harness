@@ -64,12 +64,7 @@ def env(tmp_path: Path) -> dict:
         json.dumps(install_record, indent=2, sort_keys=True) + "\n"
     )
 
-    # Seed phase-state via commit_transaction so the audit tail's
-    # after_sha256 matches on-disk canonical bytes (state_trust preflight
-    # will accept it).
-    # Note: conftest.seed_scratch is the no-audit variant (speed-bump tests).
-    # This path uses commit_transaction so the audit tail's after_sha256
-    # matches on-disk canonical bytes (state_trust preflight accepts it).
+    # Seed phase-state via commit_transaction so audit + state are consistent.
     seed_state = {
         "phase": "plan",
         "approved": False,
@@ -337,43 +332,8 @@ def test_state_mutation_sets_approved_fields(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 8. State-trust preflight + anchor preflight are invoked
 # ---------------------------------------------------------------------------
-
-
-def test_state_trust_preflight_invoked(env, monkeypatch):
-    """Spy on state_trust.preflight to ensure run_approve chains through
-    it before mutating."""
-    from lib import state_trust
-
-    calls = []
-    real = state_trust.preflight
-
-    def spy(*a, **kw):
-        calls.append(kw)
-        return real(*a, **kw)
-
-    monkeypatch.setattr(state_trust, "preflight", spy)
-    monkeypatch.setattr(phase_approve, "_state_trust", state_trust)
-    monkeypatch.setattr("builtins.input", lambda _prompt="": "y")
-    rc = _run(env)
-    assert rc.exit_code == 0
-    assert len(calls) > 0
-
-
-def test_tampered_state_rejected_via_state_trust(env):
-    """Hand-edit the state file — preflight should refuse with exit 10."""
-    state_path = env["scratch"] / "phase-state.json"
-    txt = state_path.read_text()
-    state_path.write_text(txt.replace('"approved": false', '"approved": true'))
-    # state_trust raises before Step 7 prompt; no input monkeypatch needed
-    rc = _run(env)
-    assert rc.exit_code == 10
-    assert rc.sub_reason == "state_audit_mismatch"
-
-
-# ---------------------------------------------------------------------------
-# 9. Lock holder during the mutation
+# 8. Lock holder during the mutation
 # ---------------------------------------------------------------------------
 
 

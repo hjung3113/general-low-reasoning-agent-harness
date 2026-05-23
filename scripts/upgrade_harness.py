@@ -174,17 +174,15 @@ def run(argv: list[str] | None = None) -> int:
     print("delegating: " + " ".join(command))
     env = os.environ.copy()
     env["HARNESS_DELEGATED_SOURCE_KIND"] = kind
-    if kind == "path" and "HARNESS_ALLOW_UNSIGNED_DEV" not in env:
-        env["HARNESS_ALLOW_UNSIGNED_DEV"] = "1"
-        env["HARNESS_ALLOW_UNSIGNED_DEV_SOURCE"] = "path_source"
-        env["HARNESS_BYPASS_TTY_CONFIRM"] = "1"
     if kind in {"release", "ref"}:
         env["HARNESS_DELEGATED_SOURCE_REPO"] = args.repo
     env["HARNESS_DELEGATED_SOURCE_REF"] = ref
     if version:
         env["HARNESS_DELEGATED_SOURCE_VERSION"] = version
     result = subprocess.run(command, cwd=source, env=env)
-    if args.dry_run:
+    # Only print the dry-run reassurance when the delegated check actually
+    # succeeded — otherwise the caller misreads a failed dry-run as a no-op.
+    if args.dry_run and result.returncode == 0:
         print("no mutation performed")
     return result.returncode
 

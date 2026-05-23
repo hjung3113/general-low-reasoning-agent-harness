@@ -23,20 +23,14 @@ EXIT_STALE_UNCERTAIN = 7
 EXIT_TIMESTAMP_OUT_OF_RANGE = 8
 EXIT_PLANNING_DRIFT = 12  # dashboard --check detected drift between planning docs and live gate
 # §12.6 line 1322: nonce HMAC consumers reject invalid/missing signatures with
-# exit 6 `nonce_signature_invalid`.  sub_reason distinguishes from
-# EXIT_WRONG_PHASE_FOR_VERB.  Budget-exhausted uses 9 operationally
-# (phase_txn.BudgetExhausted) — that keeps exit 9.
+# exit 6 `nonce_signature_invalid`. sub_reason distinguishes from
+# EXIT_WRONG_PHASE_FOR_VERB.
 EXIT_NONCE_SIGNATURE_INVALID = 6
 # §12.2: reparse-point refusal uses the same exit code as scope_violation (4)
-# per spec §12.2 line 1254.  FenceWindowsUnsupported stays at 11.
+# per spec §12.2 line 1254. FenceWindowsUnsupported stays at 11.
 EXIT_PATH_REPARSE_REFUSED = 4  # path_reparse_refused — reparse point on Windows path
 # §12.2: ADS / Win32 reserved-char components — containment error, not reparse
 EXIT_WINDOWS_CONTAINMENT_DEGRADED = 11  # windows_containment_degraded
-# §6 release-trust: SSH-signed tag verification failure.
-# Exit 15 is free per §3.4 table (not assigned to any meaning).
-# Previously used 17 which §3.4 assigns to "human action required" — collision
-# resolved by moving release-trust to 15.
-EXIT_RELEASE_TRUST_INVALID = 15  # tag_signature_invalid, trust_downgrade_refused, etc.
 # §3.4 "human action required" slot — also used by `harness next` autopilot
 # halt with sub_reason=requires_human. Phase.approve non-TTY halts use the
 # same numeric value with sub_reason=non_tty_approval_blocked.
@@ -57,6 +51,5 @@ __all__ = [
     "EXIT_NONCE_SIGNATURE_INVALID",
     "EXIT_PATH_REPARSE_REFUSED",
     "EXIT_WINDOWS_CONTAINMENT_DEGRADED",
-    "EXIT_RELEASE_TRUST_INVALID",
     "EXIT_HUMAN_CONFIRMATION_REQUIRED",
 ]

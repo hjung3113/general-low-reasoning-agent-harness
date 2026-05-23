@@ -70,8 +70,6 @@ from lib.version import (
     source_provenance,
 )
 # S12 — manifest v2 reconciler (§6)
-from lib.exitcodes import EXIT_RELEASE_TRUST_INVALID
-from lib.release_trust import UpgradeTrustError, file_sha256_at_commit, verify_release_tag
 from lib.manifest_reconciler import (
     ReconcileDecision,
     reconcile_install as _reconcile_install,
@@ -171,52 +169,6 @@ def install_state_migration_report(before: dict, after: dict) -> list[str]:
     return lines
 
 
-def _read_target_trust_origin(target: Path) -> str | None:
-    """Return trust_origin from the target's existing installed manifest, or None.
-
-    v0.9.13: chain-hash tamper-detection removed. Just read the file and return
-    its trust_origin, or None when absent / unparseable.
-    """
-    from lib.state import INSTALL_STATE as _IS
-    p = target / _IS
-    if not p.exists():
-        return None
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    return data.get("trust_origin")
-
-def _emit_trust_audit(
-    verb: str,
-    *,
-    target: Path | None,
-    **kwargs: object,
-) -> None:
-    """Emit a release.trust.* audit row to the target's audit log.
-
-    Uses the existing audit_append pattern.  If target is None or the audit
-    subsystem is unavailable, silently skips (audit is best-effort for trust
-    events — the error path already exits 17).
-    """
-    import datetime as _dt
-    try:
-        from lib.audit import audit_append as _audit_append
-    except ImportError:
-        return
-    if target is None:
-        return
-    audit_path = target / ".harness" / "audit.log"
-    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    entry: dict = {"verb": verb, "at": now, "args": dict(kwargs)}
-    try:
-        _audit_append(entry, audit_path=audit_path)
-    except Exception:
-        pass  # audit is best-effort; never let it abort the upgrade
-
-
 def _build_release_manifest_v2(
     *,
     root: Path,
@@ -224,90 +176,17 @@ def _build_release_manifest_v2(
     harness_version: str,
     target: Path | None = None,
 ) -> dict:
-    """Build a release_manifest dict in installed-manifest v2 format for the reconciler.
-
-    SSH-signed-tag trust root (§6, Group δ):
-    ─────────────────────────────────────────
-    For release builds (harness_version is a clean MAJOR.MINOR.PATCH string):
-      1. Trust-downgrade guard: if the *target*'s existing manifest already has
-         ``trust_origin: signed_tag`` and the new build would produce
-         ``trust_origin: dev_unsigned``, raise UpgradeTrustError immediately.
-      2. Attempt ``verify_release_tag(root, "v<version>")``.
-         On success: bind all reads to the verified commit SHA via
-         ``file_sha256_at_commit`` — the working tree is never consulted.
-         Emit ``trust_origin: "signed_tag"`` in the manifest.
-         Emit ``release.trust.verified`` audit row.
-      3. On UpgradeTrustError("tag_signature_invalid"):
-         - Check env var ``HARNESS_ALLOW_UNSIGNED_DEV=1``.
-         - If set AND target has no signed_tag trust yet:
-             - If a target manifest exists (any trust_origin): require y/N TTY
-               confirmation unless HARNESS_BYPASS_TTY_CONFIRM=1.
-             - Fall through to working-tree reads with ``trust_origin:
-               "dev_unsigned"`` + stderr WARNING.
-             - Emit ``release.trust.bypassed`` audit row.
-         - Otherwise: emit ``release.trust.refused`` + raise SystemExit(EXIT_RELEASE_TRUST_INVALID).
-
-    For dev builds (``0.0.0-dev+…`` pattern): skip verification, emit
-    ``trust_origin: "dev_unsigned"`` immediately (working-tree path).
-    """
-    tag: str | None = None
-    commit_sha: str | None = None
-    trust_origin: str
-    is_dev_version = (
-        harness_version.startswith("0.0.0-dev+")
-        or harness_version == "0.0.0-dev+unknown"
-        or harness_version.endswith(".dev0")
-    )
-
-    # v0.9.13: bypass envs / TTY confirm / trust-downgrade refusal all
-    # removed. Internal single-user tool: never refuse on trust grounds.
-    if is_dev_version:
-        trust_origin = "dev_unsigned"
-    else:
-        tag = "v" + harness_version
-        try:
-            commit_sha = verify_release_tag(root, tag)
-            trust_origin = "signed_tag"
-            _emit_trust_audit(
-                "release.trust.verified",
-                target=target,
-                release_tag=tag,
-                release_commit=commit_sha,
-                target_path=str(target) if target else None,
-            )
-        except UpgradeTrustError as _te:
-            sys.stderr.write(
-                f"advisory: tag {tag!r} not verified ({_te.sub_reason}); "
-                f"proceeding with trust_origin=dev_unsigned.\n"
-            )
-            trust_origin = "dev_unsigned"
-            commit_sha = None
-            _emit_trust_audit(
-                "release.trust.bypassed",
-                target=target,
-                reason=_te.sub_reason,
-                target_path=str(target) if target else None,
-            )
-
-    # ── Compute file hashes ─────────────────────────────────────────────────
+    """Build a release_manifest dict in installed-manifest v2 format for the reconciler."""
+    # ── Compute file hashes (working-tree path) ────────────────────────────
     files: dict[str, object] = {}
     for entry in entries:
         if entry.policy == "exclude":
             continue
-        if trust_origin == "signed_tag" and commit_sha is not None:
-            # Bind read to the verified commit SHA — working tree is NOT consulted.
-            try:
-                sha = file_sha256_at_commit(root, commit_sha, str(entry.path))
-            except UpgradeTrustError:
-                # File absent from signed tree — skip (conditional content).
-                continue
-        else:
-            # dev_unsigned path: fall back to working-tree read.
-            try:
-                src = source_path(root, entry)
-                sha = file_hash(src)
-            except (FileNotFoundError, SystemExit):
-                continue
+        try:
+            src = source_path(root, entry)
+            sha = file_hash(src)
+        except (FileNotFoundError, SystemExit):
+            continue
 
         files[str(entry.path)] = {
             "installed_sha256": sha,
@@ -319,9 +198,6 @@ def _build_release_manifest_v2(
     release_manifest: dict[str, object] = {
         "schema_version": 2,
         "harness_version": harness_version,
-        "trust_origin": trust_origin,
-        "release_tag": tag,
-        "release_commit": commit_sha,
         "files": files,
     }
     return release_manifest
@@ -390,10 +266,7 @@ def _stamp_installed_manifest_v2(
         print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
         print("====================================================================", file=_sys.stderr)
 
-    # v0.9.13: chain hash + rechain audit removed. Just persist trust fields.
-    for key in ("trust_origin", "release_tag", "release_commit"):
-        if key in release_manifest:
-            installed[key] = release_manifest[key]
+    # ADR-0002: origin-trust fields removed — dead code for internal tool.
 
 
 def upgrade(
@@ -658,24 +531,12 @@ def upgrade(
     # current_sha256, and installed_files_chain_hash onto the installed dict.
     # Backward compat: if prior manifest schema_version < 2, prior_manifest
     # is treated as None (no upgrade history) — reconcile_install handles this.
-    try:
-        release_manifest_v2 = _build_release_manifest_v2(
-            root=root,
-            entries=entries,
-            harness_version=harness_version,
-            target=target,
-        )
-    except UpgradeTrustError as _ute:
-        # B3-Fix-2: bare UpgradeTrustError (e.g. target_manifest_corrupted from
-        # _read_target_trust_origin) must become SystemExit, not an unhandled
-        # exception that produces a confusing traceback.
-        _emit_trust_audit(
-            "release.trust.refused",
-            target=target,
-            sub_reason=_ute.sub_reason,
-            detail=str(_ute),
-        )
-        raise SystemExit(_ute.exit_code) from _ute
+    release_manifest_v2 = _build_release_manifest_v2(
+        root=root,
+        entries=entries,
+        harness_version=harness_version,
+        target=target,
+    )
     prior_installed_path = target / INSTALL_STATE
     prior_manifest_v2 = None
     if prior_installed_path.exists():

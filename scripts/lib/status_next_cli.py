@@ -1,10 +1,10 @@
 """CLI handlers for `harness status` and `harness next` (design §3.9).
 
 Wired from ``scripts/harness.py`` argparse dispatch. Both verbs are
-read-only (no state mutation, no audit row written). The state-trust
-preflight uses option (a) from §3.9 line 554: brief lock acquire + release
-so the state-trust module can be invoked without requiring a lock-free code
-path in state_trust.preflight (its current signature requires a live lock).
+read-only (no state mutation, no audit row written).
+
+ADR-0002: no external attacker model; state-trust preflight removed in M4-3.
+State is read with plain JSON parse + basic schema error mapping.
 
 Spec: docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md
 §3.9, §1.1 line 624, §3.4 exit 17/18
@@ -133,78 +133,37 @@ def _read_state_with_preflight(
     audit_path: Path,
     cwd: Path,
 ) -> tuple[Optional[dict], int]:
-    """Read phase-state.json after running state-trust preflight.
+    """Read phase-state.json with plain JSON parse.
 
-    Implements option (a) from §3.9 line 554: acquire lock briefly,
-    run preflight, release lock, then return state dict.
+    ADR-0002: no attacker model; state-trust preflight removed in M4-3.
+    A malformed state file surfaces as a parse error with a clear Fix: line.
 
-    Returns (state_dict, exit_code). On preflight failure returns (None, exit_code).
+    Returns (state_dict, exit_code). On error returns (None, exit_code).
     """
-    from . import phase_lock as _phase_lock
-    from . import state_trust as _state_trust
-
     state_path = scratch / STATE_NAME
     if not state_path.exists():
         # Bootstrap case: no state file yet — return defaults.
         return ({"phase": "discuss", "execution_mode": "manual"}, 0)
 
-    # Brief lock acquire + preflight + release (option a, §3.9 line 554).
-    # audit_path=None ensures stale-lock recovery does not write an audit row;
-    # §3.9 line 578 mandates auditless status.
-    try:
-        lock = _phase_lock.acquire_primary(scratch, timeout_s=5.0, audit_path=None)
-    except _phase_lock.LockError as exc:
+    state_bytes = state_path.read_bytes()
+    if len(state_bytes) == 0:
         print(
-            f"error: harness status/next: cannot acquire state lock: {exc}\n"
-            f"Fix: run 'harness session unlock --force' if the lock is stale.",
+            "error: harness status/next: state file present but empty (crash artefact) (exit 14).\n"
+            "Fix: restore .scratch/phase-state.json via 'git checkout -- .scratch/phase-state.json' "
+            "before any state-mutating verb.",
             file=sys.stderr,
         )
-        return None, 3
+        return None, 14
 
     try:
-        try:
-            _state_trust.preflight(
-                scratch,
-                audit_path=audit_path,
-                lock=lock,
-            )
-        except _state_trust.StateAuditMismatchError as exc:
-            print(
-                f"error: harness status/next: state-trust mismatch: {exc}\n"
-                f"Fix: run 'harness verify --audit'",
-                file=sys.stderr,
-            )
-            return None, 10
-        except _state_trust.StateEmptyError as exc:
-            print(
-                f"error: harness status/next: state file empty (crash artefact): {exc}\n"
-                f"Fix: run 'harness recover' before any state-mutating verb.",
-                file=sys.stderr,
-            )
-            return None, 14
-        except _state_trust.StateTrustError as exc:
-            exit_code = getattr(exc, "exit_code", 10)
-            print(
-                f"error: harness status/next: state-trust preflight failed: {exc}\n"
-                f"Fix: run 'harness verify --audit'",
-                file=sys.stderr,
-            )
-            return None, exit_code
-
-        # Read state while lock is held
-        state_bytes = state_path.read_bytes()
-        try:
-            state = json.loads(state_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            print(
-                f"error: harness status/next: state file not parseable: {exc}\n"
-                f"Fix: run 'harness recover'",
-                file=sys.stderr,
-            )
-            return None, 5
-
-    finally:
-        _phase_lock.release_primary(lock)
+        state = json.loads(state_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        print(
+            f"error: harness status/next: state file not parseable: {exc}\n"
+            f"Fix: restore via 'git checkout -- .scratch/phase-state.json'",
+            file=sys.stderr,
+        )
+        return None, 5
 
     return state, 0
 
