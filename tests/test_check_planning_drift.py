@@ -80,7 +80,7 @@ def _make_check_fixture(root: Path) -> Path:
             "phase": "discuss",
             "approved": False,
             "current_checkpoint": "CP-01-01",
-            "checkpoint_path": ".planning/phases/01-init/01-CHECKPOINTS.md",
+            "checkpoint_path": ".planning/milestones/01-init/01-CHECKPOINTS.md",
             "state_path": ".planning/STATE.md",
             "automation_mode": "manual",
             "auto_selected": [],
@@ -98,7 +98,7 @@ def _make_check_fixture(root: Path) -> Path:
     # One valid phase folder referenced by phase-state.json.
     phase_dir = phases / "01-init"
     phase_dir.mkdir()
-    cp_file = ".planning/phases/01-init/01-CHECKPOINTS.md"
+    cp_file = ".planning/milestones/01-init/01-CHECKPOINTS.md"
     (phase_dir / "01-CHECKPOINTS.md").write_text(
         "## CP-01-01 - smoke\n- **Status**: in_progress\n", encoding="utf-8"
     )
@@ -140,7 +140,7 @@ def test_check_exits_nonzero_on_blocking_planning_drift(tmp_path):
     """
     root = _make_check_fixture(tmp_path)
     # Phase folder with no numeric prefix — triggers phase_folder_grammar_invalid.
-    (root / ".planning/phases/bad-phase-name").mkdir()
+    (root / ".planning/milestones/bad-phase-name").mkdir()
     with pytest.raises(SystemExit) as exc_info:
         harness.check(root=root)
     exit_code = exc_info.value.code
@@ -159,6 +159,6 @@ def test_check_exits_zero_on_non_blocking_planning_warning(tmp_path):
     """
     root = _make_check_fixture(tmp_path)
     # Valid grammar, not in ROADMAP — non-blocking warning only.
-    (root / ".planning/phases/03-extra-phase").mkdir()
+    (root / ".planning/milestones/03-extra-phase").mkdir()
     # Should not raise
     harness.check(root=root)

@@ -1,6 +1,6 @@
 """Tests for ADR-002 glob matcher semantics in scripts/lib/worktree.py.
 
-T0-2 slice; see .planning/phases/02b-hardening/plans/02b-03-T0-2-PLAN.md
+T0-2 slice; see .planning/milestones/02b-hardening/plans/02b-03-T0-2-PLAN.md
 TDD list items 1..17.
 """
 from __future__ import annotations

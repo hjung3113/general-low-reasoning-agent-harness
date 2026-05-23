@@ -1,8 +1,8 @@
-"""Tests for workflow-codebase-recon skill-pack (issue #29).
+"""Tests for workflow-m0-orient skill-pack (issue #29).
 
 Covers:
-- harness init --packs workflow-codebase-recon installs the SKILL.md
-- workflow-codebase-recon appears in KNOWN_PACKS
+- harness init --packs workflow-m0-orient installs the SKILL.md
+- workflow-m0-orient appears in KNOWN_PACKS
 - unknown-pack rejection works for common misspellings
 """
 from __future__ import annotations
@@ -29,12 +29,12 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 class TestWorkflowCodebaseReconPack:
     def test_known_packs_includes_workflow_codebase_recon(self) -> None:
-        """workflow-codebase-recon must be listed in KNOWN_PACKS."""
+        """workflow-m0-orient must be listed in KNOWN_PACKS."""
         from lib.manifest import KNOWN_PACKS
-        assert "workflow-codebase-recon" in KNOWN_PACKS
+        assert "workflow-m0-orient" in KNOWN_PACKS
 
     def test_init_with_pack_installs_skill_md(self) -> None:
-        """harness init --packs workflow-codebase-recon must install the SKILL.md."""
+        """harness init --packs workflow-m0-orient must install the SKILL.md."""
         import harness
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -44,13 +44,13 @@ class TestWorkflowCodebaseReconPack:
                     "init",
                     "--target", str(target),
                     "--adapters", "none",
-                    "--packs", "workflow-codebase-recon",
+                    "--packs", "workflow-m0-orient",
                 ]
             )
-            skill_path = target / ".agents/skills/workflow-codebase-recon/SKILL.md"
+            skill_path = target / ".agents/skills/workflow-m0-orient/SKILL.md"
             assert skill_path.exists(), "SKILL.md must be installed by pack"
             content = skill_path.read_text(encoding="utf-8")
-            assert "workflow-codebase-recon" in content
+            assert "workflow-m0-orient" in content
             assert ".planning/codebase-recon.md" in content
 
     def test_init_rejects_misspelled_pack_names(self) -> None:
@@ -59,7 +59,7 @@ class TestWorkflowCodebaseReconPack:
 
         misspellings = [
             "workflow-codbase-recon",        # missing 'e'
-            "workflow-codebase-recon-typo",  # extra suffix
+            "workflow-m0-orient-typo",  # extra suffix
             "codebase-recon",                # missing workflow- prefix
         ]
         with tempfile.TemporaryDirectory() as tmpdir:

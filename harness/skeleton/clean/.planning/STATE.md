@@ -15,12 +15,12 @@ progress:
 <!-- HARNESS:BEGIN managed:state-current v1 -->
 ## Current Position
 
-- **Phase**: 0 - Planning Hydration
+- **Milestone**: 0 - Orientation
 
 ## Active Checkpoint
 
 - **Checkpoint**: CP-00-01
-- **Checkpoint file**: `.planning/phases/00-planning-hydration/00-CHECKPOINTS.md`
+- **Checkpoint file**: `.planning/milestones/00-orientation/00-CHECKPOINTS.md`
 
 <!--
 ### Paused Phases

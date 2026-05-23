@@ -39,7 +39,7 @@ def test_check_exit_ok_on_extra_undeclared_phase(tmp_path):
     # Option-B reconciliation: phase_folder_not_in_roadmap is severity "warning" (non-blocking),
     # so --check exits 0 with status "ok" but includes the warning in the payload.
     root = make_minimal_planning_repo(tmp_path)
-    (root / ".planning/phases/02c-extra").mkdir()
+    (root / ".planning/milestones/02c-extra").mkdir()
     result = _run(root)
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)

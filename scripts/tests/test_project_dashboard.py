@@ -238,7 +238,7 @@ progress:
 
 
 def write_fixture_repository(root: Path) -> None:
-    (root / ".planning/phases/01-first").mkdir(parents=True)
+    (root / ".planning/milestones/01-first").mkdir(parents=True)
     (root / ".planning/codebase").mkdir(parents=True)
     (root / ".scratch/example/issues").mkdir(parents=True)
     (root / "docs/agents").mkdir(parents=True)
@@ -262,7 +262,7 @@ progress:
 ## Active Checkpoint
 
 - **Checkpoint**: CP-01 - Example checkpoint.
-- **Checkpoint file**: `.planning/phases/01-first/01-CHECKPOINTS.md`.
+- **Checkpoint file**: `.planning/milestones/01-first/01-CHECKPOINTS.md`.
 
 ### Blockers
 
@@ -284,11 +284,11 @@ Open a PR.
 """,
         encoding="utf-8",
     )
-    (root / ".planning/phases/01-first/01-CHECKPOINTS.md").write_text(
+    (root / ".planning/milestones/01-first/01-CHECKPOINTS.md").write_text(
         "# Checkpoints\n\n- [x] CP-01 - Example checkpoint.\n",
         encoding="utf-8",
     )
-    (root / ".planning/phases/01-first/01-VERIFICATION.md").write_text(
+    (root / ".planning/milestones/01-first/01-VERIFICATION.md").write_text(
         "# Verification\n\n```bash\npython3 scripts/harness.py check\n```\n",
         encoding="utf-8",
     )
@@ -301,7 +301,7 @@ Open a PR.
                 "approved_by": "human-chain-request",
                 "approved_at": "2026-05-14T00:00:00Z",
                 "state_path": ".planning/STATE.md",
-                "checkpoint_path": ".planning/phases/01-first/01-CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/01-first/01-CHECKPOINTS.md",
                 "current_checkpoint": "CP-01",
                 "next_action": "Open a PR.",
                 "allowed_paths": [".planning/", ".scratch/"],
@@ -373,7 +373,7 @@ def test_dashboard_emits_actionable_warning_when_phase_folder_missing_from_roadm
     from tests._helpers.planning_repo import make_minimal_planning_repo
     root = make_minimal_planning_repo(tmp_path)
     # Add an extra phase folder NOT declared in ROADMAP — simulating 02b-hardening on the live repo today:
-    (root / ".planning/phases/02c-followup").mkdir()
+    (root / ".planning/milestones/02c-followup").mkdir()
     from lib.project_dashboard.core import load_dashboard_data
     data = load_dashboard_data(root)
     matched = [w for w in data.warnings if w.code == "phase_folder_not_in_roadmap"]
@@ -384,7 +384,7 @@ def test_dashboard_emits_actionable_warning_when_phase_folder_missing_from_roadm
 
 
 def test_load_phase_documents_includes_nested_plan_files(tmp_path):
-    phase = tmp_path / ".planning/phases/02b-hardening"
+    phase = tmp_path / ".planning/milestones/02b-hardening"
     (phase / "plans").mkdir(parents=True)
     (phase / "README.md").write_text("# README\n")
     (phase / "plans" / "02b-01-T0-A-PLAN.md").write_text("# T0-A\n")
@@ -400,14 +400,14 @@ def test_load_phase_documents_includes_nested_plan_files(tmp_path):
 
 
 def test_load_phase_documents_top_level_wins_on_name_collision(tmp_path):
-    phase = tmp_path / ".planning/phases/02b-hardening"
+    phase = tmp_path / ".planning/milestones/02b-hardening"
     (phase / "plans").mkdir(parents=True)
     (phase / "duplicate.md").write_text("# top\n")
     (phase / "plans" / "duplicate.md").write_text("# nested\n")
     from lib.project_dashboard.core import load_phase_documents
     docs = load_phase_documents(tmp_path)
     files = docs[0].files
-    assert files["duplicate.md"].endswith(".planning/phases/02b-hardening/duplicate.md")
+    assert files["duplicate.md"].endswith(".planning/milestones/02b-hardening/duplicate.md")
 
 
 def test_malformed_phase_state_emits_single_structured_warning(tmp_path):

@@ -11,7 +11,7 @@ status: partial
 
 # Conventions
 
-> Hydrated by `workflow-codebase-recon` skill-pack (or human). Judgment-heavy — do not auto-generate.
+> Hydrated by `workflow-m0-orient` skill-pack (or human). Judgment-heavy — do not auto-generate.
 
 ## [codebase.conventions.formatting] Formatting
 <!-- Prettier/black/gofmt config highlights. Tabs vs spaces. Print width. -->

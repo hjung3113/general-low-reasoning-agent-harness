@@ -1,7 +1,7 @@
 """Nanosecond-precision ISO-8601 UTC timestamp helpers.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-04-T0-3-PLAN.md
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1 (Timestamps).
+Owning plan: .planning/milestones/02b-hardening/plans/02b-04-T0-3-PLAN.md
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1 (Timestamps).
 
 Extracted out of `session.py` + `phase_cli.py` per T0-3 amendment #5 so
 both callers route through a single implementation. Format:

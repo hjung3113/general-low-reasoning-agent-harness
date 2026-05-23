@@ -138,7 +138,7 @@ def render_html(data: DashboardData) -> str:
       <section class="panel">
         <div class="section-heading">
           <h2>Phase Details</h2>
-          <p>Available phase documents and headings under .planning/phases/</p>
+          <p>Available phase documents and headings under .planning/milestones/</p>
         </div>
         {render_phase_documents(data.phase_documents)}
       </section>

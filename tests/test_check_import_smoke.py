@@ -46,7 +46,7 @@ _PHASE_STATE = {
     "phase": "discuss",
     "approved": False,
     "current_checkpoint": "CP-01-01",
-    "checkpoint_path": ".planning/phases/01-init/01-CHECKPOINTS.md",
+    "checkpoint_path": ".planning/milestones/01-init/01-CHECKPOINTS.md",
     "state_path": ".planning/STATE.md",
     "automation_mode": "manual",
     "auto_selected": [],

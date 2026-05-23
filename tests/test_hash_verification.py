@@ -142,7 +142,7 @@ def _make_target(tmp_path: Path) -> Path:
             "phase": "discuss",
             "approved": False,
             "current_checkpoint": "CP-01-01",
-            "checkpoint_path": ".planning/phases/01-init/01-CHECKPOINTS.md",
+            "checkpoint_path": ".planning/milestones/01-init/01-CHECKPOINTS.md",
             "state_path": ".planning/STATE.md",
             "automation_mode": "manual",
             "auto_selected": [],
@@ -158,7 +158,7 @@ def _make_target(tmp_path: Path) -> Path:
     (planning / "STATE.md").write_text("# State\n", encoding="utf-8")
     (planning / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
 
-    # .planning/phases/01-init/
+    # .planning/milestones/01-init/
     (planning / "phases" / "01-init").mkdir(parents=True)
     (planning / "phases" / "01-init" / "01-CHECKPOINTS.md").write_text(
         "# Checkpoints\n", encoding="utf-8"

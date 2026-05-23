@@ -1,7 +1,7 @@
 """ADR-001 G2-B phase transition state machine.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-02-T0-1-PLAN.md Block B.
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1 (module name
+Owning plan: .planning/milestones/02b-hardening/plans/02b-02-T0-1-PLAN.md Block B.
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1 (module name
 SINGULAR: `transition.py`).
 
 This module exposes:

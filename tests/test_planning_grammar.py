@@ -30,19 +30,19 @@ from scripts.lib.planning_grammar import (
 
 
 def test_canonical_phase_id_plain_numeric():
-    assert canonical_phase_id(".planning/phases/02-foo") == "02"
+    assert canonical_phase_id(".planning/milestones/02-foo") == "02"
 
 
 def test_canonical_phase_id_letter_suffix():
-    assert canonical_phase_id(".planning/phases/02b-hardening") == "02b"
+    assert canonical_phase_id(".planning/milestones/02b-hardening") == "02b"
 
 
 def test_canonical_phase_id_two_digit():
-    assert canonical_phase_id(".planning/phases/10-release") == "10"
+    assert canonical_phase_id(".planning/milestones/10-release") == "10"
 
 
 def test_canonical_phase_id_non_phase_folder_returns_empty():
-    assert canonical_phase_id(".planning/phases/scratch-junk") == ""
+    assert canonical_phase_id(".planning/milestones/scratch-junk") == ""
 
 
 def test_canonical_phase_id_no_slash_just_folder_name():

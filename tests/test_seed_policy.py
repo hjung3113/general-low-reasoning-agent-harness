@@ -51,7 +51,7 @@ class TestSeedPolicyInit:
     """Seed files should be created on init if pack is selected."""
 
     def test_codebase_recon_created_after_init_with_pack(self, tmp_path: Path) -> None:
-        """Test that .planning/codebase-recon.md is created when workflow-codebase-recon pack is selected."""
+        """Test that .planning/codebase-recon.md is created when workflow-m0-orient pack is selected."""
         # Step 1: initialise a fresh git repo in tmp_path
         subprocess.run(
             ["git", "init", "-q"],
@@ -66,15 +66,15 @@ class TestSeedPolicyInit:
                  "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t"},
         )
 
-        # Step 2: init with workflow-codebase-recon pack
+        # Step 2: init with workflow-m0-orient pack
         rc_init, stdout_init, stderr_init = _run(
             "init",
             "--target", str(tmp_path),
             "--adapters", "none",
-            "--packs", "workflow-codebase-recon",
+            "--packs", "workflow-m0-orient",
         )
         assert rc_init == 0, (
-            f"init with workflow-codebase-recon pack must exit 0.\n"
+            f"init with workflow-m0-orient pack must exit 0.\n"
             f"stdout={stdout_init}\nstderr={stderr_init}"
         )
 
@@ -82,7 +82,7 @@ class TestSeedPolicyInit:
         recon_file = tmp_path / ".planning" / "codebase-recon.md"
         assert recon_file.exists(), (
             f"Expected .planning/codebase-recon.md to exist after init with "
-            f"workflow-codebase-recon pack"
+            f"workflow-m0-orient pack"
         )
 
         content = recon_file.read_text(encoding="utf-8")
@@ -129,12 +129,12 @@ class TestSeedPolicyUpgrade:
                  "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t"},
         )
 
-        # Step 2: init with workflow-codebase-recon pack
+        # Step 2: init with workflow-m0-orient pack
         rc_init, stdout_init, stderr_init = _run(
             "init",
             "--target", str(tmp_path),
             "--adapters", "none",
-            "--packs", "workflow-codebase-recon",
+            "--packs", "workflow-m0-orient",
         )
         assert rc_init == 0, (
             f"init must exit 0.\nstdout={stdout_init}\nstderr={stderr_init}"
@@ -183,7 +183,7 @@ class TestSeedPolicyNoPack:
     """Seed files should NOT be created if the pack is not selected."""
 
     def test_codebase_recon_not_created_without_pack(self, tmp_path: Path) -> None:
-        """Test that .planning/codebase-recon.md is NOT created without workflow-codebase-recon pack."""
+        """Test that .planning/codebase-recon.md is NOT created without workflow-m0-orient pack."""
         # Step 1: initialise a fresh git repo
         subprocess.run(
             ["git", "init", "-q"],
@@ -198,7 +198,7 @@ class TestSeedPolicyNoPack:
                  "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t"},
         )
 
-        # Step 2: init WITHOUT workflow-codebase-recon pack
+        # Step 2: init WITHOUT workflow-m0-orient pack
         rc_init, stdout_init, stderr_init = _run(
             "init",
             "--target", str(tmp_path),

@@ -8,8 +8,8 @@ Use `.scratch/phase-state.schema.json` for external phase state. Durable phase m
 - Use only the normal user workflow by default: `harness`, `harness next`, `harness run`, and `harness check`.
 - Do not run low-level phase, approval, anchor, state repair, or autopilot commands from Roo rules unless the user explicitly asks for advanced/debug/CI handling.
 - If the harness prints a `[y/N]` prompt, do not answer it yourself. Stop and ask the user to confirm from their terminal.
-- Treat `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, and the active `.planning/phases/*/*-CHECKPOINTS.md` as the canonical restart source of truth behind the status projection; `.scratch/phase-state.json` is only the live gate pointer.
-- During existing-repository adoption or `project init`, treat missing, placeholder-only, or stale `.planning/codebase/**` and active `.planning/phases/**` files as an incomplete gate that must return to `plan` for hydration.
+- Treat `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, and the active `.planning/milestones/*/*-CHECKPOINTS.md` as the canonical restart source of truth behind the status projection; `.scratch/phase-state.json` is only the live gate pointer.
+- During existing-repository adoption or `project init`, treat missing, placeholder-only, or stale `.planning/codebase/**` and active `.planning/milestones/**` files as an incomplete gate that must return to `plan` for hydration.
 - Treat `discuss` as read-only discovery.
 - Treat `plan` as documentation, ADR, PRD, checklist, issue-plan, or planning-memory hydration work only.
 - Treat `execute` as implementation only after `harness check` reports `projected_execute_gate_valid=true`, no blocking warnings, fresh canonical-file verification, approval provenance, non-empty acceptance criteria, durable pointers, allowed paths, and verification.
@@ -18,7 +18,7 @@ Use `.scratch/phase-state.schema.json` for external phase state. Durable phase m
 - Honor `--auto` by accepting recommended non-blocking defaults only when they are reversible, low risk, inside the current allowed work, and recorded in `auto_selected` or the active phase context.
 - Honor `--chain` by running recommended `discuss -> plan -> execute` only for one concrete phase and one approved plan. Stop before execute when verification, allowed paths, durable planning pointers, or the first usable slice are missing.
 - `/feature`, `/bugfix`, `/etl`, `/db`, and `/ops` must check this gate before implementation.
-- `/adr` and `project init` must check and maintain `.planning/codebase/**` and `.planning/phases/**` when the decision or initialization affects durable project context.
+- `/adr` and `project init` must check and maintain `.planning/codebase/**` and `.planning/milestones/**` when the decision or initialization affects durable project context.
 - Every execute response must explicitly cite `phase=execute` and the approved `plan_id`.
 - If requested work exceeds the approved plan, stop and return to `plan`.
 
@@ -29,7 +29,7 @@ For an existing repository, the planning context is complete only when:
 - `.planning/STATE.md` names the current phase, checkpoint, next action, and relevant files of record.
 - `.planning/ROADMAP.md` reflects the current project roadmap, not a generic template or unrelated previous project.
 - `.planning/codebase/` captures the current repository's architecture, stack, structure, conventions, testing approach, integrations, and concerns.
-- `.planning/phases/` has an active phase folder with context, plan, checkpoints, review, verification, and summary files relevant to the current project.
+- `.planning/milestones/` has an active phase folder with context, plan, checkpoints, review, verification, and summary files relevant to the current project.
 - `.scratch/phase-state.json` points to current planning files and does not reference stale or unrelated phase artifacts.
 
 If any item is missing or stale, do not proceed to implementation. Hydrate or reconcile planning memory in `plan` first.

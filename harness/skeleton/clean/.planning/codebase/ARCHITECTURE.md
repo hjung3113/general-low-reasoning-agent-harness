@@ -11,7 +11,7 @@ status: partial
 
 # Architecture
 
-> Hydrated by `workflow-codebase-recon` skill-pack (or human). Optional — skip for tiny single-package repos. Bad auto-generated architecture is worse than absent architecture.
+> Hydrated by `workflow-m0-orient` skill-pack (or human). Optional — skip for tiny single-package repos. Bad auto-generated architecture is worse than absent architecture.
 
 ## [codebase.architecture.overview] Overview
 <!-- 1-paragraph system summary. ASCII diagram if helpful. -->

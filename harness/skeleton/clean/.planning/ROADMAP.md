@@ -3,7 +3,7 @@
 ## Phases
 
 <!-- HARNESS:BEGIN managed:roadmap-phases v1 -->
-- [ ] **Phase 0: Planning Hydration**
+- [ ] **Milestone 0: Orientation**
 <!-- HARNESS:END managed:roadmap-phases -->
 
 ## Notes

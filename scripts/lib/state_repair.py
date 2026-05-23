@@ -29,9 +29,9 @@ from lib.roadmap_state import (
     parse_state_snapshot,
 )
 
-# Regex that matches a phase checkbox line anywhere in plain text.
+# Regex that matches a milestone (or legacy "phase") checkbox line anywhere in plain text.
 _PHASE_LINE_RE = re.compile(
-    r"^-\s+\[[ xX]\]\s+\*\*Phase\s+\d+:\s*[^*]+\*\*",
+    r"^-\s+\[[ xX]\]\s+\*\*(?:Phase|Milestone)\s+\d+:\s*[^*]+\*\*",
     re.MULTILINE,
 )
 
@@ -50,7 +50,7 @@ class RepairRefusedError(Exception):
     (EXIT_UNPARSEABLE_JSON) per CONTRACT-PIN §4 and §5.1.
 
     Owning slice: T0-5.
-    Plan: .planning/phases/02b-hardening/plans/02b-06-T0-5-PLAN.md
+    Plan: .planning/milestones/02b-hardening/plans/02b-06-T0-5-PLAN.md
     """
 
 
@@ -69,7 +69,7 @@ def canonical_roadmap_phases_payload(phases: list[RoadmapPhase]) -> str:
     lines = []
     for phase in phases:
         mark = "x" if phase.completed else " "
-        lines.append(f"- [{mark}] **Phase {phase.number}: {phase.title}**\n")
+        lines.append(f"- [{mark}] **Milestone {phase.number}: {phase.title}**\n")
     return "".join(lines)
 
 
@@ -108,7 +108,7 @@ def canonical_state_current_payload(
     lines = ["## Current Position\n\n"]
     if phase is not None:
         title_suffix = f" - {phase_title}" if phase_title else ""
-        lines.append(f"- **Phase**: {phase}{title_suffix}\n")
+        lines.append(f"- **Milestone**: {phase}{title_suffix}\n")
     lines.append("\n## Active Checkpoint\n\n")
     if checkpoint:
         lines.append(f"- **Checkpoint**: {checkpoint}\n")
@@ -174,7 +174,7 @@ def _phases_inside_block(text: str, slug: str) -> list[RoadmapPhase] | None:
         return None
     payload = blocks[slug].payload
     pattern = re.compile(
-        r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*Phase\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*",
+        r"^-\s+\[(?P<mark>[ xX])\]\s+\*\*(?:Phase|Milestone)\s+(?P<number>\d+):\s*(?P<title>[^*]+)\*\*",
         re.MULTILINE,
     )
     phases: list[RoadmapPhase] = []

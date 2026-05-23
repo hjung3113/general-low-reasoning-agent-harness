@@ -79,7 +79,7 @@ def manifest_sha256(root: Path) -> str:
 def write_json(path: Path, data: object) -> None:
     # Routed through lib.atomic_io.atomic_write_text (T0-A) so a crash
     # between open() and close() cannot corrupt managed JSON state.
-    # See .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md task 13.
+    # See .planning/milestones/02b-hardening/plans/02b-01-T0-A-PLAN.md task 13.
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(data, indent=2, sort_keys=True) + "\n")
 

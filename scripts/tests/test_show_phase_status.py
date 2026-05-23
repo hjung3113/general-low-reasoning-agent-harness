@@ -32,9 +32,9 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
             self.assertEqual("CP-02-01", payload["active_checkpoint_id"])
             self.assertEqual("Execute ready", payload["active_checkpoint_title"])
             self.assertEqual("Ready for execute", payload["active_checkpoint_status"])
-            self.assertEqual(".planning/phases/02-status-projection", payload["active_phase_folder"])
-            self.assertEqual(".planning/phases/02-status-projection/02-CHECKPOINTS.md", payload["checkpoint_path"])
-            self.assertEqual(".planning/phases/02-status-projection/02-01-PLAN.md", payload["plan_path"])
+            self.assertEqual(".planning/milestones/02-status-projection", payload["active_phase_folder"])
+            self.assertEqual(".planning/milestones/02-status-projection/02-CHECKPOINTS.md", payload["checkpoint_path"])
+            self.assertEqual(".planning/milestones/02-status-projection/02-01-PLAN.md", payload["plan_path"])
             self.assertTrue(payload["projected_execute_gate_valid"])
             self.assertEqual([], payload["warnings"])
             self.assertIn(".planning/STATE.md", payload["required_reads"])
@@ -72,7 +72,7 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             write_fixture_repository(root)
-            historical = root / ".planning/phases/01-old/01-VERIFICATION.md"
+            historical = root / ".planning/milestones/01-old/01-VERIFICATION.md"
             historical.parent.mkdir(parents=True)
             historical.write_text("# Old verification\n", encoding="utf-8")
 
@@ -80,8 +80,8 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
 
             payload = projection_to_dict(load_projection(root))
 
-            self.assertIn(".planning/phases/02-status-projection/02-VERIFICATION.md", payload["required_reads"])
-            self.assertNotIn(".planning/phases/01-old/01-VERIFICATION.md", payload["required_reads"])
+            self.assertIn(".planning/milestones/02-status-projection/02-VERIFICATION.md", payload["required_reads"])
+            self.assertNotIn(".planning/milestones/01-old/01-VERIFICATION.md", payload["required_reads"])
 
     def test_phase_done_stale_approval_is_not_execute_approval(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -139,7 +139,7 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             write_fixture_repository(root)
-            (root / ".planning/phases/02-status-projection/02-CHECKPOINTS.md").unlink()
+            (root / ".planning/milestones/02-status-projection/02-CHECKPOINTS.md").unlink()
 
             from scripts.lib.planning_status import load_projection, projection_to_dict
 
@@ -147,15 +147,15 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
 
             warning = only_warning(payload, "missing_active_file")
             self.assertEqual("blocking", warning["severity"])
-            self.assertIn(".planning/phases/02-status-projection/02-CHECKPOINTS.md", warning["paths"])
-            self.assertIn(".planning/phases/02-status-projection/02-CHECKPOINTS.md", payload["required_reads"])
+            self.assertIn(".planning/milestones/02-status-projection/02-CHECKPOINTS.md", warning["paths"])
+            self.assertIn(".planning/milestones/02-status-projection/02-CHECKPOINTS.md", payload["required_reads"])
             self.assertFalse(payload["projected_execute_gate_valid"])
 
     def test_discuss_phase_does_not_require_future_verification_doc(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             write_fixture_repository(root, phase="discuss", approved=False)
-            (root / ".planning/phases/02-status-projection/02-VERIFICATION.md").unlink()
+            (root / ".planning/milestones/02-status-projection/02-VERIFICATION.md").unlink()
 
             from scripts.lib.planning_status import load_projection, projection_to_dict
 
@@ -175,14 +175,14 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
 
             warning = only_warning(payload, "plan_id_drift")
             self.assertEqual("blocking", warning["severity"])
-            self.assertIn(".planning/phases/02-status-projection/02-01-PLAN.md", warning["paths"])
+            self.assertIn(".planning/milestones/02-status-projection/02-01-PLAN.md", warning["paths"])
             self.assertFalse(payload["projected_execute_gate_valid"])
 
     def test_plan_specific_summary_path_is_preferred_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             write_fixture_repository(root)
-            (root / ".planning/phases/02-status-projection/02-01-SUMMARY.md").write_text(
+            (root / ".planning/milestones/02-status-projection/02-01-SUMMARY.md").write_text(
                 "# Plan-specific summary\n",
                 encoding="utf-8",
             )
@@ -191,8 +191,8 @@ class ShowPhaseStatusProjectionTests(unittest.TestCase):
 
             payload = projection_to_dict(load_projection(root))
 
-            self.assertEqual(".planning/phases/02-status-projection/02-01-SUMMARY.md", payload["summary_path"])
-            self.assertIn(".planning/phases/02-status-projection/02-01-SUMMARY.md", payload["required_reads"])
+            self.assertEqual(".planning/milestones/02-status-projection/02-01-SUMMARY.md", payload["summary_path"])
+            self.assertIn(".planning/milestones/02-status-projection/02-01-SUMMARY.md", payload["required_reads"])
 
 
 class ShowPhaseStatusCliTests(unittest.TestCase):
@@ -262,7 +262,7 @@ def write_fixture_repository(
     checkpoint_status: str = "Ready for execute",
     roadmap_extra_phase: bool = False,
 ) -> None:
-    phase_dir = root / ".planning/phases/02-status-projection"
+    phase_dir = root / ".planning/milestones/02-status-projection"
     phase_dir.mkdir(parents=True)
     (root / ".planning/codebase").mkdir(parents=True)
     (root / ".scratch").mkdir()
@@ -286,7 +286,7 @@ progress:
 ## Active Checkpoint
 
 - **Checkpoint**: CP-02-01 - Execute ready.
-- **Checkpoint file**: `.planning/phases/02-status-projection/02-CHECKPOINTS.md`.
+- **Checkpoint file**: `.planning/milestones/02-status-projection/02-CHECKPOINTS.md`.
 """,
         encoding="utf-8",
     )
@@ -332,8 +332,8 @@ plan_id: {plan_id}
                 "plan_id": phase_state_plan_id,
                 "automation_mode": "manual",
                 "state_path": ".planning/STATE.md",
-                "plan_path": ".planning/phases/02-status-projection/02-01-PLAN.md",
-                "checkpoint_path": ".planning/phases/02-status-projection/02-CHECKPOINTS.md",
+                "plan_path": ".planning/milestones/02-status-projection/02-01-PLAN.md",
+                "checkpoint_path": ".planning/milestones/02-status-projection/02-CHECKPOINTS.md",
                 "current_checkpoint": phase_state_checkpoint,
                 "allowed_paths": ["scripts/"],
                 "blocked_paths": ["src/"],

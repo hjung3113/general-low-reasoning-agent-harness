@@ -134,7 +134,7 @@ Next step:
 Allowed:
 
 - Write or update docs, PRDs, ADRs, checklists, or local issue-plan files.
-- Hydrate `.planning/codebase/**` and active `.planning/phases/**` documents from the real repository during `project init` or existing-repository adoption.
+- Hydrate `.planning/codebase/**` and active `.planning/milestones/**` documents from the real repository during `project init` or existing-repository adoption.
 - Define acceptance criteria.
 - Define test strategy and verification commands.
 - Define exact implementation scope and file ownership.
@@ -272,8 +272,8 @@ A valid `phase-state.json` for `phase=done` after the ADR-003a CLI lands. Field-
   "auto_selected": [],
   "summary": "Hardening slice 02b complete: ADRs locked, atomic primitive landed, smoke green.",
   "state_path": ".planning/STATE.md",
-  "plan_path": ".planning/phases/02-hardening/02b-PLAN.md",
-  "checkpoint_path": ".planning/phases/02-hardening/02b-CHECKPOINTS.md",
+  "plan_path": ".planning/milestones/02-hardening/02b-PLAN.md",
+  "checkpoint_path": ".planning/milestones/02-hardening/02b-CHECKPOINTS.md",
   "current_checkpoint": "CP-02b-09",
   "next_action": "Start discuss for 02c-hardening.",
   "allowed_paths": ["scripts/", "docs/adr/", ".planning/"],

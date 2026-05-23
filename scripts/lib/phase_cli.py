@@ -1,7 +1,7 @@
 """Phase lifecycle + session operational CLI verbs (ADR-003a Artifact 1).
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-04-T0-3-PLAN.md
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1, §4.
+Owning plan: .planning/milestones/02b-hardening/plans/02b-04-T0-3-PLAN.md
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1, §4.
 
 Three verb handlers delegated from ``scripts/harness.py``:
 
@@ -734,7 +734,7 @@ def cmd_session_unlock(args) -> int:  # type: ignore[no-untyped-def]
 
 
 def cmd_phase_next_pending(args) -> int:  # type: ignore[no-untyped-def]
-    """`harness phase next-pending` — pure read of `.planning/phases/`.
+    """`harness phase next-pending` — pure read of `.planning/milestones/`.
 
     Prints next non-done phase slug, or `all done` sentinel. No state mutation.
     """
