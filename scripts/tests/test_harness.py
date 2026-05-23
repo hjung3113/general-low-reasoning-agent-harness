@@ -505,10 +505,10 @@ class HarnessToolTests(unittest.TestCase):
 
     def test_install_harness_pack_selection_uses_shown_numbers_only(self) -> None:
         self.assertEqual(
-            ["workflow-security-review", "tech-mssql"],
-            install_harness.parse_pack_selection("1,tech-mssql", ["workflow-security-review", "tech-mssql"]),
+            ["workflow-code-review", "tech-mssql"],
+            install_harness.parse_pack_selection("1,tech-mssql", ["workflow-code-review", "tech-mssql"]),
         )
-        self.assertEqual([], install_harness.parse_pack_selection("none", ["workflow-security-review"]))
+        self.assertEqual([], install_harness.parse_pack_selection("none", ["workflow-code-review"]))
         self.assertEqual("both", install_harness.normalize_adapter_choice("roo,opencode"))
 
     def test_install_harness_interactive_requires_existing_absolute_target(self) -> None:
@@ -548,7 +548,7 @@ class HarnessToolTests(unittest.TestCase):
                     "--adapters",
                     "roo,opencode",
                     "--packs",
-                    "workflow-security-review",
+                    "workflow-code-review",
                 ],
                 input=f"{target}\n\n4\n\n\nno\n",
                 cwd=harness.repo_root(),
@@ -565,8 +565,8 @@ class HarnessToolTests(unittest.TestCase):
                     "tech-react",
                     "tech-tailwind",
                     "tech-typescript",
+                    "workflow-code-review",
                     "workflow-core",
-                    "workflow-security-review",
                     "workflow-web-development",
                 ],
                 installed["packs"],
@@ -1138,8 +1138,6 @@ progress:
                     "workflow-tdd",
                     "workflow-debugging",
                     "workflow-code-review",
-                    "workflow-skill-authoring",
-                    "workflow-security-review",
                 ]
             )
 
@@ -1252,8 +1250,6 @@ progress:
                     "workflow-tdd",
                     "workflow-debugging",
                     "workflow-code-review",
-                    "workflow-skill-authoring",
-                    "workflow-security-review",
                 ]
             )
 
@@ -1263,8 +1259,6 @@ progress:
                 "workflow-tdd": "Do not implement first",
                 "workflow-debugging": "Do not guess the cause",
                 "workflow-code-review": "Findings first",
-                "workflow-skill-authoring": "A useful skill must say when to use it",
-                "workflow-security-review": "Identify trust boundaries before editing",
             }
             for skill_name, snippet in expected_snippets.items():
                 skill = (target / f".agents/skills/{skill_name}/SKILL.md").read_text(encoding="utf-8")

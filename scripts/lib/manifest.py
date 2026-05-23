@@ -56,8 +56,6 @@ KNOWN_PACKS: set[str] = {
     "workflow-tdd",
     "workflow-debugging",
     "workflow-code-review",
-    "workflow-skill-authoring",
-    "workflow-security-review",
 }
 
 
