@@ -1,6 +1,13 @@
 ---
 name: workflow-debugging
 description: Use when something fails, regresses, throws, times out, or behaves differently than expected.
+reads:
+  - codebase.testing.commands
+  - codebase.testing.repro
+  - codebase.testing.known_failures
+  - codebase.concerns.high_risk
+  - codebase.concerns.flaky_tests
+  - codebase.concerns.performance
 ---
 
 # Workflow Debugging
@@ -10,6 +17,8 @@ Use this skill before proposing a fix for a failure.
 ## Low-Reasoning Contract
 
 Do not guess the cause from symptoms. Reproduce, minimize, instrument, then fix.
+
+Before reproducing: grep `.planning/codebase/CONCERNS.md` for `[codebase.concerns.flaky_tests]` and `[codebase.concerns.known_failures]` — if the failure matches a known flake, do not chase a root-cause fix. Grep `[codebase.testing.repro]` in TESTING.md for the project's standard repro setup.
 
 ## Stop Conditions
 

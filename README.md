@@ -118,8 +118,9 @@ Removes harness-owned files. Use `--select` with comma-separated numeric codes: 
 | `harness next` | Recommended next action |
 | `harness uninstall` | Remove harness scopes |
 | `harness doctor` | Read-only drift diagnostic |
+| `harness recon` | Auto-fill `.planning/codebase/{STACK,STRUCTURE,TESTING,INTEGRATIONS}.md` for codebase orientation |
 
-Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+Full CLI reference: [`docs/CLI.md`](docs/CLI.md). Codebase recon schema (anchor IDs, frontmatter, file ownership): [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md).
 
 ## Troubleshooting
 

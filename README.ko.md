@@ -118,8 +118,9 @@ harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 | `harness next` | 다음 권장 action |
 | `harness uninstall` | 하네스 scope 제거 |
 | `harness doctor` | 읽기 전용 drift 진단 |
+| `harness recon` | `.planning/codebase/{STACK,STRUCTURE,TESTING,INTEGRATIONS}.md` 자동 채움 (코드베이스 오리엔테이션) |
 
-전체 CLI 참조: [`docs/CLI.md`](docs/CLI.md).
+전체 CLI 참조: [`docs/CLI.md`](docs/CLI.md). 코드베이스 recon 스키마 (앵커 ID, frontmatter, 파일 소유권): [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md).
 
 ## 문제 해결
 

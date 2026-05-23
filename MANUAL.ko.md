@@ -63,7 +63,19 @@ harness session unlock         # crash 후 stale session lock 해제
 harness state show             # parsed phase-state.json 출력
 harness state repair           # managed AGENTS.md block 재생성
 harness run                    # 다음 안전한 step 실행 + human gate 에서 정지
+harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INTEGRATIONS}.md 자동 채움
 ```
+
+### 코드베이스 오리엔테이션 (`.planning/codebase/`)
+
+`harness recon` 은 8개 파일 (6 core + 2 conditional) 의 구조화된 디렉토리를 채움. 모든 workflow skill-pack 이 읽는 코드베이스 계약 역할을 함:
+
+- **CLI 자동 채움** (직접 편집 X): `STACK.md`, `STRUCTURE.md`, `TESTING.md` (프레임워크 + 명령), `INTEGRATIONS.md` (외부 통합 감지 시에만).
+- **에이전트 소유** (`workflow-codebase-recon` skill-pack 이 채움): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
+
+각 섹션은 `## [codebase.stack.runtime] Runtime` 같은 앵커 ID 사용. 하위 skill-pack (`workflow-tdd`, `workflow-debugging`, `workflow-code-review`, `repository-evidence-research`) 이 전체 파일을 다시 읽지 않고 특정 사실만 grep 가능. 스키마 + 앵커 목록 + frontmatter 모양: [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md). 의사결정 근거: [`docs/adr/0008-multi-file-codebase-recon.md`](docs/adr/0008-multi-file-codebase-recon.md).
+
+`harness recon` 재실행 안전: 자동 파일은 덮어쓰지만 agent 소유 파일의 본문은 보존됨 (frontmatter 의 `updated_at` 만 다시 찍힘).
 
 ## 사용자가 관리하는 planning 문서
 

@@ -393,11 +393,12 @@ class _HintingArgumentParser(argparse.ArgumentParser):
 
 
 def cmd_recon(args) -> int:  # type: ignore[no-untyped-def]
-    """Handler for ``harness recon``."""
+    """Handler for ``harness recon`` — multi-file .planning/codebase/."""
     from lib.recon import (
-        build_recon_doc,
-        compute_unified_diff,
-        TEMPLATE_PATH_RELATIVE,
+        build_codebase_docs,
+        compute_files_diff,
+        load_existing_codebase,
+        load_skeleton_templates,
     )
 
     target = Path(args.target) if args.target else Path.cwd()
@@ -407,43 +408,43 @@ def cmd_recon(args) -> int:  # type: ignore[no-untyped-def]
     if getattr(args, "scope", None):
         scope = [s.strip() for s in args.scope.split(",") if s.strip()]
 
-    recon_path = target / ".planning" / "codebase-recon.md"
+    cb_dir = target / ".planning" / "codebase"
 
-    # Read existing content (or empty string if not present)
-    existing_text: str | None = None
-    if recon_path.exists():
-        existing_text = recon_path.read_text(encoding="utf-8")
+    existing = load_existing_codebase(target)
+    templates = load_skeleton_templates(repo_root())
 
-    # Load template from harness source tree
-    template_text: str | None = None
-    harness_root = repo_root()
-    template_path = harness_root / TEMPLATE_PATH_RELATIVE
-    if template_path.exists():
-        template_text = template_path.read_text(encoding="utf-8")
-
-    new_text = build_recon_doc(
+    new_files = build_codebase_docs(
         root=target,
         scope=scope,
-        existing_text=existing_text,
-        template_text=template_text,
+        existing=existing,
+        templates=templates,
+        generated_by=f"harness-recon@{HARNESS_VERSION}",
     )
 
     if args.dry_run:
-        old_text = existing_text if existing_text is not None else ""
-        diff = compute_unified_diff(old_text, new_text)
+        diff = compute_files_diff(old=existing, new=new_files)
         if diff:
             sys.stdout.write(diff)
         else:
             sys.stdout.write("(no changes)\n")
         return 0
 
-    # Ensure .planning/ directory exists
-    recon_path.parent.mkdir(parents=True, exist_ok=True)
+    cb_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for fname, content in new_files.items():
+        path = cb_dir / fname
+        prev = existing.get(fname)
+        if prev == content:
+            continue
+        path.write_text(content, encoding="utf-8")
+        written.append(fname)
 
-    recon_path.write_text(new_text, encoding="utf-8")
-
-    action = "updated" if existing_text is not None else "created"
-    print(f"harness recon: {action} {recon_path.relative_to(target)}", file=sys.stderr)
+    if written:
+        print(f"harness recon: wrote {len(written)} file(s) to .planning/codebase/", file=sys.stderr)
+        for f in written:
+            print(f"  - {f}", file=sys.stderr)
+    else:
+        print("harness recon: no changes", file=sys.stderr)
     return 0
 
 
@@ -734,14 +735,13 @@ def run(argv: list[str] | None = None) -> int:
         help="Run the next safe workflow step; stops for human approval.",
     )
 
-    # ----- harness recon (M9-3) -----
+    # ----- harness recon (M10) -----
     recon_parser = subparsers.add_parser(
         "recon",
         help=(
-            "Auto-populate sections 2-4 of .planning/codebase-recon.md "
-            "(tech stack, dir tree, existing docs). "
-            "Sections 1 and 5 are left for the user. "
-            "File is created from template if absent."
+            "Auto-populate .planning/codebase/*.md (STACK, STRUCTURE, TESTING, "
+            "INTEGRATIONS). SUMMARY/CONVENTIONS/ARCHITECTURE/CONCERNS are agent-owned; "
+            "the CLI restamps their frontmatter only. See ADR-0008 for schema."
         ),
     )
     recon_parser.add_argument(
@@ -762,8 +762,8 @@ def run(argv: list[str] | None = None) -> int:
         "--dry-run",
         action="store_true",
         help=(
-            "Print the intended unified diff to stdout without writing "
-            ".planning/codebase-recon.md."
+            "Print the intended unified diff across .planning/codebase/*.md "
+            "to stdout without writing."
         ),
     )
 

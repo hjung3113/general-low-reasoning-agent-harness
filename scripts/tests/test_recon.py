@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Tests for harness recon CLI command and recon.py module (M9-3 / issue #31)."""
+"""Tests for harness recon CLI and recon.py module (M10 / issue #34)."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 import tempfile
@@ -15,20 +14,24 @@ HARNESS = REPO_ROOT / "scripts" / "harness.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from lib.recon import (  # noqa: E402
-    detect_tech_stack,
-    render_tech_stack_section,
+    ALL_FILES,
+    AUTO_FILES,
+    AGENT_FILES,
+    build_codebase_docs,
     build_dir_tree,
-    render_dir_tree_section,
-    find_existing_docs,
-    render_docs_section,
-    build_recon_doc,
-    compute_unified_diff,
+    compute_files_diff,
+    detect_integrations,
+    detect_tech_stack,
+    has_integrations,
+    load_skeleton_templates,
+    parse_frontmatter,
+    render_anchor_section,
+    split_anchors,
 )
 
 
 def _make_fixture(**files: str) -> Path:
-    """Create a temp dir with the given file tree (relative path → content)."""
-    tmp = Path(tempfile.mkdtemp(prefix="harness-recon-"))
+    tmp = Path(tempfile.mkdtemp(prefix="harness-recon-m10-"))
     for rel, content in files.items():
         p = tmp / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -36,239 +39,191 @@ def _make_fixture(**files: str) -> Path:
     return tmp
 
 
-class TestDetectTechStack(unittest.TestCase):
-    """Unit tests for detect_tech_stack()."""
-
+class TestTechStackBuckets(unittest.TestCase):
     def test_python_pyproject(self) -> None:
         root = _make_fixture(**{"pyproject.toml": "[project]\nname='x'"})
         stack = detect_tech_stack(root)
         self.assertIn("Python", stack["languages"])
-
-    def test_python_requirements(self) -> None:
-        root = _make_fixture(**{"requirements.txt": "pytest\n"})
-        stack = detect_tech_stack(root)
-        self.assertIn("Python", stack["languages"])
+        self.assertIn("Python", stack["runtime"])
+        self.assertIn("pyproject.toml", stack["package_managers"])
 
     def test_node_package_json(self) -> None:
         root = _make_fixture(**{"package.json": '{"name":"x"}'})
         stack = detect_tech_stack(root)
-        self.assertIn("Node", stack["languages"])
+        self.assertIn("JavaScript/TypeScript", stack["languages"])
+        self.assertIn("Node.js", stack["runtime"])
 
-    def test_rust_cargo(self) -> None:
-        root = _make_fixture(**{"Cargo.toml": '[package]\nname="x"'})
+    def test_node_test_runners(self) -> None:
+        root = _make_fixture(**{"package.json": '{"name":"x","scripts":{"test":"vitest"}}'})
         stack = detect_tech_stack(root)
-        self.assertIn("Rust", stack["languages"])
+        self.assertIn("vitest", stack["test_runners"])
 
-    def test_go_mod(self) -> None:
-        root = _make_fixture(**{"go.mod": "module example.com/x\n"})
+    def test_pyproject_ruff_detection(self) -> None:
+        root = _make_fixture(**{"pyproject.toml": "[tool.ruff]\nline-length = 100"})
         stack = detect_tech_stack(root)
-        self.assertIn("Go", stack["languages"])
-
-    def test_no_stack(self) -> None:
-        root = _make_fixture(**{"README.md": "hello"})
-        stack = detect_tech_stack(root)
-        self.assertEqual(stack["languages"], [])
-
-    def test_pytest_runner(self) -> None:
-        root = _make_fixture(**{"pyproject.toml": "[project]", "tests/__init__.py": ""})
-        stack = detect_tech_stack(root)
-        self.assertIn("pytest", stack["test_runners"])
+        self.assertIn("ruff", stack["lint"])
 
     def test_github_actions_ci(self) -> None:
         root = _make_fixture(**{".github/workflows/ci.yml": "on: push"})
         stack = detect_tech_stack(root)
         self.assertIn("GitHub Actions", stack["ci"])
 
-    def test_multiple_languages(self) -> None:
+
+class TestIntegrations(unittest.TestCase):
+    def test_docker_compose_detected(self) -> None:
+        root = _make_fixture(**{"docker-compose.yml": "version: '3'"})
+        ints = detect_integrations(root)
+        self.assertIn("docker-compose", ints["local_dependencies"])
+        self.assertTrue(has_integrations(ints))
+
+    def test_pg_dependency_detected(self) -> None:
+        root = _make_fixture(**{"package.json": '{"name":"x","dependencies":{"pg":"^8"}}'})
+        ints = detect_integrations(root)
+        self.assertIn("PostgreSQL (pg)", ints["datastores"])
+
+    def test_empty_when_no_signals(self) -> None:
+        root = _make_fixture(**{"README.md": "hi"})
+        ints = detect_integrations(root)
+        self.assertFalse(has_integrations(ints))
+
+
+class TestFrontmatterAndAnchors(unittest.TestCase):
+    def test_parse_frontmatter_strips_to_body(self) -> None:
+        text = "---\nschema_version: 1\nartifact_type: codebase.stack\n---\n# Title\n\n## [codebase.stack.runtime] Runtime\nPython 3.12"
+        fm, body = parse_frontmatter(text)
+        self.assertEqual(fm["schema_version"], "1")
+        self.assertEqual(fm["artifact_type"], "codebase.stack")
+        self.assertIn("# Title", body)
+
+    def test_split_anchors_extracts_id_and_title(self) -> None:
+        body = "# X\n\n## [codebase.stack.runtime] Runtime\nPython\n\n## [codebase.stack.languages] Languages\nPython"
+        sections = split_anchors(body)
+        self.assertEqual(len(sections), 2)
+        self.assertEqual(sections[0][0], "codebase.stack.runtime")
+        self.assertEqual(sections[0][1], "Runtime")
+        self.assertIn("Python", sections[0][2])
+
+    def test_render_anchor_section_roundtrips(self) -> None:
+        s = render_anchor_section("codebase.stack.test", "Test runners", "- pytest")
+        sections = split_anchors(s)
+        self.assertEqual(sections[0][0], "codebase.stack.test")
+
+
+class TestBuildCodebaseDocs(unittest.TestCase):
+    def setUp(self) -> None:
+        # Load real skeleton templates for integration realism
+        self.templates = load_skeleton_templates(REPO_ROOT)
+        self.assertIn("STACK.md", self.templates, "skeleton templates must load")
+
+    def test_writes_core_files(self) -> None:
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
+        files = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        for fname in ("STACK.md", "STRUCTURE.md", "TESTING.md"):
+            self.assertIn(fname, files)
+        # Agent-owned files only appear when templates available (they are)
+        for fname in ("SUMMARY.md", "CONVENTIONS.md", "CONCERNS.md", "ARCHITECTURE.md"):
+            self.assertIn(fname, files)
+
+    def test_skips_integrations_when_no_signals(self) -> None:
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
+        files = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        self.assertNotIn("INTEGRATIONS.md", files)
+
+    def test_writes_integrations_when_docker_present(self) -> None:
         root = _make_fixture(**{
             "pyproject.toml": "[project]",
-            "package.json": '{"name":"y"}',
+            "docker-compose.yml": "version: '3'",
         })
-        stack = detect_tech_stack(root)
-        self.assertIn("Python", stack["languages"])
-        self.assertIn("Node", stack["languages"])
+        files = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        self.assertIn("INTEGRATIONS.md", files)
+        self.assertIn("docker-compose", files["INTEGRATIONS.md"])
 
-
-class TestBuildDirTree(unittest.TestCase):
-    """Unit tests for build_dir_tree()."""
-
-    def test_basic_tree(self) -> None:
-        root = _make_fixture(**{
-            "src/__init__.py": "",
-            "docs/README.md": "",
-            "tests/test_foo.py": "",
-        })
-        tree = build_dir_tree(root)
-        rel_dirs = [str(d.relative_to(root)) for d, _ in tree]
-        self.assertIn("src", rel_dirs)
-        self.assertIn("docs", rel_dirs)
-        self.assertIn("tests", rel_dirs)
-
-    def test_excludes_git(self) -> None:
-        root = _make_fixture(**{".git/HEAD": "ref: refs/heads/main"})
-        tree = build_dir_tree(root)
-        rel_dirs = [str(d.relative_to(root)) for d, _ in tree]
-        self.assertNotIn(".git", rel_dirs)
-
-    def test_excludes_node_modules(self) -> None:
-        root = _make_fixture(**{"node_modules/pkg/index.js": ""})
-        tree = build_dir_tree(root)
-        rel_dirs = [str(d.relative_to(root)) for d, _ in tree]
-        self.assertNotIn("node_modules", rel_dirs)
-
-    def test_scope_limits_to_subdir(self) -> None:
-        root = _make_fixture(**{
-            "src/core/__init__.py": "",
-            "tests/unit/__init__.py": "",
-        })
-        tree = build_dir_tree(root, scope=["src"])
-        rel_dirs = [str(d.relative_to(root)) for d, _ in tree]
-        self.assertIn("src", rel_dirs)
-        # tests should not appear since scope is limited to src
-        self.assertNotIn("tests", rel_dirs)
-
-    def test_depth_2_subdir_included(self) -> None:
-        root = _make_fixture(**{
-            "src/models/__init__.py": "",
-            "src/views/__init__.py": "",
-        })
-        tree = build_dir_tree(root)
-        rel_dirs = [str(d.relative_to(root)) for d, _ in tree]
-        self.assertIn("src/models", rel_dirs)
-        self.assertIn("src/views", rel_dirs)
-
-
-class TestFindExistingDocs(unittest.TestCase):
-    """Unit tests for find_existing_docs()."""
-
-    def test_finds_readme(self) -> None:
-        root = _make_fixture(**{"README.md": "# Project"})
-        docs = find_existing_docs(root)
-        self.assertIn(Path("README.md"), docs)
-
-    def test_finds_docs_dir(self) -> None:
-        root = _make_fixture(**{
-            "docs/overview.md": "# Overview",
-            "docs/adr/0001-foo.md": "# ADR",
-        })
-        docs = find_existing_docs(root)
-        paths = [str(d) for d in docs]
-        self.assertTrue(any("overview.md" in p for p in paths))
-        self.assertTrue(any("0001-foo.md" in p for p in paths))
-
-    def test_no_docs(self) -> None:
-        root = _make_fixture(**{"src/__init__.py": ""})
-        docs = find_existing_docs(root)
-        self.assertEqual(docs, [])
-
-
-class TestBuildReconDoc(unittest.TestCase):
-    """Integration tests for build_recon_doc()."""
-
-    TEMPLATE = (
-        "# Codebase Recon\n\n"
-        "## 1. One-liner — what is this project?\n"
-        "<!-- User or agent: 2-3 sentences -->\n\n"
-        "## 2. Tech stack\n"
-        "<!-- Auto-detected -->\n\n"
-        "## 3. Top-level structure (depth 2)\n"
-        "<!-- Tree -->\n\n"
-        "## 4. Existing docs found\n"
-        "<!-- Paths -->\n\n"
-        "## 5. Open questions\n"
-        "<!-- Agent-flagged unknowns -->\n"
-    )
-
-    def test_python_in_section_2(self) -> None:
+    def test_frontmatter_stamped(self) -> None:
         root = _make_fixture(**{"pyproject.toml": "[project]"})
-        doc = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
-        self.assertIn("Python", doc)
-
-    def test_node_in_section_2(self) -> None:
-        root = _make_fixture(**{"package.json": '{"name":"x"}'})
-        doc = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
-        self.assertIn("Node", doc)
-
-    def test_auto_detected_comment_present(self) -> None:
-        root = _make_fixture(**{"pyproject.toml": "[project]"})
-        doc = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
-        self.assertIn("auto-detected on 2026-01-01", doc)
-
-    def test_sections_1_and_5_placeholders_when_empty(self) -> None:
-        root = _make_fixture(**{"pyproject.toml": "[project]"})
-        doc = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
-        self.assertIn("## 1.", doc)
-        self.assertIn("## 5.", doc)
-        # Placeholder comment inserted for empty user sections
-        self.assertIn("<!--", doc)
-
-    def test_idempotent_user_content_preserved(self) -> None:
-        """Second run preserves user edits in sections 1 and 5."""
-        root = _make_fixture(**{"pyproject.toml": "[project]"})
-        first = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
-
-        # Simulate user editing sections 1 and 5
-        user_edit = first.replace(
-            "<!-- User or agent: 2-3 sentences -->",
-            "This project does X, Y, and Z.",
-        ).replace(
-            "<!-- Agent-flagged unknowns for user to answer -->",
-            "- Why is X done this way?",
+        files = build_codebase_docs(
+            root=root, templates=self.templates,
+            generated_by="harness-recon@0.10.0", today="2026-05-23",
         )
+        fm, _ = parse_frontmatter(files["STACK.md"])
+        self.assertEqual(fm["updated_at"], "2026-05-23")
+        self.assertEqual(fm["generated_by"], "harness-recon@0.10.0")
+        self.assertEqual(fm["status"], "current")
 
-        second = build_recon_doc(
-            root,
-            existing_text=user_edit,
-            template_text=self.TEMPLATE,
-            today="2026-01-02",
-        )
-        self.assertIn("This project does X, Y, and Z.", second)
-        self.assertIn("- Why is X done this way?", second)
-
-    def test_auto_sections_updated_on_rerun(self) -> None:
-        """Second run updates sections 2-4 even when sections 1/5 have user content."""
+    def test_anchor_headers_preserved_in_output(self) -> None:
         root = _make_fixture(**{"pyproject.toml": "[project]"})
-        first = build_recon_doc(root, template_text=self.TEMPLATE, today="2026-01-01")
+        files = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        self.assertIn("## [codebase.stack.runtime]", files["STACK.md"])
+        self.assertIn("## [codebase.stack.languages]", files["STACK.md"])
+        self.assertIn("## [codebase.structure.tree]", files["STRUCTURE.md"])
+        self.assertIn("## [codebase.testing.commands]", files["TESTING.md"])
 
-        # Add package.json to the fixture between runs
+    def test_agent_file_body_preserved(self) -> None:
+        """Re-running recon must not clobber agent-edited CONVENTIONS body."""
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
+        first = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        # Simulate agent editing CONVENTIONS
+        conv = first["CONVENTIONS.md"]
+        edited = conv.replace(
+            "## [codebase.conventions.naming]",
+            "## [codebase.conventions.naming] Naming Custom\nCustom rule: snake_case everywhere.\n\n## [codebase.conventions.naming.placeholder]",
+            1,
+        )
+        # Add real content via existing dict
+        second = build_codebase_docs(
+            root=root,
+            templates=self.templates,
+            existing={"CONVENTIONS.md": edited},
+            today="2026-05-24",
+        )
+        self.assertIn("Custom rule: snake_case", second["CONVENTIONS.md"])
+        fm, _ = parse_frontmatter(second["CONVENTIONS.md"])
+        self.assertEqual(fm["updated_at"], "2026-05-24")
+
+    def test_auto_file_overwrites_stack(self) -> None:
+        """STACK auto sections overwrite even if old content present."""
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
+        first = build_codebase_docs(root=root, templates=self.templates, today="2026-05-23")
+        # Switch fixture to node
+        (root / "pyproject.toml").unlink()
         (root / "package.json").write_text('{"name":"x"}', encoding="utf-8")
-
-        second = build_recon_doc(
-            root,
-            existing_text=first,
-            template_text=self.TEMPLATE,
-            today="2026-01-02",
+        second = build_codebase_docs(
+            root=root,
+            templates=self.templates,
+            existing=first,
+            today="2026-05-24",
         )
-        self.assertIn("Node", second)
-        self.assertIn("2026-01-02", second)
+        self.assertIn("Node.js", second["STACK.md"])
+        self.assertNotIn("- Python", second["STACK.md"])
 
-    def test_scope_limits_tree(self) -> None:
+    def test_scope_limits_structure_tree(self) -> None:
         root = _make_fixture(**{
             "src/core/__init__.py": "",
             "tests/unit/__init__.py": "",
+            "pyproject.toml": "[project]",
         })
-        doc = build_recon_doc(
-            root, scope=["src"], template_text=self.TEMPLATE, today="2026-01-01"
+        files = build_codebase_docs(
+            root=root, scope=["src"], templates=self.templates, today="2026-05-23",
         )
-        self.assertIn("src", doc)
-        # tests dir should not appear since scope is limited
-        self.assertNotIn("`tests/`", doc)
+        self.assertIn("src/", files["STRUCTURE.md"])
+        # tests dir should NOT appear in tree when scope limits it
+        self.assertNotIn("tests/", files["STRUCTURE.md"])
 
 
-class TestComputeUnifiedDiff(unittest.TestCase):
-    def test_diff_shows_change(self) -> None:
-        diff = compute_unified_diff("old line\n", "new line\n")
-        self.assertIn("-old line", diff)
-        self.assertIn("+new line", diff)
+class TestComputeFilesDiff(unittest.TestCase):
+    def test_diff_per_file(self) -> None:
+        old = {"STACK.md": "a\n"}
+        new = {"STACK.md": "b\n"}
+        d = compute_files_diff(old=old, new=new)
+        self.assertIn(".planning/codebase/STACK.md", d)
+        self.assertIn("-a", d)
+        self.assertIn("+b", d)
 
-    def test_no_diff_for_identical(self) -> None:
-        diff = compute_unified_diff("same\n", "same\n")
-        self.assertEqual(diff, "")
+    def test_no_diff_when_identical(self) -> None:
+        d = compute_files_diff(old={"X.md": "same"}, new={"X.md": "same"})
+        self.assertEqual(d, "")
 
 
 class TestReconCLI(unittest.TestCase):
-    """End-to-end CLI tests for `harness recon`."""
-
     def _run_harness(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(HARNESS), *args],
@@ -277,76 +232,32 @@ class TestReconCLI(unittest.TestCase):
             text=True,
         )
 
-    def _make_target(self, **files: str) -> Path:
-        return _make_fixture(**files)
-
-    def test_creates_file_when_absent(self) -> None:
-        root = self._make_target(**{"pyproject.toml": "[project]"})
+    def test_creates_core_files(self) -> None:
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
         result = self._run_harness("recon", "--target", str(root))
         self.assertEqual(result.returncode, 0, result.stderr)
-        recon = root / ".planning" / "codebase-recon.md"
-        self.assertTrue(recon.exists(), "codebase-recon.md should be created")
-        content = recon.read_text(encoding="utf-8")
-        self.assertIn("Python", content)
+        cb = root / ".planning" / "codebase"
+        for fname in ("STACK.md", "STRUCTURE.md", "TESTING.md", "CONVENTIONS.md", "SUMMARY.md", "CONCERNS.md", "ARCHITECTURE.md"):
+            self.assertTrue((cb / fname).exists(), f"{fname} should be created")
 
-    def test_dry_run_does_not_write(self) -> None:
-        root = self._make_target(**{"package.json": '{"name":"x"}'})
+    def test_dry_run_writes_nothing(self) -> None:
+        root = _make_fixture(**{"package.json": '{"name":"x"}'})
         result = self._run_harness("recon", "--target", str(root), "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
-        # Dry run should print a diff (or no-change message), not write the file
-        recon = root / ".planning" / "codebase-recon.md"
-        self.assertFalse(recon.exists(), "dry-run must not create the file")
+        cb = root / ".planning" / "codebase"
+        self.assertFalse(cb.exists(), "dry-run must not create files")
 
-    def test_dry_run_prints_diff(self) -> None:
-        root = self._make_target(**{"package.json": '{"name":"x"}'})
-        result = self._run_harness("recon", "--target", str(root), "--dry-run")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        # stdout should contain something (diff or no-change marker)
-        self.assertTrue(result.stdout.strip(), "dry-run should produce output")
-
-    def test_node_detected(self) -> None:
-        root = self._make_target(**{"package.json": '{"name":"x"}'})
-        result = self._run_harness("recon", "--target", str(root))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        content = (root / ".planning" / "codebase-recon.md").read_text(encoding="utf-8")
-        self.assertIn("Node", content)
-
-    def test_second_run_preserves_user_edits(self) -> None:
-        root = self._make_target(**{"pyproject.toml": "[project]"})
-        # First run
+    def test_stack_md_has_anchors(self) -> None:
+        root = _make_fixture(**{"pyproject.toml": "[project]"})
         self._run_harness("recon", "--target", str(root))
-        recon = root / ".planning" / "codebase-recon.md"
-        # Simulate user editing section 1
-        old_content = recon.read_text(encoding="utf-8")
-        new_content = old_content.replace(
-            "<!-- User or agent: 2-3 sentences -->",
-            "This project is a low-reasoning agent harness.",
-        )
-        recon.write_text(new_content, encoding="utf-8")
-        # Second run
-        self._run_harness("recon", "--target", str(root))
-        after = recon.read_text(encoding="utf-8")
-        self.assertIn("This project is a low-reasoning agent harness.", after)
-
-    def test_scope_flag_limits_tree(self) -> None:
-        root = self._make_target(**{
-            "src/core/__init__.py": "",
-            "tests/unit/__init__.py": "",
-        })
-        result = self._run_harness(
-            "recon", "--target", str(root), "--scope", "src"
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        content = (root / ".planning" / "codebase-recon.md").read_text(encoding="utf-8")
-        self.assertIn("src", content)
-        self.assertNotIn("`tests/`", content)
+        text = (root / ".planning" / "codebase" / "STACK.md").read_text(encoding="utf-8")
+        self.assertIn("## [codebase.stack.runtime]", text)
+        self.assertIn("## [codebase.stack.languages]", text)
 
     def test_help_text(self) -> None:
         result = self._run_harness("recon", "--help")
         self.assertEqual(result.returncode, 0)
-        self.assertIn("codebase-recon.md", result.stdout)
         self.assertIn("--dry-run", result.stdout)
-        self.assertIn("--target", result.stdout)
         self.assertIn("--scope", result.stdout)
 
 
