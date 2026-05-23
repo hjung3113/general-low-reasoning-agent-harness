@@ -160,7 +160,7 @@ def test_preflight_rejects_empty_state_file_distinctly(
     with pytest.raises(state_trust.StateEmptyError) as excinfo:
         _ok(scratch, audit_path, lock)
     assert excinfo.value.exit_code == 14
-    assert "recover" in str(excinfo.value)
+    assert "restore" in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------------
