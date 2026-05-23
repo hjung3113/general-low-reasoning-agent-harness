@@ -6,6 +6,8 @@ Internal tool. Trusted developers, trusted machines, no external attacker (see [
 
 For the meaning of "harness", "skeleton", "skill-pack", "phase", "milestone", etc., see [`CONTEXT.md`](CONTEXT.md). For how to use an installed harness day-to-day, see [`MANUAL.md`](MANUAL.md).
 
+한국어: [`README.ko.md`](README.ko.md) · [`MANUAL.ko.md`](MANUAL.ko.md).
+
 ## What you get when you install the harness
 
 | Path in target | Owner | Purpose |
