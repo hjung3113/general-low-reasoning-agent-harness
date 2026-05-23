@@ -177,9 +177,6 @@ def _build_release_manifest_v2(
     target: Path | None = None,
 ) -> dict:
     """Build a release_manifest dict in installed-manifest v2 format for the reconciler."""
-    # Always dev_unsigned: internal single-user tool, no trust ceremony needed.
-    trust_origin = "dev_unsigned"
-
     # ── Compute file hashes (working-tree path) ────────────────────────────
     files: dict[str, object] = {}
     for entry in entries:
@@ -201,9 +198,6 @@ def _build_release_manifest_v2(
     release_manifest: dict[str, object] = {
         "schema_version": 2,
         "harness_version": harness_version,
-        "trust_origin": trust_origin,
-        "release_tag": None,
-        "release_commit": None,
         "files": files,
     }
     return release_manifest
@@ -272,10 +266,7 @@ def _stamp_installed_manifest_v2(
         print("Review with: ls -la .harness/conflicts/", file=_sys.stderr)
         print("====================================================================", file=_sys.stderr)
 
-    # v0.9.13: chain hash + rechain audit removed. Just persist trust fields.
-    for key in ("trust_origin", "release_tag", "release_commit"):
-        if key in release_manifest:
-            installed[key] = release_manifest[key]
+    # ADR-0002: origin-trust fields removed — dead code for internal tool.
 
 
 def upgrade(

@@ -21,15 +21,14 @@ any divergence is treated as a user edit rather than a safe harness upgrade).
 
 Hash chain:
   ``compute_manifest_hash_chain`` produces a sha256 over the canonicalized
-  content of the manifest (schema_version, harness_version, trust_origin,
-  release_tag, release_commit, sorted file entries, sorted removed_in_version
-  list). Stored as top-level ``installed_files_chain_hash`` and checked on
-  read to detect tampering of the installed_sha256 / current_sha256 / trust
-  fields.  The hash covers only those two SHA fields per entry (not
-  policy/owner/sha256); field named accordingly.
+  content of the manifest (schema_version, harness_version, sorted file
+  entries, sorted removed_in_version list). Stored as top-level
+  ``installed_files_chain_hash`` and checked on read to detect tampering of
+  the installed_sha256 / current_sha256 fields.  The hash covers only those
+  two SHA fields per entry (not policy/owner/sha256); field named accordingly.
 
-  B-1 (Cycle-2): trust_origin, release_tag, release_commit added to the
-  canonical input so trust-field tampering is chain-hash-detected.
+  ADR-0002: origin-trust fields removed — dead code for internal tool with no
+  external-attacker threat model.
 """
 from __future__ import annotations
 
@@ -270,23 +269,17 @@ def reconcile_install(
 def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     """Compute a deterministic chain hash for the manifest (§6 manifest hash chain).
 
-    The chain covers (B-1, Cycle-2: trust fields added):
+    The chain covers:
     - schema_version (int)
     - harness_version (str)
-    - trust_origin (str, "" when absent)
-    - release_tag (str, "" when absent)
-    - release_commit (str, "" when absent)
     - sorted file entries by path: for each entry, path + sorted(entry items)
     - sorted removed_in_version entries by path
 
     Returns a 64-char lowercase sha256 hex string. Stored as top-level
     ``installed_files_chain_hash``.
 
-    B-1 (Cycle-2): trust_origin, release_tag, release_commit are now included
-    in the canonical input so that tampering with any of these trust fields is
-    detected by chain hash mismatch.  Any pre-Cycle-2 stored chain hash will
-    mismatch on first re-stamp — operators must re-install or re-upgrade.
-    This is acceptable for internal-share-stable targets.
+    ADR-0002: origin-trust fields stripped — dead code for internal tool with
+    no external-attacker threat model.
 
     Stability guarantee: independent of dict insertion order (sorts all keys).
     """
@@ -294,18 +287,11 @@ def compute_manifest_hash_chain(manifest: dict[str, Any]) -> str:
     harness_version = manifest.get("harness_version", "")
     files: dict[str, Any] = manifest.get("files", {})
     removed: list[Any] = manifest.get("removed_in_version", [])
-    # B-1 trust fields — default to "" so absent == "" in canonical form.
-    trust_origin = manifest.get("trust_origin") or ""
-    release_tag = manifest.get("release_tag") or ""
-    release_commit = manifest.get("release_commit") or ""
 
     # Canonical representation: stable across insertion order
     chain_parts: list[str] = [
         f"schema_version={schema_version}",
         f"harness_version={harness_version}",
-        f"trust_origin={trust_origin}",
-        f"release_tag={release_tag}",
-        f"release_commit={release_commit}",
     ]
 
     for file_path in sorted(files.keys()):
@@ -383,28 +369,14 @@ def verify_manifest_chain(manifest: dict[str, Any]) -> bool:
     }
     manifest_without_chain["files"] = normalized_files
 
-    # B-1 backward-compat: accept hashes computed with the new format (trust fields
-    # included) OR the old format (pre-Cycle-2, trust fields absent from canonical).
-    # New format: default — compute_manifest_hash_chain now always includes trust fields.
-    recomputed_new = compute_manifest_hash_chain(manifest_without_chain)
-    if recomputed_new == stored:
-        return True
-
-    # Old format fallback: exclude trust fields from canonical input so the hash
-    # matches what pre-Cycle-2 code produced.  Manifests without trust fields that
-    # were written before Cycle-2 should still be accepted.
-    old_format = {
-        k: v for k, v in manifest_without_chain.items()
-        if k not in ("trust_origin", "release_tag", "release_commit")
-    }
-    recomputed_old = compute_manifest_hash_chain(old_format)
-    if recomputed_old == stored:
+    # ADR-0002: trust fields stripped. Single canonical format now.
+    recomputed = compute_manifest_hash_chain(manifest_without_chain)
+    if recomputed == stored:
         return True
 
     raise ManifestChainTamperedError(
         f"installed_files_chain_hash mismatch: stored={stored!r}, "
-        f"recomputed (new format)={recomputed_new!r}, "
-        f"recomputed (old format)={recomputed_old!r}. "
+        f"recomputed={recomputed!r}. "
         f"Manifest may have been tampered with."
     )
     return True  # unreachable but satisfies type checkers

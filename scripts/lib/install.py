@@ -551,14 +551,6 @@ def install(
         pass
     _rmdir_recursive_quiet(staging_dir)
 
-    # B3-Fix-3: stamp trust_origin on fresh install so subsequent upgrades can
-    # enforce downgrade protection.
-    _stamp_install_trust_origin(
-        root=root,
-        target=target,
-        harness_version=harness_version,
-    )
-
     # T7 / NEW-1: write .harness/install-record.json so `phase approve` works immediately.
     if approver_email is not None and approver_bootstrap_source is not None:
         write_install_record(
@@ -570,21 +562,6 @@ def install(
         )
 
     print(f"installed harness v{harness_version} → {target} ({len(destinations)} planned writes). Next: cd {target} && python3 scripts/harness.py check")
-
-
-def _stamp_install_trust_origin(
-    *,
-    root: Path,
-    target: Path,
-    harness_version: str,
-) -> None:
-    """Stamp trust_origin=dev_unsigned on the fresh install record."""
-    from lib.state import INSTALL_STATE, write_json, read_install_state
-
-    install_state_path = target / INSTALL_STATE
-    state: dict = read_install_state(target)
-    state["trust_origin"] = "dev_unsigned"
-    write_json(install_state_path, state)
 
 
 class InstallFailed(RuntimeError):

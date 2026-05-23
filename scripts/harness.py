@@ -24,7 +24,7 @@ from lib.version import (
     normalize_release_version,
     git_output,
     is_git_worktree_dirty,
-    exact_release_tag_version,
+    exact_git_tag_version,
     development_version,
     git_source_provenance,
     source_provenance,
@@ -201,7 +201,7 @@ HARNESS_VERSION = "0.0.0-dev+unknown"
 __all__ = [
     # version
     "repo_root", "upgrade_source_root", "normalize_release_version", "git_output",
-    "is_git_worktree_dirty", "exact_release_tag_version", "development_version",
+    "is_git_worktree_dirty", "exact_git_tag_version", "development_version",
     "git_source_provenance", "source_provenance", "resolve_harness_version",
     "release_check", "readme_release_versions", "check_readme_release_versions",
     "README_RELEASE_VERSION",
