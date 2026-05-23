@@ -273,9 +273,24 @@ def cmd_next(args) -> int:
         # compute_next_action so power users with HARNESS_ADVANCED=1 or
         # harness status see the underlying transition (NEW-4 parity preserved).
         if result.agent_safe and result.exit_code == 0:
-            sys.stdout.write("harness run\n")
+            sys.stdout.write(
+                f"Recommended: {result.reason}\n"
+                f"  Run: harness run\n"
+            )
         elif result.command is not None:
-            sys.stdout.write(result.command + "\n")
+            is_approve = result.command == "harness phase approve" or result.command.startswith(
+                "harness phase approve "
+            )
+            if is_approve:
+                sys.stdout.write(
+                    f"Recommended: {result.reason}\n"
+                    f"  Run from a real terminal: {result.command}\n"
+                )
+            else:
+                sys.stdout.write(
+                    f"Recommended: {result.reason}\n"
+                    f"  Run: {result.command}\n"
+                )
         else:
             phase = state.get("phase", "discuss")
             if phase == "done":

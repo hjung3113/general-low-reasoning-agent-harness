@@ -340,16 +340,31 @@ def format_status_json(result: StatusResult) -> str:
 
 
 def format_next_human(result: NextResult) -> str:
-    """Render NextResult for plain `harness next`."""
+    """Render NextResult for plain `harness next`.
+
+    Format:
+      Recommended: <reason>
+        Run: <command>
+
+    For human-required commands (e.g. harness phase approve), the Run line
+    notes the TTY requirement inline:
+      Recommended: <reason>
+        Run from a real terminal: <command>
+
+    When there is no command, emits "No action: <reason>".
+    """
     if result.command is not None:
-        if result.requires_human:
-            return (
-                f"Human action required:\n"
-                f"  {result.command}\n"
-                f"  ({result.reason})\n"
-            )
+        is_approve = result.command == "harness phase approve" or result.command.startswith(
+            "harness phase approve "
+        )
+        if result.requires_human or is_approve:
+            run_prefix = "Run from a real terminal"
         else:
-            return result.command + "\n"
+            run_prefix = "Run"
+        return (
+            f"Recommended: {result.reason}\n"
+            f"  {run_prefix}: {result.command}\n"
+        )
     else:
         return f"No action: {result.reason}\n"
 

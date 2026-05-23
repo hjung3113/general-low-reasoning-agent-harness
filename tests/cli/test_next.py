@@ -347,3 +347,110 @@ def test_next_json_shape_complete():
         f"  Extra keys  : {set(parsed.keys()) - expected_keys}\n"
         f"  Missing keys: {expected_keys - set(parsed.keys())}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Golden-output tests for format_next_human (#24) — actionable "Run:" lines
+# ---------------------------------------------------------------------------
+
+
+def test_next_human_golden_discuss_phase():
+    """Golden output: discuss phase → 'Recommended:' + 'Run: harness phase set plan' (#24)."""
+    state = _make_state(phase="discuss")
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("Recommended:"), (
+        f"Expected output to start with 'Recommended:', got: {text!r}"
+    )
+    assert "  Run: harness phase set plan" in text, (
+        f"Expected '  Run: harness phase set plan' in output, got: {text!r}"
+    )
+    # Must NOT be the old bare-command format
+    assert not text.strip() == "harness phase set plan", (
+        "Output should not be bare command — must include 'Recommended:' header"
+    )
+
+
+def test_next_human_golden_plan_unapproved_approval_gate():
+    """Golden output: plan+unapproved → 'Run from a real terminal: harness phase approve' (#24)."""
+    state = _make_state(phase="plan", approved=False)
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("Recommended:"), (
+        f"Expected output to start with 'Recommended:', got: {text!r}"
+    )
+    # TTY constraint surfaced inline for approve commands
+    assert "Run from a real terminal:" in text, (
+        f"Expected 'Run from a real terminal:' for approval gate, got: {text!r}"
+    )
+    assert "harness phase approve" in text, (
+        f"Expected 'harness phase approve' in output, got: {text!r}"
+    )
+
+
+def test_next_human_golden_plan_approved_ready_for_execute():
+    """Golden output: plan+approved → 'Run: harness phase set execute' (#24)."""
+    state = _make_state(
+        phase="plan",
+        approved=True,
+        approved_at="2026-05-18T10:00:00Z",
+        plan_finalized_at="2026-05-18T09:50:00Z",
+    )
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("Recommended:"), (
+        f"Expected output to start with 'Recommended:', got: {text!r}"
+    )
+    assert "  Run: harness phase set execute" in text, (
+        f"Expected '  Run: harness phase set execute' in output, got: {text!r}"
+    )
+
+
+def test_next_human_golden_execute_unapproved_approval_gate():
+    """Golden output: execute+unapproved → 'Run from a real terminal' TTY note (#24)."""
+    state = _make_state(phase="execute", approved=False)
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("Recommended:"), (
+        f"Expected output to start with 'Recommended:', got: {text!r}"
+    )
+    assert "Run" in text, (
+        f"Expected 'Run' line in output, got: {text!r}"
+    )
+
+
+def test_next_human_golden_execute_approved_ready_for_done():
+    """Golden output: execute+fresh-approved → 'Run: harness phase set done' (#24)."""
+    state = _make_state(
+        phase="execute",
+        approved=True,
+        approved_at="2026-05-18T10:00:00Z",
+        execute_attempt_started_at="2026-05-18T09:58:00Z",
+    )
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("Recommended:"), (
+        f"Expected output to start with 'Recommended:', got: {text!r}"
+    )
+    assert "  Run: harness phase set done" in text, (
+        f"Expected '  Run: harness phase set done' in output, got: {text!r}"
+    )
+
+
+def test_next_human_golden_done_phase_no_action():
+    """Golden output: done phase → 'No action:' (no Run line) (#24)."""
+    state = _make_state(phase="done")
+    result = sn.compute_next(state=state, audit_path=None)
+    text = sn.format_next_human(result)
+
+    assert text.startswith("No action:"), (
+        f"Expected output to start with 'No action:', got: {text!r}"
+    )
+    assert "Run:" not in text, (
+        f"Expected no 'Run:' line for done phase, got: {text!r}"
+    )
