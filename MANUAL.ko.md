@@ -136,6 +136,7 @@ tail -f .harness/audit.jsonl | python3 -m json.tool
 | `Refusing to write malformed managed-append destination` | 에러 메시지에 unified diff 같이 출력됨 — `AGENTS.md` 에 수동 적용 후 재시도 |
 | `unknown pack: workflow-XYZ` | 이전 마일스톤에서 제거된 pack; 현재 살아있는 set 에서 선택 (`harness check` 로 확인) |
 | `harness check` drift 보고 | `harness state repair` (managed block 재생성) 또는 `harness doctor` (read-only 진단) |
+| 신규 설치 직후 `harness check` 가 `00-planning-hydration` 관련 경고 | 정상 — skeleton 시드한 템플릿 phase, 첫 마일스톤을 `.planning/ROADMAP.md` + `STATE.md` 에 선언하면 사라짐. 버그 아님. |
 
 Exit code 매핑: [`docs/error-code-map.md`](docs/error-code-map.md).
 

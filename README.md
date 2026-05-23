@@ -125,6 +125,8 @@ Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
 If `harness phase approve` exits with code 17, you're not on a real terminal — run from an interactive shell, not CI (see [`MANUAL.md`](MANUAL.md)).
 
+`harness check` may warn about a stale skeleton phase (`00-planning-hydration`) on a brand-new install. That's expected: the skeleton seeds template planning files that you replace once you declare your first real milestone. Add a bullet to `.planning/ROADMAP.md` and stamp it in `.planning/STATE.md`, then `harness check` quiets down.
+
 ## Project layout
 
 ```

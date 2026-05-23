@@ -134,6 +134,7 @@ Each row has: `at` (ISO timestamp), `verb`, `phase`, `actor`, `target_path`, `ou
 | `Refusing to write malformed managed-append destination` | The error now includes a unified diff of current vs proposed — apply it manually to `AGENTS.md` and retry |
 | `unknown pack: workflow-XYZ` | Pack was removed in a previous milestone; pick a current one (run `harness check` for the kept set) |
 | `harness check` reports drift | Run `harness state repair` (rebuilds managed block) or `harness doctor` (read-only diagnostic) |
+| `harness check` warns about `00-planning-hydration` on a brand-new install | Expected — the skeleton seeds a template phase you replace when you declare your first real milestone in `.planning/ROADMAP.md` + `STATE.md`. Not a bug. |
 
 Exit codes are documented in [`docs/error-code-map.md`](docs/error-code-map.md).
 

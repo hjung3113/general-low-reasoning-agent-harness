@@ -125,6 +125,8 @@ harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 
 `harness phase approve` 가 exit code 17 로 종료되면 TTY 가 아닌 환경에서 실행 중입니다 — 대화형 셸에서 실행하세요. CI 에서는 실행할 수 없습니다 ([`MANUAL.md`](MANUAL.md) 참조).
 
+신규 설치 직후 `harness check` 가 skeleton phase (`00-planning-hydration`) 관련 경고를 낼 수 있음. 정상 — skeleton 이 시드한 템플릿 planning 파일이 첫 마일스톤 선언 시 교체되도록 설계됨. `.planning/ROADMAP.md` 에 bullet 추가하고 `.planning/STATE.md` 에 stamp 하면 `harness check` 가 조용해짐.
+
 ## 프로젝트 구조
 
 ```
