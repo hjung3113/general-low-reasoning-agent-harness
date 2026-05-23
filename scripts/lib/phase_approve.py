@@ -13,8 +13,7 @@ Order of operations (any failure → typed ``ApproveResult`` with non-zero
   3. Identity resolution. ``--by`` if provided, else ``git config user.email``.
      Empty → exit 6 ``gitconfig_email_unset``.
   4. install-record approvers membership check.
-  5. Anchor preflight + state-trust preflight. Anchor verified BEFORE state
-     read; forged state → exit 10.
+  5. Load state under primary lock.
   6. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
   7. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
   8. Prompt ``[y/N]`` on TTY. Non-y answer, EOF, or Ctrl+C → exit 0
@@ -43,7 +42,6 @@ from . import exitcodes as _exitcodes
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
-from . import state_trust as _state_trust  # kept for tests that monkeypatch
 
 
 # ---------------------------------------------------------------------------
@@ -86,12 +84,6 @@ _FIX_APPROVER_MEMBERSHIP = (
 _FIX_AUTOPILOT = (
     "Fix: run `harness phase autopilot stop --reason \"<text>\"` "
     "first, then re-approve"
-)
-_FIX_STATE_TRUST = (
-    "Fix: inspect .harness/audit.log manually; "
-    "if intentional, restore via `git checkout -- .scratch/phase-state.json`, "
-    "or re-apply the change via `harness phase set <phase> --stdin-json` "
-    "(which updates the audit chain)"
 )
 _FIX_GITCONFIG_MUTATED = (
     "Fix: pass `--by <email>` explicitly, OR re-run `harness init` "
@@ -247,7 +239,6 @@ def run_approve(
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
-    skip_state_trust_preflight: bool = False,
 ) -> ApproveResult:
     """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
 
@@ -281,7 +272,7 @@ def run_approve(
     # ONLY active when BOTH env vars are set to "1". Production callers never
     # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
     # When active: TTY gate + [y/N] prompt are skipped; ALL other checks
-    # (identity, approver allowlist, state_trust, audit) still run.
+    # (identity, approver allowlist, audit) still run.
     # Audit row records proof_class=smoke_bypass so forensics can distinguish
     # smoke runs from real human approves.
     if (
@@ -449,49 +440,6 @@ def run_approve(
     # ---------- Steps 4+5+6+7+8: under primary lock ----------
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)
     try:
-        # State-trust preflight (§2.6). Refuses forged state with exit 10.
-        # skip_state_trust_preflight=True is a test-only bypass for tests
-        # that do not wire up a real audit chain.
-        if not skip_state_trust_preflight:
-            try:
-                _state_trust.preflight(
-                    scratch,
-                    audit_path=audit_path,
-                    lock=lock,
-                )
-            except _state_trust.StateAuditMismatchError as exc:
-                print(
-                    f"error: phase approve refused: state trust preflight "
-                    f"failed: {exc}. {_FIX_STATE_TRUST}",
-                    file=sys.stderr,
-                )
-                return ApproveResult(
-                    exit_code=10,
-                    sub_reason="state_audit_mismatch",
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-            except _state_trust.StateEmptyError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return ApproveResult(
-                    exit_code=14,
-                    sub_reason="state_empty_crash_artefact",
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-            except (
-                _state_trust.StateBomError,
-                _state_trust.StateCrlfError,
-                _state_trust.StateMalformedJsonError,
-            ) as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return ApproveResult(
-                    exit_code=5,
-                    sub_reason="state_unparseable",
-                    resolved_email=resolved,
-                    by_source=by_source,
-                )
-
         # Load canonical state.
         state_path = scratch / _phase_txn.STATE_NAME
         if not state_path.exists():

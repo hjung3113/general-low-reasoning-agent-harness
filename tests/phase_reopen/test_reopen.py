@@ -409,38 +409,7 @@ def test_lock_held_during_run_reopen(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 12. State-trust preflight invoked
-# ---------------------------------------------------------------------------
-
-
-def test_state_trust_preflight_invoked(env, monkeypatch):
-    from lib import state_trust
-
-    calls = []
-    real = state_trust.preflight
-
-    def spy(*a, **kw):
-        calls.append(kw)
-        return real(*a, **kw)
-
-    monkeypatch.setattr(state_trust, "preflight", spy)
-    monkeypatch.setattr(phase_reopen, "_state_trust", state_trust)
-    rc = _run(env, to="plan")
-    assert rc.exit_code == 0
-    assert len(calls) > 0
-
-
-def test_tampered_state_rejected(env):
-    state_path = env["scratch"] / "phase-state.json"
-    txt = state_path.read_text()
-    state_path.write_text(txt.replace('"phase": "execute"', '"phase": "discuss"'))
-    rc = _run(env, to="plan")
-    assert rc.exit_code == 10
-    assert rc.sub_reason == "state_audit_mismatch"
-
-
-# ---------------------------------------------------------------------------
-# 13. xfail-strict CLI-wiring pin (S07-prep)
+# 12. xfail-strict CLI-wiring pin (S07-prep)
 # ---------------------------------------------------------------------------
 
 
@@ -525,19 +494,11 @@ def test_reopen_to_plan_from_done_accepted(env):
 
 
 def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
-    """S06 updated sentinel (formerly pre_s06_budget P2-4): the phase.autopilot.halt
-    + phase.reopen audit lines MUST fit under AUDIT_MAX_LINE_BYTES = 1024 bytes.
+    """Plain JSONL budget check: the phase.autopilot.halt + phase.reopen audit
+    lines MUST fit under AUDIT_MAX_LINE_BYTES = 1024 bytes.
 
-    S06 added ~140 bytes of per-entry chain fields (schema_version, seq,
-    seq_global, previous_entry_hash [64 hex], entry_hash [64 hex]). The limit
-    was raised from 512 → 1024 in S06 to accommodate chain fields AND preserve
-    all forensic top-level fields (by_source, confirmation_kind, etc.) without
-    falling through to the minimal-fallback path which would drop them.
-    Design decision: option (a) — raise the sentinel limit; the limit is a
-    safety check, not a hard protocol contract.
-
-    TODO(S06-chain): RESOLVED — limit raised to 1024, chain fields preserved.
-    Records both line sizes for diagnostic purposes."""
+    No chain fields (M4-1/ADR-0005). 1024 bytes accommodates all forensic
+    top-level fields (by_source, confirmation_kind, from_phase, etc.)."""
     _reseed(env, lambda s: s.update({
         "execution_mode": "chain_autopilot",
         "autopilot_run_id": "run-sentinel",
@@ -551,8 +512,7 @@ def test_reopen_with_autopilot_audit_row_under_1024_bytes_post_s06_budget(env):
     ]
     halt_line = lines[-2]
     reopen_line = lines[-1]
-    # 1024 = AUDIT_MAX_LINE_BYTES post-S06 (raised from 512 to accommodate
-    # ~140 bytes of chain fields + forensic top-level field headroom).
+    # 1024 = AUDIT_MAX_LINE_BYTES (plain JSONL, no chain fields, M4-1).
     assert len(halt_line.encode()) <= 1024, (
         f"halt audit line {len(halt_line.encode())} bytes — exceeds 1024 "
         "(post-S06 AUDIT_MAX_LINE_BYTES budget)"

@@ -6,8 +6,8 @@ Two tests:
   2. Non-TTY stdin — command exits with code 17 and prints 'terminal'/'tty'
      to stderr.
 
-Bootstrap approach: `commit_transaction` seeds state + audit so that
-`state_trust.preflight` passes.
+Bootstrap approach: `commit_transaction` seeds state + audit (consistent
+plain JSONL — no state-trust preflight, ADR-0002).
 """
 from __future__ import annotations
 
@@ -61,9 +61,7 @@ def _bootstrap_design_phase(harness_root: Path) -> None:
 
     Steps:
       1. Write .harness/install-record.json with TEST_EMAIL as approver.
-      2. Create .scratch/ and seed phase-state via commit_transaction
-         (so audit.log has an entry with after_sha256 matching the state —
-         required by state_trust.preflight).
+      2. Create .scratch/ and seed phase-state via commit_transaction.
     """
     harness_dir = harness_root / ".harness"
     harness_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +73,7 @@ def _bootstrap_design_phase(harness_root: Path) -> None:
         json.dumps(_INSTALL_RECORD, indent=2, sort_keys=True) + "\n"
     )
 
-    # Step 2 — seed state + audit via commit_transaction
+    # Step 2 — seed state + audit via commit_transaction (consistent plain JSONL)
     audit_path = harness_dir / "audit.log"
     lock = phase_lock.acquire_primary(scratch, timeout_s=2.0)
     try:

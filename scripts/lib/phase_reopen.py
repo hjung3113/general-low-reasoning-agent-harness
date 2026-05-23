@@ -32,12 +32,6 @@ from typing import Callable, Mapping, Optional
 from . import phase_lock as _phase_lock
 from . import phase_preflight as _phase_preflight
 from . import phase_txn as _phase_txn
-# Re-exported only so legacy tests that `monkeypatch.setattr(phase_reopen,
-# "_state_trust", ...)` keep working. Runtime calls go through
-# `phase_preflight.run_state_trust_preflight`, which imports
-# `state_trust` itself; the monkeypatch flows because both module
-# references point at the same module object.
-from . import state_trust as _state_trust  # noqa: F401
 
 
 _VALID_TARGETS = frozenset({"plan", "discuss"})
@@ -134,7 +128,7 @@ def run_reopen(
     # ONLY active when BOTH env vars are set to "1". Production callers never
     # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
     # When active: TTY gate is skipped; ALL other checks (identity, approver
-    # allowlist, state_trust, audit) still run.
+    # allowlist, audit) still run.
     # Audit row records proof_class=smoke_bypass so forensics can distinguish
     # smoke runs from real human reopens.
     if (
@@ -206,25 +200,6 @@ def run_reopen(
     # Steps 6+7+8 under primary lock.
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)
     try:
-        # State-trust preflight.
-        try:
-            _phase_preflight.run_state_trust_preflight(
-                scratch=scratch,
-                audit_path=audit_path,
-                lock=lock,
-            )
-        except _phase_preflight.StateTrustPreflightError as exc:
-            print(
-                f"error: phase reopen refused: {exc.message}. {exc.fix_line}",
-                file=sys.stderr,
-            )
-            return ReopenResult(
-                exit_code=exc.exit_code,
-                sub_reason=exc.sub_reason,
-                resolved_email=resolved,
-                by_source=by_source,
-            )
-
         state_path = scratch / _phase_txn.STATE_NAME
         if not state_path.exists():
             print(

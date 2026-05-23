@@ -1,4 +1,4 @@
-"""Shared preflight helpers for TTY-only phase verbs (design §3.1, §3.2, §2.6).
+"""Shared preflight helpers for TTY-only phase verbs (design §3.1, §3.2).
 
 Extracted from `phase_approve.py` + `phase_reopen.py` during the S04+S05
 review-fix (P2-3) so the upcoming `phase set` rewrite (S07-prep) does not
@@ -10,28 +10,25 @@ Public surface
 * `default_gitconfig_email_lookup()`         — read `git config user.email`
 * `load_install_record(path)`                — JSON-parse install record
 * `approvers_emails(install_record)`         — extract lower-cased emails
-* `FIX_GITCONFIG / FIX_APPROVER_MEMBERSHIP / FIX_STATE_TRUST`
+* `FIX_GITCONFIG / FIX_APPROVER_MEMBERSHIP`
    — fix-line constants (§3.9)
-* `StateTrustPreflightError`                 — raised by `run_state_trust_preflight`
-* `run_state_trust_preflight(...)`           — §2.6 state-audit cross-check
+
+Note: `run_state_trust_preflight` / `StateTrustPreflightError` / `FIX_STATE_TRUST`
+were removed in M4-3 (#10) per ADR-0002 (no external attacker) and ADR-0005
+(plain JSONL audit log — no tamper oracle needed).
 
 The helpers do NOT print/log; callers map the raised errors to their own
 verb-specific result types. This keeps the module test-friendly and lets
 each verb compose its own `Fix:` message.
-
-Spec: `docs/superpowers/specs/2026-05-17-phase-gate-hardening-design.md`
 """
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional
-
-from . import state_trust as _state_trust
+from typing import Any, Mapping
 
 
 # ---------------------------------------------------------------------------
@@ -46,12 +43,6 @@ FIX_APPROVER_MEMBERSHIP = (
     "Fix: only emails listed in `.harness/install-record.json approvers[]` "
     "may run this verb; ask the install owner to add your email, or re-run "
     "`harness init` with `--approver-email <your-email>` to rebootstrap"
-)
-FIX_STATE_TRUST = (
-    "Fix: inspect .harness/audit.log manually; "
-    "if intentional, restore via `git checkout -- .scratch/phase-state.json`, "
-    "or re-apply the change via `harness phase set <phase> --stdin-json` "
-    "(which updates the audit chain)"
 )
 
 
@@ -103,79 +94,11 @@ def approvers_emails(install_record: Mapping) -> list:
     return out
 
 
-# ---------------------------------------------------------------------------
-# State-trust preflight (§2.6)
-# ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass(frozen=True)
-class StateTrustPreflightError(Exception):
-    """Raised when state-trust preflight fails.
-
-    `exit_code` maps to design §3.4:
-      * 10 -> `state_audit_mismatch`
-      * 14 -> `state_empty_crash_artefact`
-      *  5 -> `state_unparseable` (BOM/CRLF/malformed JSON)
-    """
-
-    exit_code: int
-    sub_reason: str
-    message: str
-    fix_line: str = FIX_STATE_TRUST
-
-    def __str__(self) -> str:  # pragma: no cover — trivial
-        return f"{self.sub_reason}: {self.message}"
-
-
-def run_state_trust_preflight(
-    *,
-    scratch: Path,
-    audit_path: Path,
-    lock: Any,
-) -> None:
-    """Invoke `state_trust.preflight`; map its exceptions to the
-    `StateTrustPreflightError` taxonomy used by both approve and reopen.
-    Raises on failure; returns None on success."""
-    try:
-        _state_trust.preflight(
-            scratch,
-            audit_path=audit_path,
-            lock=lock,
-        )
-    except _state_trust.StateAuditMismatchError as exc:
-        raise StateTrustPreflightError(
-            exit_code=10,
-            sub_reason="state_audit_mismatch",
-            message=f"state trust preflight failed: {exc}",
-        ) from exc
-    except _state_trust.StateEmptyError as exc:
-        raise StateTrustPreflightError(
-            exit_code=14,
-            sub_reason="state_empty_crash_artefact",
-            message=str(exc),
-            fix_line=FIX_STATE_TRUST,
-        ) from exc
-    except (
-        _state_trust.StateBomError,
-        _state_trust.StateCrlfError,
-        _state_trust.StateMalformedJsonError,
-    ) as exc:
-        raise StateTrustPreflightError(
-            exit_code=5,
-            sub_reason="state_unparseable",
-            message=str(exc),
-            fix_line=FIX_STATE_TRUST,
-        ) from exc
-
-
 __all__ = [
     "FIX_GITCONFIG",
     "FIX_APPROVER_MEMBERSHIP",
-    "FIX_STATE_TRUST",
     "now_iso_z",
     "default_gitconfig_email_lookup",
     "load_install_record",
     "approvers_emails",
-    "StateTrustPreflightError",
-    "run_state_trust_preflight",
 ]

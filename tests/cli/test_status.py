@@ -276,55 +276,6 @@ def test_status_can_enter_execute_false_when_approval_predates_plan_finalized():
 
 
 # ---------------------------------------------------------------------------
-# test_status_preflight_rejects_tampered_state
-# ---------------------------------------------------------------------------
-
-
-def test_status_preflight_rejects_tampered_state(tmp_path: Path):
-    """State-trust preflight rejects state with tampered approved=true (no audit match)."""
-    from lib import state_trust as _state_trust, phase_lock as _phase_lock
-    import json
-
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness_dir = tmp_path / ".harness"
-    harness_dir.mkdir()
-    audit_path = harness_dir / "audit.log"
-
-    # Write a tampered state with no corresponding audit entry
-    state_path = scratch / "phase-state.json"
-    tampered_state = {
-        "phase": "discuss",
-        "approved": True,
-        "execution_mode": "manual",
-        "state_schema_version": 2,
-    }
-    state_path.write_text(json.dumps(tampered_state, sort_keys=True) + "\n", encoding="utf-8")
-
-    # Write audit with a different after_sha256 (mismatch)
-    audit_path.write_text(
-        json.dumps({
-            "seq": 1,
-            "verb": "phase.set",
-            "after_sha256": "a" * 64,  # wrong hash
-        }) + "\n",
-        encoding="utf-8",
-    )
-
-    # Preflight should raise StateAuditMismatchError when lock is held
-    lock = _phase_lock.acquire_primary(scratch, timeout_s=5.0, audit_path=audit_path)
-    try:
-        with pytest.raises(_state_trust.StateAuditMismatchError):
-            _state_trust.preflight(
-                scratch,
-                audit_path=audit_path,
-                lock=lock,
-            )
-    finally:
-        _phase_lock.release_primary(lock)
-
-
-# ---------------------------------------------------------------------------
 # test_status_read_only_no_audit_row
 # ---------------------------------------------------------------------------
 
@@ -428,41 +379,6 @@ def test_status_bootstrap_succeeds_no_state(tmp_path: Path):
     assert exit_code == 0, f"Bootstrap should exit 0, got {exit_code}"
     assert result_state is not None
     assert result_state.get("phase") == "discuss"
-
-
-def test_status_fails_closed_when_state_audit_mismatch(tmp_path: Path):
-    """status returns exit 10 when state file hash mismatches the audit tail."""
-    import json
-    from lib import status_next_cli as cli
-
-    (tmp_path / ".git").mkdir()
-    scratch = tmp_path / ".scratch"
-    scratch.mkdir()
-    harness_dir = tmp_path / ".harness"
-    harness_dir.mkdir()
-    audit_path = harness_dir / "audit.log"
-
-    # Write minimal audit log with a hash that won't match state.
-    audit_path.write_text(
-        json.dumps({"seq": 1, "verb": "phase.set", "after_sha256": "a" * 64}) + "\n",
-        encoding="utf-8",
-    )
-
-    # Write a state file with content that hashes to something different.
-    state_path = scratch / "phase-state.json"
-    state_path.write_text(
-        json.dumps({"phase": "discuss", "approved": False, "execution_mode": "manual",
-                    "state_schema_version": 2}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-    result_state, exit_code = cli._read_state_with_preflight(
-        scratch=scratch,
-        audit_path=audit_path,
-        cwd=tmp_path,
-    )
-    assert result_state is None, "Expected None state on mismatch"
-    assert exit_code == 10, f"Expected exit 10, got {exit_code}"
 
 
 # ---------------------------------------------------------------------------
