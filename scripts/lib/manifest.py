@@ -227,6 +227,75 @@ def validate_scope_names(
 
 
 # ---------------------------------------------------------------------------
+# Graveyard / removed-artifact helpers
+# ---------------------------------------------------------------------------
+
+#: Valid upgrade_action values for removed_in_version entries.
+KNOWN_UPGRADE_ACTIONS: set[str] = {"delete", "ignore", "warn"}
+
+#: Default upgrade_action when an entry lacks the field.
+#: Harness-owned entries default to "delete"; unknown/project-owned default to
+#: "warn" per ADR "never auto-delete project-owned content".
+_DEFAULT_UPGRADE_ACTION_HARNESS = "delete"
+_DEFAULT_UPGRADE_ACTION_UNKNOWN = "warn"
+
+
+def _infer_upgrade_action(entry: dict) -> str:
+    """Infer a safe default upgrade_action based on the entry's path.
+
+    Harness adapter paths (.roo/, .opencode/) were harness-owned, so delete.
+    Everything else defaults to warn (conservative — never silently delete
+    content we can't confirm the harness installed).
+    """
+    path = entry.get("path", "")
+    if path.startswith(".roo/") or path.startswith(".opencode/") or path.startswith(".agents/"):
+        return _DEFAULT_UPGRADE_ACTION_HARNESS
+    return _DEFAULT_UPGRADE_ACTION_UNKNOWN
+
+
+def obsolete_artifact_policy(data: dict) -> dict[str, str]:
+    """Return {path: upgrade_action} for all removed_in_version entries.
+
+    Raises SystemExit if any entry is missing `upgrade_action` AND inference
+    cannot provide a safe default (i.e. the field is absent and the path is
+    ambiguous). In practice this never happens because _infer_upgrade_action
+    always returns a value — but the manifest schema requires the field to be
+    explicit after M6/#15.
+
+    Called by upgrade.py to obtain the policy map without re-parsing the full
+    manifest.
+    """
+    removed = data.get("removed_in_version", [])
+    result: dict[str, str] = {}
+    missing_action: list[str] = []
+    for entry in removed:
+        path = entry.get("path", "")
+        if not path:
+            continue
+        action = entry.get("upgrade_action")
+        if action is None:
+            # M6/#15 schema: upgrade_action is required. Infer a safe default
+            # and collect for warning, but do NOT hard-fail on existing data
+            # that predates the field.
+            action = _infer_upgrade_action(entry)
+            missing_action.append(path)
+        if action not in KNOWN_UPGRADE_ACTIONS:
+            raise SystemExit(f"Unknown upgrade_action {action!r} for removed entry {path!r}")
+        result[path] = action
+    if missing_action:
+        import sys as _sys
+        _sys.stderr.write(
+            "WARNING: removed_in_version entries missing upgrade_action (inferred defaults):\n"
+        )
+        for p in missing_action:
+            _sys.stderr.write(f"  {p}\n")
+        _sys.stderr.write(
+            "Add explicit 'upgrade_action': 'delete' | 'ignore' | 'warn' to each entry.\n"
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
 

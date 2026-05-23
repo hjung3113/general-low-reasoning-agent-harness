@@ -145,6 +145,20 @@ manifest_v2, profiles, progress, roadmap_state, state, version
 
 `--adopt-existing`: 매뉴얼로 심어진 하네스에 대해 install state 합성 (`adoption.py`, 227 LOC).
 
+### Graveyard (M6/#15)
+
+Upgrade also applies `removed_in_version` graveyard policy from `manifest.obsolete_artifact_policy()`:
+
+| upgrade_action | Behavior |
+|---|---|
+| `delete` | Delete file if present on target (harness-owned artifacts) |
+| `warn` | Print warning to stderr, leave file untouched (project-owned / unknown) |
+| `ignore` | Silent no-op |
+
+Default inference when `upgrade_action` is absent: adapter paths (`.roo/`, `.opencode/`) → `delete`; all others → `warn`. **Never auto-delete project-owned content.**
+
+See [`docs/ARTIFACTS.md`](ARTIFACTS.md) §3 for the current graveyard table.
+
 ## 7. Uninstall flow (`scripts/uninstall_harness.py`, 358 LOC)
 
 Scope 선택 (roo / opencode / runtime / core / docs / all). 각 스코프 파일 제거 + .roomodes 정리 + hook 제거.

@@ -229,10 +229,10 @@ Artifacts removed from the harness in prior versions. Upgrade behavior is govern
 
 | path                                    | removed_in | upgrade_action | reason / replaced_by                |
 | --------------------------------------- | ---------- | -------------- | ----------------------------------- |
-| `.opencode/commands/fsd-chain-phase.md` | v0.7.0     | `warn`         | .opencode/commands/fsd-run-all.md   |
-| `.opencode/commands/fsd-phase.md`       | v0.7.0     | `warn`         | .opencode/commands/fsd-run-phase.md |
-| `.roo/commands/fsd-chain-phase.md`      | v0.7.0     | `warn`         | .roo/commands/fsd-run-all.md        |
-| `.roo/commands/fsd-phase.md`            | v0.7.0     | `warn`         | .roo/commands/fsd-run-phase.md      |
+| `.opencode/commands/fsd-chain-phase.md` | v0.7.0     | `delete`       | .opencode/commands/fsd-run-all.md   |
+| `.opencode/commands/fsd-phase.md`       | v0.7.0     | `delete`       | .opencode/commands/fsd-run-phase.md |
+| `.roo/commands/fsd-chain-phase.md`      | v0.7.0     | `delete`       | .roo/commands/fsd-run-all.md        |
+| `.roo/commands/fsd-phase.md`            | v0.7.0     | `delete`       | .roo/commands/fsd-run-phase.md      |
 
 ---
 
