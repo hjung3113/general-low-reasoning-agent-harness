@@ -572,7 +572,13 @@ def run(argv: list[str] | None = None) -> int:
     p_set.add_argument("--stdin-json", action="store_true")
 
     p_approve = phase_sub.add_parser(
-        "approve", help="Approve current phase (ADR-003a verb 2)."
+        "approve",
+        help=(
+            "Approve a phase transition (plan→execute or execute→done). "
+            "Requires a real terminal. This is the human-in-loop checkpoint in agent-driven workflows — "
+            "a supervising agent should hand off to a human at this gate. Exits 17 outside a TTY. "
+            "See docs/adr/0007-tty-approval-is-human-checkpoint.md."
+        ),
     )
     p_approve.add_argument("--by", default=None)
     p_approve.add_argument("--at", default=None)

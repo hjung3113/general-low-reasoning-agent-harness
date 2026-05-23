@@ -102,6 +102,18 @@ harness run                    # 다음 안전한 step 실행 + human gate 에�
 
 환경 변수 (`HARNESS_BY_TRUST` 등) 는 identity 에 **영향 없음**. Override-identity 탈출구 없음.
 
+### 에이전트 주도 워크플로우 (Agent-driven workflows)
+
+하네스는 에이전트 주도 실행 + 휴먼 감시를 위해 설계됨. 에이전트 (또는 스크립트) 는 `discuss`, `plan`, `execute` phase 를 무인으로 진행할 수 있음. **그러나 approval (phase 전이) 는 반드시 휴먼이 실제 터미널에서 해야 함**. 이것이 에이전트가 전체 사이클을 독립적으로 도는 것을 방지하는 checkpoint.
+
+의도된 패턴:
+1. 에이전트가 `discuss`, `plan`, `execute` phase 자동 진행.
+2. 감시 휴먼이 자신의 터미널에서 `harness phase approve` 대화형 실행.
+3. 휴먼이 prompt `[y/N]` 검토 후 전이 명시적 동의.
+4. Approval 감시: audit log 에 누가, 언제 승인했는지 기록됨.
+
+TTY 요구 (터미널 아니면 exit 17) 는 제약이 아님 — 설계임. **휴먼으로 handoff 하는 것이 핵심**. 에이전트가 프로그래매틱으로 approval 할 수 있으면, 하네스는 비감시 자동화로 타락하고 존재 이유가 사라짐. [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) 참조.
+
 ## Audit log
 
 `.harness/audit.jsonl` 은 plain JSONL. State-mutating verb 당 1줄. 해시 체인/canonicalization 없음 — forensic 아니라 diagnostic ([`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).
