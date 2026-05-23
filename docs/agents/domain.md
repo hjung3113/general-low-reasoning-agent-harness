@@ -1,22 +1,40 @@
-# Domain Docs Placeholder
+# Domain Docs
 
-This file is target-owned after initialization. Replace it during planning hydration with the target repository's real domain documentation map.
+How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-## Start With Durable Planning Memory
+## Before exploring, read these
 
-Before treating missing domain docs as a blocker, read:
+- **`CONTEXT.md`** at the repo root (created lazily by `/grill-with-docs` when terminology gets resolved).
+- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
+- **`.planning/STATE.md`** + **`.planning/ROADMAP.md`** — durable phase memory. Treat these as canonical project history alongside `CONTEXT.md`.
 
-- `.planning/STATE.md`
-- `.planning/ROADMAP.md`
-- `.planning/codebase/**`
-- the active phase context, plan, checkpoint, review, verification, and summary files under `.planning/phases/`
+If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
 
-## Record During Hydration
+## File structure
 
-- Product or system domain in one paragraph.
-- Canonical glossary files, ADR directories, and architecture docs.
-- Source folders or bounded contexts that own the relevant behavior.
-- Terms agents must use exactly.
-- Known stale documents that should not be trusted.
+Single-context repo:
 
-If no separate domain docs exist yet, keep `.planning/**` as the canonical memory and record open questions in the active phase context.
+```
+/
+├── CONTEXT.md
+├── docs/adr/
+│   ├── 0001-...
+│   └── 0002-...
+├── .planning/
+│   ├── STATE.md
+│   ├── ROADMAP.md
+│   └── phases/<NN-slug>/
+└── scripts/, harness/, docs/, ...
+```
+
+## Use the glossary's vocabulary
+
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+
+If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/grill-with-docs`).
+
+## Flag ADR conflicts
+
+If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+
+> _Contradicts ADR-0007 (...) — but worth reopening because…_

@@ -1,15 +1,22 @@
-# Issue Tracker Placeholder
+# Issue tracker: GitHub
 
-This file is target-owned after initialization. Replace it during planning hydration with the issue tracker that the target repository actually uses.
+Issues and PRDs for this repo live as GitHub issues at `hjung3113/general-low-reasoning-agent-harness`. Use the `gh` CLI for all operations.
 
-## Record During Hydration
+## Conventions
 
-- Tracker type: GitHub Issues, Linear, Jira, local Markdown, or none.
-- Canonical project or board URL when one exists.
-- Where PRDs, issues, bug reports, and implementation tasks should be created.
-- Required status labels or workflow states.
-- Whether agents may create issues directly or must draft them for review.
+- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`
+- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- **Close**: `gh issue close <number> --comment "..."`
 
-## Default Until Hydrated
+Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
-Do not assume an issue tracker. If a skill says "publish to the issue tracker" before this file is hydrated, draft the content in the active phase planning document and ask where it should be published.
+## When a skill says "publish to the issue tracker"
+
+Create a GitHub issue.
+
+## When a skill says "fetch the relevant ticket"
+
+Run `gh issue view <number> --comments`.
