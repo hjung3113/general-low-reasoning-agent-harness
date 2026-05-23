@@ -12,6 +12,8 @@ helpers surface here rather than leaking into verb-specific test failures.
 
 Note: `run_state_trust_preflight` and `StateTrustPreflightError` were removed
 in M4-3 (#10) per ADR-0002 (no attacker model) and ADR-0005 (plain JSONL).
+Note: `approvers_emails` and `FIX_APPROVER_MEMBERSHIP` removed in M5 #13
+per ADR-0002 (no attacker model — no allowlist enforcement).
 """
 
 from __future__ import annotations
@@ -62,7 +64,7 @@ def test_default_gitconfig_email_lookup_strips_whitespace():
 
 
 def test_load_install_record_parses_valid_json(tmp_path: Path):
-    record = {"approvers": [{"email": "alice@example.com"}]}
+    record = {"harness_version": "v0.9.0", "installed_at": "2026-01-01T00:00:00Z"}
     p = tmp_path / "install-record.json"
     p.write_text(json.dumps(record))
     loaded = phase_preflight.load_install_record(p)
@@ -74,36 +76,16 @@ def test_load_install_record_raises_file_not_found(tmp_path: Path):
         phase_preflight.load_install_record(tmp_path / "nonexistent.json")
 
 
-# ---------------------------------------------------------------------------
-# approvers_emails
-# ---------------------------------------------------------------------------
-
-
-def test_approvers_emails_returns_lower_cased():
+def test_load_install_record_tolerates_legacy_approvers_field(tmp_path: Path):
+    """Forward-compat: old install-records with approvers[] are silently loaded."""
     record = {
-        "approvers": [
-            {"email": "Alice@Example.COM"},
-            {"email": "BOB@example.com"},
-        ]
+        "harness_version": "v0.7.0",
+        "approvers": [{"email": "alice@example.com"}],
     }
-    emails = phase_preflight.approvers_emails(record)
-    assert emails == ["alice@example.com", "bob@example.com"]
-
-
-def test_approvers_emails_skips_non_dict_entries():
-    record = {"approvers": ["notadict", {"email": "carol@example.com"}, None]}
-    emails = phase_preflight.approvers_emails(record)
-    assert emails == ["carol@example.com"]
-
-
-def test_approvers_emails_empty_when_no_key():
-    assert phase_preflight.approvers_emails({}) == []
-
-
-def test_approvers_emails_skips_entries_with_empty_email():
-    record = {"approvers": [{"email": ""}, {"email": "valid@example.com"}]}
-    emails = phase_preflight.approvers_emails(record)
-    assert emails == ["valid@example.com"]
+    p = tmp_path / "install-record.json"
+    p.write_text(json.dumps(record))
+    loaded = phase_preflight.load_install_record(p)
+    assert loaded["approvers"][0]["email"] == "alice@example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -111,29 +93,23 @@ def test_approvers_emails_skips_entries_with_empty_email():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("const_name", [
-    "FIX_GITCONFIG",
-    "FIX_APPROVER_MEMBERSHIP",
-])
-def test_fix_line_constant_present_and_non_empty(const_name):
-    val = getattr(phase_preflight, const_name)
-    assert isinstance(val, str) and val.strip(), f"{const_name} must be a non-empty string"
-    assert "Fix:" in val, f"{const_name} must contain 'Fix:' per §3.9"
+def test_fix_gitconfig_constant_present_and_non_empty():
+    val = phase_preflight.FIX_GITCONFIG
+    assert isinstance(val, str) and val.strip()
+    assert "Fix:" in val
 
 
 # ---------------------------------------------------------------------------
-# __all__ pin — M4 post-strip public surface
+# __all__ pin — M5 post-strip public surface
 # ---------------------------------------------------------------------------
 
 
 def test_all_exports_present():
     expected = {
         "FIX_GITCONFIG",
-        "FIX_APPROVER_MEMBERSHIP",
         "now_iso_z",
         "default_gitconfig_email_lookup",
         "load_install_record",
-        "approvers_emails",
     }
     assert expected.issubset(set(phase_preflight.__all__)), (
         f"Missing from __all__: {expected - set(phase_preflight.__all__)}"

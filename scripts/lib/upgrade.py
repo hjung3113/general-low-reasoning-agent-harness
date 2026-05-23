@@ -36,11 +36,13 @@ from lib.manifest import (
     MANIFEST_PATH,
     ManifestEntry,
     load_manifest,
+    load_manifest_data,
     select_entries,
     validate_scope_names,
     source_path,
     destination_path,
     selected_pack_metadata,
+    obsolete_artifact_policy,
 )
 from lib.profiles import LEGACY_PROFILE_ALIASES, normalize_profiles
 from lib.roadmap_state import normalize_path
@@ -506,6 +508,43 @@ def upgrade(
                 installed.setdefault("files", {}).pop(path_text, None)
         elif not dry_run:
             installed.setdefault("files", {}).pop(path_text, None)
+
+    # M6/#15 — Graveyard: apply upgrade_action for removed_in_version entries.
+    # This handles artifacts that were present in old harness versions but no
+    # longer ship in the current manifest. The policy map comes from the
+    # manifest graveyard so behavior is explicit and version-controlled.
+    #
+    # Actions:
+    #   delete  — harness-owned: delete if present, regardless of modification
+    #   warn    — unknown/project-owned: warn and leave (never auto-delete)
+    #   ignore  — file is absent or no action needed; skip silently
+    #
+    # Note: this is NOT the same as the "retired from current manifest"
+    # loop above (which handles files that existed in installed_paths but
+    # dropped out of current_paths). The graveyard applies to any legacy
+    # path that may exist on disk even if the harness never installed it
+    # via install_state (e.g. manual copies, pre-adoption files).
+    _manifest_data = load_manifest_data(root)
+    _graveyard_policy = obsolete_artifact_policy(_manifest_data)
+    for _grave_path, _action in sorted(_graveyard_policy.items()):
+        # Skip if already handled by the installed-paths retirement loop above.
+        if _grave_path in installed_paths and _grave_path not in current_paths:
+            continue  # already retired via installed state loop
+        _dest = target / normalize_path(_grave_path)
+        if not _dest.exists():
+            continue  # absent — nothing to do regardless of action
+        if _action == "delete":
+            planned_removals += 1
+            if not dry_run:
+                _dest.unlink()
+                remove_empty_parents(_dest.parent, target)
+                installed.setdefault("files", {}).pop(_grave_path, None)
+        elif _action == "warn":
+            sys.stderr.write(
+                f"WARNING: obsolete harness artifact present but not deleted (policy=warn): {_grave_path}\n"
+                f"  Run `rm {_dest}` to remove it manually if it is no longer needed.\n"
+            )
+        # action == "ignore": do nothing
 
     if not dry_run:
         normalize_selected_project_owned_state(root=root, target=target, entries=entries, installed=installed)

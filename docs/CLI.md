@@ -43,7 +43,7 @@
 | `--verify-hashes` | check | Per-policy hash 검증 (opt-in) |
 | `--format <fmt>` | doctor/state show | markdown / json |
 | `--quiet` | init/upgrade | Progress 억제 |
-| `--approver-email <addr>` | init | install-record approvers[] 등록 |
+<!-- --approver-email removed in M5 #13 (ADR-0002: no allowlist enforcement; installer identity auto-derived) -->
 
 ## Top-level scripts (`scripts/*.py`)
 

@@ -2,11 +2,9 @@
 
 Design refs:
   - §3.1 — `phase approve` order of operations (TTY gate, identity
-           resolution, install-record membership, exit 8 if not manual)
+           resolution, install-record presence, exit 8 if not manual)
   - §3.1.1 — Human-presence proof: [y/N] speed-bump (v0.9.0)
-  - §6.1 — `.harness/install-record.json approvers[]` shape
-  - §3.4 — exit codes: 17 (non-TTY/speed-bump), 6 (provenance),
-           8 (approve-during-autopilot), 10 (state trust), 14 (recover)
+  - ADR-0002 — no attacker model; approver-membership gate removed in M5 #13
 
 Tests target `scripts/lib/phase_approve.py:run_approve` directly with
 dependency injection (no real TTY, no real ~/.harness, no real git).
@@ -16,7 +14,6 @@ level tests prove the contract slice-by-slice.
 Fault classes asserted:
   - non_tty_approval_blocked            exit 17
   - gitconfig_email_unset               exit 6
-  - approver_not_in_install_record      exit 6
   - approve_during_autopilot            exit 8
 """
 
@@ -44,21 +41,12 @@ def env(tmp_path: Path) -> dict:
     harness = tmp_path / ".harness"
     harness.mkdir()
     audit_path = harness / "audit.log"
-    nonce_dir = tmp_path / "out-of-project" / "approval-nonces"
-    nonce_dir.mkdir(parents=True)  # kept for API compat; not consulted by speed-bump flow
 
     install_record = {
         "harness_version": "v0.7.0",
         "installed_at": "2026-05-17T03:14:15Z",
         "adapters": ["roo"],
         "git_present_at_install": True,
-        "approvers": [
-            {
-                "email": "alice@example.com",
-                "added_at": "2026-05-17T03:14:15Z",
-                "source": "gitconfig_auto",
-            }
-        ],
     }
     (harness / "install-record.json").write_text(
         json.dumps(install_record, indent=2, sort_keys=True) + "\n"
@@ -97,7 +85,6 @@ def env(tmp_path: Path) -> dict:
         "harness": harness,
         "audit_path": audit_path,
         "install_record_path": harness / "install-record.json",
-        "nonce_dir": nonce_dir,
     }
 
 
@@ -106,8 +93,6 @@ def _make_args(**overrides):
     base = {
         "by": None,
         "at": None,
-        "override_identity": False,
-        "override_reason": None,
     }
     base.update(overrides)
 
@@ -128,9 +113,9 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
     """Invoke run_approve with the test-controlled environment.
 
     `monkeypatch` + `input_response`: when the call is expected to reach
-    the Step 7 speed-bump prompt, pass the pytest `monkeypatch` fixture
+    the Step 8 speed-bump prompt, pass the pytest `monkeypatch` fixture
     and the desired response string (default "y"). Tests that return
-    before Step 7 (TTY gate, identity, etc.) can omit both.
+    before Step 8 (TTY gate, identity, etc.) can omit both.
     """
     if monkeypatch is not None:
         monkeypatch.setattr("builtins.input", lambda _prompt="": input_response)
@@ -141,7 +126,6 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
         harness_dir=env["harness"],
         audit_path=env["audit_path"],
         install_record_path=env["install_record_path"],
-        nonce_dir=env["nonce_dir"],
         stdin_isatty=stdin_isatty,
         consumer_tty=consumer_tty,
         gitconfig_email_lookup=lambda: gitconfig_email,
@@ -196,7 +180,7 @@ def test_explicit_by_flag_overrides_gitconfig(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 3. install-record approvers membership (design §3.1 step 3 + §6.1)
+# 3. install-record presence (no membership gate — ADR-0002, M5 #13)
 # ---------------------------------------------------------------------------
 
 
@@ -225,8 +209,7 @@ def test_listed_approver_accepted(env, monkeypatch):
 
 def test_harness_by_trust_env_does_not_influence_approve(env):
     """`HARNESS_BY_TRUST` is for autopilot start only; phase approve has
-    zero env-trust path. Setting it to a non-approver email MUST NOT
-    bypass approver-membership; setting it instead of gitconfig MUST NOT
+    zero env-trust path (ADR-0002). Setting it instead of gitconfig MUST NOT
     satisfy identity resolution."""
     args = _make_args()
     rc = phase_approve.run_approve(
@@ -235,7 +218,6 @@ def test_harness_by_trust_env_does_not_influence_approve(env):
         harness_dir=env["harness"],
         audit_path=env["audit_path"],
         install_record_path=env["install_record_path"],
-        nonce_dir=env["nonce_dir"],
         stdin_isatty=True,
         consumer_tty="/dev/ttys002",
         gitconfig_email_lookup=lambda: "",  # no gitconfig

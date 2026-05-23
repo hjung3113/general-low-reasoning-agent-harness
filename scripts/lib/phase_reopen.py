@@ -8,7 +8,7 @@ Order of operations (any failure → typed `ReopenResult` with non-zero
   3. `--to` validation; not in {plan, discuss} → exit 6 `reopen_invalid_target`.
   4. Identity resolution (§3.1 step 2) — gitconfig auto-read; `--by` override.
      Empty → exit 6 `gitconfig_email_unset`.
-  5. install-record approvers membership (§3.1 step 3 + §6.1).
+  5. install-record presence check (membership gate removed — ADR-0002).
   6. State-trust preflight (§2.6) under the primary lock.
   6b. Source-phase validation: `--to plan` permitted only from execute/done;
       `--to discuss` permitted from any phase (design §3.2 line 250).

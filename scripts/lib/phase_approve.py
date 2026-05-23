@@ -1,4 +1,4 @@
-"""`phase approve` — interactive speed-bump gate (spec 2026-05-19-phase-approve-speed-bump-design.md).
+"""`phase approve` — interactive speed-bump gate.
 
 Stamps the *current* phase as approved. Does NOT advance to the next phase;
 use ``phase set <next>`` to advance after stamping.
@@ -8,23 +8,21 @@ Order of operations (any failure → typed ``ApproveResult`` with non-zero
 
   1. TTY gate. ``stdin_isatty=False`` → exit 17 ``non_tty_approval_blocked``.
      HARNESS_BY_TRUST / HARNESS_HUMAN are NEVER consulted on this path.
-  2. Phase guard. Phase not in ``{plan, execute}`` → refuses with EXIT_WRONG_PHASE_FOR_VERB.
-     Discuss is blocked: ``check.py`` SM-invariant requires ``approved=False`` there.
-  3. Identity resolution. ``--by`` if provided, else ``git config user.email``.
+  2. Identity resolution. ``--by`` if provided, else ``git config user.email``.
      Empty → exit 6 ``gitconfig_email_unset``.
-  4. install-record approvers membership check.
-  5. Load state under primary lock.
-  6. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
-  7. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
+  3. install-record presence check (no membership gate — ADR-0002).
+  4. Load state under primary lock.
+  5. ``state.execution_mode != "manual"`` → exit 8 ``approve_during_autopilot``.
+  6. Idempotency check: ``state.approved == True`` → exit 0 ``already_approved``.
+  7. Phase guard. Phase not in ``{plan, execute}`` → refuses with EXIT_WRONG_PHASE_FOR_VERB.
   8. Prompt ``[y/N]`` on TTY. Non-y answer, EOF, or Ctrl+C → exit 0
-     + sub_reason=user_cancelled (stderr message printed; cancel is not
-     an error, but the shell chain operator ``&&`` will continue. Use
-     ``phase approve && phase set execute`` carefully.)
+     + sub_reason=user_cancelled.
   9. State + audit mutation via ``phase_txn.commit_transaction``.
      Audit row records ``proof_class: soft_tty``.
 
-Spec: ``docs/superpowers/specs/2026-05-19-phase-approve-speed-bump-design.md``
-ADR : ``docs/adr/2026-05-17-approver-provenance-and-execution-mode.md``
+ADR : ``docs/adr/0002-internal-tool-threat-model.md`` (no attacker model —
+      override-identity, gitconfig fingerprint, and sanitizer machinery removed in M5).
+ADR : ``docs/adr/0001-execution-is-always-manual.md`` (actor field kept for attribution).
 """
 
 from __future__ import annotations
@@ -32,7 +30,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,12 +55,11 @@ class ApproveResult:
     exit_code: int
     sub_reason: str
     resolved_email: Optional[str] = None
-    by_source: Optional[str] = None  # "gitconfig_auto" | "explicit_by_flag" | "override_identity"
-    nonce_id: Optional[str] = None
+    by_source: Optional[str] = None  # "gitconfig_auto" | "explicit_by_flag"
 
 
 # ---------------------------------------------------------------------------
-# Fix-line messages (§3.9 — every error MUST carry a remediation)
+# Fix-line messages (every error MUST carry a remediation)
 # ---------------------------------------------------------------------------
 
 
@@ -75,39 +71,14 @@ _FIX_GITCONFIG = (
     "Fix: run `git config user.email <your-email>` "
     "or pass `harness phase approve --by <your-email>`"
 )
-_FIX_APPROVER_MEMBERSHIP = (
-    "Fix: only emails listed in `.harness/install-record.json approvers[]` "
-    "may approve; ask the install owner to add your email, re-run "
-    "`harness init --approver-email <your-email>`, or pass "
-    "`--override-identity --reason <text>`"
-)
 _FIX_AUTOPILOT = (
     "Fix: run `harness phase autopilot stop --reason \"<text>\"` "
     "first, then re-approve"
 )
-_FIX_GITCONFIG_MUTATED = (
-    "Fix: pass `--by <email>` explicitly, OR re-run `harness init` "
-    "with the updated email to record the gitconfig fingerprint (§12.6)"
-)
-_FIX_OVERRIDE_REASON_MISSING = (
-    "Fix: pass `--reason \"<text>\"` together with `--override-identity` "
-    "(the reason is mandatory and audited per ADR-001)"
-)
-_FIX_OVERRIDE_REASON_CHARS = (
-    "Fix: --override-reason must not contain NUL / newlines / control "
-    "chars / Unicode bidi controls (audit-line framing hazard)"
-)
-_FIX_OVERRIDE_REASON_LEN = (
-    "Fix: --override-reason is capped at 1024 chars (design §3.1.1)"
-)
-_FIX_OVERRIDE_IDENTITY_CHARS = (
-    "Fix: --override-identity must not contain NUL / newlines / "
-    "control chars / Unicode bidi controls"
-)
 
 
 # ---------------------------------------------------------------------------
-# TTY kind label helper (§3 Fix 3 audit redaction)
+# TTY kind label helper
 # ---------------------------------------------------------------------------
 
 def _tty_kind(tty_path: str) -> str:
@@ -115,7 +86,7 @@ def _tty_kind(tty_path: str) -> str:
 
     Labels: ``win-synthetic`` | ``posix-fallback`` | ``posix-real`` | ``unknown``.
     Empty string or unrecognised paths return ``unknown`` rather than lying
-    with ``posix-real`` (X8/HIGH-B-2 fix).
+    with ``posix-real``.
     """
     if not tty_path:
         return "unknown"
@@ -126,77 +97,6 @@ def _tty_kind(tty_path: str) -> str:
     if tty_path.startswith("/dev/"):
         return "posix-real"
     return "unknown"
-
-
-# ---------------------------------------------------------------------------
-# Sanitization (§3.1.1 final paragraph + §12.6)
-# ---------------------------------------------------------------------------
-
-
-_SANITIZE_MAX_LEN = 1024
-# C0 controls (0x00-0x1f), DEL (0x7f). We accept ordinary space (0x20+).
-_C0_CONTROLS = frozenset(chr(c) for c in range(0x00, 0x20))
-# Unicode bidi/isolate formatting controls — visual-spoof hazard
-# (Trojan-Source class). LRM/RLM/LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI.
-_BIDI_CONTROLS = frozenset([
-    "‎", "‏",  # LRM, RLM
-    "‪", "‫", "‬", "‭", "‮",  # LRE/RLE/PDF/LRO/RLO
-    "⁦", "⁧", "⁨", "⁩",  # LRI/RLI/FSI/PDI
-])
-# S04+S05 review-fix P2-2: parity with §12.6 Trojan-Source intent. Add
-# zero-width joiners (ZWJ/ZWNJ), Arabic Letter Mark (ALM), and Unicode
-# line/paragraph separators (LS/PS). All five are visual-spoof or
-# audit-line-framing hazards that the original set missed.
-_EXTRA_INVISIBLES = frozenset([
-    "‌",  # ZERO WIDTH NON-JOINER (ZWNJ)
-    "‍",  # ZERO WIDTH JOINER (ZWJ)
-    "؜",  # ARABIC LETTER MARK (ALM)
-    " ",  # LINE SEPARATOR (LS)
-    " ",  # PARAGRAPH SEPARATOR (PS)
-])
-# P3-P2-1 (cycle-1 review fix): extend forbidden chars to cover homograph /
-# confusable vectors not blocked by the existing sets:
-#   - Variation selectors (VS1-VS16, U+FE00-U+FE0F) -- silently alter glyph
-#     without changing the base character; audit log records the combined form.
-#   - Variation selectors supplement (VS17-VS256, U+E0100-U+E01EF).
-#   - Unicode tag characters (U+E0020-U+E007E) -- invisible control plane tags
-#     used in Trojan-Source-class payloads.
-#   - Unpaired UTF-16 surrogates (U+D800-U+DFFF) -- Python str can hold these
-#     via surrogate escape; reject explicitly to avoid encode/decode hazards.
-# Math Alphanumeric and compatibility forms are handled by NFKC normalization
-# (applied in _sanitize_string before the forbidden-char scan), which folds
-# them to their ASCII equivalents so the audit log records the canonical form.
-_VARIATION_SELECTORS = frozenset(chr(c) for c in range(0xFE00, 0xFE10))
-_VARIATION_SELECTORS_SUPPLEMENT = frozenset(chr(c) for c in range(0xE0100, 0xE01F0))
-_TAG_CHARS = frozenset(chr(c) for c in range(0xE0020, 0xE007F))
-_SURROGATES = frozenset(chr(c) for c in range(0xD800, 0xE000))
-_FORBIDDEN_CHARS = (
-    _C0_CONTROLS | {"\x7f"} | _BIDI_CONTROLS | _EXTRA_INVISIBLES
-    | _VARIATION_SELECTORS | _VARIATION_SELECTORS_SUPPLEMENT
-    | _TAG_CHARS | _SURROGATES
-)
-
-
-def _sanitize_string(s: str) -> str:
-    """Apply NFKC normalization and return the normalized string.
-
-    NFKC folds compatibility forms (Mathematical Alphanumeric Symbols,
-    full-width Latin, etc.) to their ASCII equivalents before the
-    forbidden-char scan.  This means e.g. '\U0001d41a\U0000646d\U0000696e' (math-bold
-    "adm") -> "adm" in the audit log -- the normalized canonical form is
-    stored, removing the homograph spoof while preserving semantic content.
-
-    The caller passes the normalized form to _has_forbidden_chars and to
-    the audit entry.  Spec: §3.1.1 + cycle-1 review P3-P2-1.
-    Length cap (1024 chars) applies POST-NFKC normalization; characters that
-    expand under NFKC (e.g. '½' -> '1⁄2') can cause near-cap input to balloon past it.
-    """
-    import unicodedata
-    return unicodedata.normalize("NFKC", s)
-
-
-def _has_forbidden_chars(s: str) -> bool:
-    return any(c in _FORBIDDEN_CHARS for c in s)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +122,28 @@ def _now_iso_z() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Identity resolver (tiny pure helper)
+# ---------------------------------------------------------------------------
+
+
+def resolve_approval_identity(
+    args,
+    lookup: Optional[Callable[[], str]] = None,
+) -> tuple[str, str]:
+    """Resolve the approver identity from ``--by`` or gitconfig.
+
+    Returns ``(email, by_source)`` where ``by_source`` is
+    ``"explicit_by_flag"`` or ``"gitconfig_auto"``.
+    Raises nothing — empty string means unresolved (caller exits).
+    """
+    by_flag = getattr(args, "by", None)
+    if by_flag:
+        return by_flag.strip(), "explicit_by_flag"
+    fn = lookup or default_gitconfig_email_lookup
+    return fn().strip(), "gitconfig_auto"
+
+
+# ---------------------------------------------------------------------------
 # Pure handler
 # ---------------------------------------------------------------------------
 
@@ -233,14 +155,13 @@ def run_approve(
     harness_dir: Path,
     audit_path: Path,
     install_record_path: Path,
-    nonce_dir: Path,
     stdin_isatty: bool,
     consumer_tty: str,
     gitconfig_email_lookup: Optional[Callable[[], str]] = None,
     env_vars: Optional[Mapping[str, str]] = None,
     repo_root: Optional[Path] = None,
 ) -> ApproveResult:
-    """Execute the §3.1 + §3.1.1 sequence. Returns a structured result.
+    """Execute the approval sequence. Returns a structured result.
 
     Dependency injection points (all default to real OS/git when not
     provided) make the function unit-testable without TTY allocation or
@@ -248,33 +169,22 @@ def run_approve(
 
     Note on `env_vars`: passed in explicitly so tests can verify that
     `HARNESS_BY_TRUST` / `HARNESS_HUMAN` do NOT influence the path —
-    this verb has zero env-trust per Round-4 BLOCK fix #2.
+    this verb has zero env-trust (ADR-0002).
     """
     scratch = Path(scratch)
     harness_dir = Path(harness_dir)
     audit_path = Path(audit_path)
     install_record_path = Path(install_record_path)
-    nonce_dir = Path(nonce_dir)
     if env_vars is None:
         env_vars = os.environ
-    # env_vars is intentionally never consulted for identity resolution
-    # below. The test `test_env_vars_byte_identical_to_empty_env` proves
-    # the byte-identical-output property by injecting `HARNESS_BY_TRUST`
-    # and comparing against an empty-env baseline.
+    # env_vars is intentionally never consulted for identity resolution.
     del env_vars
 
-    # nonce_dir intentionally unused — phase.approve is now a workflow
-    # speed bump (spec 2026-05-19). Release path uses ~/.harness/approval-nonces/
-    # via its own handler, not this one.
-    del nonce_dir
-
-    # ---------- Smoke-test bypass (BLOCKER A-4) ----------
+    # ---------- Smoke-test bypass ----------
     # ONLY active when BOTH env vars are set to "1". Production callers never
     # set HARNESS_SMOKE_TEST, so this branch is unreachable in production.
     # When active: TTY gate + [y/N] prompt are skipped; ALL other checks
-    # (identity, approver allowlist, audit) still run.
-    # Audit row records proof_class=smoke_bypass so forensics can distinguish
-    # smoke runs from real human approves.
+    # (identity, audit) still run.
     if (
         os.environ.get("HARNESS_SMOKE_BYPASS_SPEED_BUMP") == "1"
         and os.environ.get("HARNESS_SMOKE_TEST") == "1"
@@ -293,14 +203,7 @@ def run_approve(
         return ApproveResult(exit_code=_exitcodes.EXIT_HUMAN_CONFIRMATION_REQUIRED, sub_reason="non_tty_approval_blocked")
 
     # ---------- Step 2: identity resolution ----------
-    by_flag = getattr(args, "by", None)
-    if by_flag:
-        resolved = by_flag.strip()
-        by_source = "explicit_by_flag"
-    else:
-        lookup = gitconfig_email_lookup or default_gitconfig_email_lookup
-        resolved = lookup().strip()
-        by_source = "gitconfig_auto"
+    resolved, by_source = resolve_approval_identity(args, gitconfig_email_lookup)
     if not resolved:
         print(
             f"error: phase approve refused: gitconfig user.email is unset. "
@@ -309,126 +212,11 @@ def run_approve(
         )
         return ApproveResult(exit_code=6, sub_reason="gitconfig_email_unset")
 
-    # ---------- Step 2a: gitconfig fingerprint check (§12.6) ----------
-    # Only runs when --by is NOT passed (gitconfig_auto path). If the
-    # install-record recorded git_user_email_at_install_sha256 and the
-    # current gitconfig email no longer matches that fingerprint, exit 6
-    # so a rotated/shared-workstation gitconfig cannot silently approve.
-    # When by_source == "explicit_by_flag" the user has explicitly asserted
-    # their identity; the fingerprint check is skipped (--by is opt-in bypass).
-    if by_source == "gitconfig_auto":
-        try:
-            _ir_for_fingerprint = _load_install_record(install_record_path)
-            stored_fingerprint = _ir_for_fingerprint.get("git_user_email_at_install_sha256")
-            if stored_fingerprint is not None:
-                import hashlib as _hashlib
-                current_fingerprint = _hashlib.sha256(
-                    resolved.lower().encode("utf-8")
-                ).hexdigest()
-                if current_fingerprint != stored_fingerprint:
-                    print(
-                        f"error: phase approve refused: current gitconfig user.email "
-                        f"sha256 does not match install-record fingerprint "
-                        f"(gitconfig_mutated_post_install). {_FIX_GITCONFIG_MUTATED}",
-                        file=sys.stderr,
-                    )
-                    return ApproveResult(
-                        exit_code=6,
-                        sub_reason="gitconfig_mutated_post_install",
-                        resolved_email=resolved,
-                        by_source=by_source,
-                    )
-        except FileNotFoundError:
-            # install_record missing — caught at step 3; skip fingerprint here
-            pass
-
-    # ---------- Step 2b: override-identity handling (§3.1 step 4 + ADR-001) ----------
-    # Design decision (under-specified clarification): §3.1 step 4 says
-    # `--override-identity` "bypasses step 3". We read this as "the
-    # AUDIT-DISPLAYED identity differs from the resolved one", NOT "the
-    # gate is removed". The resolved email (gitconfig or --by) MUST
-    # still be in approvers — otherwise the override flag is just an
-    # env-spoof rename. The override changes the audit `by` field
-    # (forensic display) and flips `by_source=override_identity` so
-    # reviewers can grep for unusual provenance. The `override_reason`
-    # is mandatory and audited.
-    override_identity_raw = getattr(args, "override_identity", None)
-    override_identity: Optional[str] = None
-    override_reason_clean: Optional[str] = None
-    if override_identity_raw not in (None, False, ""):
-        if not isinstance(override_identity_raw, str):
-            override_identity_raw = str(override_identity_raw)
-        # Reason mandatory.
-        raw_reason = getattr(args, "override_reason", None)
-        if raw_reason is None or not str(raw_reason).strip():
-            print(
-                f"error: phase approve refused: --override-identity requires "
-                f"--reason. {_FIX_OVERRIDE_REASON_MISSING}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason="override_reason_missing",
-                resolved_email=resolved,
-                by_source="override_identity",
-            )
-        # P3-P2-1: NFKC-normalize before length/charset checks.
-        # Folds Math Alphanumeric and other compatibility forms to ASCII.
-        reason_str = _sanitize_string(str(raw_reason))
-        # Length cap.
-        if len(reason_str) > _SANITIZE_MAX_LEN:
-            print(
-                f"error: phase approve refused: --override-reason exceeds "
-                f"{_SANITIZE_MAX_LEN} chars. {_FIX_OVERRIDE_REASON_LEN}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason="override_reason_too_long",
-                resolved_email=resolved,
-                by_source="override_identity",
-            )
-        # Charset.
-        if _has_forbidden_chars(reason_str):
-            print(
-                f"error: phase approve refused: --override-reason contains "
-                f"forbidden chars. {_FIX_OVERRIDE_REASON_CHARS}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason="override_reason_invalid_chars",
-                resolved_email=resolved,
-                by_source="override_identity",
-            )
-        # Identity itself sanitized too (same charset).
-        override_identity_raw = _sanitize_string(override_identity_raw)
-        if _has_forbidden_chars(override_identity_raw) or \
-                len(override_identity_raw) > _SANITIZE_MAX_LEN:
-            print(
-                f"error: phase approve refused: --override-identity contains "
-                f"forbidden chars. {_FIX_OVERRIDE_IDENTITY_CHARS}",
-                file=sys.stderr,
-            )
-            return ApproveResult(
-                exit_code=6,
-                sub_reason="override_identity_invalid_chars",
-                resolved_email=resolved,
-                by_source="override_identity",
-            )
-        override_identity = override_identity_raw.strip()
-        override_reason_clean = reason_str.strip()
-        by_source = "override_identity"
-
-    # ---------- Step 3: install-record presence (membership removed v0.9.13) ----------
-    # v0.9.13: approver-membership check fully removed. This is an internal
-    # single-user dev tool (memory feedback_internal_only_threat_model). The
-    # "approvers list" was workflow theater inherited from a multi-approver
-    # design that nobody uses. The install-record file existence is still
-    # checked because downstream forensic code reads it (audit row builder,
-    # check_installed_target), but no email comparison happens.
+    # ---------- Step 3: install-record presence ----------
+    # No membership gate (ADR-0002: no attacker model). File existence is still
+    # checked because downstream forensic code reads it.
     try:
-        install_record = _load_install_record(install_record_path)
+        _load_install_record(install_record_path)
     except FileNotFoundError:
         print(
             f"error: phase approve refused: {install_record_path} not found. "
@@ -437,7 +225,7 @@ def run_approve(
         )
         return ApproveResult(exit_code=6, sub_reason="install_record_missing")
 
-    # ---------- Steps 4+5+6+7+8: under primary lock ----------
+    # ---------- Steps 4–8: under primary lock ----------
     lock = _phase_lock.acquire_primary(scratch, timeout_s=10.0)
     try:
         # Load canonical state.
@@ -494,19 +282,8 @@ def run_approve(
                 by_source=by_source,
             )
 
-        # ---------- Step 7: Speed-bump prompt ----------
-        # Per spec 2026-05-19-phase-approve-speed-bump-design.md §4.1, prompt
-        # names the *current* phase being stamped (not the next phase) to avoid
-        # users misreading approve as auto-advance.
+        # ---------- Step 7: Phase-validity guard ----------
         current_phase = before_state.get("phase", "unknown")
-
-        # Phase-validity guard: only plan and execute are approvable phases.
-        # - done: terminal phase, no further state to stamp.
-        # - discuss: check.py SM-invariant enforces approved=False in discuss;
-        #   approving here creates an immediately-invalid state rejected by
-        #   `harness check`. Discuss also has no plan document yet — approval
-        #   is semantically meaningless (HIGH-7 final-review finding).
-        # Conservative: restrict to plan and execute, the two real gate phases.
         APPROVABLE_PHASES = {"plan", "execute"}
         if current_phase not in APPROVABLE_PHASES:
             if current_phase == "done":
@@ -528,6 +305,7 @@ def run_approve(
                 sub_reason=sub,
             )
 
+        # ---------- Step 8: Speed-bump prompt ----------
         prompt = (
             f"Approve current phase={current_phase}? "
             f"Type y to confirm, N to cancel [y/N]: "
@@ -549,54 +327,28 @@ def run_approve(
                 return ApproveResult(exit_code=_exitcodes.EXIT_OK, sub_reason="user_cancelled")
         # If smoke bypass is active, skip prompt — proceed directly to audit + stamp.
 
-        # ---------- Step 8: state + audit mutation ----------
+        # ---------- Step 9: state + audit mutation ----------
         approved_at = (
             getattr(args, "at", None) or _now_iso_z()
         )
         after_state = dict(before_state)
         after_state["approved"] = True
-        # State `approved_by` records the AUDIT-DISPLAYED identity
-        # (override when set; resolved otherwise) so `harness status`
-        # surfaces the same value the audit log carries.
-        after_state["approved_by"] = override_identity or resolved
+        after_state["approved_by"] = resolved
         after_state["approved_at"] = approved_at
 
-        # Audit entry: proof_class=soft_tty records that the human confirmed
-        # via interactive [y/N] prompt on a TTY (speed-bump design §4.1).
-        # S05: when override_identity is set, the audit `by` field is the
-        # override (forensic-displayed identity); `by_source` is
-        # "override_identity"; `confirmation_kind` is also
-        # "override_identity" so reviewers can detect this branch from
-        # either field (truncation-resilient cross-check).
-        audit_by = override_identity or resolved
-        if override_identity is not None:
-            confirmation_kind = "override_identity"
-        else:
-            confirmation_kind = "soft_tty"
         proof_class_value = "smoke_bypass" if _smoke_bypass_active else "soft_tty"
-        audit_extra = {
+        audit_draft = {
+            "verb": "phase.approve",
+            "by": resolved,
+            "by_source": by_source,
+            "confirmation_kind": "soft_tty",
             "proof_class": proof_class_value,
             "tty": consumer_tty,
             "response": "smoke_bypass" if _smoke_bypass_active else "y",
-        }
-        audit_draft = {
-            "verb": "phase.approve",
-            "by": audit_by,
-            "by_source": by_source,
-            "confirmation_kind": confirmation_kind,
-            **audit_extra,
             "args": {
                 "approved_at": approved_at,
             },
         }
-        if override_identity is not None:
-            audit_draft["args"]["override_reason"] = override_reason_clean
-            audit_draft["args"]["override_identity"] = override_identity
-            audit_draft["args"]["resolved_email"] = resolved
-        # NOTE: `commit_transaction` reads `_phase_txn` via module-level
-        # symbol; tests that monkeypatch `phase_txn.commit_transaction`
-        # also monkeypatch `phase_approve._phase_txn` to the live module
-        # so the spy is honored.
         txn_id = _phase_txn.commit_transaction(
             scratch,
             lock=lock,
@@ -632,4 +384,4 @@ def run_approve(
         _phase_lock.release_primary(lock)
 
 
-__all__ = ["ApproveResult", "run_approve", "default_gitconfig_email_lookup"]
+__all__ = ["ApproveResult", "run_approve", "default_gitconfig_email_lookup", "resolve_approval_identity"]

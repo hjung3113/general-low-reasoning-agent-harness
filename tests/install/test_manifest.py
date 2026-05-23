@@ -508,12 +508,16 @@ class TestFixtureRoundTrips:
         assert exc.value.code == 5
 
     def test_install_record_tampered_approvers_fixture_exists(self) -> None:
-        """install_record_tampered_approvers fixture must be present."""
+        """install_record_tampered_approvers fixture must be present.
+
+        Forward-compat (M5 #13, ADR-0002): legacy install-records with
+        approvers[] are tolerated — load_install_record does not fail on them.
+        """
         fixture_path = FIXTURES_DIR / "install_record_tampered_approvers" / "install-record.json"
         assert fixture_path.exists(), f"Fixture missing: {fixture_path}"
         data = json.loads(fixture_path.read_text(encoding="utf-8"))
-        # The tampered approvers field must be a list
-        assert isinstance(data.get("approvers"), list)
+        # Legacy record may contain approvers[] — loading must not fail.
+        assert isinstance(data, dict)
 
 
 # ===========================================================================

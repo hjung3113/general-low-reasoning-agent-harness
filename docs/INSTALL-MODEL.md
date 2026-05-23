@@ -2,46 +2,21 @@
 
 하네스를 타겟 프로젝트에 심고 갱신하는 메커니즘.
 
-## 1. Manifest 구조 (`harness/manifest.json`, ~1357 lines)
+## 1. Manifest 구조 (`harness/manifest.json`)
+
+> **Canonical artifact tables are in [`docs/ARTIFACTS.md`](ARTIFACTS.md)** — generated from
+> `harness/manifest.json` by `python3 scripts/generate_artifacts_doc.py`.
+> Do not hand-maintain file counts or pack lists here.
 
 ### 최상위 키
 
 ```json
 {
   "version": "__release__",         // 릴리즈 시 interpolate
-  "packs": { ... },                  // 18개 pack 정의
-  "files": [ ... ],                  // ~204개 manifest entries
-  "removed_in_version": [ ... ]      // v0.7 legacy 제거 기록 (4 entries)
+  "packs": { ... },                  // pack 정의 (count: see ARTIFACTS.md)
+  "files": [ ... ],                  // manifest entries (count: see ARTIFACTS.md)
+  "removed_in_version": [ ... ]      // graveyard — removed artifacts with upgrade_action
 }
-```
-
-### packs section
-
-각 pack:
-```json
-{
-  "category": "workflow" | "tech",
-  "capabilities": ["...", ...],
-  "activation_evidence"?: ["pyproject.toml", ...],
-  "suggests"?: ["workflow-db-context"],
-  "generic_safe_default"?: true
-}
-```
-
-18 packs: workflow-core, workflow-tdd, workflow-etl, workflow-data-analysis, workflow-data-processing, workflow-db-context, workflow-debugging, workflow-code-review, workflow-skill-authoring, workflow-security-review, workflow-web-development (11) + tech-python, tech-react, tech-typescript, tech-tailwind, tech-csharp, tech-mssql, tech-postgresql (7).
-
-### files section
-
-`ManifestEntry` (manifest.py:68-78):
-```python
-path: PurePosixPath          # 타겟 경로
-source: PurePosixPath        # harness 트리 내 소스 경로
-policy: str                  # 아래 표
-owner: str = "core"          # core | adapter:<n> | pack:<n>
-adapter: str | None          # roo | opencode | None (inferred)
-profile: str | None          # generic | dotnet-etl | python-etl | react-web
-pack: str | None             # workflow-core | tech-python | ...
-retired_action: str          # remove_if_unmodified (default)
 ```
 
 ### Policy matrix
@@ -54,6 +29,19 @@ retired_action: str          # remove_if_unmodified (default)
 | `project-owned` | application code. drift 검사 안 함 |
 | `exclude` | 설치 시 skip |
 
+### ManifestEntry dataclass (manifest.py)
+
+```python
+path: PurePosixPath          # 타겟 경로
+source: PurePosixPath        # harness 트리 내 소스 경로
+policy: str                  # 위 표 참고
+owner: str = "core"          # core | adapter:<n> | pack:<n>
+adapter: str | None          # roo | opencode | None (inferred)
+profile: str | None          # generic | dotnet-etl | python-etl | react-web
+pack: str | None             # workflow-core | tech-python | ...
+retired_action: str          # remove_if_unmodified (default)
+```
+
 ### Adapter inference
 
 ```python
@@ -62,7 +50,7 @@ retired_action: str          # remove_if_unmodified (default)
 .opencode/* → adapter="opencode"
 ```
 
-`select_entries()` (manifest.py:186-202):
+`select_entries()` (manifest.py):
 ```python
 if entry.adapter and entry.adapter not in requested_adapters: skip
 if entry.profile and entry.profile not in requested_profiles: skip
@@ -112,7 +100,7 @@ if entry.pack and entry.pack not in requested_packs: skip
 6. **Write install state**: `.harness/installed-manifest.json` (schema_version=2)
 7. **Sync .roomodes**: roomodes_writer가 logical base/profile split
 8. **Hook install (opt)**: `.git/hooks/pre-commit` 마커 블록 (hooks.py)
-9. **install-record.json**: approver email 기록 (`--approver-email`, 기본 git config)
+9. **install-record.json**: installer identity 기록 (git config email 자동, `--approver-email` 제거됨 — ADR-0002)
 
 ### Atomic batch (atomic_io.py + durable_fs.py)
 
@@ -156,6 +144,20 @@ manifest_v2, profiles, progress, roadmap_state, state, version
 ### Adopt-existing
 
 `--adopt-existing`: 매뉴얼로 심어진 하네스에 대해 install state 합성 (`adoption.py`, 227 LOC).
+
+### Graveyard (M6/#15)
+
+Upgrade also applies `removed_in_version` graveyard policy from `manifest.obsolete_artifact_policy()`:
+
+| upgrade_action | Behavior |
+|---|---|
+| `delete` | Delete file if present on target (harness-owned artifacts) |
+| `warn` | Print warning to stderr, leave file untouched (project-owned / unknown) |
+| `ignore` | Silent no-op |
+
+Default inference when `upgrade_action` is absent: adapter paths (`.roo/`, `.opencode/`) → `delete`; all others → `warn`. **Never auto-delete project-owned content.**
+
+See [`docs/ARTIFACTS.md`](ARTIFACTS.md) §3 for the current graveyard table.
 
 ## 7. Uninstall flow (`scripts/uninstall_harness.py`, 358 LOC)
 
