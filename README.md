@@ -89,6 +89,16 @@ harness upgrade --adopt-existing
 
 This treats the existing files as the starting point for an install and writes the install record. The harness refuses to auto-route ambiguous / partial states — you have to opt in.
 
+## Agent-driven workflows
+
+The harness exists to give low-reasoning agents a structured workflow they can follow: the agent does the work (`discuss`, `plan`, `execute`), and a supervising human approves transitions at each gate.
+
+**The approval gate is a human checkpoint, not an authorization system.** `harness phase approve` is TTY-only by design (see [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md)). The agent prepares work and requests approval; the human runs the interactive command from a real terminal to advance the phase. The audit log (`.harness/audit.jsonl`) records who approved each transition.
+
+**Exit code 17 is correct behavior.** If you're an agent reading this and `phase approve` exits with code 17, you're not on a TTY — that's the intended checkpoint. Hand the session back to your supervising human; they will run the approval from an interactive shell.
+
+**Integration with agent harnesses.** To run this with Claude Code, Codex, Cursor, or other agent harnesses, ensure the supervising human has a real shell open with the project as the current working directory to handle the approval prompt when the agent reaches a gate.
+
 ## Uninstall
 
 ```bash

@@ -89,6 +89,16 @@ harness upgrade --adopt-existing
 
 기존 파일을 install 의 출발점으로 인정하고 install-record 작성. 모호한/부분 상태는 자동 라우팅 거부 — 명시적 opt-in 필요.
 
+## 에이전트 주도 워크플로우
+
+하네스는 저성능 AI 에이전트가 체계적인 워크플로우를 따를 수 있도록 설계되었습니다: 에이전트가 작업을 수행하고 (`discuss`, `plan`, `execute`), 감시자인 사람이 각 게이트에서 전환을 승인합니다.
+
+**승인 게이트는 권한 부여 시스템이 아니라 사람이 있는 체크포인트입니다.** 설계상 `harness phase approve` 는 TTY 전용입니다 ([`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) 참조). 에이전트가 작업을 준비하고 승인을 요청하면, 사람이 실제 터미널에서 대화형으로 명령을 실행하여 phase 를 진행합니다. 감사 로그 (`.harness/audit.jsonl`) 는 각 전환을 누가 승인했는지 기록합니다.
+
+**Exit code 17 은 올바른 동작입니다.** 이 문서를 읽는 에이전트라면, `phase approve` 가 exit code 17 로 종료되면 TTY 환경이 아닌 것입니다. — 이것이 의도된 체크포인트입니다. 세션을 감시 역할을 하는 사람에게 넘겨주세요. 감시자가 대화형 셸에서 승인을 실행할 것입니다.
+
+**에이전트 하네스와의 통합.** Claude Code, Codex, Cursor 또는 다른 에이전트 하네스에서 이것을 실행하려면, 감시자가 에이전트가 게이트에 도달했을 때 승인 프롬프트를 처리할 수 있도록 프로젝트를 현재 작업 디렉토리로 설정하여 실제 셸을 열어 두어야 합니다.
+
 ## Uninstall
 
 ```bash
