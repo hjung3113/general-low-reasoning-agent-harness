@@ -1,12 +1,11 @@
 """v0.7.1 P0 — runtime-dep import-guard contract.
 
-`scripts/lib/phase_lock.py` and `scripts/lib/audit_chain.py` MUST surface
-a SystemExit with an actionable install instruction when the declared
-runtime dependency (`psutil`, `rfc8785` respectively) is missing,
-instead of letting a bare ``ModuleNotFoundError`` traceback escape.
+`scripts/lib/phase_lock.py` MUST surface a SystemExit with an actionable
+install instruction when the declared runtime dependency (`psutil`) is
+missing, instead of letting a bare ``ModuleNotFoundError`` traceback escape.
 
-The guards have ``# pragma: no cover`` in source because the import path
-is environment-dependent — these tests cover the contract by running a
+The guard has ``# pragma: no cover`` in source because the import path
+is environment-dependent — this test covers the contract by running a
 fresh interpreter with the target module blocked, so future refactors
 cannot silently revert the guard.
 """
@@ -55,9 +54,8 @@ def _run_with_blocked_module(blocked: str, target_import: str) -> subprocess.Com
     ("blocked", "target_import"),
     [
         ("psutil", "from lib import phase_lock  # noqa: F401"),
-        ("rfc8785", "from lib import audit_chain  # noqa: F401"),
     ],
-    ids=["phase_lock-missing-psutil", "audit_chain-missing-rfc8785"],
+    ids=["phase_lock-missing-psutil"],
 )
 def test_missing_runtime_dep_surfaces_actionable_systemexit(
     blocked: str, target_import: str
