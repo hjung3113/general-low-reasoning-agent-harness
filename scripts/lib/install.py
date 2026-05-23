@@ -59,6 +59,31 @@ INSTALL_RECORD_NAME = "install-record.json"
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _manual_cleanup_cmd() -> str:
+    if _is_windows():
+        return "Remove-Item -Recurse -Force .harness"
+    return "rm -rf .harness"
+
+
+def _permission_recovery_cmds() -> str:
+    if _is_windows():
+        return (
+            "takeown /F .harness /R /A\n"
+            "  icacls .harness /grant \"$env:USERNAME:(F)\" /T\n"
+            "  Remove-Item -Recurse -Force .harness\n"
+            "  python scripts\\harness.py init --target ."
+        )
+    return (
+        "sudo chown -R \"$(id -un)\" .harness\n"
+        "  rm -rf .harness\n"
+        "  python3 scripts/harness.py init --target ."
+    )
+
+
 def _sanitize_approver_email(raw: str) -> str:
     """Sanitize a candidate approver email (codex M-6).
 
@@ -313,8 +338,7 @@ def install(
                 f"       python3 scripts/harness.py init --target {target} --force\n"
                 f"\n"
                 f"  2) 또는 수동 정리:\n"
-                f"       Remove-Item -Recurse -Force .harness   # PowerShell\n"
-                f"       rm -rf .harness                         # bash\n"
+                f"       {_manual_cleanup_cmd()}\n"
                 f"     그 후 다시 init.\n"
                 f"\n"
                 f"[Half-installed state detected. Re-run with --force, or delete "
@@ -624,15 +648,12 @@ def _preflight_target_writable(target: Path) -> None:
         raise SystemExit(
             f"error: harness init refused — .harness/ exists but is not writable: {exc}\n"
             f"\n"
-            f"흔한 원인: 이전 install 이 관리자 권한으로 돌아 .harness/ 가 다른 사용자 소유.\n"
-            f"대처 (Windows PowerShell):\n"
-            f"  takeown /F .harness /R /A\n"
-            f"  icacls .harness /grant \"$env:USERNAME:(F)\" /T\n"
-            f"  Remove-Item -Recurse -Force .harness\n"
-            f"  python3 scripts\\harness.py init --target .\n"
+            f"흔한 원인: 이전 install 이 관리자/다른 사용자 권한으로 돌아 .harness/ 소유권 다름.\n"
+            f"대처:\n"
+            f"  {_permission_recovery_cmds()}\n"
             f"\n"
             f"[.harness/ exists but current user has no write permission. "
-            f"takeown + icacls + delete then retry.]"
+            f"Fix ownership/perms then delete and retry.]"
         ) from exc
 
 

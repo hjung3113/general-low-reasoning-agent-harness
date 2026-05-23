@@ -131,7 +131,14 @@ def run(argv: list[str] | None = None) -> int:
             remove_install_state=args.remove_install_state_only or args.remove_all,
         )
     if args.interactive:
-        args = prompt_interactive(args)
+        try:
+            args = prompt_interactive(args)
+        except EOFError:
+            parser.error(
+                "--interactive ran out of input. stdin is closed or empty; "
+                "either run from a TTY, pipe the answers, or drop --interactive "
+                "and pass --target / --select explicitly."
+            )
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     selected = parse_selection(args.select)

@@ -180,7 +180,9 @@ def run(argv: list[str] | None = None) -> int:
     if version:
         env["HARNESS_DELEGATED_SOURCE_VERSION"] = version
     result = subprocess.run(command, cwd=source, env=env)
-    if args.dry_run:
+    # Only print the dry-run reassurance when the delegated check actually
+    # succeeded — otherwise the caller misreads a failed dry-run as a no-op.
+    if args.dry_run and result.returncode == 0:
         print("no mutation performed")
     return result.returncode
 

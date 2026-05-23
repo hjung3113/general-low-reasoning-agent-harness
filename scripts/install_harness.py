@@ -250,7 +250,14 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     if args.interactive:
-        args = prompt_interactive(args)
+        try:
+            args = prompt_interactive(args)
+        except EOFError:
+            parser.error(
+                "--interactive ran out of input. stdin is closed or empty; "
+                "either run from a TTY, pipe the answers, or drop --interactive "
+                "and pass flags (--target/--adapters/--profiles/--packs) explicitly."
+            )
     if args.target is None:
         parser.error("--target is required unless --interactive supplies it")
     delegated = build_harness_argv(args)

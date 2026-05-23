@@ -409,8 +409,11 @@ def _normal_help() -> str:
         "  harness next   Show the next safe action.\n"
         "  harness run    Run the next safe workflow step; stops for approval.\n"
         "  harness check  Validate the harness and project workflow state.\n\n"
-        "Advanced/debug commands are hidden from the normal path. "
-        "Set HARNESS_ADVANCED=1 to show the full command surface.\n"
+        "Advanced commands (hidden by default):\n"
+        "  init, upgrade, uninstall, install, doctor, release-check,\n"
+        "  state, phase, session, status\n\n"
+        "Show advanced help:\n"
+        "  HARNESS_ADVANCED=1 harness --help\n"
     )
 
 
