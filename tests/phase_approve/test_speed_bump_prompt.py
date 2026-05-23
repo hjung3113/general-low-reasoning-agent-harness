@@ -12,7 +12,7 @@ from tests.phase_approve.conftest import seed_scratch
 
 
 def _stub_args(**overrides):
-    base = dict(by=None)
+    base = dict(by=None, at=None)
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -27,14 +27,11 @@ def _setup(tmp_path: Path):
     install_record = harness_dir / "install.json"
     install_record.write_text(
         json.dumps({
-            "approvers": [
-                {"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}
-            ]
+            "harness_version": "v0.9.0-test",
+            "installed_at": "2026-01-01T00:00:00Z",
         })
     )
-    nonce_dir = tmp_path / "nonces"
-    nonce_dir.mkdir()
-    return scratch, harness_dir, audit_path, install_record, nonce_dir
+    return scratch, harness_dir, audit_path, install_record
 
 
 def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
@@ -45,10 +42,8 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
     audit_path = harness_dir / "audit.log"
     install_record = harness_dir / "install.json"
     install_record.write_text(
-        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+        json.dumps({"harness_version": "v0.9.0-test", "installed_at": "2026-01-01T00:00:00Z"})
     )
-    nonce_dir = tmp_path / "nonces"
-    nonce_dir.mkdir()
 
     # Bootstrap scratch state
     seed_scratch(scratch, audit_path)
@@ -67,7 +62,6 @@ def test_phase_approve_prompts_and_stamps_on_y(tmp_path, monkeypatch):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -88,10 +82,8 @@ def test_phase_approve_non_tty_halts_with_exit_17(tmp_path):
     audit_path = harness_dir / "audit.log"
     install_record = harness_dir / "install.json"
     install_record.write_text(
-        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+        json.dumps({"harness_version": "v0.9.0-test", "installed_at": "2026-01-01T00:00:00Z"})
     )
-    nonce_dir = tmp_path / "nonces"
-    nonce_dir.mkdir()
 
     result = phase_approve.run_approve(
         _stub_args(),
@@ -99,7 +91,6 @@ def test_phase_approve_non_tty_halts_with_exit_17(tmp_path):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -119,10 +110,8 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
     audit_path = harness_dir / "audit.log"
     install_record = harness_dir / "install.json"
     install_record.write_text(
-        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+        json.dumps({"harness_version": "v0.9.0-test", "installed_at": "2026-01-01T00:00:00Z"})
     )
-    nonce_dir = tmp_path / "nonces"
-    nonce_dir.mkdir()
 
     # Bootstrap scratch state
     seed_scratch(scratch, audit_path)
@@ -133,7 +122,6 @@ def test_phase_approve_cancels_cleanly_on_capital_n(tmp_path, monkeypatch):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -153,10 +141,8 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
     audit_path = harness_dir / "audit.log"
     install_record = harness_dir / "install.json"
     install_record.write_text(
-        json.dumps({"approvers": [{"email": "u@example.com", "added_at": "2026-01-01T00:00:00Z", "source": "gitconfig_auto"}]})
+        json.dumps({"harness_version": "v0.9.0-test", "installed_at": "2026-01-01T00:00:00Z"})
     )
-    nonce_dir = tmp_path / "nonces"
-    nonce_dir.mkdir()
 
     # Seed scratch in done phase — no further state to stamp
     from lib import phase_txn
@@ -177,7 +163,6 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -190,7 +175,7 @@ def test_phase_approve_in_done_phase_refuses(tmp_path, monkeypatch):
 def test_phase_approve_in_discuss_phase_refuses(tmp_path, monkeypatch):
     """HIGH-7: approve in discuss must be refused (check.py SM-invariant: discuss.approved=False)."""
     monkeypatch.setattr("builtins.input", lambda _="": "y")
-    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
+    scratch, harness_dir, audit_path, install_record = _setup(tmp_path)
 
     # Seed discuss phase
     from lib import phase_txn
@@ -211,7 +196,6 @@ def test_phase_approve_in_discuss_phase_refuses(tmp_path, monkeypatch):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -225,14 +209,13 @@ def test_smoke_bypass_only_when_both_env_vars_set(tmp_path, monkeypatch):
     """Smoke bypass refuses to activate when only one of the two env vars is set."""
     monkeypatch.setenv("HARNESS_SMOKE_BYPASS_SPEED_BUMP", "1")
     monkeypatch.delenv("HARNESS_SMOKE_TEST", raising=False)
-    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
+    scratch, harness_dir, audit_path, install_record = _setup(tmp_path)
     result = phase_approve.run_approve(
         _stub_args(),
         scratch=scratch,
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -244,7 +227,7 @@ def test_smoke_bypass_only_when_both_env_vars_set(tmp_path, monkeypatch):
 def test_cancel_prints_stderr_message(tmp_path, monkeypatch, capsys):
     """Non-y response must print a cancellation message to stderr (X5/HIGH-6)."""
     monkeypatch.setattr("builtins.input", lambda _="": "N")
-    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
+    scratch, harness_dir, audit_path, install_record = _setup(tmp_path)
     seed_scratch(scratch, audit_path)
     result = phase_approve.run_approve(
         _stub_args(),
@@ -252,7 +235,6 @@ def test_cancel_prints_stderr_message(tmp_path, monkeypatch, capsys):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=True,
         consumer_tty="/dev/ttys000",
         gitconfig_email_lookup=lambda: "u@example.com",
@@ -276,8 +258,8 @@ def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
     """Smoke bypass active: skips TTY check + prompt, writes smoke_bypass audit row."""
     monkeypatch.setenv("HARNESS_SMOKE_BYPASS_SPEED_BUMP", "1")
     monkeypatch.setenv("HARNESS_SMOKE_TEST", "1")
-    scratch, harness_dir, audit_path, install_record, nonce_dir = _setup(tmp_path)
-    # because seed_scratch intentionally does NOT write an audit chain entry.
+    scratch, harness_dir, audit_path, install_record = _setup(tmp_path)
+    # seed_scratch intentionally does NOT write an audit chain entry.
     seed_scratch(scratch, audit_path)
     result = phase_approve.run_approve(
         _stub_args(),
@@ -285,7 +267,6 @@ def test_smoke_bypass_active_when_both_env_vars_set(tmp_path, monkeypatch):
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record,
-        nonce_dir=nonce_dir,
         stdin_isatty=False,
         consumer_tty="",
         gitconfig_email_lookup=lambda: "u@example.com",

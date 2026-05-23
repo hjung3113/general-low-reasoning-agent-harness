@@ -44,21 +44,12 @@ def env(tmp_path: Path) -> dict:
     harness = tmp_path / ".harness"
     harness.mkdir()
     audit_path = harness / "audit.log"
-    nonce_dir = tmp_path / "out-of-project" / "approval-nonces"
-    nonce_dir.mkdir(parents=True)  # kept for API compat; not consulted by speed-bump flow
 
     install_record = {
         "harness_version": "v0.7.0",
         "installed_at": "2026-05-17T03:14:15Z",
         "adapters": ["roo"],
         "git_present_at_install": True,
-        "approvers": [
-            {
-                "email": "alice@example.com",
-                "added_at": "2026-05-17T03:14:15Z",
-                "source": "gitconfig_auto",
-            }
-        ],
     }
     (harness / "install-record.json").write_text(
         json.dumps(install_record, indent=2, sort_keys=True) + "\n"
@@ -97,7 +88,6 @@ def env(tmp_path: Path) -> dict:
         "harness": harness,
         "audit_path": audit_path,
         "install_record_path": harness / "install-record.json",
-        "nonce_dir": nonce_dir,
     }
 
 
@@ -106,8 +96,6 @@ def _make_args(**overrides):
     base = {
         "by": None,
         "at": None,
-        "override_identity": False,
-        "override_reason": None,
     }
     base.update(overrides)
 
@@ -128,9 +116,9 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
     """Invoke run_approve with the test-controlled environment.
 
     `monkeypatch` + `input_response`: when the call is expected to reach
-    the Step 7 speed-bump prompt, pass the pytest `monkeypatch` fixture
+    the Step 8 speed-bump prompt, pass the pytest `monkeypatch` fixture
     and the desired response string (default "y"). Tests that return
-    before Step 7 (TTY gate, identity, etc.) can omit both.
+    before Step 8 (TTY gate, identity, etc.) can omit both.
     """
     if monkeypatch is not None:
         monkeypatch.setattr("builtins.input", lambda _prompt="": input_response)
@@ -141,7 +129,6 @@ def _run(env, *, stdin_isatty=True, consumer_tty="/dev/ttys002",
         harness_dir=env["harness"],
         audit_path=env["audit_path"],
         install_record_path=env["install_record_path"],
-        nonce_dir=env["nonce_dir"],
         stdin_isatty=stdin_isatty,
         consumer_tty=consumer_tty,
         gitconfig_email_lookup=lambda: gitconfig_email,
@@ -235,7 +222,6 @@ def test_harness_by_trust_env_does_not_influence_approve(env):
         harness_dir=env["harness"],
         audit_path=env["audit_path"],
         install_record_path=env["install_record_path"],
-        nonce_dir=env["nonce_dir"],
         stdin_isatty=True,
         consumer_tty="/dev/ttys002",
         gitconfig_email_lookup=lambda: "",  # no gitconfig

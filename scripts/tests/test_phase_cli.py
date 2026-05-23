@@ -51,8 +51,6 @@ def do_approve_direct(cwd: Path, *, by: str = "t@e", response: str = "y",
     harness_dir.mkdir(exist_ok=True)
     audit_path = harness_dir / "audit.log"
     install_record_path = harness_dir / "install-record.json"
-    nonce_dir = harness_dir / "approval-nonces"
-    nonce_dir.mkdir(exist_ok=True)
 
     # Auto-create a minimal install-record if absent.
     if not install_record_path.exists():
@@ -60,13 +58,10 @@ def do_approve_direct(cwd: Path, *, by: str = "t@e", response: str = "y",
             json.dumps({
                 "harness_version": "v0.9.0-test",
                 "installed_at": "2026-01-01T00:00:00Z",
-                "approvers": [{"email": by, "added_at": "2026-01-01T00:00:00Z",
-                               "source": "gitconfig_auto"}],
             }) + "\n"
         )
 
-    args = SimpleNamespace(by=by, at=None, override_identity=False,
-                           override_reason=None)
+    args = SimpleNamespace(by=by, at=None)
     with mock.patch("builtins.input", return_value=response):
         result = phase_approve.run_approve(
             args,
@@ -74,7 +69,6 @@ def do_approve_direct(cwd: Path, *, by: str = "t@e", response: str = "y",
             harness_dir=harness_dir,
             audit_path=audit_path,
             install_record_path=install_record_path,
-            nonce_dir=nonce_dir,
             stdin_isatty=True,
             consumer_tty="/dev/ttys000",
             gitconfig_email_lookup=lambda: by,

@@ -500,14 +500,16 @@ def _validate_at_within_24h(at_str: str) -> str:
 
 
 def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
-    """Handle ``harness phase approve`` — interactive [y/N] speed bump per spec 2026-05-19-phase-approve-speed-bump-design.md.
+    """Handle ``harness phase approve`` — interactive [y/N] speed bump.
 
     Stamps the current phase as approved; does NOT advance to the next phase
     (use ``phase set <next>`` to advance). Delegates to
     ``phase_approve.run_approve`` which enforces the TTY gate (exit 17
-    ``non_tty_approval_blocked`` on non-TTY), identity resolution,
-    install-record membership, state-trust preflight, and audit
-    provenance (``proof_class: soft_tty``).
+    ``non_tty_approval_blocked`` on non-TTY), identity resolution (ADR-0001),
+    install-record presence, and audit provenance (``proof_class: soft_tty``).
+
+    ADR-0002: no attacker model — override-identity, gitconfig fingerprint,
+    and approver-membership machinery removed in M5.
     """
     _probe_harness_writable()
 
@@ -517,14 +519,11 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
     audit_path = harness_dir / "audit.log"
     install_record_path = harness_dir / "install-record.json"
 
-    nonce_dir: Path = harness_dir  # v0.9.13: nonce machinery removed; arg unused
-
     stdin_isatty: bool = sys.stdin.isatty()
-    # X8/HIGH-B-2: On Windows os.ttyname is unavailable; mint a synthetic
-    # identifier so _tty_kind() can classify it as "win-synthetic" instead of
-    # returning the misleading "posix-real" label for an empty string.
+    # On Windows os.ttyname is unavailable; mint a synthetic identifier so
+    # _tty_kind() can classify it as "win-synthetic" instead of "unknown".
     # On POSIX, use os.ttyname when stdin is a TTY; fall back to empty string
-    # for non-TTY callers (which are blocked earlier by the TTY gate anyway).
+    # for non-TTY callers (blocked earlier by the TTY gate anyway).
     if os.name == "posix":
         consumer_tty: str = (
             os.ttyname(sys.stdin.fileno())
@@ -532,8 +531,6 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
             else ""
         )
     else:
-        # Windows / other non-POSIX: ttyname() is unavailable; synthesise a
-        # unique identifier so _tty_kind() classifies it as "win-synthetic".
         import secrets as _secrets
         consumer_tty = f"win:{os.getpid()}:{_secrets.token_hex(4)}"
 
@@ -543,7 +540,6 @@ def cmd_phase_approve(args) -> int:  # type: ignore[no-untyped-def]
         harness_dir=harness_dir,
         audit_path=audit_path,
         install_record_path=install_record_path,
-        nonce_dir=nonce_dir,
         stdin_isatty=stdin_isatty,
         consumer_tty=consumer_tty,
         repo_root=cwd,
