@@ -1,7 +1,7 @@
 """Atomic I/O primitives for managed state and operational logs.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md (T0-A)
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1
+Owning plan: .planning/milestones/02b-hardening/plans/02b-01-T0-A-PLAN.md (T0-A)
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1
 ADR: docs/adr/2026-05-16-hardening-bundle.md (Artifact 2, G1-A, G1-D)
 
 Exports (skeleton — bodies filled in subsequent commits per plan task order):

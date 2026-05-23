@@ -499,6 +499,7 @@ def check(
             check_worktree_paths(root)
         check_drift(root)
         _check_planning_drift(root)
+        check_m0_done(root)
         return
 
     manifest = load_manifest_data(root)
@@ -524,6 +525,7 @@ def check(
     check_phase_state_paths(root)
     check_roadmap_state_sync(root)
     check_phase_reference_drift(root)
+    check_m0_done(root)
 
     check_target = (target or root).resolve()
     if target:
@@ -1092,6 +1094,71 @@ def check_phase_reference_drift(root: Path) -> None:
                 offenders.append(f"{path.relative_to(root)}: {phrase}")
     if offenders:
         raise SystemExit("Stale phase reference detected: " + "; ".join(offenders) + ". Fix: search-and-replace the listed phrases in the named files, or rephrase the stale text")
+
+
+_M0_CORE_FILES = (
+    "SUMMARY.md",
+    "STACK.md",
+    "STRUCTURE.md",
+    "TESTING.md",
+    "CONVENTIONS.md",
+    "CONCERNS.md",
+)
+
+
+def check_m0_done(root: Path) -> None:
+    """ADR-0009: if active milestone > 0, M0 done criteria must hold.
+
+    Done criteria:
+      1. All 6 core .planning/codebase/*.md exist with `status: current`
+      2. .planning/ROADMAP.md has at least 1 future-milestone bullet
+      3. Active milestone in STATE.md > 0
+
+    Grandfather clause: if `.planning/codebase/` is absent (pre-M11 install),
+    skip — there is no M0 contract to enforce on a legacy layout.
+    """
+    cb = root / ".planning/codebase"
+    if not cb.is_dir():
+        return  # legacy install grandfathered
+
+    # Read active milestone from STATE.md frontmatter
+    state_path = root / ".planning/STATE.md"
+    if not state_path.exists():
+        return
+    text = state_path.read_text(encoding="utf-8")
+    # Look for Milestone: N in body
+    m = re.search(r"-\s*\*\*Milestone\*\*:\s*(\d+)", text)
+    if not m:
+        # No milestone marker — pre-M11 or malformed; skip
+        return
+    active = int(m.group(1))
+    if active == 0:
+        return  # still in M0, no enforcement
+
+    # active > 0 → enforce
+    failures: list[str] = []
+
+    for fname in _M0_CORE_FILES:
+        p = cb / fname
+        if not p.exists():
+            failures.append(f"missing .planning/codebase/{fname}")
+            continue
+        content = p.read_text(encoding="utf-8")
+        if not re.search(r"^status:\s*current\s*$", content, re.MULTILINE):
+            failures.append(f".planning/codebase/{fname} frontmatter status != current")
+
+    roadmap = root / ".planning/ROADMAP.md"
+    if roadmap.exists():
+        roadmap_text = roadmap.read_text(encoding="utf-8")
+        if not re.search(r"-\s*\[\s*\]\s*\*\*Milestone\s+\d+:", roadmap_text):
+            failures.append(".planning/ROADMAP.md has no future-milestone bullet (`- [ ] **Milestone N: ...**`)")
+
+    if failures:
+        raise SystemExit(
+            "M0 (orientation) done criteria not met (ADR-0009). "
+            "Fix: run /workflow-m0-orient or `harness recon` and complete codebase docs.\n  - "
+            + "\n  - ".join(failures)
+        )
 
 
 def check_phase_state_paths(root: Path) -> None:

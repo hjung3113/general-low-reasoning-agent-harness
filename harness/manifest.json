@@ -130,7 +130,7 @@
         "scope review"
       ]
     },
-    "workflow-codebase-recon": {
+    "workflow-m0-orient": {
       "category": "workflow",
       "capabilities": [
         "codebase orientation",
@@ -333,11 +333,11 @@
       "pack": "workflow-code-review"
     },
     {
-      "path": ".agents/skills/workflow-codebase-recon/SKILL.md",
-      "source": "harness/skill-packs/workflow-codebase-recon/workflow-codebase-recon/SKILL.md",
+      "path": ".agents/skills/workflow-m0-orient/SKILL.md",
+      "source": "harness/skill-packs/workflow-m0-orient/workflow-m0-orient/SKILL.md",
       "policy": "harness-owned",
-      "owner": "pack:workflow-codebase-recon",
-      "pack": "workflow-codebase-recon"
+      "owner": "pack:workflow-m0-orient",
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".roomodes",
@@ -603,78 +603,78 @@
       "path": ".planning/codebase/SUMMARY.md",
       "source": "harness/skeleton/clean/.planning/codebase/SUMMARY.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/STACK.md",
       "source": "harness/skeleton/clean/.planning/codebase/STACK.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/STRUCTURE.md",
       "source": "harness/skeleton/clean/.planning/codebase/STRUCTURE.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/TESTING.md",
       "source": "harness/skeleton/clean/.planning/codebase/TESTING.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/CONVENTIONS.md",
       "source": "harness/skeleton/clean/.planning/codebase/CONVENTIONS.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/CONCERNS.md",
       "source": "harness/skeleton/clean/.planning/codebase/CONCERNS.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/ARCHITECTURE.md",
       "source": "harness/skeleton/clean/.planning/codebase/ARCHITECTURE.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
       "path": ".planning/codebase/INTEGRATIONS.md",
       "source": "harness/skeleton/clean/.planning/codebase/INTEGRATIONS.md",
       "policy": "seed",
-      "pack": "workflow-codebase-recon"
+      "pack": "workflow-m0-orient"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
+      "path": ".planning/milestones/00-orientation/00-CHECKPOINTS.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-CHECKPOINTS.md",
       "policy": "project-owned"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-CONTEXT.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-CONTEXT.md",
+      "path": ".planning/milestones/00-orientation/00-CONTEXT.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-CONTEXT.md",
       "policy": "project-owned"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-01-PLAN.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-PLAN.md",
+      "path": ".planning/milestones/00-orientation/00-01-PLAN.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-01-PLAN.md",
       "policy": "project-owned"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-REVIEW.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-REVIEW.md",
+      "path": ".planning/milestones/00-orientation/00-REVIEW.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-REVIEW.md",
       "policy": "project-owned"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-VERIFICATION.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-VERIFICATION.md",
+      "path": ".planning/milestones/00-orientation/00-VERIFICATION.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-VERIFICATION.md",
       "policy": "project-owned"
     },
     {
-      "path": ".planning/phases/00-planning-hydration/00-01-SUMMARY.md",
-      "source": "harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-SUMMARY.md",
+      "path": ".planning/milestones/00-orientation/00-01-SUMMARY.md",
+      "source": "harness/skeleton/clean/.planning/milestones/00-orientation/00-01-SUMMARY.md",
       "policy": "project-owned"
     },
     {

@@ -1,16 +1,16 @@
 ---
 planning_doc_schema_version: 1
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 10
-  percent: 100
+  percent: 91
 ---
 
 # Project State
 
-- **Milestone**: 10 - multi-file codebase recon + skill-pack integration (complete)
-- **Checkpoint**: CP-10-FINAL - haiku live test passed
-- **Checkpoint file**: `.planning/phases/10-multi-file-codebase-recon/10-CHECKPOINTS.md`
+- **Milestone**: 11 - M0-as-mandatory-orientation + phases→milestones rename (in progress)
+- **Checkpoint**: CP-11-05 - harness check M0 invariant in place
+- **Checkpoint file**: `.planning/milestones/11-m0-orient-and-rename/11-CHECKPOINTS.md`
 
 ## Active Workstreams
 
@@ -39,14 +39,15 @@ progress:
 - 08 — UX polish + ADR-0007 (PR #28)
 - 09 — codebase recon optional (PR #32)
 - 10 — multi-file .planning/codebase/ + skill-pack integration (PR #35)
+- 11 — M0-as-mandatory-orientation + phases→milestones rename (issue #36, in progress)
 
 <!-- HARNESS:BEGIN managed:state-current v1 -->
 ## Current Position
 
-- **Phase**: 10 - multi-file .planning/codebase/ + skill-pack integration
+- **Milestone**: 11 - M0-as-mandatory-orientation + phases→milestones rename
 
 ## Active Checkpoint
 
-- **Checkpoint**: CP-10-FINAL
-- **Checkpoint file**: `.planning/phases/10-multi-file-codebase-recon/10-CHECKPOINTS.md`
+- **Checkpoint**: CP-11-05
+- **Checkpoint file**: `.planning/milestones/11-m0-orient-and-rename/11-CHECKPOINTS.md`
 <!-- HARNESS:END managed:state-current -->

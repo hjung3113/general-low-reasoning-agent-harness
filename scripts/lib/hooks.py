@@ -1,6 +1,6 @@
 """T1-1: install/uninstall the harness pre-commit scope-check hook.
 
-Plan: .planning/phases/02b-hardening/plans/02b-07-T1-1-PLAN.md Task 2.
+Plan: .planning/milestones/02b-hardening/plans/02b-07-T1-1-PLAN.md Task 2.
 Contract: CONTRACT-PIN §4 (exit code 4 = EXIT_SCOPE_VIOLATION).
 
 The hook calls `python3 scripts/harness.py check --worktree` from the

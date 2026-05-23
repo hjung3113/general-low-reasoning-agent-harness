@@ -31,7 +31,7 @@ Use the first matching route. Do not run two workflow commands for one slice; sp
 
 - If the request says review, inspect, audit, scan, or pre-merge, use `/review`.
 - If the user asks to apply the harness to an existing project, fill planning docs, reconcile stale `.planning/` files, or make ADR work use existing project context, use `workflow-planning-hydration` before `/adr`, `/issues`, or implementation workflows.
-- If `/adr` is requested but `.planning/codebase/**` or active `.planning/phases/**` is missing, placeholder-only, stale, or unrelated to the current repo, run `workflow-planning-hydration` first and return to `/adr` only after planning context is usable.
+- If `/adr` is requested but `.planning/codebase/**` or active `.planning/milestones/**` is missing, placeholder-only, stale, or unrelated to the current repo, run `workflow-planning-hydration` first and return to `/adr` only after planning context is usable.
 - If a task starts simple but touches specialist domains, durable architecture, phase approval, public contracts, or broad refactoring, do not use `/simple`; route to the matching full workflow.
 - Use active tech and workflow packs to refine ownership for data, integration, frontend, persistence, or platform-specific work.
 - If the request is an implementation feature and no specialized active pack applies, use `/feature`.

@@ -6,13 +6,13 @@ Reference for the multi-file codebase recon directory introduced in Milestone 10
 
 | File | Owner | Refresh policy | Filled by |
 |------|-------|----------------|-----------|
-| `SUMMARY.md` | agent | `preserve_sections` | workflow-codebase-recon |
+| `SUMMARY.md` | agent | `preserve_sections` | workflow-m0-orient |
 | `STACK.md` | auto | `overwrite` | `harness recon` |
 | `STRUCTURE.md` | auto | `overwrite` | `harness recon` |
-| `TESTING.md` | hybrid | `preserve_sections` | `harness recon` (frameworks/commands) + workflow-codebase-recon (scopes/repro) |
-| `CONVENTIONS.md` | agent | `preserve_sections` | workflow-codebase-recon |
-| `CONCERNS.md` | agent | `preserve_sections` | workflow-codebase-recon |
-| `ARCHITECTURE.md` | agent (optional) | `preserve_sections` | workflow-codebase-recon |
+| `TESTING.md` | hybrid | `preserve_sections` | `harness recon` (frameworks/commands) + workflow-m0-orient (scopes/repro) |
+| `CONVENTIONS.md` | agent | `preserve_sections` | workflow-m0-orient |
+| `CONCERNS.md` | agent | `preserve_sections` | workflow-m0-orient |
+| `ARCHITECTURE.md` | agent (optional) | `preserve_sections` | workflow-m0-orient |
 | `INTEGRATIONS.md` | auto (conditional) | `overwrite` | `harness recon` (only if datastore/cloud/auth signals detected) |
 
 ## Frontmatter
@@ -23,7 +23,7 @@ Every file:
 ---
 schema_version: 1
 artifact_type: codebase.<file>          # codebase.stack, codebase.summary, ...
-generated_by: harness-recon@<version> | workflow-codebase-recon | skeleton | agent
+generated_by: harness-recon@<version> | workflow-m0-orient | skeleton | agent
 updated_at: YYYY-MM-DD
 ownership: auto | hybrid | agent
 source: detected | inferred | human | mixed
@@ -121,7 +121,7 @@ Current consumers:
 - `workflow-debugging` — `codebase.testing.repro`, `codebase.concerns.flaky_tests`, `codebase.concerns.high_risk`, `codebase.concerns.performance`
 - `workflow-code-review` — `codebase.conventions.*`, `codebase.concerns.high_risk`, `codebase.concerns.security`, `codebase.testing.commands`
 - `repository-evidence-research` — `codebase.stack.*`, `codebase.structure.*`, `codebase.summary.*`, `codebase.testing.commands`, `codebase.concerns.open_questions`
-- `workflow-codebase-recon` (writer) — `codebase.summary.*`, `codebase.conventions.*`, `codebase.concerns.*`, `codebase.architecture.*`
+- `workflow-m0-orient` (writer) — `codebase.summary.*`, `codebase.conventions.*`, `codebase.concerns.*`, `codebase.architecture.*`
 
 Tech packs (`tech-python`, `tech-react`, etc.) are **read-only** consumers; they never write to `.planning/codebase/`.
 
@@ -130,6 +130,6 @@ Tech packs (`tech-python`, `tech-react`, etc.) are **read-only** consumers; they
 ```
 fresh target:    harness init → seeds 8 stub files (status: partial)
 auto-fill:       harness recon → fills STACK, STRUCTURE, TESTING auto sections, INTEGRATIONS if signals
-agent-fill:      workflow-codebase-recon skill → fills SUMMARY, CONVENTIONS, CONCERNS, ARCHITECTURE, TESTING judgment sections
+agent-fill:      workflow-m0-orient skill → fills SUMMARY, CONVENTIONS, CONCERNS, ARCHITECTURE, TESTING judgment sections
 re-run recon:    overwrites auto files; restamps frontmatter on agent files (body preserved)
 ```

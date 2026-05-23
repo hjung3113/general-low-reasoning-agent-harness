@@ -27,7 +27,7 @@ from lib.install import (
     # excluded from the T0-A atomic-write grep gate. Upgrade flow's call sites
     # (lines 184 and 235 in the pre-T0-A tree) therefore inherit the same
     # exclusion. See plan task 17 in
-    # .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md.
+    # .planning/milestones/02b-hardening/plans/02b-01-T0-A-PLAN.md.
     write_text_file,
     write_text_conflict,
     remove_empty_parents,

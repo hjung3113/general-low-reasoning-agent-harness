@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests for scripts/lib/transition.py — ADR-001 G2-B state machine table.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-02-T0-1-PLAN.md Block B.
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1 (module name
+Owning plan: .planning/milestones/02b-hardening/plans/02b-02-T0-1-PLAN.md Block B.
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1 (module name
 singular: `transition.py`) and §3 (flat test path `scripts/test_*.py`).
 
 Tests T-22..T-26 from the plan.

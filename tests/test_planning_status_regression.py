@@ -7,7 +7,7 @@ def test_projection_recognizes_letter_suffix_phase(tmp_path):
     proj = load_projection(root)
     assert proj.phase_id == "02b"
     assert proj.active_checkpoint_id == "CP-02b-01"
-    assert proj.verification_path == ".planning/phases/02b-hardening/02b-VERIFICATION.md"
+    assert proj.verification_path == ".planning/milestones/02b-hardening/02b-VERIFICATION.md"
     assert proj.active_checkpoint_status == "in_progress"
 
 

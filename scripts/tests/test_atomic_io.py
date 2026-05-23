@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests for the atomic I/O primitives (scripts/lib/atomic_io.py).
 
-Plan: .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md
-Contract: .planning/phases/02b-hardening/CONTRACT-PIN.md §1, §2, §3
+Plan: .planning/milestones/02b-hardening/plans/02b-01-T0-A-PLAN.md
+Contract: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1, §2, §3
 """
 
 from __future__ import annotations

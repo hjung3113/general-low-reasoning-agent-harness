@@ -6,9 +6,9 @@
   "approved_by": "human",
   "approved_at": "2026-05-11T09:00:00Z",
   "summary": "Example execute-phase state showing the v2 schema shape.",
-  "plan_path": ".planning/phases/01-example/01-01-PLAN.md",
+  "plan_path": ".planning/milestones/01-example/01-01-PLAN.md",
   "state_path": ".planning/STATE.md",
-  "checkpoint_path": ".planning/phases/01-example/01-CHECKPOINTS.md",
+  "checkpoint_path": ".planning/milestones/01-example/01-CHECKPOINTS.md",
   "current_checkpoint": "CP-example-execute",
   "next_action": "Run the approved verification commands and update the active phase summary.",
   "allowed_paths": [

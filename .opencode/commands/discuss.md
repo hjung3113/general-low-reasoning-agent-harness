@@ -17,7 +17,7 @@ When the status projection is trustworthy, use it to resolve active phase docs. 
 Resolve active phase docs in this order:
 
 1. Follow explicit `checkpoint_path`, `plan_path`, and `state_path` pointers in `.scratch/phase-state.json` when present.
-2. If pointers are empty during a new discussion, choose the highest numbered `.planning/phases/**` directory.
+2. If pointers are empty during a new discussion, choose the highest numbered `.planning/milestones/**` directory.
 3. Read `*-CONTEXT.md`, `*-PLAN.md`, `*-REVIEW.md`, `*-VERIFICATION.md`, `*-SUMMARY.md`, then `*-CHECKPOINTS.md`.
 4. If a file is absent, record that it is absent instead of inventing its contents.
 

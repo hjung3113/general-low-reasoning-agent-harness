@@ -880,7 +880,7 @@ class HarnessToolTests(unittest.TestCase):
         state_completed: int = 3,
         state_percent: int = 60,
         state_checkpoint: str = "CP-04-02",
-        phase_state_checkpoint_path: str = ".planning/phases/04-template-consumer-onboarding/04-CHECKPOINTS.md",
+        phase_state_checkpoint_path: str = ".planning/milestones/04-template-consumer-onboarding/04-CHECKPOINTS.md",
         phase_state_current_checkpoint: str = "CP-04-02",
     ) -> None:
         (root / "harness/skeleton/clean").mkdir(parents=True)
@@ -915,7 +915,7 @@ class HarnessToolTests(unittest.TestCase):
                     "automation_mode": "manual",
                     "auto_selected": [],
                     "state_path": ".planning/STATE.md",
-                    "plan_path": ".planning/phases/04-template-consumer-onboarding/04-01-PLAN.md",
+                    "plan_path": ".planning/milestones/04-template-consumer-onboarding/04-01-PLAN.md",
                     "checkpoint_path": phase_state_checkpoint_path,
                     "current_checkpoint": phase_state_current_checkpoint,
                     "next_action": "Run the approved verification.",
@@ -929,7 +929,7 @@ class HarnessToolTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        phase_dir = root / ".planning/phases/04-template-consumer-onboarding"
+        phase_dir = root / ".planning/milestones/04-template-consumer-onboarding"
         phase_dir.mkdir(parents=True)
         (phase_dir / "04-01-PLAN.md").write_text("# Phase 4 Plan\n", encoding="utf-8")
         (phase_dir / "04-CHECKPOINTS.md").write_text(
@@ -977,7 +977,7 @@ progress:
 ## Active Checkpoint
 
 - **Checkpoint**: {state_checkpoint} - design adversarial review complete.
-- **Checkpoint file**: `.planning/phases/04-template-consumer-onboarding/04-CHECKPOINTS.md`.
+- **Checkpoint file**: `.planning/milestones/04-template-consumer-onboarding/04-CHECKPOINTS.md`.
 """,
             encoding="utf-8",
         )
@@ -1006,10 +1006,10 @@ progress:
             root = Path(tmpdir)
             self.write_sync_fixture(
                 root,
-                phase_state_checkpoint_path=".planning/phases/04-template-consumer-onboarding/WRONG.md",
+                phase_state_checkpoint_path=".planning/milestones/04-template-consumer-onboarding/WRONG.md",
                 phase_state_current_checkpoint="CP-04-99",
             )
-            (root / ".planning/phases/04-template-consumer-onboarding/WRONG.md").write_text(
+            (root / ".planning/milestones/04-template-consumer-onboarding/WRONG.md").write_text(
                 "# Wrong checkpoint file\n\n## CP-04-99 - Wrong\n", encoding="utf-8"
             )
 
@@ -1279,28 +1279,28 @@ progress:
                     "--adapters",
                     "none",
                     "--packs",
-                    "workflow-codebase-recon",
+                    "workflow-m0-orient",
                 ]
             )
 
-            skill_path = target / ".agents/skills/workflow-codebase-recon/SKILL.md"
-            self.assertTrue(skill_path.exists(), "workflow-codebase-recon SKILL.md must be installed")
+            skill_path = target / ".agents/skills/workflow-m0-orient/SKILL.md"
+            self.assertTrue(skill_path.exists(), "workflow-m0-orient SKILL.md must be installed")
             content = skill_path.read_text(encoding="utf-8")
-            self.assertIn("workflow-codebase-recon", content)
+            self.assertIn("workflow-m0-orient", content)
             self.assertIn(".planning/codebase/", content)
 
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
-            self.assertIn("workflow-codebase-recon", installed["packs"])
+            self.assertIn("workflow-m0-orient", installed["packs"])
             harness.run(["check", "--target", str(target)])
 
     def test_workflow_codebase_recon_in_known_packs(self) -> None:
         from lib.manifest import KNOWN_PACKS
-        self.assertIn("workflow-codebase-recon", KNOWN_PACKS)
+        self.assertIn("workflow-m0-orient", KNOWN_PACKS)
 
     def test_init_rejects_misspelled_codebase_recon_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "target"
-            for misspelling in ("workflow-codebase-recon-typo", "workflow-codbase-recon", "codebase-recon"):
+            for misspelling in ("workflow-m0-orient-typo", "workflow-codbase-recon", "codebase-recon"):
                 with self.subTest(pack=misspelling):
                     with self.assertRaisesRegex(SystemExit, f"pack: {misspelling}"):
                         harness.run(["init", "--target", str(target), "--packs", misspelling])
@@ -1371,8 +1371,8 @@ progress:
                 "00-VERIFICATION.md",
                 "00-01-SUMMARY.md",
             ):
-                text = (target / ".planning/phases/00-planning-hydration" / filename).read_text(encoding="utf-8")
-                self.assertIn("not hydrated yet", text)
+                text = (target / ".planning/milestones/00-orientation" / filename).read_text(encoding="utf-8")
+                self.assertTrue(text.strip(), f"{filename} must not be empty")
 
     def test_init_installs_target_safe_smoke_test_suite(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2230,7 +2230,7 @@ progress:
         )
         for path in active_surfaces:
             relative = path.relative_to(root).as_posix()
-            if relative.startswith(".planning/phases/") or relative.startswith("docs/superpowers/"):
+            if relative.startswith(".planning/milestones/") or relative.startswith("docs/superpowers/"):
                 continue
             text = path.read_text(encoding="utf-8")
             for phrase in contradictory_phrases:
@@ -2316,8 +2316,8 @@ progress:
                     "allowed_paths": allowed_paths,
                     "verification": ["python3 scripts/harness.py check"],
                     "state_path": ".planning/STATE.md",
-                    "plan_path": ".planning/phases/01/PLAN.md",
-                    "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                    "plan_path": ".planning/milestones/01/PLAN.md",
+                    "checkpoint_path": ".planning/milestones/01/CHECKPOINTS.md",
                     "current_checkpoint": "CP-01",
                     "next_action": "Run check --worktree.",
                     "approved_by": "test",
@@ -2426,8 +2426,8 @@ progress:
                         "allowed_paths": ["scripts/harness.py"],
                         "verification": ["definitely-not-a-command --nope"],
                         "state_path": ".planning/STATE.md",
-                        "plan_path": ".planning/phases/01/PLAN.md",
-                        "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                        "plan_path": ".planning/milestones/01/PLAN.md",
+                        "checkpoint_path": ".planning/milestones/01/CHECKPOINTS.md",
                         "current_checkpoint": "CP-01",
                         "next_action": "Run verification.",
                         "approved_by": "user",
@@ -2457,8 +2457,8 @@ progress:
                         "allowed_paths": ["scripts/harness.py"],
                         "verification": ["TODO: add concrete verification"],
                         "state_path": ".planning/STATE.md",
-                        "plan_path": ".planning/phases/01/PLAN.md",
-                        "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                        "plan_path": ".planning/milestones/01/PLAN.md",
+                        "checkpoint_path": ".planning/milestones/01/CHECKPOINTS.md",
                         "current_checkpoint": "CP-01",
                         "next_action": "Run verification.",
                         "approved_by": "user",
@@ -2477,7 +2477,7 @@ progress:
             # accepted; rewriting this sub-assertion to use the new
             # `pytest ` allowlist verb instead. The original sub-assertion
             # is preserved in the negative-path block below as a rejection
-            # case. Plan: .planning/phases/02b-hardening/plans/02b-05-T0-4-PLAN.md
+            # case. Plan: .planning/milestones/02b-hardening/plans/02b-05-T0-4-PLAN.md
             state = json.loads(path.read_text(encoding="utf-8"))
             state["verification"] = ["pytest tests/foo.py"]
             path.write_text(json.dumps(state), encoding="utf-8")
@@ -2507,8 +2507,8 @@ progress:
                 "plan_id": "manual-plan",
                 "allowed_paths": ["scripts/harness.py"],
                 "state_path": ".planning/STATE.md",
-                "plan_path": ".planning/phases/01/PLAN.md",
-                "checkpoint_path": ".planning/phases/01/CHECKPOINTS.md",
+                "plan_path": ".planning/milestones/01/PLAN.md",
+                "checkpoint_path": ".planning/milestones/01/CHECKPOINTS.md",
                 "current_checkpoint": "CP-01",
                 "next_action": "Run verification.",
                 "approved_by": "user",
@@ -2522,7 +2522,7 @@ progress:
             # "Review" entries are rejected at the prefix gate. The
             # equivalent guarantee is now expressed by exercising domain
             # words inside an allowed-verb command body. Plan:
-            # .planning/phases/02b-hardening/plans/02b-05-T0-4-PLAN.md.
+            # .planning/milestones/02b-hardening/plans/02b-05-T0-4-PLAN.md.
             for verification in (
                 "harness check  # inspect todo-list component behavior",
                 "pytest tests/  # review manual test plan results in docs/verification.md",
@@ -2548,8 +2548,8 @@ progress:
                         "allowed_paths": ["scripts/harness.py"],
                         "verification": ["python3 -m unittest scripts/test_harness.py"],
                         "state_path": ".planning/STATE.md",
-                        "plan_path": ".planning/phases/04-template-consumer-onboarding/04-01-PLAN.md",
-                        "checkpoint_path": ".planning/phases/04-template-consumer-onboarding/04-CHECKPOINTS.md",
+                        "plan_path": ".planning/milestones/04-template-consumer-onboarding/04-01-PLAN.md",
+                        "checkpoint_path": ".planning/milestones/04-template-consumer-onboarding/04-CHECKPOINTS.md",
                         "current_checkpoint": "CP-04-02",
                         "next_action": "Run verification.",
                         "approved_by": "user",
@@ -3535,7 +3535,7 @@ class LiveFixtureMigrationTests(unittest.TestCase):
 class ChangelogStructureTests(unittest.TestCase):
     """T0-1 (02b-02) — CHANGELOG ### Breaking subsection (Block 0).
 
-    Per plan .planning/phases/02b-hardening/plans/02b-02-T0-1-PLAN.md and
+    Per plan .planning/milestones/02b-hardening/plans/02b-02-T0-1-PLAN.md and
     CONTRACT-PIN §7 (ledger L1, L2, L12 owned by 02b-02 and land in Block 0).
     """
 

@@ -11,7 +11,7 @@ status: partial
 
 # Concerns
 
-> Hydrated by `workflow-codebase-recon` skill-pack (or human). What agents must avoid breaking. Where the bodies are buried.
+> Hydrated by `workflow-m0-orient` skill-pack (or human). What agents must avoid breaking. Where the bodies are buried.
 
 ## [codebase.concerns.high_risk] High-risk code paths
 <!-- "Touch these and ask first": auth, migrations, billing, etc. -->

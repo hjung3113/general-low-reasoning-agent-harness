@@ -41,7 +41,7 @@ A chunk of work on the harness installer itself (Milestone 1: security strip; Mi
 _Avoid_: phase (reserved for workflow), epic, release, sprint.
 
 **Planning**:
-Target-owned roadmap and state docs at `.planning/ROADMAP.md` + `.planning/STATE.md` + `.planning/phases/`. Human-authored. Parsed by `planning_grammar.py`.
+Target-owned roadmap and state docs at `.planning/ROADMAP.md` + `.planning/STATE.md` + `.planning/milestones/`. Human-authored. Parsed by `planning_grammar.py`.
 _Avoid_: docs, plan, design.
 
 **Scratch**:

@@ -1,7 +1,7 @@
 """Canonical path tuples for managed state + operational artifacts.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-01-T0-A-PLAN.md (T0-A)
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1, §2
+Owning plan: .planning/milestones/02b-hardening/plans/02b-01-T0-A-PLAN.md (T0-A)
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1, §2
 
 These tuples are the SOLE declaration site for the path literals.
 Per CONTRACT-PIN §2 rule: "operational_paths.py is the sole declarer of

@@ -11,7 +11,7 @@ status: partial
 
 # Codebase Summary
 
-> Hydrated by `workflow-codebase-recon` skill-pack. 1-page entrypoint for any agent or human starting on this codebase.
+> Hydrated by `workflow-m0-orient` skill-pack. 1-page entrypoint for any agent or human starting on this codebase.
 
 ## [codebase.summary.identity] Identity
 <!-- 2-3 sentences: what this project is, who uses it. -->
