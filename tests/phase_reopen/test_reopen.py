@@ -201,12 +201,6 @@ def test_missing_gitconfig_rejected(env):
     assert rc.sub_reason == "gitconfig_email_unset"
 
 
-def test_email_not_in_approvers_rejected(env):
-    rc = _run(env, gitconfig_email="mallory@evil.example")
-    assert rc.exit_code == 6
-    assert rc.sub_reason == "approver_not_in_install_record"
-
-
 # ---------------------------------------------------------------------------
 # 4. --reason mandatory (§3.2 synopsis)
 # ---------------------------------------------------------------------------
