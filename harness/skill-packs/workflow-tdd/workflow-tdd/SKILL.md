@@ -1,6 +1,12 @@
 ---
 name: workflow-tdd
 description: Use for behavior changes where tests can define the expected result before implementation.
+reads:
+  - codebase.testing.frameworks
+  - codebase.testing.commands
+  - codebase.testing.scopes
+  - codebase.testing.fixtures
+  - codebase.testing.known_failures
 ---
 
 # Workflow TDD
@@ -10,6 +16,8 @@ Use this skill for bug fixes and features with testable behavior.
 ## Low-Reasoning Contract
 
 Do not implement first. A low-reasoning model needs a visible red/green trail.
+
+Before starting: grep `.planning/codebase/TESTING.md` for `[codebase.testing.commands]` — that anchor is the contract for which test command to run. If absent, run `harness recon` first.
 
 ## Activation Evidence
 
@@ -27,7 +35,7 @@ Do not implement first. A low-reasoning model needs a visible red/green trail.
 ## Workflow
 
 1. State the smallest behavior being changed.
-2. Find the nearest existing test style and command.
+2. Grep `.planning/codebase/TESTING.md` for `[codebase.testing.commands]`. That is the test command. If empty, find the nearest existing test style and command yourself, then update the anchor.
 3. Add or update one focused failing test.
 4. Run the focused test and record the failing signal.
 5. Implement the smallest change.

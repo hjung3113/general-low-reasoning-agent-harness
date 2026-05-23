@@ -1,6 +1,12 @@
 ---
 name: repository-evidence-research
 description: Use during discuss or hydration to discover project facts before selecting profiles, tools, workflows, or implementation slices.
+reads:
+  - codebase.stack.*
+  - codebase.structure.*
+  - codebase.summary.*
+  - codebase.testing.commands
+  - codebase.concerns.open_questions
 ---
 
 # Repository Evidence Research
@@ -10,6 +16,8 @@ Use this skill before making project-specific claims.
 ## Low-Reasoning Contract
 
 Do not summarize from memory. Build a small evidence ledger and keep each claim tied to a path, command, or user statement.
+
+Start by checking `.planning/codebase/SUMMARY.md` and `STACK.md`. If they have `status: current` and recent `updated_at`, use their anchors as confirmed facts. If empty or stale, run `harness recon` (auto fills STACK/STRUCTURE/TESTING) and then invoke `workflow-codebase-recon` for the judgment files.
 
 Stop and mark `blocked_until` when:
 

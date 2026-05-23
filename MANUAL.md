@@ -61,7 +61,19 @@ harness session unlock         # drop a stale session lock (after a crash)
 harness state show             # print the parsed phase-state.json
 harness state repair           # rebuild the managed AGENTS.md block
 harness run                    # execute the next safe step + halt at human gate
+harness recon                  # auto-fill .planning/codebase/{STACK,STRUCTURE,TESTING,INTEGRATIONS}.md
 ```
+
+### Codebase orientation (`.planning/codebase/`)
+
+`harness recon` populates a structured directory of 8 files (6 core + 2 conditional) that act as the codebase contract every workflow skill-pack reads:
+
+- **Auto-filled by the CLI** (no edits): `STACK.md`, `STRUCTURE.md`, `TESTING.md` (frameworks + commands), `INTEGRATIONS.md` (only if external integrations detected).
+- **Agent-owned** (filled by the `workflow-codebase-recon` skill-pack): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
+
+Each section uses anchor IDs like `## [codebase.stack.runtime] Runtime` so downstream skill-packs (`workflow-tdd`, `workflow-debugging`, `workflow-code-review`, `repository-evidence-research`) can grep specific facts without re-reading the whole file. Schema + anchor list + frontmatter shape: see [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md). Decision rationale: [`docs/adr/0008-multi-file-codebase-recon.md`](docs/adr/0008-multi-file-codebase-recon.md).
+
+Re-running `harness recon` is safe: auto files are overwritten, but agent-owned bodies are preserved (only `updated_at` frontmatter is restamped).
 
 ## Planning docs you maintain
 
@@ -71,6 +83,15 @@ Each milestone lives under `.planning/phases/NN-<slug>/`. The harness reads thes
 .planning/
 ├── ROADMAP.md                  # high-level milestone list (Milestone N: Title)
 ├── STATE.md                    # current milestone + checkpoint pointers
+├── codebase/                   # filled by harness recon + workflow-codebase-recon
+│   ├── SUMMARY.md              # 1-page entrypoint (agent)
+│   ├── STACK.md                # auto: runtime/languages/CI
+│   ├── STRUCTURE.md            # auto: depth-2 dir tree
+│   ├── TESTING.md              # hybrid: frameworks/commands auto + scopes/repro agent
+│   ├── CONVENTIONS.md          # agent: naming/formatting/imports/errors
+│   ├── CONCERNS.md             # agent: tech debt/high-risk paths/flakes
+│   ├── ARCHITECTURE.md         # agent: system overview (optional)
+│   └── INTEGRATIONS.md         # auto: DB/cloud/auth (only when detected)
 └── phases/
     └── 03-some-milestone/
         ├── 03-CONTEXT.md       # discuss phase

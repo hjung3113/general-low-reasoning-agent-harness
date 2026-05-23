@@ -1,6 +1,16 @@
 ---
 name: workflow-codebase-recon
-description: Use at the start of a session on an unknown codebase to produce a 1-page orientation map.
+description: Use at the start of a session on an unknown codebase to populate .planning/codebase/ — the structured orientation directory other skill-packs read.
+writes:
+  - codebase.summary.*
+  - codebase.conventions.*
+  - codebase.concerns.*
+  - codebase.architecture.*
+reads:
+  - codebase.stack.*
+  - codebase.structure.*
+  - codebase.testing.*
+  - codebase.integrations.*
 ---
 
 # Workflow Codebase Recon
@@ -9,86 +19,78 @@ Use this skill before writing any code on an unfamiliar codebase.
 
 ## Low-Reasoning Contract
 
-Do not read deeply or modify files. Grep, list, and observe. Write findings to `.planning/codebase-recon.md`.
+`.planning/codebase/` is split into 8 files. The harness CLI handles the auto-detectable ones; you handle the judgment ones.
+
+| File | Owner | What you do |
+|------|-------|-------------|
+| `STACK.md` | `harness recon` | Run the CLI; do not edit by hand. |
+| `STRUCTURE.md` | `harness recon` | Run the CLI; do not edit by hand. |
+| `TESTING.md` | `harness recon` (frameworks/commands) + you (scopes/repro) | Run CLI first; fill agent-owned anchors. |
+| `INTEGRATIONS.md` | `harness recon` | Only present if external integrations detected. |
+| `SUMMARY.md` | **you** | Hand-write 1-page entrypoint after others are filled. |
+| `CONVENTIONS.md` | **you** | Naming, formatting, imports, errors — read the configs, write the contract. |
+| `CONCERNS.md` | **you** | Tech debt, high-risk paths, flaky tests, security. |
+| `ARCHITECTURE.md` | **you** (optional) | Skip for tiny single-package repos. |
 
 ## Stop Conditions
 
 - you are already familiar with the codebase from prior context
+- all agent-owned files (`SUMMARY`, `CONVENTIONS`, `CONCERNS`) have `status: current` in frontmatter and `updated_at` is within the last 7 days
 - the codebase requires credentials or a running service to observe its structure
-- `.planning/codebase-recon.md` was updated within the current session and all five sections are already filled
 
 ## Constraints
 
-- **Time-box**: finish in ~5 minutes. Skip deep file reads.
-- **Read-only**: no code modifications during recon.
-- **No assumptions**: if unsure, add to "Open questions" instead of guessing.
-- **Diff mode**: if `.planning/codebase-recon.md` already exists, diff new findings against existing content and update only stale sections (sections 2–4). Do not overwrite sections 1 (One-liner) or 5 (Open questions) — those are user-owned.
+- **Time-box**: finish in ~10 minutes for a medium repo.
+- **Read-only on code**: no source-file modifications during recon.
+- **Anchor IDs are contracts**: do not rename `[codebase.<file>.<key>]` headers. Other skill-packs grep these.
+- **No assumptions**: if unsure, leave the section as `<!-- TODO -->` or write into `codebase.concerns.open_questions`.
 
 ## Workflow
 
-1. **One-liner** — read the first 50 lines of `README.md`, `AGENTS.md`, `CONTEXT.md`, or any top-level doc that exists. Summarize the project in 2–3 sentences. Skip if the section already exists in `.planning/codebase-recon.md`.
+1. **Run `harness recon`** first. This populates `STACK.md`, `STRUCTURE.md`, `TESTING.md` (frameworks + commands), and `INTEGRATIONS.md` (if applicable).
 
-2. **Tech stack auto-detection** — run the following grep (first match wins per category):
-   ```
-   find . -maxdepth 2 \( -name "pyproject.toml" -o -name "package.json" \
-     -o -name "Cargo.toml" -o -name "go.mod" -o -name "Gemfile" \
-     -o -name "*.csproj" -o -name "pom.xml" \
-     -o -name "requirements*.txt" -o -name "setup.py" \
-     -o -name "build.gradle" \) \
-     -not -path "*/node_modules/*" -not -path "*/.venv/*"
-   ```
-   From matching files determine: **language**, **build tool**, **test runner**, **CI presence** (check `.github/`, `.circleci/`, `Jenkinsfile`, `.gitlab-ci.yml`).
+2. **Fill `CONVENTIONS.md`** — read lint configs (`.eslintrc`, `pyproject.toml`, `prettier`), grep for common patterns (naming, imports), check a sample of 3-5 files. For each anchor:
+   - `codebase.conventions.formatting` — Prettier/black/gofmt config highlights
+   - `codebase.conventions.naming` — file/function/var/type rules from grep evidence
+   - `codebase.conventions.imports` — ordering, aliases, banned imports
+   - `codebase.conventions.errors` — throw vs Result; custom error types
+   - `codebase.conventions.logging` — library, levels, structured-vs-string
+   - `codebase.conventions.git` — branch model, commit format, PR template
+   - `codebase.conventions.review` — what reviewers check, CI gates
 
-3. **Top-level structure (depth 2)** — run:
-   ```
-   find . -maxdepth 2 -type d \
-     -not -path "*/.git/*" -not -path "*/node_modules/*" \
-     -not -path "*/.venv/*" -not -path "*/dist/*" -not -path "*/build/*"
-   ```
-   Annotate each directory in 5 words or fewer.
+3. **Fill `CONCERNS.md`** — grep TODO/FIXME, scan flaky-test markers, check security-sensitive paths (auth, migrations, secrets). For each anchor:
+   - `codebase.concerns.high_risk` — paths to never touch without asking
+   - `codebase.concerns.tech_debt` — known shortcuts with owners
+   - `codebase.concerns.flaky_tests` — list with retry policy
+   - `codebase.concerns.security` — secrets handling, threat surfaces
+   - `codebase.concerns.performance` — hotspots, slow tests
+   - `codebase.concerns.open_questions` — TODO items for the user
 
-4. **Existing docs** — list paths of any of the following that exist:
-   `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `README.md`, `MANUAL.md`,
-   `docs/*.md`, `docs/adr/*.md`.
+4. **Fill agent-owned anchors in `TESTING.md`**:
+   - `codebase.testing.scopes` — unit/integration/e2e split
+   - `codebase.testing.fixtures` — where fixtures live, parity rules
+   - `codebase.testing.repro` — how to reproduce a bug locally
+   - `codebase.testing.known_failures` — flaky/skipped tests
 
-5. **Open questions** — list anything that could not be determined from grep alone. Leave as `TODO: <question>` for the user to answer. Do not guess.
+5. **Optionally fill `ARCHITECTURE.md`** — only for non-trivial repos. ASCII diagram + components table. Skip if it would be guesswork.
+
+6. **Fill `SUMMARY.md` last** — pulls highlights from the others. Anchors:
+   - `codebase.summary.identity` — 2-3 sentences, what + who
+   - `codebase.summary.quickstart` — install + run cmd
+   - `codebase.summary.test` — single test cmd (copy from `codebase.testing.commands`)
+   - `codebase.summary.map` — 3-5 key edit paths
+   - `codebase.summary.concerns` — top 3, link to CONCERNS anchors
+   - `codebase.summary.links` — link to all other files (already in template)
+
+7. **Update frontmatter**: each file you edit should have `status: current` and `updated_at: <today>`. Set `ownership: agent` and `source: human` where appropriate.
 
 ## Output Contract
 
-Write results to `.planning/codebase-recon.md` using this template (create if absent, update stale sections if present):
-
-```markdown
-# Codebase Recon
-
-_Generated by workflow-codebase-recon. Sections 1 and 5 are user-owned._
-
-## 1. One-liner
-
-<!-- 2-3 sentences summarizing the project -->
-
-## 2. Tech Stack
-
-| Dimension    | Value |
-|--------------|-------|
-| Language     |       |
-| Build tool   |       |
-| Test runner  |       |
-| CI           |       |
-
-## 3. Top-level Structure
-
-| Path | Notes (≤5 words) |
-|------|------------------|
-
-## 4. Existing Docs
-
-<!-- List paths of AGENTS.md, CLAUDE.md, CONTEXT.md, README.md, MANUAL.md, docs/*.md, docs/adr/*.md -->
-
-## 5. Open Questions
-
-<!-- TODO items for the user -->
-```
+All files live under `.planning/codebase/`. Each file:
+- Has YAML frontmatter with `schema_version`, `artifact_type`, `generated_by`, `updated_at`, `ownership`, `source`, `refresh_policy`, `status`.
+- Uses anchor headers `## [codebase.<file>.<key>] Title` exclusively for sections.
+- Never renames anchor IDs (downstream skill-packs grep them).
 
 ## Worked Example
 
-On a Python repo with `pyproject.toml` and `pytest`, the agent finds the language is Python, build tool is `uv`/`pip`, test runner is `pytest`, CI is GitHub Actions. It lists `.github/`, `src/`, `tests/`, `docs/` with short annotations, records `README.md` and `docs/adr/` as present, and adds "Unclear whether integration tests require a live DB" under Open questions.
+Python repo with `pytest`. Step 1: run `harness recon` — fills STACK with `[runtime: Python]`, STRUCTURE with depth-2 tree, TESTING frameworks with `pytest`, TESTING commands with `pytest`. Step 2-7: read `pyproject.toml` for ruff/black config → fill CONVENTIONS formatting/naming; grep `TODO` → fill CONCERNS tech_debt; write SUMMARY identity = "VOC management API, internal tool, 4 user roles", quickstart = `make dev`, test = `pytest`, map = `src/`, `tests/`, `migrations/`, concerns = (top 3 from CONCERNS).

@@ -102,9 +102,10 @@ Manifest entry는 `adapter` 필드로 선택 필터링 (`select_entries()` in ma
 
 ## 참고 문서 (이 폴더)
 
-- `WORKFLOW.md` — phase gate, planning, roadmap (KEEP 대상 상세)
-- `SECURITY-INVENTORY.md` — 모든 보안/trust 기능 + 제거 후보 ranking
+- `WORKFLOW.md` — phase gate, planning, roadmap
 - `INSTALL-MODEL.md` — install/upgrade/manifest/adapter
 - `CLI.md` — 모든 subcommand 표
-- `MODULE-MAP.md` — 54 lib 파일 카테고리 매핑
-- `TESTS.md` — 64 테스트 파일 카테고리
+- `ARTIFACTS.md` — 전체 manifest entry (자동 생성)
+- `CODEBASE-SCHEMA.md` — `.planning/codebase/` 스키마 (anchor IDs, frontmatter)
+- `error-code-map.md` — exit code reference
+- `adr/` — accepted decisions (0001-0008)

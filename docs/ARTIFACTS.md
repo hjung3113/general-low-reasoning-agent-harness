@@ -5,11 +5,11 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **181**  
-- `harness-owned`: 153
+Total files: **182**  
+- `harness-owned`: 154
 - `managed-append`: 2
-- `project-owned`: 25
-- `seed`: 1
+- `project-owned`: 18
+- `seed`: 8
 
 ## 1. Installed Files
 
@@ -61,14 +61,14 @@ Total files: **181**
 | `.planning/ROADMAP.md`                                           | `project-owned`  | `harness/skeleton/clean/.planning/ROADMAP.md`                                      |                               |            |                          |          |
 | `.planning/STATE.md`                                             | `project-owned`  | `harness/skeleton/clean/.planning/STATE.md`                                        |                               |            |                          |          |
 | `.planning/VERIFICATION.md`                                      | `project-owned`  | `harness/skeleton/clean/.planning/VERIFICATION.md`                                 |                               |            |                          |          |
-| `.planning/codebase-recon.md`                                    | `seed`           | `harness/skeleton/clean/.planning/codebase-recon.md`                               |                               |            | workflow-codebase-recon  |          |
-| `.planning/codebase/ARCHITECTURE.md`                             | `project-owned`  | `harness/skeleton/clean/.planning/codebase/ARCHITECTURE.md`                        |                               |            |                          |          |
-| `.planning/codebase/CONCERNS.md`                                 | `project-owned`  | `harness/skeleton/clean/.planning/codebase/CONCERNS.md`                            |                               |            |                          |          |
-| `.planning/codebase/CONVENTIONS.md`                              | `project-owned`  | `harness/skeleton/clean/.planning/codebase/CONVENTIONS.md`                         |                               |            |                          |          |
-| `.planning/codebase/INTEGRATIONS.md`                             | `project-owned`  | `harness/skeleton/clean/.planning/codebase/INTEGRATIONS.md`                        |                               |            |                          |          |
-| `.planning/codebase/STACK.md`                                    | `project-owned`  | `harness/skeleton/clean/.planning/codebase/STACK.md`                               |                               |            |                          |          |
-| `.planning/codebase/STRUCTURE.md`                                | `project-owned`  | `harness/skeleton/clean/.planning/codebase/STRUCTURE.md`                           |                               |            |                          |          |
-| `.planning/codebase/TESTING.md`                                  | `project-owned`  | `harness/skeleton/clean/.planning/codebase/TESTING.md`                             |                               |            |                          |          |
+| `.planning/codebase/ARCHITECTURE.md`                             | `seed`           | `harness/skeleton/clean/.planning/codebase/ARCHITECTURE.md`                        |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/CONCERNS.md`                                 | `seed`           | `harness/skeleton/clean/.planning/codebase/CONCERNS.md`                            |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/CONVENTIONS.md`                              | `seed`           | `harness/skeleton/clean/.planning/codebase/CONVENTIONS.md`                         |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/INTEGRATIONS.md`                             | `seed`           | `harness/skeleton/clean/.planning/codebase/INTEGRATIONS.md`                        |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/STACK.md`                                    | `seed`           | `harness/skeleton/clean/.planning/codebase/STACK.md`                               |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/STRUCTURE.md`                                | `seed`           | `harness/skeleton/clean/.planning/codebase/STRUCTURE.md`                           |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/SUMMARY.md`                                  | `seed`           | `harness/skeleton/clean/.planning/codebase/SUMMARY.md`                             |                               |            | workflow-codebase-recon  |          |
+| `.planning/codebase/TESTING.md`                                  | `seed`           | `harness/skeleton/clean/.planning/codebase/TESTING.md`                             |                               |            | workflow-codebase-recon  |          |
 | `.planning/phases/00-planning-hydration/00-01-PLAN.md`           | `project-owned`  | `harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-PLAN.md`      |                               |            |                          |          |
 | `.planning/phases/00-planning-hydration/00-01-SUMMARY.md`        | `project-owned`  | `harness/skeleton/clean/.planning/phases/00-planning-hydration/00-01-SUMMARY.md`   |                               |            |                          |          |
 | `.planning/phases/00-planning-hydration/00-CHECKPOINTS.md`       | `project-owned`  | `harness/skeleton/clean/.planning/phases/00-planning-hydration/00-CHECKPOINTS.md`  |                               |            |                          |          |
@@ -173,6 +173,7 @@ Total files: **181**
 | `scripts/lib/project_dashboard/models.py`                        | `harness-owned`  | `scripts/lib/project_dashboard/models.py`                                          |                               |            |                          |          |
 | `scripts/lib/project_dashboard/renderer.py`                      | `harness-owned`  | `scripts/lib/project_dashboard/renderer.py`                                        |                               |            |                          |          |
 | `scripts/lib/project_dashboard/server.py`                        | `harness-owned`  | `scripts/lib/project_dashboard/server.py`                                          |                               |            |                          |          |
+| `scripts/lib/recon.py`                                           | `harness-owned`  | `scripts/lib/recon.py`                                                             | harness                       |            |                          |          |
 | `scripts/lib/roadmap_state.py`                                   | `harness-owned`  | `scripts/lib/roadmap_state.py`                                                     |                               |            |                          |          |
 | `scripts/lib/roo_modes.py`                                       | `harness-owned`  | `scripts/lib/roo_modes.py`                                                         |                               |            |                          |          |
 | `scripts/lib/roomodes_writer.py`                                 | `harness-owned`  | `scripts/lib/roomodes_writer.py`                                                   |                               |            |                          |          |
@@ -225,6 +226,7 @@ Artifacts removed from the harness in prior versions. Upgrade behavior is govern
 
 | path                                    | removed_in | upgrade_action | reason / replaced_by                |
 | --------------------------------------- | ---------- | -------------- | ----------------------------------- |
+| `.planning/codebase-recon.md`           | v0.10.0    | `delete`       | .planning/codebase/SUMMARY.md       |
 | `.opencode/commands/fsd-chain-phase.md` | v0.7.0     | `delete`       | .opencode/commands/fsd-run-all.md   |
 | `.opencode/commands/fsd-phase.md`       | v0.7.0     | `delete`       | .opencode/commands/fsd-run-phase.md |
 | `.roo/commands/fsd-chain-phase.md`      | v0.7.0     | `delete`       | .roo/commands/fsd-run-all.md        |

@@ -1287,7 +1287,7 @@ progress:
             self.assertTrue(skill_path.exists(), "workflow-codebase-recon SKILL.md must be installed")
             content = skill_path.read_text(encoding="utf-8")
             self.assertIn("workflow-codebase-recon", content)
-            self.assertIn(".planning/codebase-recon.md", content)
+            self.assertIn(".planning/codebase/", content)
 
             installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
             self.assertIn("workflow-codebase-recon", installed["packs"])
