@@ -144,6 +144,25 @@ def test_parse_roadmap_phase_bullets_all_no_summary():
     assert all(b.summary == "" for b in bullets)
 
 
+def test_parse_state_phase_line_milestone_alias():
+    assert parse_state_phase_line("- **Milestone**: 2 - Minimal workflow strip\n") == (
+        "02",
+        "Minimal workflow strip",
+    )
+
+
+def test_parse_roadmap_phase_bullets_milestone_alias():
+    text = (
+        "- [x] **Milestone 1: Security strip** - sec-1 ~ sec-7b\n"
+        "- [ ] **Milestone 3: Foo** - tbd\n"
+    )
+    bullets = parse_roadmap_phase_bullets(text)
+    assert [(b.phase_id, b.title, b.completed) for b in bullets] == [
+        ("01", "Security strip", True),
+        ("03", "Foo", False),
+    ]
+
+
 def test_heading_matches_exact():
     assert heading_matches("Blockers", "Blockers")
 
