@@ -1268,6 +1268,43 @@ progress:
             self.assertIn("red green refactor", installed["pack_metadata"]["workflow-tdd"]["capabilities"])
             harness.run(["check", "--target", str(target)])
 
+    def test_workflow_codebase_recon_pack_installs_skill_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            harness.run(
+                [
+                    "init",
+                    "--target",
+                    str(target),
+                    "--adapters",
+                    "none",
+                    "--packs",
+                    "workflow-codebase-recon",
+                ]
+            )
+
+            skill_path = target / ".agents/skills/workflow-codebase-recon/SKILL.md"
+            self.assertTrue(skill_path.exists(), "workflow-codebase-recon SKILL.md must be installed")
+            content = skill_path.read_text(encoding="utf-8")
+            self.assertIn("workflow-codebase-recon", content)
+            self.assertIn(".planning/codebase-recon.md", content)
+
+            installed = json.loads((target / ".harness/installed-manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("workflow-codebase-recon", installed["packs"])
+            harness.run(["check", "--target", str(target)])
+
+    def test_workflow_codebase_recon_in_known_packs(self) -> None:
+        from lib.manifest import KNOWN_PACKS
+        self.assertIn("workflow-codebase-recon", KNOWN_PACKS)
+
+    def test_init_rejects_misspelled_codebase_recon_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "target"
+            for misspelling in ("workflow-codebase-recon-typo", "workflow-codbase-recon", "codebase-recon"):
+                with self.subTest(pack=misspelling):
+                    with self.assertRaisesRegex(SystemExit, f"pack: {misspelling}"):
+                        harness.run(["init", "--target", str(target), "--packs", misspelling])
+
     def test_default_roo_adapter_does_not_leak_specialized_stack_guardrails(self) -> None:
         forbidden = (
             ".NET 10",

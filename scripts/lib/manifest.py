@@ -38,7 +38,7 @@ def _active_harness_version() -> str:
 MANIFEST_PATH = Path("harness/manifest.json")
 
 KNOWN_ADAPTERS: set[str] = {"roo", "opencode"}
-KNOWN_POLICIES: set[str] = {"harness-owned", "managed", "managed-append", "project-owned", "exclude"}
+KNOWN_POLICIES: set[str] = {"harness-owned", "managed", "managed-append", "project-owned", "seed", "exclude"}
 KNOWN_PACKS: set[str] = {
     "workflow-core",
     "tech-python",
@@ -54,6 +54,7 @@ KNOWN_PACKS: set[str] = {
     "workflow-tdd",
     "workflow-debugging",
     "workflow-code-review",
+    "workflow-codebase-recon",
 }
 
 

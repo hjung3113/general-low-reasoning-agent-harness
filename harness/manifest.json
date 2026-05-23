@@ -129,6 +129,14 @@
         "verification review",
         "scope review"
       ]
+    },
+    "workflow-codebase-recon": {
+      "category": "workflow",
+      "capabilities": [
+        "codebase orientation",
+        "tech stack detection",
+        "directory structure mapping"
+      ]
     }
   },
   "files": [
@@ -323,6 +331,13 @@
       "policy": "harness-owned",
       "owner": "pack:workflow-code-review",
       "pack": "workflow-code-review"
+    },
+    {
+      "path": ".agents/skills/workflow-codebase-recon/SKILL.md",
+      "source": "harness/skill-packs/workflow-codebase-recon/workflow-codebase-recon/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-codebase-recon",
+      "pack": "workflow-codebase-recon"
     },
     {
       "path": ".roomodes",
@@ -583,6 +598,12 @@
       "path": ".planning/VERIFICATION.md",
       "source": "harness/skeleton/clean/.planning/VERIFICATION.md",
       "policy": "project-owned"
+    },
+    {
+      "path": ".planning/codebase-recon.md",
+      "source": "harness/skeleton/clean/.planning/codebase-recon.md",
+      "policy": "seed",
+      "pack": "workflow-codebase-recon"
     },
     {
       "path": ".planning/codebase/ARCHITECTURE.md",
