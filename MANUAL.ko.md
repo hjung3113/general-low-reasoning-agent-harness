@@ -85,6 +85,15 @@ harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INT
 .planning/
 ├── ROADMAP.md                  # 마일스톤 목록 (Milestone N: Title)
 ├── STATE.md                    # 현재 마일스톤 + 체크포인트 포인터
+├── codebase/                   # harness recon + workflow-codebase-recon 이 채움
+│   ├── SUMMARY.md              # 1-page 진입점 (agent)
+│   ├── STACK.md                # auto: 런타임/언어/CI
+│   ├── STRUCTURE.md            # auto: depth-2 디렉토리 트리
+│   ├── TESTING.md              # hybrid: 프레임워크/명령 auto + scopes/repro agent
+│   ├── CONVENTIONS.md          # agent: 네이밍/포맷/임포트/에러
+│   ├── CONCERNS.md             # agent: 기술부채/위험경로/플레이키
+│   ├── ARCHITECTURE.md         # agent: 시스템 다이어그램 (선택)
+│   └── INTEGRATIONS.md         # auto: DB/cloud/auth (감지 시에만)
 └── phases/
     └── 03-some-milestone/
         ├── 03-CONTEXT.md       # discuss phase

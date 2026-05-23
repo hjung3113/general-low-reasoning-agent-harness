@@ -24,10 +24,11 @@ progress:
 - `docs/ARCHITECTURE.md` — system architecture
 - `docs/WORKFLOW.md` — workflow state machine
 - `docs/CLI.md` — CLI reference
-- `docs/MODULE-MAP.md` — module index
-- `docs/SECURITY-INVENTORY.md` — security posture
-- `docs/TESTS.md` — test layout
+- `docs/ARTIFACTS.md` — manifest entries (auto-generated)
+- `docs/CODEBASE-SCHEMA.md` — .planning/codebase/ schema
 - `docs/INSTALL-MODEL.md` — install/upgrade model
+- `docs/error-code-map.md` — exit-code map
+- `docs/adr/` — accepted decisions (0001-0008)
 
 ## Milestone History
 
