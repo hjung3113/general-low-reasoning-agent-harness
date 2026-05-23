@@ -23,6 +23,7 @@
 | `status` | `lib.status_next_cli.cmd_status()` | Phase + halt + next action | KEEP |
 | `next` | `lib.status_next_cli.cmd_next()` | Recommended next action | KEEP |
 | `run` | `lib.status_next_cli.cmd_run()` | Safe step 실행, human 멈춤 | KEEP |
+| `recon` | `lib.recon.build_recon_doc()` | `.planning/codebase-recon.md` 섹션 2-4 자동 채움 (tech stack, dir tree, docs) | KEEP |
 
 ## 공용 flags
 
@@ -104,6 +105,7 @@ harness session unlock [--force]
 harness status [--json]
 harness next [--shell|--json]
 harness run
+harness recon [--target <dir>] [--scope <dir1,dir2>] [--dry-run]
 ```
 
 **Removed**: `verify --audit` (Milestone 1), `migrate state` (Milestone 2 Item 1), `halt-diary clear` (Milestone 2 Item 7).
