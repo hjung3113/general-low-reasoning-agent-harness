@@ -58,8 +58,6 @@ Available DB packs: `mssql`, `postgresql`, `none`.
 
 `harness init` is interactive by default. You'll see a `[y/N]` prompt that records *who* initialized the harness in `.harness/install-record.json`. This is attribution, not an authorization list — there's no approver allowlist (see [`docs/adr/0002-internal-tool-threat-model.md`](docs/adr/0002-internal-tool-threat-model.md)).
 
-To override attribution non-interactively, pass `--approver-email user@example.com` (mostly for CI / scripted setup).
-
 ### Verify the install
 
 ```bash
@@ -91,13 +89,23 @@ harness upgrade --adopt-existing
 
 This treats the existing files as the starting point for an install and writes the install record. The harness refuses to auto-route ambiguous / partial states — you have to opt in.
 
+## Agent-driven workflows
+
+The harness exists to give low-reasoning agents a structured workflow they can follow: the agent does the work (`discuss`, `plan`, `execute`), and a supervising human approves transitions at each gate.
+
+**The approval gate is a human checkpoint, not an authorization system.** `harness phase approve` is TTY-only by design (see [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md)). The agent prepares work and requests approval; the human runs the interactive command from a real terminal to advance the phase. The audit log (`.harness/audit.jsonl`) records who approved each transition.
+
+**Exit code 17 is correct behavior.** If you're an agent reading this and `phase approve` exits with code 17, you're not on a TTY — that's the intended checkpoint. Hand the session back to your supervising human; they will run the approval from an interactive shell.
+
+**Integration with agent harnesses.** To run this with Claude Code, Codex, Cursor, or other agent harnesses, ensure the supervising human has a real shell open with the project as the current working directory to handle the approval prompt when the agent reaches a gate.
+
 ## Uninstall
 
 ```bash
-harness uninstall --scope all
+harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 ```
 
-Removes harness-owned files. `--scope` can target subsets (`harness`, `planning`, `scratch`, `adapters`, `agents`, `all`).
+Removes harness-owned files. Use `--select` with comma-separated numeric codes: `1`=roo, `2`=opencode, `3`=runtime, `4`=core, `5`=docs. For example, `--select 3,4` removes runtime and core only.
 
 ## CLI quick reference
 
@@ -112,6 +120,10 @@ Removes harness-owned files. `--scope` can target subsets (`harness`, `planning`
 | `harness doctor` | Read-only drift diagnostic |
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+
+## Troubleshooting
+
+If `harness phase approve` exits with code 17, you're not on a real terminal — run from an interactive shell, not CI (see [`MANUAL.md`](MANUAL.md)).
 
 ## Project layout
 

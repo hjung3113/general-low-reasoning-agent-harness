@@ -58,8 +58,6 @@ db (선택)            →  db skill-packs (M개)
 
 `harness init` 은 기본적으로 interactive. `[y/N]` 프롬프트로 *누가* 하네스를 초기화했는지 `.harness/install-record.json` 에 기록. **권한 부여가 아니라 attribution 만 기록** — approver allowlist 없음 ([`docs/adr/0002-internal-tool-threat-model.md`](docs/adr/0002-internal-tool-threat-model.md)).
 
-CI/스크립트에서 비대화식으로 attribution 지정: `--approver-email user@example.com`.
-
 ### 설치 검증
 
 ```bash
@@ -91,13 +89,23 @@ harness upgrade --adopt-existing
 
 기존 파일을 install 의 출발점으로 인정하고 install-record 작성. 모호한/부분 상태는 자동 라우팅 거부 — 명시적 opt-in 필요.
 
+## 에이전트 주도 워크플로우
+
+하네스는 저성능 AI 에이전트가 체계적인 워크플로우를 따를 수 있도록 설계되었습니다: 에이전트가 작업을 수행하고 (`discuss`, `plan`, `execute`), 감시자인 사람이 각 게이트에서 전환을 승인합니다.
+
+**승인 게이트는 권한 부여 시스템이 아니라 사람이 있는 체크포인트입니다.** 설계상 `harness phase approve` 는 TTY 전용입니다 ([`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) 참조). 에이전트가 작업을 준비하고 승인을 요청하면, 사람이 실제 터미널에서 대화형으로 명령을 실행하여 phase 를 진행합니다. 감사 로그 (`.harness/audit.jsonl`) 는 각 전환을 누가 승인했는지 기록합니다.
+
+**Exit code 17 은 올바른 동작입니다.** 이 문서를 읽는 에이전트라면, `phase approve` 가 exit code 17 로 종료되면 TTY 환경이 아닌 것입니다. — 이것이 의도된 체크포인트입니다. 세션을 감시 역할을 하는 사람에게 넘겨주세요. 감시자가 대화형 셸에서 승인을 실행할 것입니다.
+
+**에이전트 하네스와의 통합.** Claude Code, Codex, Cursor 또는 다른 에이전트 하네스에서 이것을 실행하려면, 감시자가 에이전트가 게이트에 도달했을 때 승인 프롬프트를 처리할 수 있도록 프로젝트를 현재 작업 디렉토리로 설정하여 실제 셸을 열어 두어야 합니다.
+
 ## Uninstall
 
 ```bash
-harness uninstall --scope all
+harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 ```
 
-하네스 소유 파일 제거. `--scope` 로 부분 선택 가능: `harness`, `planning`, `scratch`, `adapters`, `agents`, `all`.
+하네스 소유 파일 제거. `--select` 에 쉼표로 구분된 숫자 코드 입력: `1`=roo, `2`=opencode, `3`=runtime, `4`=core, `5`=docs. 예: `--select 3,4` 는 runtime 과 core 만 제거.
 
 ## CLI 빠른 참조
 
@@ -112,6 +120,10 @@ harness uninstall --scope all
 | `harness doctor` | 읽기 전용 drift 진단 |
 
 전체 CLI 참조: [`docs/CLI.md`](docs/CLI.md).
+
+## 문제 해결
+
+`harness phase approve` 가 exit code 17 로 종료되면 TTY 가 아닌 환경에서 실행 중입니다 — 대화형 셸에서 실행하세요. CI 에서는 실행할 수 없습니다 ([`MANUAL.md`](MANUAL.md) 참조).
 
 ## 프로젝트 구조
 

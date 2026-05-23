@@ -165,6 +165,61 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
 # Sync checks
 # ---------------------------------------------------------------------------
 
+# Sentinel values written by `harness init` into .scratch/phase-state.json.
+# Both fields must match for the phase-state to be treated as the unedited
+# init skeleton (first-run).  Either field diverging means the user or an
+# agent has touched the file and the invariant should fire normally.
+_INIT_UPDATED_BY = "harness-init"
+_INIT_UPDATED_AT = "1970-01-01T00:00:00Z"
+
+
+def is_uninitialized_planning_state(root: Path) -> bool:
+    """Return True when .planning/ is still the unedited harness-init skeleton.
+
+    Conservative predicate (false-positive = silently skip a real broken
+    state, so we require ALL of):
+
+    1. .scratch/phase-state.json has ``updated_by == "harness-init"``
+       AND ``updated_at == "1970-01-01T00:00:00Z"`` — the exact values that
+       ``harness init`` stamps.  Any later ``harness phase set`` call
+       overwrites both, so this reliably identifies a fresh-init state.
+
+    2. .planning/STATE.md has ``milestone: m0`` — the template sentinel that
+       the skeleton ships with; once the user declares their real milestone
+       this field changes.
+
+    Both conditions together make a false positive (skipping a real broken
+    state) essentially impossible while still covering the common first-run
+    confusion reported in issue #23.
+    """
+    phase_state_path = root / ".scratch/phase-state.json"
+    state_path = root / ".planning/STATE.md"
+
+    # Condition 1: phase-state.json carries the harness-init sentinel.
+    if not phase_state_path.exists():
+        return False
+    try:
+        data = json.loads(phase_state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not (
+        isinstance(data, dict)
+        and data.get("updated_by") == _INIT_UPDATED_BY
+        and data.get("updated_at") == _INIT_UPDATED_AT
+    ):
+        return False
+
+    # Condition 2: STATE.md still carries the template milestone sentinel.
+    if not state_path.exists():
+        return False
+    try:
+        state_text = state_path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    fm = parse_frontmatter(state_text)
+    milestone = fm.get("milestone", "")
+    return isinstance(milestone, str) and milestone.strip() == "m0"
+
 
 def check_roadmap_state_sync(root: Path) -> None:
     findings = find_roadmap_state_sync_findings(root)
@@ -177,6 +232,10 @@ def roadmap_state_sync_applicable(root: Path) -> bool:
     phase_state_path = root / ".scratch/phase-state.json"
     roadmap_path = root / ".planning/ROADMAP.md"
     if not state_path.exists() or not roadmap_path.exists() or not phase_state_path.exists():
+        return False
+    # Suppress the invariant when the planning state is still the unedited
+    # harness-init skeleton (issue #23: first-run confuses new users).
+    if is_uninitialized_planning_state(root):
         return False
     state = parse_state_snapshot(state_path.read_text(encoding="utf-8"))
     from lib.state_diagnostics import load_state_json

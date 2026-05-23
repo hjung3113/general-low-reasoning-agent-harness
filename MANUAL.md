@@ -100,6 +100,18 @@ When you run `harness phase approve`:
 
 Environment variables (`HARNESS_BY_TRUST` etc.) do **not** influence identity. There's no override-identity escape hatch.
 
+### Agent-driven workflows
+
+The harness is designed for agent-driven execution with human oversight. An agent (or script) can execute the `discuss`, `plan`, and `execute` phases unattended. However, phase approval (the transitions `plan → execute` and `execute → done`) **must be performed by a human at a real terminal**. This is the checkpoint that prevents an agent from running an entire cycle in isolation.
+
+The intended pattern is:
+1. Agent runs `discuss`, `plan`, `execute` phases autonomously.
+2. Supervising human runs `harness phase approve` interactively from their terminal.
+3. Human reviews the approval prompt `[y/N]` and explicitly consents to the transition.
+4. Approval is audited: the audit log records who approved each transition and when.
+
+The TTY requirement (exit 17 outside a terminal) is not a limitation — it is the design. The handoff to a human is the entire point. If an agent could approve transitions programmatically, the harness would degrade to unreviewed automation, defeating its core purpose. See [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) for rationale and design decisions.
+
 ## Audit log
 
 `.harness/audit.jsonl` is plain JSON-lines. One row per state-mutating verb. No hash chain, no canonicalization — diagnostic, not forensic (see [`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).
