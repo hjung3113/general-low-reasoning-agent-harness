@@ -58,8 +58,6 @@ db (선택)            →  db skill-packs (M개)
 
 `harness init` 은 기본적으로 interactive. `[y/N]` 프롬프트로 *누가* 하네스를 초기화했는지 `.harness/install-record.json` 에 기록. **권한 부여가 아니라 attribution 만 기록** — approver allowlist 없음 ([`docs/adr/0002-internal-tool-threat-model.md`](docs/adr/0002-internal-tool-threat-model.md)).
 
-CI/스크립트에서 비대화식으로 attribution 지정: `--approver-email user@example.com`.
-
 ### 설치 검증
 
 ```bash
@@ -94,10 +92,10 @@ harness upgrade --adopt-existing
 ## Uninstall
 
 ```bash
-harness uninstall --scope all
+harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 ```
 
-하네스 소유 파일 제거. `--scope` 로 부분 선택 가능: `harness`, `planning`, `scratch`, `adapters`, `agents`, `all`.
+하네스 소유 파일 제거. `--select` 에 쉼표로 구분된 숫자 코드 입력: `1`=roo, `2`=opencode, `3`=runtime, `4`=core, `5`=docs. 예: `--select 3,4` 는 runtime 과 core 만 제거.
 
 ## CLI 빠른 참조
 
@@ -112,6 +110,10 @@ harness uninstall --scope all
 | `harness doctor` | 읽기 전용 drift 진단 |
 
 전체 CLI 참조: [`docs/CLI.md`](docs/CLI.md).
+
+## 문제 해결
+
+`harness phase approve` 가 exit code 17 로 종료되면 TTY 가 아닌 환경에서 실행 중입니다 — 대화형 셸에서 실행하세요. CI 에서는 실행할 수 없습니다 ([`MANUAL.md`](MANUAL.md) 참조).
 
 ## 프로젝트 구조
 

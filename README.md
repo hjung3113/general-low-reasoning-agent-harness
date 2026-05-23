@@ -58,8 +58,6 @@ Available DB packs: `mssql`, `postgresql`, `none`.
 
 `harness init` is interactive by default. You'll see a `[y/N]` prompt that records *who* initialized the harness in `.harness/install-record.json`. This is attribution, not an authorization list — there's no approver allowlist (see [`docs/adr/0002-internal-tool-threat-model.md`](docs/adr/0002-internal-tool-threat-model.md)).
 
-To override attribution non-interactively, pass `--approver-email user@example.com` (mostly for CI / scripted setup).
-
 ### Verify the install
 
 ```bash
@@ -94,10 +92,10 @@ This treats the existing files as the starting point for an install and writes t
 ## Uninstall
 
 ```bash
-harness uninstall --scope all
+harness uninstall --target /path/to/your/project --select 1,2,3,4,5
 ```
 
-Removes harness-owned files. `--scope` can target subsets (`harness`, `planning`, `scratch`, `adapters`, `agents`, `all`).
+Removes harness-owned files. Use `--select` with comma-separated numeric codes: `1`=roo, `2`=opencode, `3`=runtime, `4`=core, `5`=docs. For example, `--select 3,4` removes runtime and core only.
 
 ## CLI quick reference
 
@@ -112,6 +110,10 @@ Removes harness-owned files. `--scope` can target subsets (`harness`, `planning`
 | `harness doctor` | Read-only drift diagnostic |
 
 Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+
+## Troubleshooting
+
+If `harness phase approve` exits with code 17, you're not on a real terminal — run from an interactive shell, not CI (see [`MANUAL.md`](MANUAL.md)).
 
 ## Project layout
 
