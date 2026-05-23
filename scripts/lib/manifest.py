@@ -48,16 +48,12 @@ KNOWN_PACKS: set[str] = {
     "tech-csharp",
     "tech-mssql",
     "tech-postgresql",
-    "workflow-data-analysis",
-    "workflow-data-processing",
     "workflow-etl",
     "workflow-db-context",
     "workflow-web-development",
     "workflow-tdd",
     "workflow-debugging",
     "workflow-code-review",
-    "workflow-skill-authoring",
-    "workflow-security-review",
 }
 
 

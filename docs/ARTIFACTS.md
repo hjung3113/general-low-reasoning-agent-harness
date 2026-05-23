@@ -5,8 +5,8 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **183**  
-- `harness-owned`: 156
+Total files: **179**  
+- `harness-owned`: 152
 - `managed-append`: 2
 - `project-owned`: 25
 
@@ -31,13 +31,9 @@ Total files: **183**
 | `.agents/skills/tech-typescript/SKILL.md`                        | `harness-owned`  | `harness/skill-packs/tech-typescript/tech-typescript/SKILL.md`                     | pack:tech-typescript          |            | tech-typescript          |          |
 | `.agents/skills/verification-contract/SKILL.md`                  | `harness-owned`  | `harness/skill-packs/workflow-core/verification-contract/SKILL.md`                 | pack:workflow-core            |            | workflow-core            |          |
 | `.agents/skills/workflow-code-review/SKILL.md`                   | `harness-owned`  | `harness/skill-packs/workflow-code-review/workflow-code-review/SKILL.md`           | pack:workflow-code-review     |            | workflow-code-review     |          |
-| `.agents/skills/workflow-data-analysis/SKILL.md`                 | `harness-owned`  | `harness/skill-packs/workflow-data-analysis/workflow-data-analysis/SKILL.md`       | pack:workflow-data-analysis   |            | workflow-data-analysis   |          |
-| `.agents/skills/workflow-data-processing/SKILL.md`               | `harness-owned`  | `harness/skill-packs/workflow-data-processing/workflow-data-processing/SKILL.md`   | pack:workflow-data-processing |            | workflow-data-processing |          |
 | `.agents/skills/workflow-db-context/SKILL.md`                    | `harness-owned`  | `harness/skill-packs/workflow-db-context/workflow-db-context/SKILL.md`             | pack:workflow-db-context      |            | workflow-db-context      |          |
 | `.agents/skills/workflow-debugging/SKILL.md`                     | `harness-owned`  | `harness/skill-packs/workflow-debugging/workflow-debugging/SKILL.md`               | pack:workflow-debugging       |            | workflow-debugging       |          |
 | `.agents/skills/workflow-etl/SKILL.md`                           | `harness-owned`  | `harness/skill-packs/workflow-etl/workflow-etl/SKILL.md`                           | pack:workflow-etl             |            | workflow-etl             |          |
-| `.agents/skills/workflow-security-review/SKILL.md`               | `harness-owned`  | `harness/skill-packs/workflow-security-review/workflow-security-review/SKILL.md`   | pack:workflow-security-review |            | workflow-security-review |          |
-| `.agents/skills/workflow-skill-authoring/SKILL.md`               | `harness-owned`  | `harness/skill-packs/workflow-skill-authoring/workflow-skill-authoring/SKILL.md`   | pack:workflow-skill-authoring |            | workflow-skill-authoring |          |
 | `.agents/skills/workflow-tdd/SKILL.md`                           | `harness-owned`  | `harness/skill-packs/workflow-tdd/workflow-tdd/SKILL.md`                           | pack:workflow-tdd             |            | workflow-tdd             |          |
 | `.agents/skills/workflow-web-development/SKILL.md`               | `harness-owned`  | `harness/skill-packs/workflow-web-development/workflow-web-development/SKILL.md`   | pack:workflow-web-development |            | workflow-web-development |          |
 | `.gitignore`                                                     | `managed-append` | `harness/skeleton/clean/.gitignore`                                                |                               |            |                          |          |
@@ -213,13 +209,9 @@ Pack metadata from `harness/manifest.json` `packs` section.
 | `tech-typescript`          | tech     |                     | typecheck; typed module boundaries                                                                                                              |
 | `workflow-code-review`     | workflow |                     | defect review; verification review; scope review                                                                                                |
 | `workflow-core`            | workflow |                     | evidence research; skill composition; ecosystem skill research; verification contract; risk review; multi-agent review; release readiness audit |
-| `workflow-data-analysis`   | workflow |                     | analysis question framing; reproducible analytical outputs                                                                                      |
-| `workflow-data-processing` | workflow |                     | data contracts; transformation invariants; failure handling                                                                                     |
 | `workflow-db-context`      | workflow |                     | needs-db-context; database shape gating; database verification readiness                                                                        |
 | `workflow-debugging`       | workflow |                     | reproduce failures; minimize cases; instrument and regress                                                                                      |
 | `workflow-etl`             | workflow | workflow-db-context | extract transform load; restart idempotency; schema drift                                                                                       |
-| `workflow-security-review` | workflow |                     | trust boundaries; secret handling; abuse case review                                                                                            |
-| `workflow-skill-authoring` | workflow |                     | skill design; activation contracts; manifest and install validation                                                                             |
 | `workflow-tdd`             | workflow |                     | red green refactor; focused regression tests; behavior verification                                                                             |
 | `workflow-web-development` | workflow |                     | web UX states; frontend verification; responsive behavior                                                                                       |
 

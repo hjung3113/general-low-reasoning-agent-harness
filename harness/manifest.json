@@ -79,21 +79,6 @@
         "postgresql verification"
       ]
     },
-    "workflow-data-analysis": {
-      "category": "workflow",
-      "capabilities": [
-        "analysis question framing",
-        "reproducible analytical outputs"
-      ]
-    },
-    "workflow-data-processing": {
-      "category": "workflow",
-      "capabilities": [
-        "data contracts",
-        "transformation invariants",
-        "failure handling"
-      ]
-    },
     "workflow-etl": {
       "category": "workflow",
       "suggests": [
@@ -143,22 +128,6 @@
         "defect review",
         "verification review",
         "scope review"
-      ]
-    },
-    "workflow-skill-authoring": {
-      "category": "workflow",
-      "capabilities": [
-        "skill design",
-        "activation contracts",
-        "manifest and install validation"
-      ]
-    },
-    "workflow-security-review": {
-      "category": "workflow",
-      "capabilities": [
-        "trust boundaries",
-        "secret handling",
-        "abuse case review"
       ]
     }
   },
@@ -314,20 +283,6 @@
       "pack": "tech-postgresql"
     },
     {
-      "path": ".agents/skills/workflow-data-analysis/SKILL.md",
-      "source": "harness/skill-packs/workflow-data-analysis/workflow-data-analysis/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-data-analysis",
-      "pack": "workflow-data-analysis"
-    },
-    {
-      "path": ".agents/skills/workflow-data-processing/SKILL.md",
-      "source": "harness/skill-packs/workflow-data-processing/workflow-data-processing/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-data-processing",
-      "pack": "workflow-data-processing"
-    },
-    {
       "path": ".agents/skills/workflow-etl/SKILL.md",
       "source": "harness/skill-packs/workflow-etl/workflow-etl/SKILL.md",
       "policy": "harness-owned",
@@ -368,20 +323,6 @@
       "policy": "harness-owned",
       "owner": "pack:workflow-code-review",
       "pack": "workflow-code-review"
-    },
-    {
-      "path": ".agents/skills/workflow-skill-authoring/SKILL.md",
-      "source": "harness/skill-packs/workflow-skill-authoring/workflow-skill-authoring/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-skill-authoring",
-      "pack": "workflow-skill-authoring"
-    },
-    {
-      "path": ".agents/skills/workflow-security-review/SKILL.md",
-      "source": "harness/skill-packs/workflow-security-review/workflow-security-review/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-security-review",
-      "pack": "workflow-security-review"
     },
     {
       "path": ".roomodes",
