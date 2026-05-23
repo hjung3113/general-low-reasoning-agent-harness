@@ -8,13 +8,13 @@ progress:
 
 # Project State
 
-- **Phase**: 2 - Minimal workflow strip
+- **Milestone**: 2 - Minimal workflow strip
 - **Checkpoint**: CP-02-08 - infra hygiene
 - **Checkpoint file**: `.planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md`
 
 ## Active Workstreams
 
-None. Awaiting next phase definition.
+None. Awaiting next milestone definition.
 
 ## Canonical Docs
 
@@ -26,7 +26,7 @@ None. Awaiting next phase definition.
 - `docs/TESTS.md` — test layout
 - `docs/INSTALL-MODEL.md` — install/upgrade model
 
-## Phase History
+## Milestone History
 
 - 01 — security strip (sec-1 ~ sec-7b)
 - 02 — minimal workflow strip (item-1 ~ item-8, excluding item-6)

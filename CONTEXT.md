@@ -37,7 +37,7 @@ A value of the workflow state machine in a target: one of `discuss`, `plan`, `ex
 _Avoid_: stage, step, state (when referring to the state machine value).
 
 **Milestone**:
-A chunk of work on the harness installer itself (Milestone 1: security strip; Milestone 2: minimal workflow strip; …). Used in installer commit history and roadmap, not in target repos.
+A chunk of work on the harness installer itself (Milestone 1: security strip; Milestone 2: minimal workflow strip; …). Used in installer commit history and roadmap, not in target repos. Planning grammar accepts both `**Milestone N: Title**` and the legacy `**Phase N: Title**` form (`scripts/lib/planning_grammar.py`); new installer milestones use the `Milestone` keyword.
 _Avoid_: phase (reserved for workflow), epic, release, sprint.
 
 **Planning**:

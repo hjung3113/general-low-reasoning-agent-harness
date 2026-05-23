@@ -127,7 +127,7 @@ if entry.pack and entry.pack not in requested_packs: skip
 
 **호출**: `harness upgrade --target <DIR>`.
 
-### 의존 모듈 (Phase 1 simplified)
+### 의존 모듈 (Milestone 1 simplified)
 
 ```
 adoption, atomic_io, exitcodes, install, manifest, manifest_reconciler,
@@ -136,7 +136,7 @@ manifest_v2, profiles, progress, roadmap_state, state, version
 
 `release_trust` 의존 제거됨 (sec-7b에서 모듈 자체 삭제).
 
-### Phases (Phase 1: trust_origin logic removed)
+### Phases (Milestone 1: trust_origin logic removed)
 
 1. **Read target install state** (`installed-manifest.json` v2)
 2. **Read source files from working tree** (no git tag verification, no commit SHA resolution)
@@ -184,7 +184,7 @@ Conflicts/warnings: 사용자 편집된 managed 파일은 경고만, 강제 제�
 {
   "schema_version": 2,
   "harness_version": "0.9.4",
-  "trust_origin": "dev_unsigned",       // 항상 (phase 1 이후)
+  "trust_origin": "dev_unsigned",       // 항상 (milestone 1 이후)
   "scopes": {
     "adapters": ["roo", "opencode"],
     "profiles": ["generic"],
@@ -204,7 +204,7 @@ Conflicts/warnings: 사용자 편집된 managed 파일은 경고만, 강제 제�
 }
 ```
 
-**Phase 1 note**: trust_origin decision tree removed. Always dev_unsigned; no SSH verify.
+**Milestone 1 note**: trust_origin decision tree removed. Always dev_unsigned; no SSH verify.
 
 ## 10. Adapter directories
 
@@ -223,7 +223,7 @@ Conflicts/warnings: 사용자 편집된 managed 파일은 경고만, 강제 제�
 - `.harness/backups/<file>.<timestamp>.bak` — pre-mutation snapshots (retention 10)
 - `.harness/conflicts/<file>` — quarantined user-modified files
 
-## 12. Phase 1 Completion: KEEP modules (deployment axis)
+## 12. Milestone 1 Completion: KEEP modules (deployment axis)
 
 **KEEP**: install.py, upgrade.py, manifest.py, manifest_reconciler.py, append_block.py, managed_block.py, state.py, profiles.py, hooks.py, install_recovery.py, adoption.py, roomodes_writer.py, atomic_io.py, durable_fs.py, safe_open.py, backups.py, manifest_v2.py.
 

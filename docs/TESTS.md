@@ -43,8 +43,8 @@
 | `test_upgrade_dry_run.py` | WORKFLOW | ✅ |
 | `test_wrong_tree_resolution.py` | INFRA | ✅ |
 
-**Removed** (Phase 1): test_audit_verify_tail.py, test_audit_error_wording.py, test_phase_approve_no_nonce_strings.py.
-**Removed** (Phase 2 Item 4): test_smoke_lifecycle.py.
+**Removed** (Milestone 1): test_audit_verify_tail.py, test_audit_error_wording.py, test_phase_approve_no_nonce_strings.py.
+**Removed** (Milestone 2 Item 4): test_smoke_lifecycle.py.
 **Note**: test_fixture_determinism.py is still present (not removed).
 
 ## Test subdirectories (36 files)
@@ -68,14 +68,14 @@
 | `phase_state/` | 3 | WORKFLOW | forward() round-trips on §9.1 fixtures | ✅ |
 | `phase_txn/` | 3 | WORKFLOW | §9.1 fixtures dispatch | ✅ |
 | `safe_open/` | 1 | INFRA | O_NOFOLLOW race-safe open | ✅ |
-| `slash/` | 0 | — | Empty stub (content removed Phase 1) | — |
+| `slash/` | 0 | — | Empty stub (content removed Milestone 1) | — |
 | `smoke/` | 3 | INFRA | grep_gate smoke tests | ✅ |
 
-**Removed** (Phase 1): autopilot/, phase_autopilot/, fsd_wrappers/, cycle1_fixC/, ci_provenance/, release_smoke/ — ~15 test files total.
-**Removed** (Phase 2 Item 4): tests/smoke/test_smoke_lifecycle.py.
-**Removed** (Phase 2 Item 7): halt_diary/ test dir — ~1200 LOC tests.
+**Removed** (Milestone 1): autopilot/, phase_autopilot/, fsd_wrappers/, cycle1_fixC/, ci_provenance/, release_smoke/ — ~15 test files total.
+**Removed** (Milestone 2 Item 4): tests/smoke/test_smoke_lifecycle.py.
+**Removed** (Milestone 2 Item 7): halt_diary/ test dir — ~1200 LOC tests.
 
-## Phase 1 Completion: Test File Removal
+## Milestone 1 Completion: Test File Removal
 
 **Removed** (~20 files):
 - cli/ (5 files) — cli_deprecated removed
@@ -113,4 +113,4 @@ KEEP (sanity):
 
 ## Test fixtures (`tests/fixtures/`, `scripts/fixtures/`)
 
-대부분 phase-state / manifest / roadmap snapshots. legacy v0 fixture는 Phase 2에서 state_migrate 제거와 함께 정리 완료.
+대부분 phase-state / manifest / roadmap snapshots. legacy v0 fixture는 Milestone 2에서 state_migrate 제거와 함께 정리 완료.

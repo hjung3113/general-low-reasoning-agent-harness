@@ -43,7 +43,7 @@
 | `install_recovery.py` | 537 | `.staging-*` 회수 (T14b) | ✅ |
 | `roomodes_writer.py` | 63 | `.roomodes` R/W (logical base/profile split) | ✅ |
 
-## INFRA (10 modules, 2,272 LOC) — Phase 1 complete
+## INFRA (10 modules, 2,272 LOC) — Milestone 1 complete
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
@@ -60,16 +60,16 @@
 
 **Removed**: fs_fence.py (390 LOC)
 
-## SECURITY (4 modules, 1,081 LOC) — Phase 2 complete
+## SECURITY (4 modules, 1,081 LOC) — Milestone 2 complete
 
 | Module | LOC | Purpose | Verdict |
 |---|---|---|---|
 | `audit.py` | 535 | audit.log writer, rotation orchestration | ✅ |
-| `audit_chain.py` | 126 | per-entry SHA256 chain stamping only; verify/walk path removed Phase 2 Item 5 | ✅ |
+| `audit_chain.py` | 126 | per-entry SHA256 chain stamping only; verify/walk path removed Milestone 2 Item 5 | ✅ |
 | `audit_rotation.py` | 60 | Rotated file enumeration | ✅ |
 | `state_trust.py` | 360 | Audit oracle preflight (after_sha256 비교) | ✅ |
 
-**Removed in Phase 1**: secret_key (208), cli_deprecated (148), fs_fence (390), autopilot_guard (389 + assets), audit_verify_cli (235), release_trust (283, sec-7b) — ~1,653 LOC modules.
+**Removed in Milestone 1**: secret_key (208), cli_deprecated (148), fs_fence (390), autopilot_guard (389 + assets), audit_verify_cli (235), release_trust (283, sec-7b) — ~1,653 LOC modules.
 
 ## CLI_DISPATCH (3 modules, 1,448 LOC)
 
@@ -89,9 +89,9 @@
 | `state_repair.py` | 370 | Managed marker block 재생성 | ✅ |
 | `workflow_static_checks.py` | 118 | 설치된 하네스의 static check | ✅ |
 
-## DEAD_LEGACY — Phase 2 제거 완료
+## DEAD_LEGACY — Milestone 2 제거 완료
 
-`state_migrate.py`, `state_migrate_t04.py`, `migrate_state.py` (v0→v2 마이그레이션) — Phase 2에서 제거됨. 모든 state는 이제 v2.
+`state_migrate.py`, `state_migrate_t04.py`, `migrate_state.py` (v0→v2 마이그레이션) — Milestone 2에서 제거됨. 모든 state는 이제 v2.
 
 ---
 
@@ -109,7 +109,7 @@ Tier 2: manifest, append_block, state, install_recovery,
 Tier 3: install, adoption, check, doctor,
         phase_cli, status_next_cli, state_cli
 
-**Removed (Phase 2 Item 7)**: halt_diary_cli, cli_budgets, halt_diary
+**Removed (Milestone 2 Item 7)**: halt_diary_cli, cli_budgets, halt_diary
 
 Tier 4: upgrade (모두 의존)
 ```
@@ -118,7 +118,7 @@ Tier 4: upgrade (모두 의존)
 
 ---
 
-## Phase 1 Completion: LOC & Module Reduction
+## Milestone 1 Completion: LOC & Module Reduction
 
 | Commit | Item | LOC | Status |
 |---|---|---|---|
@@ -130,11 +130,11 @@ Tier 4: upgrade (모두 의존)
 | sec-6 | release_trust SSH dead code | ~46 | ✅ |
 | sec-7 | trust_origin decision logic | ~160 net | ✅ |
 | sec-7b | release_trust.py orphan + EXIT constant | 283 | ✅ |
-| **Phase 1 Total** | (modules + tests + manifest + audit verbs) | **~3,930** | **✅** |
+| **Milestone 1 Total** | (modules + tests + manifest + audit verbs) | **~3,930** | **✅** |
 
-**Module reduction**: 60 → 54 files (50 modules + project_dashboard subpackage). **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→10 (fs_fence + worktree 제거). **DEAD_LEGACY** fully cleared (Phase 2).
+**Module reduction**: 60 → 54 files (50 modules + project_dashboard subpackage). **SECURITY** 9→4 (audit + audit_chain + audit_rotation + state_trust), **INFRA** 12→10 (fs_fence + worktree 제거). **DEAD_LEGACY** fully cleared (Milestone 2).
 
-**Phase 2 Item 7 completion**: halt-diary + cli_budgets + autopilot scaffolding removed — ~816 LOC modules + ~1200 LOC tests. `halt_diary.py` (196 LOC), `halt_diary_cli.py` (128 LOC), `cli_budgets.py` (495 LOC) deleted. Schema fields `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network` removed. Audit verbs `phase.autopilot.*`, `halt_diary.clear` removed.
+**Milestone 2 Item 7 completion**: halt-diary + cli_budgets + autopilot scaffolding removed — ~816 LOC modules + ~1200 LOC tests. `halt_diary.py` (196 LOC), `halt_diary_cli.py` (128 LOC), `cli_budgets.py` (495 LOC) deleted. Schema fields `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network` removed. Audit verbs `phase.autopilot.*`, `halt_diary.clear` removed.
 
 **Remaining phases**:
 - doctor.py simplification — ~200 LOC potential

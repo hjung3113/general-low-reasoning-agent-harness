@@ -1,4 +1,4 @@
-# Phase 02 — Verification
+# Milestone 02 — Verification
 
 ## Commands
 

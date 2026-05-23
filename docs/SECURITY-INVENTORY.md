@@ -1,6 +1,6 @@
 # Security / Trust / Integrity Inventory
 
-## Phase 1 (Security removal) — COMPLETE
+## Milestone 1 (Security removal) — COMPLETE
 
 **Commits**: strip(sec-1) through strip(sec-7b). **3,930 LOC deleted**, 7 modules + dead code removed. All items below marked **DONE**.
 
@@ -15,12 +15,12 @@
 7. **trust_origin decision logic** (~160 LOC net in upgrade/install/audit/exitcodes) ✅ sec-7
 8. **release_trust.py** orphan + tests + EXIT_RELEASE_TRUST_INVALID ✅ sec-7b
 
-**Total phase 1**: ~3,930 LOC across 8 commits (modules + tests + manifest + audit verbs).
+**Total milestone 1**: ~3,930 LOC across 8 commits (modules + tests + manifest + audit verbs).
 
 ### KEEP — SURVIVING MODULES
 
 - **audit.py** (535 LOC) — chain SHA256 stamping (state_trust oracle)
-- **audit_chain.py** (126 LOC) — per-entry chain stamp only; walk/verify removed Phase 2 Item 5
+- **audit_chain.py** (126 LOC) — per-entry chain stamp only; walk/verify removed Milestone 2 Item 5
 - **audit_rotation.py** (60 LOC) — rotated file enumeration
 - **state_trust.py** (360 LOC) — audit oracle preflight (after_sha256 compare)
 
@@ -36,7 +36,7 @@
 
 ---
 
-## KEPT MODULES (post-phase 1)
+## KEPT MODULES (post-milestone 1)
 
 ### 1. Audit chain (`audit.py` 535 + `audit_chain.py` 126 + `audit_rotation.py` 60)
 
@@ -86,7 +86,7 @@ Detects/recovers `.harness/.staging-*` after crash (600s timeout, .aborted senti
 
 ---
 
-## Phase 1 Impact Summary
+## Milestone 1 Impact Summary
 
 **Removed LOC breakdown** (modules only — tests + manifest + audit-log additional):
 - secret_key.py: 208
@@ -122,7 +122,7 @@ Per v0.9.13 commit: low-perf AI agent, **no multi-user threat model**.
 - Legacy flag deprecation (cli_deprecated)
 - trust_origin decision tree (always dev_unsigned now)
 
-**Removed in Phase 2**:
+**Removed in Milestone 2**:
 - state_migrate.py + state_migrate_t04.py + migrate_state.py (v0→v2 migration — all state is now v2)
 
-**Removed in Phase 2 Item 5**: `verify_chain`/`walk_chain` forensic path in audit_chain.py — write-path only retained (126 LOC).
+**Removed in Milestone 2 Item 5**: `verify_chain`/`walk_chain` forensic path in audit_chain.py — write-path only retained (126 LOC).

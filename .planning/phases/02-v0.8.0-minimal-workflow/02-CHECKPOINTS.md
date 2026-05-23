@@ -1,4 +1,4 @@
-# Phase 02 Checkpoints
+# Milestone 02 Checkpoints
 
 | ID | Item | Status | Commit |
 |----|------|--------|--------|

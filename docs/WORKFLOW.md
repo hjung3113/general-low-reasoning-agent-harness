@@ -25,7 +25,7 @@ discuss → plan → execute → done
 
 **규칙**: forward edge → approval 필요. backward edge → `--reset-approval` 필요.
 
-### Execution mode (post Phase 2 Item 7)
+### Execution mode (post Milestone 2 Item 7)
 
 Autopilot 제거. 모든 execution은 `manual`로 고정.
 
@@ -39,7 +39,7 @@ execute_attempt_started_at, plan_finalized_at,
 draft_verification, draft_allowed_paths
 ```
 
-**Removed (Phase 2 Item 7)**: `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network`, `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, plus `execution_mode` enum reduced to `{manual}`.
+**Removed (Milestone 2 Item 7)**: `autopilot_run_id`, `autopilot_mode`, `autopilot_phase_slug`, `autopilot_start_entry_hash`, `autopilot_allow_network`, `autopilot_started_at_iso`, `cli_budgets_remaining`, `last_halt`, `last_halt_history`, plus `execution_mode` enum reduced to `{manual}`.
 
 ### Stale-approval check (§3.6)
 
@@ -152,7 +152,7 @@ Boolean gates:
 - 0 = agent_safe (concrete command 추천)
 - 17 = human_action_required
 
-(Exit code 18 `no_action_during_autopilot` removed in Phase 2 Item 7 alongside autopilot.)
+(Exit code 18 `no_action_during_autopilot` removed in Milestone 2 Item 7 alongside autopilot.)
 
 ## 7. Check command (`check.py`, 1110 LOC)
 
@@ -278,7 +278,7 @@ Recovery matrix (`recover()`, 12 rows) — 크래시 후 다음 CLI 시작 시 p
 
 Exit: 0 / 3 (locked) / 14 (undecidable).
 
-**Phase 1 note**: No change to core protocol; all crash-safety mechanisms retained.
+**Milestone 1 note**: No change to core protocol; all crash-safety mechanisms retained.
 
 ## 14. Exit codes (`exitcodes.py`)
 
@@ -294,9 +294,9 @@ Exit: 0 / 3 (locked) / 14 (undecidable).
 | 14 | EXIT_CRASH_RECOVERY_UNDECIDABLE | manual intervention |
 | 17 | EXIT_NON_TTY | TTY-only verb hit non-TTY |
 
-Exit 18 (`EXIT_NO_ACTION_DURING_AUTOPILOT`) removed in Phase 2 Item 7.
+Exit 18 (`EXIT_NO_ACTION_DURING_AUTOPILOT`) removed in Milestone 2 Item 7.
 
-## Workflow invariants (요약) — Phase 1 complete
+## Workflow invariants (요약) — Milestone 1 complete
 
 1. 11개 허용 전이만 (transition.py 표)
 2. Forward edge → approval 필수
@@ -308,5 +308,5 @@ Exit 18 (`EXIT_NO_ACTION_DURING_AUTOPILOT`) removed in Phase 2 Item 7.
 8. TTY-only speed bumps (approve, reopen)
 9. Crash-safe state+audit transactions
 
-**Phase 1 removals**: No workflow enforcement changes. All security removal was dormant code (autopilot_guard, fs_fence, secret_key, cli_deprecated, audit_verify_cli, release_trust SSH dead code). Audit chain + state_trust + crash-safety fully retained.
-**Phase 2 removals**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets + autopilot/budget schema fields (Item 7).
+**Milestone 1 removals**: No workflow enforcement changes. All security removal was dormant code (autopilot_guard, fs_fence, secret_key, cli_deprecated, audit_verify_cli, release_trust SSH dead code). Audit chain + state_trust + crash-safety fully retained.
+**Milestone 2 removals**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets + autopilot/budget schema fields (Item 7).

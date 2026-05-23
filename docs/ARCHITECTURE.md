@@ -12,7 +12,7 @@ general-low-reasoning-agent-harness/
 ├── scripts/                    # 모든 Python 로직 (lib/ + 12개 top-level)
 │   ├── harness.py              # CLI dispatcher (916 LOC, argparse subparsers)
 │   ├── lib/                    # 54개 모듈, ~18K LOC
-│   └── smoke/                  # grep gates only (live-trial harness removed Phase 2)
+│   └── smoke/                  # grep gates only (live-trial harness removed Milestone 2)
 ├── harness/                    # 타겟에 심을 자원들
 │   ├── skeleton/clean/         # AGENTS.md + README.md 템플릿 (project-owned 복사)
 │   ├── profiles/               # generic / dotnet-etl / python-etl / react-web
@@ -26,7 +26,7 @@ general-low-reasoning-agent-harness/
 └── docs/                       # (이 폴더 — 새로 작성됨)
 ```
 
-## 코드 카테고리 (50 lib 모듈, ~18K LOC) — Phase 2 complete
+## 코드 카테고리 (50 lib 모듈, ~18K LOC) — Milestone 2 complete
 
 | Category | Modules | LOC | Status |
 |---|---|---|---|
@@ -39,9 +39,9 @@ general-low-reasoning-agent-harness/
 
 **Total**: 50 lib modules (54 files incl. project_dashboard subpackage) + 12 scripts/*.py = ~18K LOC.
 
-**Phase 1 reduction**: 60→53 modules. **Phase 2 reduction**: →50 modules (state_migrate×3, halt_diary, halt_diary_cli, cli_budgets removed).
+**Milestone 1 reduction**: 60→53 modules. **Milestone 2 reduction**: →50 modules (state_migrate×3, halt_diary, halt_diary_cli, cli_budgets removed).
 
-## Tier dependency graph (no cycles) — Phase 1 updated
+## Tier dependency graph (no cycles) — Milestone 1 updated
 
 ```
 Tier 1 (no lib deps):
@@ -63,8 +63,8 @@ Tier 4 (heaviest aggregator):
   upgrade (adoption + install + manifest_reconciler + manifest_v2 + ...)
 ```
 
-**Removed in Phase 1**: secret_key, cli_deprecated, fs_fence, autopilot_guard, audit_verify_cli, release_trust (sec-7b orphan).
-**Removed in Phase 2**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets (autopilot/budget scaffolding — ~816 LOC modules + ~1200 LOC tests; Item 7).
+**Removed in Milestone 1**: secret_key, cli_deprecated, fs_fence, autopilot_guard, audit_verify_cli, release_trust (sec-7b orphan).
+**Removed in Milestone 2**: state_migrate, state_migrate_t04, migrate_state (v0→v2 migration — all state is now v2; Item 1). halt_diary, halt_diary_cli, cli_budgets (autopilot/budget scaffolding — ~816 LOC modules + ~1200 LOC tests; Item 7).
 
 ## Two-axis 분류: workflow vs deployment
 

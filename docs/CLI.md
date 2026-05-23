@@ -65,7 +65,7 @@
 
 ## Smoke scripts (`scripts/smoke/`)
 
-Live-trial harness removed Phase 2. Remaining modules are diagnostics gates only.
+Live-trial harness removed Milestone 2. Remaining modules are diagnostics gates only.
 
 | Module | Purpose |
 |---|---|
@@ -106,6 +106,6 @@ harness next [--shell|--json]
 harness run
 ```
 
-**Removed**: `verify --audit` (Phase 1), `migrate state` (Phase 2 Item 1), `halt-diary clear` (Phase 2 Item 7).
+**Removed**: `verify --audit` (Milestone 1), `migrate state` (Milestone 2 Item 1), `halt-diary clear` (Milestone 2 Item 7).
 
 **Pending**: `release-check` (release ops 별도 도구로).
