@@ -42,7 +42,7 @@ def do_approve_direct(cwd: Path, *, by: str = "t@e", response: str = "y",
 
     The helper auto-creates a minimal install-record.json if one does not
     exist, so tests that do not call `harness install` still pass the
-    install-record membership check.
+    install-record presence check.
     """
     from lib import phase_approve
 

@@ -112,7 +112,7 @@ if entry.pack and entry.pack not in requested_packs: skip
 6. **Write install state**: `.harness/installed-manifest.json` (schema_version=2)
 7. **Sync .roomodes**: roomodes_writer가 logical base/profile split
 8. **Hook install (opt)**: `.git/hooks/pre-commit` 마커 블록 (hooks.py)
-9. **install-record.json**: approver email 기록 (`--approver-email`, 기본 git config)
+9. **install-record.json**: installer identity 기록 (git config email 자동, `--approver-email` 제거됨 — ADR-0002)
 
 ### Atomic batch (atomic_io.py + durable_fs.py)
 

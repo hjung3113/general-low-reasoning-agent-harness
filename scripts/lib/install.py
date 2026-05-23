@@ -4,7 +4,6 @@ from __future__ import annotations
 import datetime
 import json
 import os
-import re
 import secrets
 import shutil
 import subprocess
@@ -56,7 +55,6 @@ from lib.version import (
 # ---------------------------------------------------------------------------
 
 INSTALL_RECORD_NAME = "install-record.json"
-_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _is_windows() -> bool:
@@ -84,51 +82,15 @@ def _permission_recovery_cmds() -> str:
     )
 
 
-def _sanitize_approver_email(raw: str) -> str:
-    """Sanitize a candidate approver email (codex M-6).
+def _resolve_installer_identity(root: "Path | None" = None) -> "tuple[str, str]":
+    """Resolve the installer identity for the install-record. Never fails.
 
-    - Trim ASCII whitespace; reject empty; reject control chars; lowercase.
+    M5 #13 (ADR-0002): no approver allowlist — we record who ran `harness init`
+    for attribution only, not for authorization. Priority:
+      1. ``git config user.email``          → source = "git-config"
+      2. ``<getpass.getuser>@<hostname>``   → source = "auto"
+      3. ``"local@harness"`` constant       → source = "auto"
     """
-    trimmed = raw.strip()
-    if not trimmed:
-        raise ValueError("approver email is empty after whitespace trim")
-    if len(trimmed.splitlines()) > 1:
-        raise ValueError(f"approver email contains multiple lines: {raw!r}")
-    if _CONTROL_CHAR_RE.search(trimmed):
-        raise ValueError(f"approver email contains control characters: {raw!r}")
-    return trimmed.lower()
-
-
-def resolve_approver_email(
-    *,
-    cli_flag: "str | None" = None,
-    env: "dict | None" = None,
-    root: "Path | None" = None,
-) -> "tuple[str, str]":
-    """Resolve bootstrap approver email — never fails.
-
-    v0.9.9: this is an internal single-user dev tool (see memory
-    feedback_internal_only_threat_model). The approver email used to be a
-    hard requirement that refused init when no source was available — that
-    was workflow theater, not security. Now this returns a best-effort
-    identity and never raises.
-
-    Priority:
-      1. ``cli_flag``                       → source = "cli-flag"
-      2. ``git config user.email``          → source = "git-config"
-      3. ``<getpass.getuser>@<hostname>``   → source = "auto"
-      4. ``"local@harness"`` constant       → source = "auto"
-
-    Invalid CLI values fall through to the next source instead of aborting.
-    """
-    _env = env if env is not None else os.environ
-
-    if cli_flag is not None:
-        try:
-            return _sanitize_approver_email(cli_flag), "cli-flag"
-        except ValueError:
-            pass  # v0.9.9: invalid flag → fall through
-
     try:
         result = subprocess.run(
             ["git", "config", "user.email"],
@@ -136,12 +98,9 @@ def resolve_approver_email(
             cwd=str(root) if root else None,
         )
         if result.returncode == 0:
-            git_email = result.stdout.strip()
-            if git_email:
-                try:
-                    return _sanitize_approver_email(git_email), "git-config"
-                except ValueError:
-                    pass
+            email = result.stdout.strip().lower()
+            if email:
+                return email, "git-config"
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -150,11 +109,7 @@ def resolve_approver_email(
         import socket as _sk
         user = _gp.getuser() or "user"
         host = _sk.gethostname() or "localhost"
-        candidate = f"{user}@{host}".lower()
-        try:
-            return _sanitize_approver_email(candidate), "auto"
-        except ValueError:
-            pass
+        return f"{user}@{host}".lower(), "auto"
     except Exception:
         pass
 
@@ -164,13 +119,15 @@ def resolve_approver_email(
 def write_install_record(
     *,
     target: Path,
-    approver_email: str,
-    bootstrap_source: str,
+    installer_email: str,
+    installer_source: str,
     harness_version: str,
     root: Path,
 ) -> None:
     """Write .harness/install-record.json and append audit row.
 
+    M5 #13 (ADR-0002): install-record no longer contains approvers[].
+    Records installer identity for attribution only (ADR-0001).
     Idempotent: if the file already exists, logs advisory and returns.
     """
     from lib.atomic_io import atomic_write_text
@@ -183,7 +140,7 @@ def write_install_record(
     if record_path.exists():
         sys.stderr.write(
             f"advisory: install-record already exists at {record_path}; "
-            "preserving existing approvers (install_record.preexisting).\n"
+            "preserving existing record (install_record.preexisting).\n"
         )
         return
 
@@ -221,8 +178,8 @@ def write_install_record(
         "schema_version": 2,
         "harness_version": harness_version,
         "installed_at_iso": now_iso,
-        "bootstrap_source": bootstrap_source,
-        "installer_email": approver_email,
+        "installer_email": installer_email,
+        "installer_source": installer_source,
         "source_provenance": {"commit": commit_sha, "tag": tag_val, "dirty": is_dirty},
     }
 
@@ -234,8 +191,8 @@ def write_install_record(
             {
                 "verb": "install_record.bootstrap",
                 "at": now_iso,
-                "actor": approver_email,
-                "args": {"bootstrap_source": bootstrap_source, "approver_count": 1},
+                "actor": installer_email,
+                "args": {"installer_source": installer_source},
             },
             audit_path=audit_path,
         )
@@ -275,8 +232,6 @@ def install(
     profiles: "set[str] | None" = None,
     packs: "set[str] | None" = None,
     harness_version: str = "0.0.0-dev+unknown",
-    approver_email: "str | None" = None,
-    approver_bootstrap_source: "str | None" = None,
     quiet: bool = False,
     force: bool = False,
 ) -> None:
@@ -551,12 +506,14 @@ def install(
         pass
     _rmdir_recursive_quiet(staging_dir)
 
-    # T7 / NEW-1: write .harness/install-record.json so `phase approve` works immediately.
-    if approver_email is not None and approver_bootstrap_source is not None:
+    # Write .harness/install-record.json so `phase approve` works immediately.
+    # M5 #13 (ADR-0002): no approver allowlist — record installer identity for attribution only.
+    if not dry_run:
+        _installer_email, _installer_source = _resolve_installer_identity(root)
         write_install_record(
             target=target,
-            approver_email=approver_email,
-            bootstrap_source=approver_bootstrap_source,
+            installer_email=_installer_email,
+            installer_source=_installer_source,
             harness_version=harness_version,
             root=root,
         )

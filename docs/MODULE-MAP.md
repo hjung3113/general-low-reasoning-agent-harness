@@ -16,7 +16,7 @@
 | `phase_preflight.py` | 180 | TTY-only verb helpers, preflight 진입점 | ✅ |
 | `phase_lock.py` | 529 | O_EXCL primary lock + dead-process recovery | ✅ |
 | `phase_txn.py` | 836 | 5-step crash-safe state+audit txn + recovery matrix | ✅ |
-| `phase_approve.py` | 705 | TTY [y/N] gate, identity, approver membership | ✅ |
+| `phase_approve.py` | 287 | TTY [y/N] gate, identity, install-record presence (no membership — ADR-0002) | ✅ |
 | `phase_reopen.py` | 553 | Backward 전이, draft 보존 | ✅ |
 | `planning_grammar.py` | 176 | STATE.md/ROADMAP.md regex + parsing | ✅ |
 | `planning_status.py` | 689 | Read-only status projection, task inventory | ✅ |

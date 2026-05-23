@@ -56,7 +56,7 @@ Approval은 둘 모두보다 나중이어야 유효. 옛 approval로 새 plan �
 | Verb | Behavior | Exit codes |
 |---|---|---|
 | `harness phase set <target>` | 전이 검증 → lock → state-trust preflight → commit_transaction | 0/2/4/10/14 |
-| `harness phase approve` | **TTY-only** [y/N] prompt → `approved=true` stamp. 허용 phase: plan/execute. 식별: gitconfig email or `--by`. approver membership 검증 (`.harness/install-record.json`) | 0/17/idempotent |
+| `harness phase approve` | **TTY-only** [y/N] prompt → `approved=true` stamp. 허용 phase: plan/execute. 식별: gitconfig email or `--by`. install-record presence check (membership gate 제거 — ADR-0002) | 0/17/idempotent |
 | `harness phase reopen --to <p> --reason <t>` | **TTY-only**. plan/discuss로 backward. approval/verification/allowed_paths 클리어 | 0/6 |
 | `harness phase next-pending` | 다음 미완 phase slug 출력 (read-only) | 0 |
 | `harness session unlock [--force]` | stale lock 해제 (psutil로 dead-PID 확인) | 0/3 |
@@ -72,19 +72,20 @@ Approval은 둘 모두보다 나중이어야 유효. 옛 approval로 새 plan �
 
 ## 3. Approval gate (`phase_approve.py`)
 
-Speed-bump 디자인 (2026-05-19 ADR). 순서:
+Speed-bump 디자인 (2026-05-19 ADR). M5 #12/#13 post-strip 순서:
 
 1. TTY gate: stdin not tty → exit 17
-2. Phase guard: plan/execute만 (discuss 차단)
-3. Identity: `--by <email>` 또는 `git config user.email`
-4. Approver membership 검증
-5. Anchor preflight (state hash)
+2. Identity: `--by <email>` 또는 `git config user.email`
+3. install-record presence (no membership gate — ADR-0002)
+4. Lock → state load
+5. execution_mode gate (manual only)
 6. Idempotency: 이미 approved면 exit 0 no-op
-7. TTY [y/N] prompt
-8. commit_transaction with `proof_class=soft_tty`
+7. Phase guard: plan/execute만 (discuss/done 차단)
+8. TTY [y/N] prompt
+9. commit_transaction with `proof_class=soft_tty`
 
-Fix-line 메시지 표 (ADR-003a Artifact 1):
-- `_FIX_TTY`, `_FIX_GITCONFIG`, `_FIX_APPROVER_MEMBERSHIP`, `_FIX_STATE_TRUST`
+Fix-line 메시지 표:
+- `_FIX_TTY`, `_FIX_GITCONFIG`, `_FIX_AUTOPILOT`
 
 ## 4. Planning grammar
 
@@ -242,7 +243,7 @@ Backward transition.
 1. TTY gate
 2. `--reason` mandatory
 3. `--to` ∈ {plan, discuss}
-4. Identity + approver membership
+4. Identity (gitconfig email or `--by`; no membership gate — ADR-0002)
 5. state-trust preflight
 6. Source 제약: `--to plan`은 execute/done에서만, `--to discuss`는 어디서나
 

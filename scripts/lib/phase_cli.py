@@ -769,8 +769,8 @@ def cmd_phase_reopen(args) -> int:  # type: ignore[no-untyped-def]
     """Handle ``harness phase reopen`` (design §3.2).
 
     Delegates to ``phase_reopen.run_reopen`` which enforces the §3.2
-    TTY gate, identity resolution, install-record membership,
-    state-trust preflight, and the backward-transition reset.
+    TTY gate, identity resolution, install-record presence, and the
+    backward-transition reset.
     """
     _probe_harness_writable()
 

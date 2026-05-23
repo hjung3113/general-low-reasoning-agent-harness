@@ -284,8 +284,6 @@ def install(
     adapters: set[str] | None = None,
     profiles: set[str] | None = None,
     packs: set[str] | None = None,
-    approver_email: str | None = None,
-    approver_bootstrap_source: str | None = None,
     quiet: bool = False,
     force: bool = False,
 ) -> None:
@@ -298,8 +296,6 @@ def install(
         profiles=profiles,
         packs=packs,
         harness_version=HARNESS_VERSION,
-        approver_email=approver_email,
-        approver_bootstrap_source=approver_bootstrap_source,
         quiet=quiet,
         force=force,
     )
@@ -471,17 +467,8 @@ def run(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional database axis. Ignored when profile is 'generic'.",
     )
-    init_parser.add_argument(
-        "--approver-email",
-        default=None,
-        metavar="ADDR",
-        help=(
-            "[optional, v0.9.9+] Audit-display email recorded in "
-            ".harness/install-record.json. Not required — harness auto-derives "
-            "<user>@<host> when no value is provided. The approver field is no "
-            "longer enforced (internal single-user threat model)."
-        ),
-    )
+    # --approver-email removed in M5 #13 (ADR-0002: no allowlist enforcement).
+    # Installer identity is now auto-derived from git config user.email.
     init_parser.add_argument(
         "--quiet",
         action="store_true",
@@ -729,16 +716,7 @@ def run(argv: list[str] | None = None) -> int:
                 else:
                     auto_packs.update(db_packs(db))
             final_packs = auto_packs
-        # T7 / NEW-1: resolve bootstrap approver email before install.
-        # Skip for --dry-run (no files are written).
-        _approver_email: str | None = None
-        _approver_bootstrap_source: str | None = None
-        if not args.dry_run:
-            from lib.install import resolve_approver_email as _rae
-            _approver_email, _approver_bootstrap_source = _rae(
-                cli_flag=getattr(args, "approver_email", None),
-                root=root,
-            )
+        # M5 #13: installer identity resolved inside install() — no CLI flag needed.
         install(
             root=root,
             target=args.target,
@@ -746,8 +724,6 @@ def run(argv: list[str] | None = None) -> int:
             adapters=raw_adapters,
             profiles=set(profiles_resolved),
             packs=final_packs,
-            approver_email=_approver_email,
-            approver_bootstrap_source=_approver_bootstrap_source,
             quiet=getattr(args, "quiet", False),
             force=getattr(args, "force", False),
         )

@@ -105,9 +105,9 @@ $HARNESS init --target $T --profile generic --adapter roo >/dev/null 2>&1
 run "1f-double-init-refused" 1 "$HARNESS init --target $T --profile generic --adapter roo"
 assert_contains "1f-refusal-message" "$SMOKE_ROOT/1f-double-init-refused.stderr" "Refusing to overwrite"
 
-# 1g approver-email flag
+# 1g basic init (--approver-email removed in M5 #13, ADR-0002; installer identity auto-derived)
 T=$SMOKE_ROOT/t1g && mkdir -p $T
-run "1g-init-approver-flag" 0 "$HARNESS init --target $T --profile generic --adapter roo --approver-email test@example.com"
+run "1g-init-no-approver-flag" 0 "$HARNESS init --target $T --profile generic --adapter roo"
 
 echo ""
 echo "=============================================="

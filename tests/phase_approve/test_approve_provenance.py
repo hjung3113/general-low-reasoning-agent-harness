@@ -2,11 +2,9 @@
 
 Design refs:
   - §3.1 — `phase approve` order of operations (TTY gate, identity
-           resolution, install-record membership, exit 8 if not manual)
+           resolution, install-record presence, exit 8 if not manual)
   - §3.1.1 — Human-presence proof: [y/N] speed-bump (v0.9.0)
-  - §6.1 — `.harness/install-record.json approvers[]` shape
-  - §3.4 — exit codes: 17 (non-TTY/speed-bump), 6 (provenance),
-           8 (approve-during-autopilot), 10 (state trust), 14 (recover)
+  - ADR-0002 — no attacker model; approver-membership gate removed in M5 #13
 
 Tests target `scripts/lib/phase_approve.py:run_approve` directly with
 dependency injection (no real TTY, no real ~/.harness, no real git).
@@ -16,7 +14,6 @@ level tests prove the contract slice-by-slice.
 Fault classes asserted:
   - non_tty_approval_blocked            exit 17
   - gitconfig_email_unset               exit 6
-  - approver_not_in_install_record      exit 6
   - approve_during_autopilot            exit 8
 """
 
@@ -183,7 +180,7 @@ def test_explicit_by_flag_overrides_gitconfig(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 3. install-record approvers membership (design §3.1 step 3 + §6.1)
+# 3. install-record presence (no membership gate — ADR-0002, M5 #13)
 # ---------------------------------------------------------------------------
 
 
@@ -212,8 +209,7 @@ def test_listed_approver_accepted(env, monkeypatch):
 
 def test_harness_by_trust_env_does_not_influence_approve(env):
     """`HARNESS_BY_TRUST` is for autopilot start only; phase approve has
-    zero env-trust path. Setting it to a non-approver email MUST NOT
-    bypass approver-membership; setting it instead of gitconfig MUST NOT
+    zero env-trust path (ADR-0002). Setting it instead of gitconfig MUST NOT
     satisfy identity resolution."""
     args = _make_args()
     rc = phase_approve.run_approve(
