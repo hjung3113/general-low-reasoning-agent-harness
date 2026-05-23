@@ -1,20 +1,20 @@
 ---
 planning_doc_schema_version: 1
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 2
-  percent: 100
+  percent: 66
 ---
 
 # Project State
 
-- **Milestone**: 2 - Minimal workflow strip
-- **Checkpoint**: CP-02-08 - infra hygiene
-- **Checkpoint file**: `.planning/phases/02-v0.8.0-minimal-workflow/02-CHECKPOINTS.md`
+- **Milestone**: 3 - Post-strip coherence
+- **Checkpoint**: CP-03-01 - failing-test repair
+- **Checkpoint file**: `.planning/phases/03-post-strip-coherence/03-CHECKPOINTS.md`
 
 ## Active Workstreams
 
-None. Awaiting next milestone definition.
+- Milestone 3 — co-grilled with codex 2026-05-23. Plan at `.planning/phases/03-post-strip-coherence/03-01-PLAN.md`. Phase: discuss.
 
 ## Canonical Docs
 
@@ -30,3 +30,4 @@ None. Awaiting next milestone definition.
 
 - 01 — security strip (sec-1 ~ sec-7b)
 - 02 — minimal workflow strip (item-1 ~ item-8, excluding item-6)
+- 03 — post-strip coherence (in progress)
