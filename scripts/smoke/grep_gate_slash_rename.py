@@ -70,6 +70,10 @@ def get_exempt_paths(repo_root: Path) -> frozenset[str]:
         "docs/adr/2026-05-17-autopilot-guards-and-manual-handoff.md",
         # UX-polish spec documents prior muscle-memory pain; historical record.
         "docs/superpowers/specs/v0.8.0_todo/2026-05-17-ux-polish.md",
+        # Generated artifact contract (M6/#14): graveyard section lists removed
+        # artifact paths verbatim from manifest removed_in_version — historical
+        # record of retired commands, not live references.
+        "docs/ARTIFACTS.md",
     ]
     return frozenset(c for c in candidates if (repo_root / c).exists() or True)
 
