@@ -83,7 +83,6 @@ def test_happy_path_atomic_install(tmp_path, monkeypatch):
     monkeypatch.setattr("lib.state._active_harness_version", lambda: "0.9.7-test")
     monkeypatch.setattr("lib.state.now_utc", lambda: "2026-05-21T00:00:00Z")
     monkeypatch.setattr("lib.state._git_user_email_sha256", lambda: None)
-    monkeypatch.setattr("lib.install._stamp_install_trust_origin", lambda **kw: None)
     # Patch manifest chain verification to no-op
     monkeypatch.setattr("lib.install_recovery.recover_aborted_install", lambda t: None)
     import lib.manifest_reconciler as _mrc
@@ -132,7 +131,6 @@ def test_sigterm_after_phase1_recovery_noop(tmp_path, monkeypatch):
     monkeypatch.setattr("lib.state._active_harness_version", lambda: "0.9.7-test")
     monkeypatch.setattr("lib.state.now_utc", lambda: "2026-05-21T00:00:00Z")
     monkeypatch.setattr("lib.state._git_user_email_sha256", lambda: None)
-    monkeypatch.setattr("lib.install._stamp_install_trust_origin", lambda **kw: None)
     import lib.manifest_reconciler as _mrc
     monkeypatch.setattr(_mrc, "verify_install_record_integrity", lambda t: None)
 

@@ -96,7 +96,7 @@ class HarnessToolTests(unittest.TestCase):
 
         with mock.patch.object(version, "git_output") as git_output:
             git_output.return_value = "1.2.3"
-            self.assertIsNone(harness.exact_release_tag_version(root))
+            self.assertIsNone(harness.exact_git_tag_version(root))
 
         def fake_git_output(_: Path, command: list[str]) -> str:
             if command == ["git", "describe", "--tags", "--exact-match"]:
