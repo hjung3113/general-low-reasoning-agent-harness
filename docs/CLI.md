@@ -23,7 +23,7 @@
 | `status` | `lib.status_next_cli.cmd_status()` | Phase + halt + next action | KEEP |
 | `next` | `lib.status_next_cli.cmd_next()` | Recommended next action | KEEP |
 | `run` | `lib.status_next_cli.cmd_run()` | Safe step 실행, human 멈춤 | KEEP |
-| `recon` | `lib.recon.build_recon_doc()` | `.planning/codebase-recon.md` 섹션 2-4 자동 채움 (tech stack, dir tree, docs) | KEEP |
+| `recon` | `lib.recon.build_codebase_docs()` | `.planning/codebase/{STACK,STRUCTURE,TESTING,INTEGRATIONS}.md` 자동 채움 + 나머지 4개 (SUMMARY/CONVENTIONS/ARCHITECTURE/CONCERNS) frontmatter restamp. Anchor schema는 ADR-0008 + `docs/ARTIFACTS.md` 참고 | KEEP |
 
 ## 공용 flags
 

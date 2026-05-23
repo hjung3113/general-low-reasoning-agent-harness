@@ -1,6 +1,16 @@
 ---
 name: workflow-code-review
 description: Use for reviewing a diff, branch, implementation plan, or release candidate for defects and missing verification.
+reads:
+  - codebase.conventions.formatting
+  - codebase.conventions.naming
+  - codebase.conventions.imports
+  - codebase.conventions.errors
+  - codebase.conventions.logging
+  - codebase.conventions.review
+  - codebase.concerns.high_risk
+  - codebase.concerns.security
+  - codebase.testing.commands
 ---
 
 # Workflow Code Review
@@ -10,6 +20,8 @@ Use this skill when the task is to review work or when a broad change is about t
 ## Low-Reasoning Contract
 
 Findings first. Do not summarize effort before checking for behavioral risk.
+
+Before reviewing: grep `.planning/codebase/CONVENTIONS.md` for the seven `[codebase.conventions.*]` anchors — those are the project's contract for what "correct" means. Grep `.planning/codebase/CONCERNS.md` for `[codebase.concerns.high_risk]` to know which paths in this diff need extra scrutiny.
 
 ## Review Lenses
 
