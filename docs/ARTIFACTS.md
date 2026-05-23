@@ -5,8 +5,8 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **181**  
-- `harness-owned`: 153
+Total files: **182**  
+- `harness-owned`: 154
 - `managed-append`: 2
 - `project-owned`: 18
 - `seed`: 8
@@ -173,6 +173,7 @@ Total files: **181**
 | `scripts/lib/project_dashboard/models.py`                        | `harness-owned`  | `scripts/lib/project_dashboard/models.py`                                          |                               |            |                          |          |
 | `scripts/lib/project_dashboard/renderer.py`                      | `harness-owned`  | `scripts/lib/project_dashboard/renderer.py`                                        |                               |            |                          |          |
 | `scripts/lib/project_dashboard/server.py`                        | `harness-owned`  | `scripts/lib/project_dashboard/server.py`                                          |                               |            |                          |          |
+| `scripts/lib/recon.py`                                           | `harness-owned`  | `scripts/lib/recon.py`                                                             | harness                       |            |                          |          |
 | `scripts/lib/roadmap_state.py`                                   | `harness-owned`  | `scripts/lib/roadmap_state.py`                                                     |                               |            |                          |          |
 | `scripts/lib/roo_modes.py`                                       | `harness-owned`  | `scripts/lib/roo_modes.py`                                                         |                               |            |                          |          |
 | `scripts/lib/roomodes_writer.py`                                 | `harness-owned`  | `scripts/lib/roomodes_writer.py`                                                   |                               |            |                          |          |

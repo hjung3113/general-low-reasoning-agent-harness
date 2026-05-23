@@ -52,15 +52,14 @@ class ReleaseScriptTests(unittest.TestCase):
                 "git switch main",
                 "git pull --ff-only origin main",
                 "git merge --no-ff develop -m merge: release v0.4.3",
-                "python3 -m unittest scripts/test_harness.py scripts/test_release.py",
+                "python3 -m unittest scripts/tests/test_harness.py scripts/tests/test_release.py",
                 "python3 scripts/harness.py check --verify-hashes",
-                "python3 scripts/release_smoke_test.py",
+                "bash scripts/full_smoke.sh",
                 "git push origin main",
                 "git tag -s v0.4.3 -m v0.4.3",
-                "python3 scripts/release_smoke_test.py --release --expected-version v0.4.3",
                 "git push origin v0.4.3",
             ],
-            commands[:13],
+            commands[:12],
         )
         self.assertIn("gh release create v0.4.3 --verify-tag --title v0.4.3 --generate-notes", commands)
 

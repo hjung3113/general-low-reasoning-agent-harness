@@ -913,6 +913,13 @@
       "policy": "harness-owned"
     },
     {
+      "path": "scripts/lib/recon.py",
+      "source": "scripts/lib/recon.py",
+      "policy": "harness-owned",
+      "owner": "harness",
+      "note": "Multi-file .planning/codebase/ recon: detect tech stack, build codebase docs. ADR-0008."
+    },
+    {
       "path": "scripts/lib/status_next.py",
       "source": "scripts/lib/status_next.py",
       "policy": "harness-owned",
