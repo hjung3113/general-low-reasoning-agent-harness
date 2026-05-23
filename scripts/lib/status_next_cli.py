@@ -148,7 +148,7 @@ def _read_state_with_preflight(
     state_bytes = state_path.read_bytes()
     if len(state_bytes) == 0:
         print(
-            "error: harness status/next: state file present but empty (crash artefact).\n"
+            "error: harness status/next: state file present but empty (crash artefact) (exit 14).\n"
             "Fix: restore .scratch/phase-state.json via 'git checkout -- .scratch/phase-state.json' "
             "before any state-mutating verb.",
             file=sys.stderr,

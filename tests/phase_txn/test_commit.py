@@ -1,18 +1,10 @@
-"""S01-D.1: `commit_transaction` 5-step protocol (design §3.8).
+"""phase_txn.commit_transaction — ADR-0004 contract tests.
 
-Each step's durability call is observable through the
-`scripts.lib.durable_fs` module-level functions; tests patch them as
-spies to assert ordering and frequency. Crash recovery (rows 1-12)
-is S01-D.2 scope.
-
-Step table (design §3.8, lines 439-445):
-  1. Write journal {txn_id, action, before_sha256, after_sha256,
-     audit_entry_draft, started_at_monotonic} -> fsync(journal_fd);
-     fsync_parent_dir(scratch).
-  2. Write state.json.tmp -> fsync(tmp_fd); fsync_parent_dir(scratch).
-  3. Append audit entry with txn_id -> fsync(audit_fd).
-  4. os.replace(state.json.tmp, state.json) -> fsync_parent_dir(scratch).
-  5. os.unlink(journal) -> fsync_parent_dir(scratch).
+ADR-0004: crash-safety = atomic write + primary lock only.
+No journal, no recovery matrix. The protocol is:
+  1. Write state.json.tmp → fsync(tmp_fd) → fsync_parent_dir(scratch)
+  2. Append audit entry with txn_id, before/after sha256 → fsync_parent_dir(scratch)
+  3. os.replace(tmp → state) → fsync_parent_dir(scratch) → fsync_file_durable(state)
 """
 
 from __future__ import annotations
@@ -77,9 +69,8 @@ def test_commit_writes_state_atomically(scratch: Path, audit_path: Path, lock):
     on_disk = json.loads(state_path.read_text(encoding="utf-8"))
     assert on_disk == {"phase": "plan"}
 
-    # Journal and tmp are gone (steps 4+5 cleaned them up).
+    # No tmp remains after commit.
     assert not (scratch / "phase-state.json.tmp").exists()
-    assert not (scratch / "phase-state.json.journal").exists()
 
     # Audit log has a single new entry carrying our txn_id.
     entries = [
@@ -137,14 +128,15 @@ def test_commit_refuses_with_released_lock(scratch: Path, audit_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Step ordering observed via durable_fs spies (design §3.8 Round-5 BLOCK #4)
+# Durable write ordering (ADR-0004)
 # ---------------------------------------------------------------------------
 
 
 def test_commit_calls_durable_fs_in_documented_order(
     scratch: Path, audit_path: Path, lock, monkeypatch
 ):
-    """The protocol ordering is the spec's contract — pinned by spy."""
+    """ADR-0004 atomic write protocol: 3 scratch fsyncs total.
+    Step 1 (tmp write) + step 2 (after audit append) + step 3 (after replace)."""
     from lib import durable_fs
 
     real_fsync_parent_dir = durable_fs.fsync_parent_dir
@@ -161,19 +153,15 @@ def test_commit_calls_durable_fs_in_documented_order(
     req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
     phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
 
-    # The scratch parent-dir fsync MUST fire after EVERY step:
-    #   step 1 (journal write) + step 2 (tmp write) + step 3 (audit
-    #   append, per §12.5 #3 Round-7 amendment) + step 4 (replace) +
-    #   step 5 (unlink journal) = five total scratch fsyncs.
+    # Three scratch fsyncs: after tmp write, after audit append, after replace.
     scratch_fsyncs = [c for c in calls if c == "fsync_parent_dir(.scratch)"]
-    assert len(scratch_fsyncs) == 5, f"expected 5 scratch fsyncs, got {len(scratch_fsyncs)}: {calls}"
+    assert len(scratch_fsyncs) == 3, f"expected 3 scratch fsyncs, got {len(scratch_fsyncs)}: {calls}"
 
 
 def test_commit_tmp_durable_before_audit_append(
     scratch: Path, audit_path: Path, lock, monkeypatch
 ):
-    """Round-5 BLOCK #4: tmp's parent-dir fsync MUST happen BEFORE audit
-    append (so audit cannot point at a not-yet-durable tmp)."""
+    """ADR-0004: tmp's parent-dir fsync MUST happen BEFORE audit append."""
     from lib import audit as audit_mod, durable_fs
 
     real_fsync_parent_dir = durable_fs.fsync_parent_dir
@@ -196,74 +184,24 @@ def test_commit_tmp_durable_before_audit_append(
     req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
     phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
 
-    # Find the audit append index and assert at least two scratch fsyncs
-    # (steps 1 + 2) precede it.
     audit_idx = next(i for i, op in enumerate(order) if op.startswith("AUDIT_APPEND"))
     pre_fsyncs = [op for op in order[:audit_idx] if op == "FSYNC_PARENT(.scratch)"]
-    assert len(pre_fsyncs) >= 2, (
+    assert len(pre_fsyncs) >= 1, (
         "tmp's parent-dir fsync did not happen before audit append: "
         f"{order!r}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Journal contents
-# ---------------------------------------------------------------------------
-
-
-def test_journal_contains_required_fields(
-    scratch: Path, audit_path: Path, lock, monkeypatch
-):
-    """Pin the on-disk journal shape. Recovery (S01-D.2) consumes these
-    fields literally — any rename/removal breaks the matrix decision."""
-    journal_snapshots: list[str] = []
-    real_replace = phase_txn._durable_fs.replace_with_retry
-
-    def spy_replace(src, dst):
-        # Snapshot the journal text just before step 4 (replace) so we
-        # can inspect mid-transaction state.
-        journal = Path(scratch) / "phase-state.json.journal"
-        if journal.exists():
-            journal_snapshots.append(journal.read_text(encoding="utf-8"))
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(phase_txn._durable_fs, "replace_with_retry", spy_replace)
-
-    state_path = scratch / "phase-state.json"
-    state_path.write_text(json.dumps({"phase": "discuss"}, sort_keys=True) + "\n", encoding="utf-8")
-    req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
-    phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
-
-    assert journal_snapshots, "journal was never observable on disk before replace"
-    payload = json.loads(journal_snapshots[-1])
-    for key in (
-        "txn_id",
-        "action",
-        "before_sha256",
-        "after_sha256",
-        "audit_entry_draft",
-        "started_at_monotonic",
-    ):
-        assert key in payload, f"journal missing required field: {key}"
-    assert payload["action"] == "phase.set"
-
-
-# ---------------------------------------------------------------------------
-# Failure paths: clean up on partial commit
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# S01-D.1 review fixes (P1, 2026-05-17): §12.5 amendments
+# ADR-0004 §12.5 amendments
 # ---------------------------------------------------------------------------
 
 
 def test_commit_fsyncs_scratch_after_audit_append_per_125_3(
     scratch: Path, audit_path: Path, lock, monkeypatch
 ):
-    """§12.5 #3 (Round-7 amendment to §3.8 row 3): after audit_append's
-    `fsync(audit_fd)`, the harness MUST `fsync_parent_dir(scratch)`
-    before proceeding to step 4. Pinned via ordering spy."""
+    """§12.5 #3: after audit_append's fsync(audit_fd), scratch MUST be
+    fsync'd before proceeding to replace. Pinned via ordering spy."""
     from lib import audit as audit_mod, durable_fs
 
     real_fsync_parent_dir = durable_fs.fsync_parent_dir
@@ -286,8 +224,6 @@ def test_commit_fsyncs_scratch_after_audit_append_per_125_3(
     req = _make_request(before={"phase": "discuss"}, after={"phase": "plan"})
     phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
 
-    # Find the audit append index; the very next scratch fsync MUST be
-    # present (step-3 amendment).
     audit_idx = next(i for i, op in enumerate(order) if op == "AUDIT_APPEND")
     post_audit = order[audit_idx + 1:]
     next_scratch_idx = next(
@@ -303,9 +239,8 @@ def test_commit_fsyncs_scratch_after_audit_append_per_125_3(
 def test_commit_invokes_fsync_file_durable_on_replaced_state_per_125_4(
     scratch: Path, audit_path: Path, lock, monkeypatch
 ):
-    """§12.5 #4: step 4 of §3.8 now requires `fsync_file_durable` of the
-    renamed `state.json` AND `fsync_parent_dir(scratch)`. The original
-    code only did the directory fsync. Pinned via spy."""
+    """§12.5 #4: step 3 requires `fsync_file_durable` of the renamed
+    `state.json`. Pinned via spy."""
     from lib import durable_fs
 
     real_fsync_file_durable = durable_fs.fsync_file_durable
@@ -328,12 +263,16 @@ def test_commit_invokes_fsync_file_durable_on_replaced_state_per_125_4(
     )
 
 
-def test_commit_leaves_journal_when_replace_fails(
+# ---------------------------------------------------------------------------
+# Injected failure leaves state consistent (ADR-0004 canary)
+# ---------------------------------------------------------------------------
+
+
+def test_commit_state_consistent_when_replace_fails(
     scratch: Path, audit_path: Path, lock, monkeypatch
 ):
-    """If step 4 (`os.replace`) raises after the audit entry was written,
-    the journal MUST remain on disk so the next CLI start can roll
-    forward via the recovery matrix (S01-D.2 row 7/8a/8b)."""
+    """ADR-0004 canary: if os.replace fails, old state is still valid.
+    No journal to clean up; state file is untouched (tmp was never renamed)."""
     from lib import durable_fs
 
     def fail_replace(src, dst):
@@ -348,8 +287,6 @@ def test_commit_leaves_journal_when_replace_fails(
     with pytest.raises(durable_fs.DurableFsError):
         phase_txn.commit_transaction(scratch, lock=lock, request=req, audit_path=audit_path)
 
-    # Journal + tmp left for the recovery matrix; state file unchanged.
-    assert (scratch / "phase-state.json.journal").exists()
-    assert (scratch / "phase-state.json.tmp").exists()
+    # State file is still old valid JSON (tmp was not renamed).
     on_disk = json.loads(state_path.read_text(encoding="utf-8"))
     assert on_disk == {"phase": "discuss"}

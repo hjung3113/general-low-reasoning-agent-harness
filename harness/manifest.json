@@ -779,16 +779,6 @@
       "policy": "harness-owned"
     },
     {
-      "path": "scripts/lib/audit_chain.py",
-      "source": "scripts/lib/audit_chain.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/audit_rotation.py",
-      "source": "scripts/lib/audit_rotation.py",
-      "policy": "harness-owned"
-    },
-    {
       "path": "scripts/lib/backups.py",
       "source": "scripts/lib/backups.py",
       "policy": "harness-owned"
@@ -951,11 +941,6 @@
     {
       "path": "scripts/lib/state_repair.py",
       "source": "scripts/lib/state_repair.py",
-      "policy": "harness-owned"
-    },
-    {
-      "path": "scripts/lib/state_trust.py",
-      "source": "scripts/lib/state_trust.py",
       "policy": "harness-owned"
     },
     {

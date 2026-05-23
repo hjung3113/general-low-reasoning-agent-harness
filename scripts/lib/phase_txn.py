@@ -1,10 +1,7 @@
-"""Crash-safe state+audit transaction protocol (design §3.8).
+"""Crash-safe state+audit transaction — ADR-0004 atomic write + primary lock.
 
-Holding the state lock prevents concurrent writers; it does NOT make
-two-file (state + audit) mutation crash-atomic. A power loss between
-`os.replace(state)` and audit append, or between audit append and the
-replace, can leave them divergent. This module provides the 5-step
-protocol that closes that gap.
+ADR-0004: crash-safety = atomic write + primary lock only.
+No journal, no recovery matrix, no audit-tail oracle.
 
 Public surface
 --------------
@@ -12,14 +9,25 @@ Public surface
     TxnLockMissingError(TxnError)  -- caller did not hold a live LockHandle
     TxnRequest                     -- dataclass(action, before_state,
                                                 after_state, audit_entry_draft)
-    JOURNAL_NAME, TMP_NAME         -- on-disk filenames inside `.scratch/`
+    STATE_NAME                     -- on-disk filename inside `.scratch/`
     commit_transaction(scratch, *, lock, request, audit_path) -> txn_id
 
 The function MUST be called with a live `LockHandle` from
-`scripts.lib.phase_lock.acquire_primary`. All five steps run while that
-lock is held; the caller releases it after the transaction returns.
-Failure between steps 1-5 leaves the journal+tmp on disk so the recovery
-matrix (S01-D.2) can resolve the partial state on next CLI start.
+`scripts.lib.phase_lock.acquire_primary`. All steps run while that lock
+is held; the caller releases it after the transaction returns.
+
+Protocol (3 steps, ADR-0004):
+  1. Write state.json.tmp with after_state canonical bytes;
+     fsync(tmp_fd); fsync_parent_dir(scratch).
+  2. Append audit entry with txn_id, before/after sha256 to audit.log;
+     fsync_parent_dir(scratch).
+  3. os.replace(state.json.tmp, state.json); fsync_parent_dir(scratch);
+     fsync_file_durable(state.json).
+
+If step 3 fails, state.json remains the old valid value (tmp was never
+renamed). The audit row may have been written; a re-try will produce a
+second audit row with a new txn_id — acceptable for this internal tool
+(ADR-0002: no external attacker).
 """
 
 from __future__ import annotations
@@ -29,7 +37,6 @@ import hashlib
 import json
 import os
 import secrets
-import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
@@ -38,14 +45,10 @@ from . import durable_fs as _durable_fs
 from . import phase_lock as _phase_lock
 
 
-JOURNAL_NAME = "phase-state.json.journal"
-TMP_NAME = "phase-state.json.tmp"
 STATE_NAME = "phase-state.json"
+TMP_NAME = "phase-state.json.tmp"
 
-# Verbs that are always emitted via commit_transaction and therefore always carry
-# {entry_hash, txn_id, after_sha256}.  Non-txn verbs (ci.oidc.jti.consumed,
-# lock.recovered, approve_nonce.mint, etc.) tail the audit log too but do NOT
-# carry those three fields — _audit_tail_partial_write must not flag them.
+# Verbs emitted via commit_transaction (always carry txn_id, after_sha256).
 _TXN_VERBS: frozenset[str] = frozenset([
     "phase.approve",
     "phase.reopen",
@@ -53,9 +56,7 @@ _TXN_VERBS: frozenset[str] = frozenset([
 
 
 class TxnError(OSError):
-    """Base class for phase_txn failures. Callers map to exit 14
-    (`crash_recovery_undecidable` family) unless a more specific
-    subclass dictates otherwise."""
+    """Base class for phase_txn failures."""
 
 
 class TxnLockMissingError(TxnError):
@@ -83,8 +84,7 @@ class TxnRequest:
 
     def resolved_drafts(self) -> list:
         """Return the canonical list of drafts to write. Plural wins over
-        singular. Empty/missing -> empty list (callers should not invoke
-        commit_transaction with zero audit rows, but the helper is safe)."""
+        singular. Empty/missing -> empty list."""
         if self.audit_entry_drafts:
             return list(self.audit_entry_drafts)
         if self.audit_entry_draft is not None:
@@ -96,10 +96,7 @@ def _canonical_bytes(state: Optional[Mapping[str, Any]]) -> bytes:
     """Canonical serialization for hashing AND for the state file body.
 
     Pinned to `json.dumps(..., sort_keys=True, indent=2,
-    separators=(',', ': '))` with a trailing LF, matching the existing
-    Canonical serialize shape (recovery matrix in S01-D.2 depends
-    on byte-equality with prior writes). For audit-chain canonicalization
-    (rfc8785) see §2.3 — that lives in S06.
+    separators=(',', ': '))` with a trailing LF.
     """
     if state is None:
         return b""
@@ -138,25 +135,21 @@ def commit_transaction(
     request: TxnRequest,
     audit_path: Union[str, "os.PathLike[str]"],
 ) -> str:
-    """Execute steps 1-5 of design §3.8 in order. Returns the assigned `txn_id`.
+    """Execute ADR-0004 3-step protocol. Returns the assigned `txn_id`.
 
-    Step 1: write journal {txn_id, action, before_sha256, after_sha256,
-            audit_entry_draft, started_at_monotonic}; fsync(journal_fd);
+    Step 1: write state.json.tmp with `after_state` canonical bytes;
+            fsync(tmp_fd); fsync_parent_dir(scratch).
+    Step 2: append audit entry with `txn_id` and content sha256s to
+            `audit.log` (audit_append fsyncs the fd internally);
             fsync_parent_dir(scratch).
-    Step 2: write state.json.tmp with `after_state` canonical bytes;
-            fsync(tmp_fd); fsync_parent_dir(scratch). (Round-5 BLOCK #4:
-            the tmp's parent-dir fsync MUST precede step 3.)
-    Step 3: append audit entry with `txn_id` and content sha256s to
-            `audit.log` (audit_append fsyncs the fd internally).
-    Step 4: os.replace(state.json.tmp, state.json) via replace_with_retry;
-            fsync_parent_dir(scratch).
-    Step 5: os.unlink(journal); fsync_parent_dir(scratch).
+    Step 3: os.replace(state.json.tmp, state.json);
+            fsync_parent_dir(scratch);
+            fsync_file_durable(state.json).
     """
     scratch = Path(scratch)
     audit_path = Path(audit_path)
     _check_lock(lock, scratch)
 
-    journal_path = scratch / JOURNAL_NAME
     tmp_path = scratch / TMP_NAME
     state_path = scratch / STATE_NAME
 
@@ -167,37 +160,13 @@ def commit_transaction(
     txn_id = _new_txn_id()
 
     drafts = request.resolved_drafts()
-    # Journal captures the FIRST draft only (the recovery oracle uses the
-    # journal solely to learn the planned action; the audit log itself
-    # records all drafts after step 3 completes).
-    journal_first_draft = dict(drafts[0]) if drafts else {}
+    if not drafts:
+        raise TxnError(
+            "commit_transaction requires at least one audit_entry_draft "
+            "(set request.audit_entry_draft or request.audit_entry_drafts)"
+        )
 
-    # --- Step 1: journal -----------------------------------------------------
-    journal_payload = {
-        "txn_id": txn_id,
-        "action": request.action,
-        "before_sha256": before_sha,
-        "after_sha256": after_sha,
-        "audit_entry_draft": journal_first_draft,
-        "started_at_monotonic": time.monotonic(),
-    }
-    journal_bytes = (
-        json.dumps(journal_payload, sort_keys=True, separators=(",", ":"))
-        + "\n"
-    ).encode("utf-8")
-    fd = os.open(
-        str(journal_path),
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-        0o600,
-    )
-    try:
-        os.write(fd, journal_bytes)
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    _durable_fs.fsync_parent_dir(scratch)
-
-    # --- Step 2: state.json.tmp ---------------------------------------------
+    # --- Step 1: write state.json.tmp ----------------------------------------
     fd = os.open(
         str(tmp_path),
         os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -208,23 +177,9 @@ def commit_transaction(
         os.fsync(fd)
     finally:
         os.close(fd)
-    # Round-5 BLOCK #4: tmp directory entry MUST be durable before audit
-    # references it (otherwise recovery oracle points at non-existent tmp).
     _durable_fs.fsync_parent_dir(scratch)
 
-    # --- Step 3: audit append ----------------------------------------------
-    # P1-3 extension: append ALL drafts inside step 3 so a multi-row
-    # transaction (e.g. autopilot.halt + reopen) is atomic — a crash
-    # between rows still leaves the journal+tmp on disk for the recovery
-    # oracle, which keys off the journal's `txn_id` (== shared by all
-    # rows). The §3.8 "one txn = one audit row" invariant is widened to
-    # "one txn = one audit txn_id span"; every row carries the same
-    # decorations.
-    if not drafts:
-        raise TxnError(
-            "commit_transaction requires at least one audit_entry_draft "
-            "(set request.audit_entry_draft or request.audit_entry_drafts)"
-        )
+    # --- Step 2: audit append -------------------------------------------------
     now_iso = _now_iso()
     for draft in drafts:
         entry = dict(draft)
@@ -233,278 +188,18 @@ def commit_transaction(
         entry["before_sha256"] = before_sha
         entry["after_sha256"] = after_sha
         _audit.audit_append(entry, audit_path=audit_path)
-    # §12.5 #3 (Round-7 amendment): after `fsync(audit_fd)` inside
-    # `audit_append`, the harness MUST `fsync_parent_dir(scratch)`
-    # before proceeding to step 4. Without this the scratch dir entry
-    # for tmp could still be undurable in a crash window even though
-    # audit already references it.
     _durable_fs.fsync_parent_dir(scratch)
 
-    # --- Step 4: atomic replace --------------------------------------------
-    # `replace_with_retry` raises DurableFsError on Windows AV pin
-    # exhaustion. The journal + tmp are left in place so the recovery
-    # matrix (S01-D.2 rows 7 / 8a / 8b) can resolve on next start.
+    # --- Step 3: atomic replace -----------------------------------------------
     _durable_fs.replace_with_retry(tmp_path, state_path)
     _durable_fs.fsync_parent_dir(scratch)
-    # §12.5 #4: step 4 now requires `fsync_file_durable` of the renamed
-    # state.json IN ADDITION to the directory fsync above. On APFS this
-    # promotes the dir fsync to `F_FULLFSYNC` on the file's bytes; on
-    # Windows it FlushFileBuffers the file via a re-open. Without this
-    # the rename can be durable while the file's data pages still sit
-    # in volatile cache, defeating the §3.8 crash guarantee.
     fd = os.open(str(state_path), os.O_RDONLY)
     try:
         _durable_fs.fsync_file_durable(fd, path=state_path)
     finally:
         os.close(fd)
 
-    # --- Step 5: unlink journal --------------------------------------------
-    os.unlink(journal_path)
-    _durable_fs.fsync_parent_dir(scratch)
-
     return txn_id
-
-
-# ---------------------------------------------------------------------------
-# Recovery — 12-row matrix (design §3.8 + §12.5 #2)
-# ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass
-class RecoveryResult:
-    """Outcome of one `recover()` pass. The `row` field maps directly to
-    the design §3.8 table (1-11) or §12.5 #2 row 12. `decision` is a
-    short machine-readable string for logging / audit; `exit_code` is 0
-    for the eight self-healing rows and 14 for the four fault rows."""
-
-    row: int
-    decision: str
-    exit_code: int
-
-
-def _state_sha_of_disk(state_path: Path) -> str:
-    if not state_path.exists():
-        return ""
-    return _sha256(state_path.read_bytes())
-
-
-def _file_sha(path: Path) -> str:
-    return _sha256(path.read_bytes()) if path.exists() else ""
-
-
-def _audit_tail_partial_write(audit_path: Path, *, tail_scan_rows: int = 100) -> bool:
-    """Return True if the most recent txn-verb line fails partial-write check.
-
-    C-5 (Cycle-2): scan backward from the tail to find the FIRST line whose
-    verb is in _TXN_VERBS.  This handles the case where a legit non-txn append
-    (e.g. ci.oidc.jti.consumed) was written AFTER a partial txn commit — the
-    old logic checked only lines[-1] and would miss the partial txn row.
-
-    If no txn verb is found within the last `tail_scan_rows` rows → return False
-    (no txn row to check; assume not-partial).
-
-    Malformed JSON in the very last line is still flagged immediately (the audit
-    oracle itself is untrustworthy regardless of verb).
-
-    B2-Fix-1 (Cycle-1): The three mandatory fields {entry_hash, txn_id,
-    after_sha256} are ONLY required for entries whose verb is in _TXN_VERBS.
-    Non-txn verbs legitimately omit those fields.
-    """
-    if not audit_path.exists():
-        return False
-    text = audit_path.read_text(encoding="utf-8")
-    lines = [ln for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        return False
-
-    # Fast-path: malformed JSON on the very last line is always partial.
-    try:
-        json.loads(lines[-1])
-    except json.JSONDecodeError:
-        return True
-
-    # C-5: scan backward up to tail_scan_rows for the most recent txn verb.
-    scan_lines = lines[-tail_scan_rows:]
-    for ln in reversed(scan_lines):
-        try:
-            parsed = json.loads(ln)
-        except json.JSONDecodeError:
-            # Malformed intermediate line — already handled for the last line above.
-            continue
-        verb = parsed.get("verb", "")
-        if verb in _TXN_VERBS:
-            # Found the most recent txn row — check mandatory fields.
-            required = {"entry_hash", "txn_id", "after_sha256"}
-            if not required.issubset(parsed):
-                return True
-            # Txn row is well-formed; stop scanning.
-            return False
-
-    # No txn verb found in tail scan — no partial write to report.
-    return False
-
-
-def _audit_tail_entry(audit_path: Path) -> Optional[dict]:
-    """Return the last well-formed audit entry (full dict), or None."""
-    if not audit_path.exists():
-        return None
-    text = audit_path.read_text(encoding="utf-8")
-    for line in reversed(text.splitlines()):
-        if not line.strip():
-            continue
-        try:
-            return json.loads(line)
-        except json.JSONDecodeError:
-            continue
-    return None
-
-
-def _audit_tail_txn_id(audit_path: Path) -> Optional[str]:
-    """Return the `txn_id` field of the last well-formed audit entry, if any."""
-    entry = _audit_tail_entry(audit_path)
-    return entry.get("txn_id") if entry else None
-
-
-class _MalformedJournal(Exception):
-    """Sentinel raised when a present journal file fails JSON-parse.
-
-    Surfaced by `recover()` as `row=13 decision=malformed_journal exit=14`
-    — a real fault separate from a missing journal (J=0). Prior to the
-    S01-D.2 review-fix the parse failure was silently swallowed.
-    """
-
-
-def _read_journal(scratch: Path) -> Optional[dict]:
-    journal = scratch / JOURNAL_NAME
-    if not journal.exists():
-        return None
-    try:
-        return json.loads(journal.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise _MalformedJournal(str(exc)) from exc
-
-
-def recover(
-    scratch: Union[str, "os.PathLike[str]"],
-    *,
-    audit_path: Union[str, "os.PathLike[str]"],
-    lock: Optional[_phase_lock.LockHandle],
-) -> RecoveryResult:
-    """Dispatch one of the 12 design §3.8 matrix rows and execute its
-    decision. Returns a `RecoveryResult`. The caller MUST hold the
-    state lock (handed in via `lock`); recovery mutates artefacts.
-
-    Row 12 (`audit_partial_write`, §12.5 #2) takes precedence — if the
-    audit oracle itself is corrupt, no other matrix decision is safe.
-    """
-    scratch = Path(scratch)
-    audit_path = Path(audit_path)
-    _check_lock(lock, scratch)
-
-    state_path = scratch / STATE_NAME
-    journal_path = scratch / JOURNAL_NAME
-    tmp_path = scratch / TMP_NAME
-
-    # Row 12 — audit oracle untrustworthy.
-    if _audit_tail_partial_write(audit_path):
-        return RecoveryResult(row=12, decision="audit_partial_write", exit_code=14)
-
-    # Out-of-band row 13 — journal file exists but fails JSON-parse.
-    # Surfaced separately from J=0 so we don't fall into rows 1/2/3/4
-    # and erroneously unlink tmp while a real journal sits on disk.
-    try:
-        journal = _read_journal(scratch)
-    except _MalformedJournal:
-        return RecoveryResult(row=13, decision="malformed_journal", exit_code=14)
-
-    J = journal is not None
-    T = tmp_path.exists()
-    state_hash = _state_sha_of_disk(state_path)
-    audit_entry = _audit_tail_entry(audit_path)
-    audit_txn = audit_entry.get("txn_id") if audit_entry else None
-    audit_after_sha = audit_entry.get("after_sha256") if audit_entry else None
-
-    # J = 0 (rows 1-4)
-    if not J:
-        if not T:
-            if audit_txn is None:
-                return RecoveryResult(row=1, decision="quiescent", exit_code=0)
-            # Row 3 review-fix: only accept when the on-disk state hash
-            # matches the audit tail's `after_sha256`. Otherwise the
-            # state file has drifted (corruption / out-of-band edit) and
-            # we MUST exit 14 rather than silently report "accept".
-            if audit_after_sha and state_hash == audit_after_sha:
-                return RecoveryResult(
-                    row=3, decision="post_finalize_no_tmp_accept", exit_code=0
-                )
-            return RecoveryResult(
-                row=9, decision="undecidable_state_hash_mismatch_audit", exit_code=14
-            )
-        # T = 1, J = 0 — orphan tmp.
-        if audit_txn is None:
-            # No audit info to corroborate — historical "orphan_tmp" path.
-            os.unlink(tmp_path)
-            _durable_fs.fsync_parent_dir(scratch)
-            return RecoveryResult(row=2, decision="orphan_tmp_unlinked", exit_code=0)
-        # Row 4 review-fix: audit claims a transition; require state hash
-        # match before treating the tmp as discardable. Tampered state
-        # must NOT cause us to delete a potentially-recoverable tmp.
-        if audit_after_sha and state_hash == audit_after_sha:
-            os.unlink(tmp_path)
-            _durable_fs.fsync_parent_dir(scratch)
-            return RecoveryResult(
-                row=4, decision="orphan_tmp_unlinked_post_finalize", exit_code=0
-            )
-        return RecoveryResult(
-            row=9, decision="undecidable_state_hash_mismatch_audit", exit_code=14
-        )
-
-    # J = 1 — journal present (rows 5-11)
-    assert journal is not None
-    before_sha = journal.get("before_sha256", "")
-    after_sha = journal.get("after_sha256", "")
-    journal_txn = journal.get("txn_id", "")
-    A = audit_txn is not None and audit_txn == journal_txn
-
-    if not A:
-        # Audit never observed this txn (step 3 didn't complete).
-        if state_hash == before_sha:
-            # Rollback: state untouched; drop journal (+ tmp if present).
-            if T:
-                os.unlink(tmp_path)
-            os.unlink(journal_path)
-            _durable_fs.fsync_parent_dir(scratch)
-            row = 6 if T else 5
-            decision = "rollback_journal_and_tmp" if T else "rollback_journal_only"
-            return RecoveryResult(row=row, decision=decision, exit_code=0)
-        # state != before AND audit never recorded -> corruption.
-        row = 10 if T else 11
-        return RecoveryResult(row=row, decision="corruption", exit_code=14)
-
-    # A = 1 — audit confirms the txn.
-    if state_hash == after_sha:
-        # Finalize: state already updated, just remove leftovers.
-        if T:
-            os.unlink(tmp_path)
-        os.unlink(journal_path)
-        _durable_fs.fsync_parent_dir(scratch)
-        return RecoveryResult(row=8, decision="finalize", exit_code=0)
-
-    if state_hash == before_sha and T and _file_sha(tmp_path) == after_sha:
-        # Roll forward: replace state with tmp, drop journal.
-        _durable_fs.replace_with_retry(tmp_path, state_path)
-        _durable_fs.fsync_parent_dir(scratch)
-        fd = os.open(str(state_path), os.O_RDONLY)
-        try:
-            _durable_fs.fsync_file_durable(fd, path=state_path)
-        finally:
-            os.close(fd)
-        os.unlink(journal_path)
-        _durable_fs.fsync_parent_dir(scratch)
-        return RecoveryResult(row=7, decision="roll_forward", exit_code=0)
-
-    # Audit confirms but state matches neither before nor after.
-    return RecoveryResult(row=9, decision="undecidable", exit_code=14)
 
 
 def _now_iso() -> str:
@@ -522,10 +217,7 @@ __all__ = [
     "TxnError",
     "TxnLockMissingError",
     "TxnRequest",
-    "RecoveryResult",
-    "JOURNAL_NAME",
-    "TMP_NAME",
     "STATE_NAME",
+    "TMP_NAME",
     "commit_transaction",
-    "recover",
 ]
