@@ -79,21 +79,6 @@
         "postgresql verification"
       ]
     },
-    "workflow-data-analysis": {
-      "category": "workflow",
-      "capabilities": [
-        "analysis question framing",
-        "reproducible analytical outputs"
-      ]
-    },
-    "workflow-data-processing": {
-      "category": "workflow",
-      "capabilities": [
-        "data contracts",
-        "transformation invariants",
-        "failure handling"
-      ]
-    },
     "workflow-etl": {
       "category": "workflow",
       "suggests": [
@@ -296,20 +281,6 @@
       "policy": "harness-owned",
       "owner": "pack:tech-postgresql",
       "pack": "tech-postgresql"
-    },
-    {
-      "path": ".agents/skills/workflow-data-analysis/SKILL.md",
-      "source": "harness/skill-packs/workflow-data-analysis/workflow-data-analysis/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-data-analysis",
-      "pack": "workflow-data-analysis"
-    },
-    {
-      "path": ".agents/skills/workflow-data-processing/SKILL.md",
-      "source": "harness/skill-packs/workflow-data-processing/workflow-data-processing/SKILL.md",
-      "policy": "harness-owned",
-      "owner": "pack:workflow-data-processing",
-      "pack": "workflow-data-processing"
     },
     {
       "path": ".agents/skills/workflow-etl/SKILL.md",

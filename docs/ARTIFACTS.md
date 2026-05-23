@@ -5,8 +5,8 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **181**  
-- `harness-owned`: 154
+Total files: **179**  
+- `harness-owned`: 152
 - `managed-append`: 2
 - `project-owned`: 25
 
@@ -31,8 +31,6 @@ Total files: **181**
 | `.agents/skills/tech-typescript/SKILL.md`                        | `harness-owned`  | `harness/skill-packs/tech-typescript/tech-typescript/SKILL.md`                     | pack:tech-typescript          |            | tech-typescript          |          |
 | `.agents/skills/verification-contract/SKILL.md`                  | `harness-owned`  | `harness/skill-packs/workflow-core/verification-contract/SKILL.md`                 | pack:workflow-core            |            | workflow-core            |          |
 | `.agents/skills/workflow-code-review/SKILL.md`                   | `harness-owned`  | `harness/skill-packs/workflow-code-review/workflow-code-review/SKILL.md`           | pack:workflow-code-review     |            | workflow-code-review     |          |
-| `.agents/skills/workflow-data-analysis/SKILL.md`                 | `harness-owned`  | `harness/skill-packs/workflow-data-analysis/workflow-data-analysis/SKILL.md`       | pack:workflow-data-analysis   |            | workflow-data-analysis   |          |
-| `.agents/skills/workflow-data-processing/SKILL.md`               | `harness-owned`  | `harness/skill-packs/workflow-data-processing/workflow-data-processing/SKILL.md`   | pack:workflow-data-processing |            | workflow-data-processing |          |
 | `.agents/skills/workflow-db-context/SKILL.md`                    | `harness-owned`  | `harness/skill-packs/workflow-db-context/workflow-db-context/SKILL.md`             | pack:workflow-db-context      |            | workflow-db-context      |          |
 | `.agents/skills/workflow-debugging/SKILL.md`                     | `harness-owned`  | `harness/skill-packs/workflow-debugging/workflow-debugging/SKILL.md`               | pack:workflow-debugging       |            | workflow-debugging       |          |
 | `.agents/skills/workflow-etl/SKILL.md`                           | `harness-owned`  | `harness/skill-packs/workflow-etl/workflow-etl/SKILL.md`                           | pack:workflow-etl             |            | workflow-etl             |          |
@@ -211,8 +209,6 @@ Pack metadata from `harness/manifest.json` `packs` section.
 | `tech-typescript`          | tech     |                     | typecheck; typed module boundaries                                                                                                              |
 | `workflow-code-review`     | workflow |                     | defect review; verification review; scope review                                                                                                |
 | `workflow-core`            | workflow |                     | evidence research; skill composition; ecosystem skill research; verification contract; risk review; multi-agent review; release readiness audit |
-| `workflow-data-analysis`   | workflow |                     | analysis question framing; reproducible analytical outputs                                                                                      |
-| `workflow-data-processing` | workflow |                     | data contracts; transformation invariants; failure handling                                                                                     |
 | `workflow-db-context`      | workflow |                     | needs-db-context; database shape gating; database verification readiness                                                                        |
 | `workflow-debugging`       | workflow |                     | reproduce failures; minimize cases; instrument and regress                                                                                      |
 | `workflow-etl`             | workflow | workflow-db-context | extract transform load; restart idempotency; schema drift                                                                                       |
