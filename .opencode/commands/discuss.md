@@ -1,5 +1,13 @@
 # OpenCode Discuss
 
+## ⛔ STEP 0 — RUN GUARD CHECK
+
+Before doing ANYTHING in this command, run:
+```bash
+python3 scripts/harness.py next --prompt
+```
+The output is your current guard block (phase, approved, forbidden writes, refusal template). Re-run this command between major steps if uncertain.
+
 ## ⛔ STOP — PHASE BOUNDARY
 
 **FORBIDDEN this phase:** source files (`*.html`, `*.css`, `*.js`, `*.py`, `*.ts`, `*.tsx`, etc.), `package.json`, `pyproject.toml`, lockfiles, anything under `src/`, `lib/`, `app/`. No `Write` / `Edit` on these.

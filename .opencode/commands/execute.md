@@ -1,5 +1,13 @@
 # OpenCode Execute
 
+## ⛔ STEP 0 — RUN GUARD CHECK
+
+Before writing ANY source file, run:
+```bash
+python3 scripts/harness.py next --prompt
+```
+Output = your current guard block + required preflight.
+
 ## ⛔ GATE — VERIFY BEFORE WRITING CODE
 
 **Required preflight**: read `.scratch/phase-state.json`. ONLY proceed with code writes if:

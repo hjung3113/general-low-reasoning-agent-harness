@@ -514,6 +514,9 @@ def check(
         raise SystemExit(f"Manifest sources missing: {', '.join(missing)}. Fix: run `harness upgrade --target <target>` (or restore missing source files in the harness checkout)")
 
     check_clean_skeleton(root)
+    # iter2: early phase-source drift detection — surface the bypass even
+    # if other downstream checks would fail later
+    check_phase_source_drift(root)
     if (root / ".roomodes").exists():
         check_json(root / ".roomodes")
     check_json(root / ".scratch/phase-state.schema.json")
@@ -527,7 +530,6 @@ def check(
     check_roadmap_state_sync(root)
     check_phase_reference_drift(root)
     check_m0_done(root)
-    check_phase_source_drift(root)
 
     check_target = (target or root).resolve()
     if target:
@@ -804,6 +806,10 @@ def check_installed_target(
         check_roadmap_state_sync(target)
     # T5: detect stale aborted-install staging directories.
     _print_stale_staging_warnings(target)
+
+    # iter2: check phase-source drift early so it's surfaced even if other
+    # downstream checks would fail later.
+    check_phase_source_drift(target)
 
     for warning in managed_block_warnings(target):
         print(f"warning: {warning.code} in {warning.path}: {warning.message}")
