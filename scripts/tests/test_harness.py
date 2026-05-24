@@ -567,6 +567,7 @@ class HarnessToolTests(unittest.TestCase):
                     "tech-typescript",
                     "workflow-code-review",
                     "workflow-core",
+                    "workflow-m0-orient",
                     "workflow-web-development",
                 ],
                 installed["packs"],
@@ -2822,19 +2823,19 @@ class ProfileResolutionTests(unittest.TestCase):
     def test_default_packs_for_dotnet_etl(self):
         from scripts import harness as h
         packs = h.default_packs_for_profile("dotnet-etl")
-        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-csharp"})
+        self.assertEqual(set(packs), {"workflow-core", "workflow-m0-orient", "workflow-etl", "tech-csharp"})
 
     def test_default_packs_for_python_etl(self):
         from scripts import harness as h
         packs = h.default_packs_for_profile("python-etl")
-        self.assertEqual(set(packs), {"workflow-core", "workflow-etl", "tech-python"})
+        self.assertEqual(set(packs), {"workflow-core", "workflow-m0-orient", "workflow-etl", "tech-python"})
 
     def test_default_packs_for_react_web(self):
         from scripts import harness as h
         packs = h.default_packs_for_profile("react-web")
         self.assertEqual(
             set(packs),
-            {"workflow-core", "workflow-web-development", "tech-react", "tech-typescript", "tech-tailwind"},
+            {"workflow-core", "workflow-m0-orient", "workflow-web-development", "tech-react", "tech-typescript", "tech-tailwind"},
         )
 
     def test_db_packs_mssql(self):

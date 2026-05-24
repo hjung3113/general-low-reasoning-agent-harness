@@ -9,6 +9,9 @@
 
 ### Fixed
 
+- **`workflow-m0-orient` skill not deployed by default.** M11 declared M0 orientation mandatory, but the skill pack was omitted from every default profile's pack list (`scripts/lib/profiles.py:_PROFILE_DEFAULT_PACKS`). Result: a fresh `harness init` produced no `.agents/skills/workflow-m0-orient/SKILL.md`, so agents had no skill body to follow for the greenfield interview / existing-code detection. Added `workflow-m0-orient` to all four default profiles (`generic`, `dotnet-etl`, `python-etl`, `react-web`).
+- **No Roo mirror for `workflow-m0-orient`.** `.opencode/commands/*.md` and `.roo/commands/*.md` were mirrored in M12, but skills were not — Roo loads its skills from `.roo/skills/`, and the M0 skill never landed there. Added a `.roo/skills/workflow-m0-orient/SKILL.md` manifest entry sourced from the same pack file.
+- **Uninstall left `.planning/codebase/` behind** when `seed`-policy files were tracked. Added `"seed"` to the policy allowlist in `scripts/uninstall_harness.py:build_removal_plan` so seed-policy files (e.g. `.planning/codebase/STACK.md`) are removed alongside `harness-owned` files.
 - **Drift check false-positive in harness-self repo** (`scripts/lib/check.py`): `check_phase_source_drift` previously flagged the harness's own root files (`pyproject.toml`, `harness_cli.py`) when developing the harness itself. Now skipped when `harness/manifest.json` is present (the unambiguous signal that this is the harness source repo, not a target project).
 
 ### Breaking

@@ -8,11 +8,12 @@ KNOWN_PROFILES = {"generic", "dotnet-etl", "python-etl", "react-web"}
 LEGACY_PROFILE_ALIASES = {"dotnet-etl-mssql": "dotnet-etl"}
 
 _PROFILE_DEFAULT_PACKS = {
-    "generic": ("workflow-core",),
-    "dotnet-etl": ("workflow-core", "workflow-etl", "tech-csharp"),
-    "python-etl": ("workflow-core", "workflow-etl", "tech-python"),
+    "generic": ("workflow-core", "workflow-m0-orient"),
+    "dotnet-etl": ("workflow-core", "workflow-m0-orient", "workflow-etl", "tech-csharp"),
+    "python-etl": ("workflow-core", "workflow-m0-orient", "workflow-etl", "tech-python"),
     "react-web": (
         "workflow-core",
+        "workflow-m0-orient",
         "workflow-web-development",
         "tech-react",
         "tech-typescript",

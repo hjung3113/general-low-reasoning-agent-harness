@@ -5,8 +5,8 @@
 > Enforce with: `python3 scripts/generate_artifacts_doc.py --check`
 
 Manifest version: `(release placeholder — replaced at build time)`  
-Total files: **182**  
-- `harness-owned`: 154
+Total files: **183**  
+- `harness-owned`: 155
 - `managed-append`: 2
 - `project-owned`: 18
 - `seed`: 8
@@ -116,6 +116,7 @@ Total files: **182**
 | `.roo/skills/workflow-docs-to-issues/SKILL.md`                   | `harness-owned`  | `.roo/skills/workflow-docs-to-issues/SKILL.md`                                   |                               |            |                          |          |
 | `.roo/skills/workflow-feature-tdd/SKILL.md`                      | `harness-owned`  | `.roo/skills/workflow-feature-tdd/SKILL.md`                                      |                               |            |                          |          |
 | `.roo/skills/workflow-harness-doctor/SKILL.md`                   | `harness-owned`  | `.roo/skills/workflow-harness-doctor/SKILL.md`                                   |                               |            |                          |          |
+| `.roo/skills/workflow-m0-orient/SKILL.md`                        | `harness-owned`  | `harness/skill-packs/workflow-m0-orient/workflow-m0-orient/SKILL.md`             | pack:workflow-m0-orient       |            | workflow-m0-orient       | roo      |
 | `.roo/skills/workflow-ops-observability/SKILL.md`                | `harness-owned`  | `.roo/skills/workflow-ops-observability/SKILL.md`                                |                               |            |                          |          |
 | `.roo/skills/workflow-phase-gate/SKILL.md`                       | `harness-owned`  | `.roo/skills/workflow-phase-gate/SKILL.md`                                       |                               |            |                          |          |
 | `.roo/skills/workflow-planning-hydration/SKILL.md`               | `harness-owned`  | `.roo/skills/workflow-planning-hydration/SKILL.md`                               |                               |            |                          |          |

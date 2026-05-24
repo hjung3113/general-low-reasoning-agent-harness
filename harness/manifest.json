@@ -340,6 +340,14 @@
       "pack": "workflow-m0-orient"
     },
     {
+      "path": ".roo/skills/workflow-m0-orient/SKILL.md",
+      "source": "harness/skill-packs/workflow-m0-orient/workflow-m0-orient/SKILL.md",
+      "policy": "harness-owned",
+      "owner": "pack:workflow-m0-orient",
+      "pack": "workflow-m0-orient",
+      "adapter": "roo"
+    },
+    {
       "path": ".roomodes",
       "source": ".roomodes",
       "policy": "harness-owned",
