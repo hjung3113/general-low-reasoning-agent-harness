@@ -477,6 +477,17 @@ def install(
     final_path = harness_dir / "installed-manifest.json"
     os.replace(str(pending_path), str(final_path))
 
+    # iter4: auto-install pre-commit hook (opt-out via env). Codex Q1 86.
+    if os.environ.get("HARNESS_INIT_SKIP_GIT_HOOK", "0") != "1":
+        try:
+            from lib.hooks import install_pre_commit_hook
+            install_pre_commit_hook(target)
+            reporter.note("installed pre-commit hook (set HARNESS_INIT_SKIP_GIT_HOOK=1 to skip)")
+        except SystemExit as exc:
+            reporter.note(f"pre-commit hook skipped: {exc}")
+        except Exception as exc:
+            reporter.note(f"pre-commit hook install skipped: {exc}")
+
     # Phase 6: post-finalize verify.
     with open(str(final_path), encoding="utf-8") as fh:
         verify = json.load(fh)
