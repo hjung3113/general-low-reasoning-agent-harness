@@ -500,6 +500,7 @@ def check(
         check_drift(root)
         _check_planning_drift(root)
         check_m0_done(root)
+        check_phase_source_drift(root)
         return
 
     manifest = load_manifest_data(root)
@@ -526,6 +527,7 @@ def check(
     check_roadmap_state_sync(root)
     check_phase_reference_drift(root)
     check_m0_done(root)
+    check_phase_source_drift(root)
 
     check_target = (target or root).resolve()
     if target:
@@ -1171,3 +1173,70 @@ def check_phase_state_paths(root: Path) -> None:
             missing.append(f"{key}={value}")
     if missing:
         raise SystemExit("Phase-state paths are missing: " + ", ".join(missing) + ". Fix: create the listed file(s), or update phase-state.json's state_path/plan_path/checkpoint_path via `harness phase set <phase> --stdin-json`")
+
+
+_SOURCE_EXTENSIONS = {".html", ".css", ".js", ".jsx", ".ts", ".tsx",
+                      ".py", ".go", ".rs", ".rb", ".java", ".kt", ".swift"}
+_SOURCE_FILENAMES = {"package.json", "pyproject.toml", "Cargo.toml",
+                     "go.mod", "Gemfile", "pom.xml", "build.gradle"}
+
+
+def check_phase_source_drift(root: Path) -> None:
+    """ADR-0009 / iter2: if phase in {discuss, plan} and source files exist
+    outside .planning/, fail. Catches CC9 (workflow gate bypass).
+
+    Grandfather: if .planning/codebase/ is absent (legacy install), skip.
+    """
+    cb = root / ".planning/codebase"
+    if not cb.is_dir():
+        return
+
+    state_path = root / ".scratch/phase-state.json"
+    if not state_path.exists():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    phase = state.get("phase", "")
+    if phase not in {"discuss", "plan"}:
+        return
+
+    # Find any source file at project root or top-level dirs
+    # Allowlist: .planning/, .scratch/, .harness/, .opencode/, .roo/, .agents/,
+    # tests/ for testing, harness/ (this is harness repo itself)
+    excluded_dirs = {".git", ".planning", ".scratch", ".harness",
+                     ".opencode", ".roo", ".agents", "node_modules",
+                     ".venv", "venv", "build", "dist", "__pycache__",
+                     "harness", "scripts", "tests", "docs"}
+
+    offenders: list[str] = []
+    for entry in root.iterdir():
+        if entry.is_file():
+            if entry.suffix.lower() in _SOURCE_EXTENSIONS or entry.name in _SOURCE_FILENAMES:
+                offenders.append(str(entry.relative_to(root)))
+        elif entry.is_dir() and entry.name not in excluded_dirs:
+            # Walk one level into non-excluded dirs
+            try:
+                for sub in entry.rglob("*"):
+                    if sub.is_file() and (sub.suffix.lower() in _SOURCE_EXTENSIONS
+                                          or sub.name in _SOURCE_FILENAMES):
+                        rel = sub.relative_to(root)
+                        if not any(part in excluded_dirs for part in rel.parts):
+                            offenders.append(str(rel))
+                        if len(offenders) > 20:
+                            break
+            except (PermissionError, OSError):
+                continue
+        if len(offenders) > 20:
+            break
+
+    if offenders:
+        sample = offenders[:5]
+        more = f" (+{len(offenders) - 5} more)" if len(offenders) > 5 else ""
+        raise SystemExit(
+            f"Phase boundary violation: phase={phase} but source files present outside .planning/ ({', '.join(sample)}{more}).\n"
+            f"Fix: either (a) move to execute phase via `harness phase set plan` → `harness phase approve` → `harness phase set execute`, "
+            f"or (b) delete the source files if they were written prematurely. Phase {phase} forbids source-file writes."
+        )
