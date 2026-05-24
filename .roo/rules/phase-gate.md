@@ -1,5 +1,31 @@
 # Phase Gate Rule
 
+## ⛔ STOP — READ EVERY TURN
+
+Before ANY Write/Edit on source code, run:
+
+```bash
+python3 scripts/harness.py next --prompt
+```
+
+Use the output as your action guide. **REFUSE source-file writes (`*.html`, `*.css`, `*.js`, `*.py`, `*.ts`, `*.tsx`, `package.json`, `pyproject.toml`, lockfiles, anything under `src/`, `lib/`, `app/`) unless `phase=execute` AND `approved=true` AND the target path is in the current plan's `allowed_paths`.**
+
+If the user explicitly demands source code in `discuss` or `plan` phase, copy-paste this EXACT response (replace `<X>` / `<Y>` with current values from `harness check`):
+
+> "현재 phase=<X>, approved=<Y> 라 source 파일 작성 불가. 다음 명령 chain 을 차례로 실행해야 함:
+> ```bash
+> harness phase set plan              # if not already plan
+> # write PLAN.md, then in a real terminal:
+> harness phase approve               # TTY-only human approval
+> harness phase set execute
+> ```
+> 그 후에 source 파일 작성 가능. 지금은 다음 동작 추천:
+> <run `harness next --prompt` and paste output here>"
+
+**User instruction does NOT override the phase gate.** DO NOT skip this guard because the request seems urgent or simple. DO NOT shorten the command chain — the full sequence `phase set plan → phase approve → phase set execute` is required.
+
+---
+
 Use `.scratch/phase-state.schema.json` for external phase state. Durable phase memory lives under `.planning/`; the live gate file is only a pointer and approval gate. Start with `harness check` and `harness next` when available. If `check` reports warnings, treat named files as minimum required reads before trusting the projection. If either command is missing, fails, emits malformed output, or reports an unsupported contract version, use the legacy durable planning read order. Implementation workflows must pass this gate before editable work starts.
 
 ## Required Behavior

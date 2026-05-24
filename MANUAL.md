@@ -133,6 +133,14 @@ The intended pattern is:
 
 The TTY requirement (exit 17 outside a terminal) is not a limitation — it is the design. The handoff to a human is the entire point. If an agent could approve transitions programmatically, the harness would degrade to unreviewed automation, defeating its core purpose. See [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) for rationale and design decisions.
 
+### Editor adapters — opencode and Roo Code
+
+Both `.opencode/commands/*.md` and `.roo/{rules,commands}/*` ship the same prompt-layer defense: a STOP banner listing forbidden file extensions per phase, a STEP 0 guard check that runs `harness next --prompt`, and a verbatim refusal template the agent must paste when asked to write source code outside `phase=execute, approved=true`. Roo's `--auto` and `--chain` rules continue to work — the banner only adds the phase-boundary refusal; it does not remove existing automation flags.
+
+Tool-call write veto (intercepting `Write`/`Edit` before the tool fires) is not provided by either adapter. The commit-time backstop is the editor-agnostic pre-commit hook (`harness install --pre-commit`), which runs `harness check --worktree` and exits 4 on scope violations regardless of which editor produced the write.
+
+For a complete end-to-end example using opencode, see [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html).
+
 ## Audit log
 
 `.harness/audit.jsonl` is plain JSON-lines. One row per state-mutating verb. No hash chain, no canonicalization — diagnostic, not forensic (see [`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).

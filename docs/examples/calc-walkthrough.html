@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Harness Walkthrough — Building a Calculator with opencode</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115;
+    --fg: #e6e6e6;
+    --muted: #8b93a7;
+    --accent: #7dd3fc;
+    --ok: #86efac;
+    --warn: #fde68a;
+    --bad: #fca5a5;
+    --card: #161a22;
+    --border: #2a3142;
+    --code: #1c2230;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px; line-height: 1.55;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 14px 22px; display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { margin: 0; font-size: 17px; letter-spacing: 0.2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  nav { padding: 0 22px; margin-top: 12px; }
+  nav ol { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none; }
+  nav a {
+    display: inline-block; padding: 4px 9px;
+    border: 1px solid var(--border); border-radius: 999px;
+    color: var(--muted); text-decoration: none; font-size: 12px;
+  }
+  nav a:hover { color: var(--accent); border-color: var(--accent); }
+  main { max-width: 980px; margin: 0 auto; padding: 16px 22px 80px; }
+  section.step {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 22px; margin: 22px 0;
+  }
+  section.step h2 {
+    margin: 0 0 6px; font-size: 18px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section.step h2 .num {
+    display: inline-block; min-width: 28px; text-align: center;
+    background: var(--accent); color: #0f1115;
+    border-radius: 6px; padding: 2px 6px; font-size: 13px; font-weight: 700;
+  }
+  section.step .phase {
+    font-size: 12px; color: var(--muted);
+    display: inline-block; margin-bottom: 14px;
+    padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px;
+  }
+  .phase.discuss { color: var(--warn); border-color: var(--warn); }
+  .phase.plan    { color: var(--accent); border-color: var(--accent); }
+  .phase.execute { color: var(--ok); border-color: var(--ok); }
+  .phase.refuse  { color: var(--bad); border-color: var(--bad); }
+  h3 {
+    margin: 18px 0 8px; font-size: 13px;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+  }
+  pre {
+    background: var(--code); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px; overflow-x: auto;
+    font-size: 13px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .prompt {
+    border-left: 3px solid var(--accent); background: #11202c;
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 6px 0;
+  }
+  .prompt b { color: var(--accent); }
+  .delta { display: grid; gap: 4px; margin: 4px 0 2px; }
+  .delta .row { font-size: 13px; color: var(--fg); }
+  .delta .row .tag {
+    display: inline-block; width: 90px; text-align: right;
+    color: var(--muted); padding-right: 10px; font-variant-numeric: tabular-nums;
+  }
+  .delta .row.add .tag { color: var(--ok); }
+  .delta .row.set .tag { color: var(--accent); }
+  .delta .row.no  .tag { color: var(--bad); }
+  footer {
+    color: var(--muted); font-size: 12px;
+    padding: 30px 22px; text-align: center; border-top: 1px solid var(--border);
+  }
+  .callout {
+    background: #2d2418; border: 1px solid #5c4a1f; color: var(--warn);
+    border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px;
+  }
+  .callout.bad { background: #2d1818; border-color: #5c1f1f; color: var(--bad); }
+  .callout.ok  { background: #182d1f; border-color: #1f5c2f; color: var(--ok); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Harness Walkthrough</h1>
+  <div class="sub">Building a calculator with opencode — prompt → action → state delta</div>
+</header>
+
+<nav>
+  <ol>
+    <li><a href="#s0">0 · Install</a></li>
+    <li><a href="#s1">1 · M0 orient</a></li>
+    <li><a href="#s2">2 · Questions</a></li>
+    <li><a href="#s3">3 · Hydrate codebase</a></li>
+    <li><a href="#s4">4 · Add milestone</a></li>
+    <li><a href="#s5">5 · Refusal gate</a></li>
+    <li><a href="#s6">6 · Approve in TTY</a></li>
+    <li><a href="#s7">7 · Execute &amp; commit</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section class="step" id="intro">
+  <h2><span class="num">★</span>Goal</h2>
+  <p>Build a tiny HTML calculator (four operators + parentheses) using opencode (zai/glm-4.5-flash, weak reasoning) inside a fresh harness-managed project. The walkthrough captures every prompt the user typed, what the agent did, and how repo state changed — so a first-time reader can see the full loop end-to-end, including the moment the workflow blocks a premature code request.</p>
+  <p><strong>Why follow this?</strong> Phase gates only protect you if you actually use them. Skipping orientation and approval is the failure mode this harness was built to prevent.</p>
+</section>
+
+<section class="step" id="s0">
+  <h2><span class="num">0</span>Install the harness into a fresh project</h2>
+  <span class="phase">terminal — no phase yet</span>
+
+  <h3>What the user runs</h3>
+<pre>$ mkdir calc-demo &amp;&amp; cd calc-demo &amp;&amp; git init -q
+$ python3 /path/to/general-low-reasoning-agent-harness/scripts/harness.py \
+    install --target . --pre-commit</pre>
+
+  <h3>What happens</h3>
+  <div class="delta">
+    <div class="row add"><span class="tag">+ created</span><code>.planning/STATE.md, ROADMAP.md, codebase/, milestones/00-orientation/</code></div>
+    <div class="row add"><span class="tag">+ created</span><code>.scratch/phase-state.json</code> (phase=discuss, approved=false)</div>
+    <div class="row add"><span class="tag">+ created</span><code>AGENTS.md</code> with managed phase-guard block at top</div>
+    <div class="row add"><span class="tag">+ created</span><code>.opencode/commands/{discuss,plan,execute,done}.md</code> and <code>.roo/</code> mirror</div>
+    <div class="row add"><span class="tag">+ created</span><code>.git/hooks/pre-commit</code> → calls <code>harness check --worktree</code></div>
+  </div>
+
+  <div class="callout">First run prints <code>installed pre-commit hook (set HARNESS_INIT_SKIP_GIT_HOOK=1 to skip)</code>. Two harmless warnings about empty STATE/ROADMAP are expected — see <code>README.md</code>.</div>
+</section>
+
+<section class="step" id="s1">
+  <h2><span class="num">1</span>M0 — orientation discovery</h2>
+  <span class="phase discuss">phase = discuss</span>
+
+  <h3>User prompt (in opencode)</h3>
+  <div class="prompt"><b>워크플로우 따라서 진행해줘</b></div>
+
+  <h3>Agent action</h3>
+<pre>$ python3 scripts/show_phase_status.py
+{ "phase": "discuss", "approved": false,
+  "suggested_next_read": ".planning/STATE.md" }
+
+→ Read .planning/ROADMAP.md
+→ Read .planning/STATE.md
+→ Read .planning/codebase/{STACK,STRUCTURE,SUMMARY,...}.md   # empty placeholders
+→ Read .planning/milestones/00-orientation/00-CHECKPOINTS.md</pre>
+
+  <h3>State delta</h3>
+  <div class="delta">
+    <div class="row"><span class="tag">phase</span><code>discuss</code> (unchanged — discovery only)</div>
+    <div class="row"><span class="tag">files</span>read-only; nothing written</div>
+  </div>
+</section>
+
+<section class="step" id="s2">
+  <h2><span class="num">2</span>Ask the user the right questions</h2>
+  <span class="phase discuss">phase = discuss</span>
+
+  <h3>User prompt</h3>
+  <div class="prompt"><b>사용자한테 핵심 질문 5개만 물어봐</b></div>
+
+  <h3>Agent action</h3>
+  <p>Agent surfaces the unresolved decisions blocking M0 sign-off as exactly five questions:</p>
+<pre>1. Build tool? (none / Vite / Webpack)
+2. Test framework? (none / Jest / Vitest)
+3. CSS approach? (vanilla / Tailwind / framework)
+4. Deployment target? (static hosting / Pages / Vercel)
+5. Code quality tooling? (none / ESLint+Prettier)</pre>
+
+  <p>The user answers: <em>vanilla HTML/CSS/JS, no build tool, no test framework, no Tailwind, no deployment plan, no linter</em>.</p>
+</section>
+
+<section class="step" id="s3">
+  <h2><span class="num">3</span>Hydrate the 8 codebase docs</h2>
+  <span class="phase plan">phase = discuss → plan</span>
+
+  <h3>User prompt</h3>
+  <div class="prompt"><b>답변으로 8개 파일 채우고 ROADMAP 에 M1/M2/M3 추가</b></div>
+
+  <h3>Agent action</h3>
+<pre>$ harness phase set plan
+{ "ok": true, "phase": "plan", "previous_phase": "discuss" }
+
+→ Write .planning/codebase/STACK.md
+→ Write .planning/codebase/STRUCTURE.md
+→ Write .planning/codebase/ARCHITECTURE.md
+→ Write .planning/codebase/CONVENTIONS.md
+→ Write .planning/codebase/TESTING.md
+→ Write .planning/codebase/INTEGRATIONS.md
+→ Write .planning/codebase/CONCERNS.md
+→ Write .planning/codebase/SUMMARY.md</pre>
+
+  <h3>State delta</h3>
+  <div class="delta">
+    <div class="row set"><span class="tag">phase</span><code>discuss → plan</code></div>
+    <div class="row add"><span class="tag">+ written</span>8 codebase docs filled with answers + repo-inferred facts</div>
+  </div>
+</section>
+
+<section class="step" id="s4">
+  <h2><span class="num">4</span>Add a calculator milestone to ROADMAP</h2>
+  <span class="phase plan">phase = plan</span>
+
+  <h3>User prompt</h3>
+  <div class="prompt"><b>ROADMAP 에 M1/M2/M3 정의해 — 1=기초 UI, 2=사칙연산, 3=괄호</b></div>
+
+  <h3>Agent action</h3>
+<pre>→ Edit .planning/ROADMAP.md   # adds three checklist lines inside the managed marker block
+→ Write .planning/milestones/01-basic-ui/01-CONTEXT.md
+→ Write .planning/milestones/01-basic-ui/01-01-PLAN.md
+→ Write .planning/milestones/01-basic-ui/01-CHECKPOINTS.md
+$ harness phase set plan --stdin-json &lt;&lt;'EOF'
+  { "plan_id": "01-01-basic-ui",
+    "plan_path": ".planning/milestones/01-basic-ui/01-01-PLAN.md",
+    "allowed_paths": ["index.html", "style.css", "calc.js", ...],
+    "verification": ["open index.html and click 1+2= → expect 3"] }
+EOF</pre>
+
+  <h3>State delta</h3>
+  <div class="delta">
+    <div class="row set"><span class="tag">plan_id</span><code>01-01-basic-ui</code></div>
+    <div class="row set"><span class="tag">allowed</span><code>index.html, style.css, calc.js</code></div>
+    <div class="row"><span class="tag">approved</span><code>false</code> (still needs TTY approval)</div>
+  </div>
+</section>
+
+<section class="step" id="s5">
+  <h2><span class="num">5</span>User asks for code too early — the gate fires</h2>
+  <span class="phase refuse">phase = plan, approved = false  →  REFUSE</span>
+
+  <h3>User prompt</h3>
+  <div class="prompt"><b>이제 계산기 실제로 만들어줘. 단순하게.</b></div>
+
+  <h3>Agent action — refusal template (verbatim from AGENTS.md guard)</h3>
+<pre>현재 phase=plan, approved=false 라 source 파일 작성 불가.
+다음 명령 chain 을 차례로 실행해야 함:
+
+  harness phase set plan              # if not already plan
+  # write PLAN.md, then in a real terminal:
+  harness phase approve               # TTY-only human approval
+  harness phase set execute
+
+그 후에 source 파일 작성 가능. 지금은 다음 동작 추천:
+$ python3 scripts/harness.py next --prompt
+[현재 워크플로우 상태 — 매 동작 전에 확인]
+- phase: plan
+- approved: False
+- forbidden writes this phase: *.html, *.css, *.js, ...</pre>
+
+  <div class="callout bad"><strong>This is the critical moment.</strong> Without the AGENTS.md persistent guard + the per-command STOP banners in <code>.opencode/commands/*.md</code>, a low-reasoning model will obey the user and write HTML files immediately. Defense in depth: prompt-layer (banner + refusal template) + post-hoc (<code>harness check</code> drift detection) + commit-time (<code>pre-commit</code> hook exit 4).</div>
+</section>
+
+<section class="step" id="s6">
+  <h2><span class="num">6</span>User approves from their own terminal</h2>
+  <span class="phase plan">phase = plan  →  approved  →  execute</span>
+
+  <p>Approval is intentionally TTY-only — the agent cannot self-approve. The user runs:</p>
+<pre>$ harness phase approve
+{ "ok": true, "approved": true, "approved_by": "user@example.com",
+  "approved_at": "2026-05-24T..." }
+
+$ harness phase set execute
+{ "ok": true, "phase": "execute" }</pre>
+
+  <h3>State delta</h3>
+  <div class="delta">
+    <div class="row set"><span class="tag">approved</span><code>false → true</code></div>
+    <div class="row set"><span class="tag">phase</span><code>plan → execute</code></div>
+    <div class="row add"><span class="tag">+ stamped</span><code>approved_by</code>, <code>approved_at</code> (audit trail)</div>
+  </div>
+</section>
+
+<section class="step" id="s7">
+  <h2><span class="num">7</span>Execute, verify, and commit</h2>
+  <span class="phase execute">phase = execute, approved = true</span>
+
+  <h3>User prompt (re-issued)</h3>
+  <div class="prompt"><b>이제 계산기 실제로 만들어줘. 단순하게.</b></div>
+
+  <h3>Agent action</h3>
+<pre>→ Write index.html         # inside allowed_paths ✓
+→ Write style.css          # inside allowed_paths ✓
+→ Write calc.js            # inside allowed_paths ✓
+
+$ harness check
+ok — phase=execute, approved=true, allowed_paths matched
+
+$ git add index.html style.css calc.js
+$ git commit -m "feat(M1): basic calculator UI"
+# pre-commit hook runs: harness check --worktree → exit 0
+[main abc1234] feat(M1): basic calculator UI
+ 3 files changed, 142 insertions(+)</pre>
+
+  <div class="callout ok"><strong>Happy path.</strong> Every write was inside <code>allowed_paths</code>, the commit cleared the pre-commit hook on exit 0, and the audit log records who approved when. To start M2, the agent must drop back to <code>phase=plan</code> and re-approve.</div>
+
+  <h3>If a write strays outside <code>allowed_paths</code></h3>
+<pre>$ git add scripts/secret_helper.py    # NOT in allowed_paths
+$ git commit -m "..."
+# pre-commit hook: exit 4 (scope violation)
+Phase boundary violation: scripts/secret_helper.py not in allowed_paths.
+Fix: (a) git restore --staged scripts/secret_helper.py, OR
+     (b) return to plan, expand allowed_paths, re-approve, re-enter execute.</pre>
+</section>
+
+<section class="step" id="recap">
+  <h2><span class="num">✓</span>Recap — what each layer protected</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:4px">
+    <thead>
+      <tr style="text-align:left;border-bottom:1px solid var(--border)">
+        <th style="padding:6px 8px">Layer</th>
+        <th style="padding:6px 8px">When it fires</th>
+        <th style="padding:6px 8px">What it caught in this walkthrough</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 8px"><code>AGENTS.md</code> guard</td><td style="padding:6px 8px">every turn</td><td style="padding:6px 8px">Step 5 refusal template</td></tr>
+      <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 8px"><code>.opencode/commands/*.md</code> STOP</td><td style="padding:6px 8px">slash-command entry</td><td style="padding:6px 8px">Step 5 FORBIDDEN list</td></tr>
+      <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 8px"><code>harness next --prompt</code></td><td style="padding:6px 8px">on demand</td><td style="padding:6px 8px">Step 5 "next action" hint</td></tr>
+      <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 8px"><code>harness check</code> drift</td><td style="padding:6px 8px">manual / hook</td><td style="padding:6px 8px">Step 7 post-write verify</td></tr>
+      <tr><td style="padding:6px 8px">pre-commit hook</td><td style="padding:6px 8px">every <code>git commit</code></td><td style="padding:6px 8px">Step 7 scope-violation example</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  Built from live calc-iter4 transcript (zai/glm-4.5-flash, opencode 1.14.19). One static file — open directly in a browser. Source: <code>docs/examples/calc-walkthrough.html</code>.
+</footer>
+
+</body>
+</html>

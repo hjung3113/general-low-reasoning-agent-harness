@@ -12,5 +12,6 @@
 - [x] **Milestone 8: UX polish + ADR-0007**
 - [x] **Milestone 9: codebase recon optional**
 - [x] **Milestone 10: multi-file .planning/codebase/ + skill-pack integration**
-- [ ] **Milestone 11: M0-as-mandatory-orientation + phases→milestones rename**
+- [x] **Milestone 11: M0-as-mandatory-orientation + phases→milestones rename**
+- [ ] **Milestone 12: Roo adapter parity + sample walkthrough**
 <!-- HARNESS:END managed:roadmap-phases -->

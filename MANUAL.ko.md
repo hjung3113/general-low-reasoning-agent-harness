@@ -135,6 +135,14 @@ harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INT
 
 TTY 요구 (터미널 아니면 exit 17) 는 제약이 아님 — 설계임. **휴먼으로 handoff 하는 것이 핵심**. 에이전트가 프로그래매틱으로 approval 할 수 있으면, 하네스는 비감시 자동화로 타락하고 존재 이유가 사라짐. [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) 참조.
 
+### 에디터 어댑터 — opencode 와 Roo Code
+
+`.opencode/commands/*.md` 와 `.roo/{rules,commands}/*` 모두 동일한 프롬프트 레이어 방어 제공: phase 별 금지 파일 확장자 목록을 담은 STOP banner, `harness next --prompt` 를 실행하는 STEP 0 guard check, `phase=execute, approved=true` 가 아닐 때 source code 작성 요청을 거부하기 위해 그대로 붙여 넣는 refusal template. Roo 의 `--auto` / `--chain` 규칙은 그대로 동작 — banner 는 phase boundary 거부만 추가하고 기존 자동화 플래그를 제거하지 않음.
+
+`Write`/`Edit` 도구 호출 자체를 막는 tool-call write veto 는 어느 어댑터에서도 제공하지 않음. 커밋 시점의 backstop 은 에디터에 의존하지 않는 pre-commit hook (`harness install --pre-commit`) 이며, 에디터 종류에 관계없이 `harness check --worktree` 를 실행해 scope 위반 시 exit 4 로 차단함.
+
+opencode 를 사용한 처음부터 끝까지 예시: [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html).
+
 ## Audit log
 
 `.harness/audit.jsonl` 은 plain JSONL. State-mutating verb 당 1줄. 해시 체인/canonicalization 없음 — forensic 아니라 diagnostic ([`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).

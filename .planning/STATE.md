@@ -1,20 +1,20 @@
 ---
 planning_doc_schema_version: 1
 progress:
-  total_phases: 11
-  completed_phases: 10
-  percent: 91
+  total_phases: 12
+  completed_phases: 11
+  percent: 92
 ---
 
 # Project State
 
-- **Milestone**: 11 - M0-as-mandatory-orientation + phases→milestones rename (in progress)
-- **Checkpoint**: CP-11-05 - harness check M0 invariant in place
-- **Checkpoint file**: `.planning/milestones/11-m0-orient-and-rename/11-CHECKPOINTS.md`
+- **Milestone**: 12 - Roo adapter parity + sample walkthrough (in progress)
+- **Checkpoint**: CP-12-00 - drift check harness-self skip
+- **Checkpoint file**: `.planning/milestones/12-roo-parity-and-sample-walkthrough/12-CHECKPOINTS.md`
 
 ## Active Workstreams
 
-(none — MVP complete, tagging v1.0.0)
+- M12 — Roo phase-guard parity + `docs/examples/calc-walkthrough.html` sample tutorial
 
 ## Canonical Docs
 
@@ -39,15 +39,16 @@ progress:
 - 08 — UX polish + ADR-0007 (PR #28)
 - 09 — codebase recon optional (PR #32)
 - 10 — multi-file .planning/codebase/ + skill-pack integration (PR #35)
-- 11 — M0-as-mandatory-orientation + phases→milestones rename (issue #36, in progress)
+- 11 — M0-as-mandatory-orientation + phases→milestones rename (done)
+- 12 — Roo adapter parity + sample walkthrough (in progress)
 
 <!-- HARNESS:BEGIN managed:state-current v1 -->
 ## Current Position
 
-- **Milestone**: 11 - M0-as-mandatory-orientation + phases→milestones rename
+- **Milestone**: 12 - Roo adapter parity + sample walkthrough
 
 ## Active Checkpoint
 
-- **Checkpoint**: CP-11-05
-- **Checkpoint file**: `.planning/milestones/11-m0-orient-and-rename/11-CHECKPOINTS.md`
+- **Checkpoint**: CP-12-00
+- **Checkpoint file**: `.planning/milestones/12-roo-parity-and-sample-walkthrough/12-CHECKPOINTS.md`
 <!-- HARNESS:END managed:state-current -->

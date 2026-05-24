@@ -1197,6 +1197,11 @@ def check_phase_source_drift(root: Path) -> None:
     if not cb.is_dir():
         return
 
+    # Skip if we are inside the harness-self repo (i.e. developing the harness
+    # itself rather than using it as a target). Detected by manifest presence.
+    if (root / "harness" / "manifest.json").is_file():
+        return
+
     state_path = root / ".scratch/phase-state.json"
     if not state_path.exists():
         return

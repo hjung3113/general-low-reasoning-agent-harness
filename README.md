@@ -99,6 +99,12 @@ The harness exists to give low-reasoning agents a structured workflow they can f
 
 **Integration with agent harnesses.** To run this with Claude Code, Codex, Cursor, or other agent harnesses, ensure the supervising human has a real shell open with the project as the current working directory to handle the approval prompt when the agent reaches a gate.
 
+**Supported adapters.** `.opencode/commands/*.md` (opencode) and `.roo/{rules,commands}/*` (Roo Code) ship with parity STOP banners, STEP 0 guard checks, and refusal templates. Either adapter alone delivers the same prompt-layer defense; the editor-agnostic pre-commit hook (`harness install --pre-commit`) provides the commit-boundary backstop regardless of which adapter the agent uses.
+
+## Sample walkthrough
+
+See [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html) — open it in a browser for a step-by-step tutorial of building a tiny HTML calculator with opencode. Each step shows the verbatim user prompt, what the agent did, and how repository state changed, including the moment the workflow blocks a premature code request.
+
 ## Uninstall
 
 ```bash
