@@ -20,11 +20,11 @@ If the task cannot proceed because planning context is missing, stale, placehold
 ## Steps
 
 1. Gather context.
-   - Read `AGENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, the active `.planning/phases/**` document set, `CONTEXT.md`, `docs/adr/`, relevant requirements, and current code.
-   - Treat `.planning/codebase/**` and `.planning/phases/**` as first-class ADR inputs, not optional extras.
+   - Read `AGENTS.md`, `.planning/STATE.md`, `.planning/ROADMAP.md`, `.planning/codebase/**`, the active `.planning/milestones/**` document set, `CONTEXT.md`, `docs/adr/`, relevant requirements, and current code.
+   - Treat `.planning/codebase/**` and `.planning/milestones/**` as first-class ADR inputs, not optional extras.
    - When adopting this harness into an existing repository, inspect the actual repository structure, README, build/test files, and existing ADR/planning artifacts before writing or updating decisions.
    - Use project vocabulary.
-   - If `.planning/codebase/**` or active `.planning/phases/**` is missing, stale, unrelated to the current repository, or placeholder-only, stop ADR work and run `workflow-planning-hydration` first.
+   - If `.planning/codebase/**` or active `.planning/milestones/**` is missing, stale, unrelated to the current repository, or placeholder-only, stop ADR work and run `workflow-planning-hydration` first.
    - Stop if enough context is not available to name the actual decision.
 
 2. Align with the user before phase or ADR commitments.
@@ -85,7 +85,7 @@ Do not fold existing-repository planning hydration into this workflow. Use `work
 ADR may proceed only when:
 
 - `.planning/codebase/**` describes the current repository.
-- `.planning/phases/**` has an active phase document set relevant to the current work.
+- `.planning/milestones/**` has an active phase document set relevant to the current work.
 - `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.scratch/phase-state.json` do not point at unrelated template or previous-project artifacts.
 
 ## Routing
@@ -100,7 +100,7 @@ ADR may proceed only when:
 ## Hard Rules
 
 - Architect mode does not implement application code.
-- Do not skip `.planning/codebase/**` or `.planning/phases/**` during ADR work because those folders are the durable design and phase memory.
+- Do not skip `.planning/codebase/**` or `.planning/milestones/**` during ADR work because those folders are the durable design and phase memory.
 - Do not use ADR as a substitute for `workflow-planning-hydration` when the repo planning memory is absent, stale, or placeholder-only.
 - Do not create or reshape ROADMAP phases, phase folders, ADR decisions, or success criteria until the alignment interview has produced a written summary and any blocking questions are resolved or explicitly deferred.
 - Do not finalize ADR or phase commitments until the two-expert adversarial review has been applied or explicitly deferred with reasons.

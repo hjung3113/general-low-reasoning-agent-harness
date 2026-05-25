@@ -1,2 +1,2 @@
-warning: Phase folder is present but not listed in ROADMAP: .planning/phases/02b-hardening
+warning: Phase folder is present but not listed in ROADMAP: .planning/milestones/02b-hardening
 wrote /tmp/baseline-dashboard.html

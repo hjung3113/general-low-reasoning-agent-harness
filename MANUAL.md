@@ -18,7 +18,7 @@ The harness enforces ordering. Forward edges (`discuss → plan`, `plan → exec
 
 | Phase | What you do | Exits to |
 |---|---|---|
-| `discuss` | Frame the problem in `.planning/phases/NN-*/NN-CONTEXT.md`. No code changes. | `plan` |
+| `discuss` | Frame the problem in `.planning/milestones/NN-*/NN-CONTEXT.md`. No code changes. | `plan` |
 | `plan` | Write `NN-NN-PLAN.md` with concrete steps + acceptance criteria. | `execute` (requires approval) |
 | `execute` | Make code changes. Stay inside `draft_allowed_paths` from the plan. | `done` (requires approval) |
 | `done` | Write `NN-VERIFICATION.md` and `NN-NN-SUMMARY.md`. No further changes. | next milestone or `discuss` |
@@ -69,7 +69,7 @@ harness recon                  # auto-fill .planning/codebase/{STACK,STRUCTURE,T
 `harness recon` populates a structured directory of 8 files (6 core + 2 conditional) that act as the codebase contract every workflow skill-pack reads:
 
 - **Auto-filled by the CLI** (no edits): `STACK.md`, `STRUCTURE.md`, `TESTING.md` (frameworks + commands), `INTEGRATIONS.md` (only if external integrations detected).
-- **Agent-owned** (filled by the `workflow-codebase-recon` skill-pack): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
+- **Agent-owned** (filled by the `workflow-m0-orient` skill-pack): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
 
 Each section uses anchor IDs like `## [codebase.stack.runtime] Runtime` so downstream skill-packs (`workflow-tdd`, `workflow-debugging`, `workflow-code-review`, `repository-evidence-research`) can grep specific facts without re-reading the whole file. Schema + anchor list + frontmatter shape: see [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md). Decision rationale: [`docs/adr/0008-multi-file-codebase-recon.md`](docs/adr/0008-multi-file-codebase-recon.md).
 
@@ -77,13 +77,13 @@ Re-running `harness recon` is safe: auto files are overwritten, but agent-owned 
 
 ## Planning docs you maintain
 
-Each milestone lives under `.planning/phases/NN-<slug>/`. The harness reads these to drive its checks. You write them.
+Each milestone lives under `.planning/milestones/NN-<slug>/`. The harness reads these to drive its checks. You write them.
 
 ```
 .planning/
 ├── ROADMAP.md                  # high-level milestone list (Milestone N: Title)
 ├── STATE.md                    # current milestone + checkpoint pointers
-├── codebase/                   # filled by harness recon + workflow-codebase-recon
+├── codebase/                   # filled by harness recon + workflow-m0-orient
 │   ├── SUMMARY.md              # 1-page entrypoint (agent)
 │   ├── STACK.md                # auto: runtime/languages/CI
 │   ├── STRUCTURE.md            # auto: depth-2 dir tree
@@ -133,6 +133,14 @@ The intended pattern is:
 
 The TTY requirement (exit 17 outside a terminal) is not a limitation — it is the design. The handoff to a human is the entire point. If an agent could approve transitions programmatically, the harness would degrade to unreviewed automation, defeating its core purpose. See [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) for rationale and design decisions.
 
+### Editor adapters — opencode and Roo Code
+
+Both `.opencode/commands/*.md` and `.roo/{rules,commands}/*` ship the same prompt-layer defense: a STOP banner listing forbidden file extensions per phase, a STEP 0 guard check that runs `harness next --prompt`, and a verbatim refusal template the agent must paste when asked to write source code outside `phase=execute, approved=true`. Roo's `--auto` and `--chain` rules continue to work — the banner only adds the phase-boundary refusal; it does not remove existing automation flags.
+
+Tool-call write veto (intercepting `Write`/`Edit` before the tool fires) is not provided by either adapter. The commit-time backstop is the editor-agnostic pre-commit hook (`harness install --pre-commit`), which runs `harness check --worktree` and exits 4 on scope violations regardless of which editor produced the write.
+
+For a complete end-to-end example using opencode, see [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html).
+
 ## Audit log
 
 `.harness/audit.jsonl` is plain JSON-lines. One row per state-mutating verb. No hash chain, no canonicalization — diagnostic, not forensic (see [`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).
@@ -155,7 +163,7 @@ Each row has: `at` (ISO timestamp), `verb`, `phase`, `actor`, `target_path`, `ou
 | `Refusing to write malformed managed-append destination` | The error now includes a unified diff of current vs proposed — apply it manually to `AGENTS.md` and retry |
 | `unknown pack: workflow-XYZ` | Pack was removed in a previous milestone; pick a current one (run `harness check` for the kept set) |
 | `harness check` reports drift | Run `harness state repair` (rebuilds managed block) or `harness doctor` (read-only diagnostic) |
-| `harness check` warns about `00-planning-hydration` on a brand-new install | Expected — the skeleton seeds a template phase you replace when you declare your first real milestone in `.planning/ROADMAP.md` + `STATE.md`. Not a bug. |
+| `harness check` warns about `00-orientation` on a brand-new install | Expected — the skeleton seeds a template phase you replace when you declare your first real milestone in `.planning/ROADMAP.md` + `STATE.md`. Not a bug. |
 
 Exit codes are documented in [`docs/error-code-map.md`](docs/error-code-map.md).
 

@@ -28,6 +28,84 @@ def _machine_mode() -> bool:
     return os.environ.get("HARNESS_MACHINE") == "1"
 
 
+_FORBIDDEN_BY_PHASE = {
+    "discuss": ["*.html", "*.css", "*.js", "*.py", "*.ts", "*.tsx", "*.jsx",
+                "*.go", "*.rs", "*.rb", "package.json", "pyproject.toml",
+                "src/**", "lib/**", "app/**"],
+    "plan": ["*.html", "*.css", "*.js", "*.py", "*.ts", "*.tsx", "*.jsx",
+             "*.go", "*.rs", "*.rb", "package.json", "pyproject.toml",
+             "src/**", "lib/**", "app/**"],
+    "execute": [],  # everything allowed within plan's allowed_paths
+    "done": ["*.html", "*.css", "*.js", "*.py", "*.ts", "*.tsx"],  # no new features
+}
+
+_ALLOWED_BY_PHASE = {
+    "discuss": [".planning/codebase/**", ".planning/milestones/<active>/NN-CONTEXT.md",
+                ".planning/milestones/<active>/NN-CHECKPOINTS.md"],
+    "plan": [".planning/milestones/<active>/NN-NN-PLAN.md",
+             ".planning/milestones/<active>/NN-CHECKPOINTS.md"],
+    "execute": ["whatever is listed in current plan's allowed_paths"],
+    "done": [".planning/milestones/<active>/NN-VERIFICATION.md",
+             ".planning/milestones/<active>/NN-01-SUMMARY.md"],
+}
+
+
+def _format_next_prompt(state: dict, result) -> str:
+    """Render a copy-paste prompt for the user to send to their AI agent.
+
+    Embeds current phase + approval + forbidden writes + refusal template +
+    next legal command. Designed to deter phase-gate bypass by re-emitting
+    guard context per call (codex iter2 Q4 verdict 84).
+    """
+    phase = state.get("phase", "discuss")
+    approved = bool(state.get("approved", False))
+    milestone_id = state.get("phase_id", "??")
+    forbidden = _FORBIDDEN_BY_PHASE.get(phase, [])
+    allowed = _ALLOWED_BY_PHASE.get(phase, [])
+    next_cmd = result.command if hasattr(result, "command") and result.command else "harness run"
+
+    refusal = (
+        f"현재 phase={phase}, approved={approved}. 이 단계에서 source 파일 "
+        f"({', '.join(forbidden[:5])}{'...' if len(forbidden) > 5 else ''}) "
+        f"수정 불가. `{next_cmd}` 부터 실행하세요."
+    )
+
+    out = [
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "📋 다음 단계 추천 프롬프트 — 복사해서 AI 에이전트에게 보내세요",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+        f"[현재 워크플로우 상태 — 매 동작 전에 확인]",
+        f"- phase: {phase}",
+        f"- approved: {approved}",
+        f"- active milestone: {milestone_id}",
+        f"- forbidden writes this phase: {', '.join(forbidden) if forbidden else '(none)'}",
+        f"- allowed outputs: {', '.join(allowed)}",
+        "",
+        f"[명령 — 그대로 복붙해서 에이전트에게]",
+        "```",
+        f"현재 phase={phase} (approved={approved}). 다음 진행:",
+    ]
+
+    if hasattr(result, "reason") and result.reason:
+        out.append(f"  {result.reason}")
+
+    if next_cmd:
+        out.append(f"  실행: {next_cmd}")
+
+    out.extend([
+        "",
+        f"제약: 이 phase 에서 다음 파일 변경 금지: {', '.join(forbidden[:3]) if forbidden else '(none)'}",
+        "사용자가 코드 작성 요청해도 거부. 응답: \"" + refusal + "\"",
+        "phase 전환 필요시 먼저 `harness phase set <target>` 호출 후 진행.",
+        "```",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "",
+    ])
+    return "\n".join(out)
+
+
 def _machine_payload(
     *,
     status: str,
@@ -258,6 +336,11 @@ def cmd_next(args) -> int:
 
     use_shell = getattr(args, "shell", False)
     use_json = getattr(args, "json", False)
+    use_prompt = getattr(args, "prompt", False)
+
+    if use_prompt:
+        sys.stdout.write(_format_next_prompt(state, result))
+        return 0
 
     if _machine_mode():
         sys.stdout.write(_format_machine_next(state))

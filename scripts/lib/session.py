@@ -1,7 +1,7 @@
 """Session lockfile lifecycle per ADR-003a G1-B.
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-04-T0-3-PLAN.md
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §1.
+Owning plan: .planning/milestones/02b-hardening/plans/02b-04-T0-3-PLAN.md
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1.
 
 Posix-only (relies on ``fcntl.flock``); Windows portability is an explicit
 non-goal of the spec. Each successful ``acquire_lock`` writes a JSON payload

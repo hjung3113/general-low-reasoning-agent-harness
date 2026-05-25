@@ -317,7 +317,7 @@ def build_removal_plan(*, target: Path, installed_files: dict[str, object], sele
             else:
                 installed_files.pop(path_text, None)
             continue
-        if policy in {"harness-owned", "managed", "project-owned"}:
+        if policy in {"harness-owned", "managed", "project-owned", "seed"}:
             # v0.9.12: previously refused to delete a locally-modified
             # harness-owned file as a "conflict". User explicitly asked
             # for uninstall; that refusal was paternalistic. Now: still

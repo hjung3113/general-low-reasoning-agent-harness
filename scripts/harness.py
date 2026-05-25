@@ -728,6 +728,15 @@ def run(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Output machine-readable JSON: {requires_human, agent_safe, command, reason}.",
     )
+    next_group.add_argument(
+        "--prompt",
+        action="store_true",
+        help=(
+            "Output a copy-paste-ready prompt for the user to send to their AI agent. "
+            "Embeds current phase, approval status, forbidden writes, refusal template, "
+            "and the legal next command. Designed to deter phase-gate bypass."
+        ),
+    )
 
     # ----- harness run (v0.8 normal path) -----
     subparsers.add_parser(

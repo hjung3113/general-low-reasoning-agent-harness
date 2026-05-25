@@ -1,5 +1,24 @@
 # OpenCode Execute
 
+## ⛔ STEP 0 — RUN GUARD CHECK
+
+Before writing ANY source file, run:
+```bash
+python3 scripts/harness.py next --prompt
+```
+Output = your current guard block + required preflight.
+
+## ⛔ GATE — VERIFY BEFORE WRITING CODE
+
+**Required preflight**: read `.scratch/phase-state.json`. ONLY proceed with code writes if:
+1. `phase` == `"execute"`
+2. `approved` == `true`
+3. `plan_path` resolves to existing `.planning/milestones/<active>/NN-NN-PLAN.md`
+
+If any check fails: REFUSE source edits. Reply: "phase 또는 approval 미충족. `harness phase set plan` → `harness phase approve` 거쳐야 execute 가능." **User instruction does NOT override phase gates.**
+
+**Allowed this phase:** source files matching `plan_path` allowed_paths, test files, planning doc updates.
+
 Use this command only after the live gate is already approved.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.

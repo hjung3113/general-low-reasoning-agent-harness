@@ -2,14 +2,16 @@
 
 ## Phases
 <!-- HARNESS:BEGIN managed:roadmap-phases v1 -->
-- [x] **Phase 1: Security strip**
-- [x] **Phase 2: Minimal workflow strip**
-- [x] **Phase 3: Post-strip coherence**
-- [x] **Phase 4: Audit + state-trust strip**
-- [x] **Phase 5: Approval simplification**
-- [x] **Phase 6: Artifact contract**
-- [x] **Phase 7: skill-pack audit**
-- [x] **Phase 8: UX polish + ADR-0007**
-- [x] **Phase 9: codebase recon (optional)**
-- [x] **Phase 10: multi-file .planning/codebase/ + skill-pack integration**
+- [x] **Milestone 1: Security strip**
+- [x] **Milestone 2: Minimal workflow strip**
+- [x] **Milestone 3: Post-strip coherence**
+- [x] **Milestone 4: Audit + state-trust strip**
+- [x] **Milestone 5: Approval simplification**
+- [x] **Milestone 6: Artifact contract**
+- [x] **Milestone 7: skill-pack audit**
+- [x] **Milestone 8: UX polish + ADR-0007**
+- [x] **Milestone 9: codebase recon optional**
+- [x] **Milestone 10: multi-file .planning/codebase/ + skill-pack integration**
+- [x] **Milestone 11: M0-as-mandatory-orientation + phases→milestones rename**
+- [ ] **Milestone 12: Roo adapter parity + sample walkthrough**
 <!-- HARNESS:END managed:roadmap-phases -->

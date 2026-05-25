@@ -1,7 +1,7 @@
 """Malformed-state diagnostic helper (T1-M).
 
-Plan: .planning/phases/02b-hardening/plans/02b-09-T1-M-PLAN.md
-Contract: .planning/phases/02b-hardening/CONTRACT-PIN.md §1, §4, §5.1, §6.3
+Plan: .planning/milestones/02b-hardening/plans/02b-09-T1-M-PLAN.md
+Contract: .planning/milestones/02b-hardening/CONTRACT-PIN.md §1, §4, §5.1, §6.3
 ADR: docs/adr/2026-05-16-hardening-bundle.md (ADR-005, ADR-003a Artifact 1)
 
 The sole sanctioned reader for managed harness state files

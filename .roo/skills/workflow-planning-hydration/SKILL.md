@@ -21,7 +21,7 @@ After this workflow, `harness check` should identify the current project, curren
 Use this workflow when any of these are true:
 
 - A user says this harness was applied to an existing project.
-- A user asks for ADR work but `.planning/codebase/**` or `.planning/phases/**` is missing, stale, or placeholder-only.
+- A user asks for ADR work but `.planning/codebase/**` or `.planning/milestones/**` is missing, stale, or placeholder-only.
 - `.planning/STATE.md`, `.planning/ROADMAP.md`, or `.scratch/phase-state.json` points to template content or a previous project.
 - Existing planning files are present but appear unrelated to the current repo.
 - The task looks like `project init`, but the repository already has code, docs, ADRs, issues, or planning history.
@@ -50,7 +50,7 @@ Pass 0 is intentionally narrow. Write or update only:
 - `.planning/STATE.md`
 - `.planning/ROADMAP.md`
 - `.planning/codebase/STRUCTURE.md`
-- `.planning/phases/00-planning-hydration/00-CHECKPOINTS.md`
+- `.planning/milestones/00-orientation/00-CHECKPOINTS.md`
 
 During Pass 0, record open questions and stop for review. Do not hydrate every codebase note, create a real implementation phase, or mark planning context usable until that review is complete.
 
@@ -69,12 +69,12 @@ Hydrate or create these files when they are missing or placeholder-only:
 - `.planning/codebase/TESTING.md`
 - `.planning/codebase/INTEGRATIONS.md`
 - `.planning/codebase/CONCERNS.md`
-- `.planning/phases/<NN-current-phase>/NN-CONTEXT.md`
-- `.planning/phases/<NN-current-phase>/NN-01-PLAN.md`
-- `.planning/phases/<NN-current-phase>/NN-CHECKPOINTS.md`
-- `.planning/phases/<NN-current-phase>/NN-REVIEW.md`
-- `.planning/phases/<NN-current-phase>/NN-VERIFICATION.md`
-- `.planning/phases/<NN-current-phase>/NN-01-SUMMARY.md`
+- `.planning/milestones/<NN-current-phase>/NN-CONTEXT.md`
+- `.planning/milestones/<NN-current-phase>/NN-01-PLAN.md`
+- `.planning/milestones/<NN-current-phase>/NN-CHECKPOINTS.md`
+- `.planning/milestones/<NN-current-phase>/NN-REVIEW.md`
+- `.planning/milestones/<NN-current-phase>/NN-VERIFICATION.md`
+- `.planning/milestones/<NN-current-phase>/NN-01-SUMMARY.md`
 
 Advance the live gate via `harness phase set <X>` (and `phase approve` if entering execute) only when the user explicitly asks for harness/planning-control changes or when the current task is already scoped to phase-state repair. Keep the gate in `discuss` or `plan` unless implementation has been explicitly approved. Do NOT direct-edit `.scratch/phase-state.json`.
 
@@ -108,7 +108,7 @@ Do not invent missing commands. Mark them as unknown when the repo does not prov
 
 ### 2. Align with the user before creating phases
 
-Before creating or reshaping `.planning/ROADMAP.md`, `.planning/STATE.md`, or `.planning/phases/**`, run a `grill-me` style alignment pass:
+Before creating or reshaping `.planning/ROADMAP.md`, `.planning/STATE.md`, or `.planning/milestones/**`, run a `grill-me` style alignment pass:
 
 - Ask one question at a time and include your recommended answer with the reason.
 - If the repository can answer the question, inspect the repository instead of asking.
@@ -171,7 +171,7 @@ Every active phase folder begins with phase-local `discuss`, then proceeds to `p
 Required pattern:
 
 ```text
-.planning/phases/<NN-phase-slug>/
+.planning/milestones/<NN-phase-slug>/
   NN-CONTEXT.md
   NN-01-PLAN.md
   NN-CHECKPOINTS.md

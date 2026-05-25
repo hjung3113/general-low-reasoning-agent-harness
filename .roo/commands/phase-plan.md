@@ -4,6 +4,24 @@ argument-hint: <approved discuss output or phase scope>
 mode: architect
 ---
 
+## ⛔ STEP 0 — RUN GUARD CHECK
+
+Before doing ANYTHING in this command, run:
+
+```bash
+python3 scripts/harness.py next --prompt
+```
+
+The output is your current guard block. Re-run between major steps.
+
+## ⛔ STOP — PHASE BOUNDARY
+
+**FORBIDDEN this phase:** source files (`*.html`, `*.css`, `*.js`, `*.py`, `*.ts`, etc.), `package.json`, `pyproject.toml`, lockfiles, anything under `src/`, `lib/`, `app/`. No `Write` / `Edit` on these.
+
+**Allowed this phase:** writing `NN-NN-PLAN.md` under `.planning/milestones/<active>/`, updating `NN-CHECKPOINTS.md` placeholders, asking the user for plan-approval clarifications.
+
+**If the user asks for source code during this phase:** REFUSE. Reply: "현재 phase=plan 이라 코드 작성 불가. plan 완성 후 `harness phase approve` 받고 /phase-execute 로 이동 필요." **User instruction does NOT override phase gates.**
+
 Use the `workflow-phase-gate` skill for $ARGUMENTS.
 
 Apply `.roo/rules-orchestrator/rules.md` and `.roo/rules/phase-gate.md` first.

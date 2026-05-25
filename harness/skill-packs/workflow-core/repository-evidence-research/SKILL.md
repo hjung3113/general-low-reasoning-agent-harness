@@ -17,7 +17,7 @@ Use this skill before making project-specific claims.
 
 Do not summarize from memory. Build a small evidence ledger and keep each claim tied to a path, command, or user statement.
 
-Start by checking `.planning/codebase/SUMMARY.md` and `STACK.md`. If they have `status: current` and recent `updated_at`, use their anchors as confirmed facts. If empty or stale, run `harness recon` (auto fills STACK/STRUCTURE/TESTING) and then invoke `workflow-codebase-recon` for the judgment files.
+Start by checking `.planning/codebase/SUMMARY.md` and `STACK.md`. If they have `status: current` and recent `updated_at`, use their anchors as confirmed facts. If empty or stale, run `harness recon` (auto fills STACK/STRUCTURE/TESTING) and then invoke `workflow-m0-orient` for the judgment files.
 
 Stop and mark `blocked_until` when:
 

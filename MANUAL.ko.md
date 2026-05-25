@@ -20,7 +20,7 @@ discuss → plan → execute → done
 
 | Phase | 할 일 | 다음 |
 |---|---|---|
-| `discuss` | `.planning/phases/NN-*/NN-CONTEXT.md` 에 문제 정의. 코드 변경 ❌. | `plan` |
+| `discuss` | `.planning/milestones/NN-*/NN-CONTEXT.md` 에 문제 정의. 코드 변경 ❌. | `plan` |
 | `plan` | `NN-NN-PLAN.md` 작성: 구체적 단계 + 수용 기준. | `execute` (approval 필요) |
 | `execute` | 코드 변경. `draft_allowed_paths` 범위 안에서만. | `done` (approval 필요) |
 | `done` | `NN-VERIFICATION.md`, `NN-NN-SUMMARY.md` 작성. 추가 변경 ❌. | 다음 마일스톤 또는 `discuss` |
@@ -71,7 +71,7 @@ harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INT
 `harness recon` 은 8개 파일 (6 core + 2 conditional) 의 구조화된 디렉토리를 채움. 모든 workflow skill-pack 이 읽는 코드베이스 계약 역할을 함:
 
 - **CLI 자동 채움** (직접 편집 X): `STACK.md`, `STRUCTURE.md`, `TESTING.md` (프레임워크 + 명령), `INTEGRATIONS.md` (외부 통합 감지 시에만).
-- **에이전트 소유** (`workflow-codebase-recon` skill-pack 이 채움): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
+- **에이전트 소유** (`workflow-m0-orient` skill-pack 이 채움): `SUMMARY.md`, `CONVENTIONS.md`, `CONCERNS.md`, `ARCHITECTURE.md`.
 
 각 섹션은 `## [codebase.stack.runtime] Runtime` 같은 앵커 ID 사용. 하위 skill-pack (`workflow-tdd`, `workflow-debugging`, `workflow-code-review`, `repository-evidence-research`) 이 전체 파일을 다시 읽지 않고 특정 사실만 grep 가능. 스키마 + 앵커 목록 + frontmatter 모양: [`docs/CODEBASE-SCHEMA.md`](docs/CODEBASE-SCHEMA.md). 의사결정 근거: [`docs/adr/0008-multi-file-codebase-recon.md`](docs/adr/0008-multi-file-codebase-recon.md).
 
@@ -79,13 +79,13 @@ harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INT
 
 ## 사용자가 관리하는 planning 문서
 
-마일스톤별로 `.planning/phases/NN-<slug>/` 디렉토리. 하네스가 이걸 읽어서 검증. 사용자가 직접 작성.
+마일스톤별로 `.planning/milestones/NN-<slug>/` 디렉토리. 하네스가 이걸 읽어서 검증. 사용자가 직접 작성.
 
 ```
 .planning/
 ├── ROADMAP.md                  # 마일스톤 목록 (Milestone N: Title)
 ├── STATE.md                    # 현재 마일스톤 + 체크포인트 포인터
-├── codebase/                   # harness recon + workflow-codebase-recon 이 채움
+├── codebase/                   # harness recon + workflow-m0-orient 이 채움
 │   ├── SUMMARY.md              # 1-page 진입점 (agent)
 │   ├── STACK.md                # auto: 런타임/언어/CI
 │   ├── STRUCTURE.md            # auto: depth-2 디렉토리 트리
@@ -135,6 +135,14 @@ harness recon                  # .planning/codebase/{STACK,STRUCTURE,TESTING,INT
 
 TTY 요구 (터미널 아니면 exit 17) 는 제약이 아님 — 설계임. **휴먼으로 handoff 하는 것이 핵심**. 에이전트가 프로그래매틱으로 approval 할 수 있으면, 하네스는 비감시 자동화로 타락하고 존재 이유가 사라짐. [`docs/adr/0007-tty-approval-is-human-checkpoint.md`](docs/adr/0007-tty-approval-is-human-checkpoint.md) 참조.
 
+### 에디터 어댑터 — opencode 와 Roo Code
+
+`.opencode/commands/*.md` 와 `.roo/{rules,commands}/*` 모두 동일한 프롬프트 레이어 방어 제공: phase 별 금지 파일 확장자 목록을 담은 STOP banner, `harness next --prompt` 를 실행하는 STEP 0 guard check, `phase=execute, approved=true` 가 아닐 때 source code 작성 요청을 거부하기 위해 그대로 붙여 넣는 refusal template. Roo 의 `--auto` / `--chain` 규칙은 그대로 동작 — banner 는 phase boundary 거부만 추가하고 기존 자동화 플래그를 제거하지 않음.
+
+`Write`/`Edit` 도구 호출 자체를 막는 tool-call write veto 는 어느 어댑터에서도 제공하지 않음. 커밋 시점의 backstop 은 에디터에 의존하지 않는 pre-commit hook (`harness install --pre-commit`) 이며, 에디터 종류에 관계없이 `harness check --worktree` 를 실행해 scope 위반 시 exit 4 로 차단함.
+
+opencode 를 사용한 처음부터 끝까지 예시: [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html).
+
 ## Audit log
 
 `.harness/audit.jsonl` 은 plain JSONL. State-mutating verb 당 1줄. 해시 체인/canonicalization 없음 — forensic 아니라 diagnostic ([`docs/adr/0005-audit-log-is-plain-jsonl.md`](docs/adr/0005-audit-log-is-plain-jsonl.md)).
@@ -157,7 +165,7 @@ tail -f .harness/audit.jsonl | python3 -m json.tool
 | `Refusing to write malformed managed-append destination` | 에러 메시지에 unified diff 같이 출력됨 — `AGENTS.md` 에 수동 적용 후 재시도 |
 | `unknown pack: workflow-XYZ` | 이전 마일스톤에서 제거된 pack; 현재 살아있는 set 에서 선택 (`harness check` 로 확인) |
 | `harness check` drift 보고 | `harness state repair` (managed block 재생성) 또는 `harness doctor` (read-only 진단) |
-| 신규 설치 직후 `harness check` 가 `00-planning-hydration` 관련 경고 | 정상 — skeleton 시드한 템플릿 phase, 첫 마일스톤을 `.planning/ROADMAP.md` + `STATE.md` 에 선언하면 사라짐. 버그 아님. |
+| 신규 설치 직후 `harness check` 가 `00-orientation` 관련 경고 | 정상 — skeleton 시드한 템플릿 phase, 첫 마일스톤을 `.planning/ROADMAP.md` + `STATE.md` 에 선언하면 사라짐. 버그 아님. |
 
 Exit code 매핑: [`docs/error-code-map.md`](docs/error-code-map.md).
 

@@ -541,7 +541,7 @@ def format_projection_warnings(projection: dict[str, object]) -> list[DashboardW
 
 
 def load_phase_documents(root: Path) -> list[PhaseDocument]:
-    phases_root = root / ".planning/phases"
+    phases_root = root / ".planning/milestones"
     if not phases_root.exists():
         return []
     documents: list[PhaseDocument] = []

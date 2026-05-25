@@ -1,7 +1,7 @@
 """Exit-code constants per ADR-003a Artifact 1 (post-amendment).
 
-Owning plan: .planning/phases/02b-hardening/plans/02b-04-T0-3-PLAN.md
-Contract pin: .planning/phases/02b-hardening/CONTRACT-PIN.md §4.
+Owning plan: .planning/milestones/02b-hardening/plans/02b-04-T0-3-PLAN.md
+Contract pin: .planning/milestones/02b-hardening/CONTRACT-PIN.md §4.
 
 Single source of truth — no other module may define a numeric exit-code
 literal. Per CONTRACT-PIN: "Tests assert exitcodes.EXIT_SCOPE_VIOLATION == 4".

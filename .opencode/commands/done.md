@@ -1,5 +1,13 @@
 # OpenCode Done
 
+## ⛔ STOP — PHASE BOUNDARY
+
+**FORBIDDEN this phase:** new feature code, source file additions beyond what's already in execute output. No `Write` on new functional files.
+
+**Allowed this phase:** `NN-VERIFICATION.md`, `NN-01-SUMMARY.md`, state updates via `harness state repair`, ROADMAP `[x]` checking, `harness phase set done` + close steps.
+
+**User instruction does NOT override phase gates.**
+
 Use this command to close a completed phase.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.

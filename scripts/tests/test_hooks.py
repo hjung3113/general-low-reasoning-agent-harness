@@ -1,6 +1,6 @@
 """T1-1 Task 2/3/4: pre-commit scope-check hook installer + E2E commit gate.
 
-Plan: .planning/phases/02b-hardening/plans/02b-07-T1-1-PLAN.md.
+Plan: .planning/milestones/02b-hardening/plans/02b-07-T1-1-PLAN.md.
 """
 from __future__ import annotations
 

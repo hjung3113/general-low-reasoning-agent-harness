@@ -15,7 +15,7 @@ For the meaning of "harness", "skeleton", "skill-pack", "phase", "milestone", et
 | `.harness/` | harness-generated | runtime: install-record, audit log |
 | `.scratch/` | harness-generated | runtime: phase state, locks, session files |
 | `.planning/ROADMAP.md`, `.planning/STATE.md` | target-owned | human-authored roadmap + current state |
-| `.planning/phases/NN-*/` | target-owned | per-milestone planning artifacts |
+| `.planning/milestones/NN-*/` | target-owned | per-milestone planning artifacts |
 | `AGENTS.md` | mixed (managed block + project-owned) | agent-facing rules + project-specific notes |
 | `README.md` | seeded once, then target-owned | project README starter |
 | `.roo/`, `.opencode/` (optional) | adapter-owned | editor/agent integration adapters |
@@ -99,6 +99,12 @@ The harness exists to give low-reasoning agents a structured workflow they can f
 
 **Integration with agent harnesses.** To run this with Claude Code, Codex, Cursor, or other agent harnesses, ensure the supervising human has a real shell open with the project as the current working directory to handle the approval prompt when the agent reaches a gate.
 
+**Supported adapters.** `.opencode/commands/*.md` (opencode) and `.roo/{rules,commands}/*` (Roo Code) ship with parity STOP banners, STEP 0 guard checks, and refusal templates. Either adapter alone delivers the same prompt-layer defense; the editor-agnostic pre-commit hook (`harness install --pre-commit`) provides the commit-boundary backstop regardless of which adapter the agent uses.
+
+## Sample walkthrough
+
+See [`docs/examples/calc-walkthrough.html`](docs/examples/calc-walkthrough.html) — open it in a browser for a step-by-step tutorial of building a tiny HTML calculator with opencode. Each step shows the verbatim user prompt, what the agent did, and how repository state changed, including the moment the workflow blocks a premature code request.
+
 ## Uninstall
 
 ```bash
@@ -126,7 +132,7 @@ Full CLI reference: [`docs/CLI.md`](docs/CLI.md). Codebase recon schema (anchor 
 
 If `harness phase approve` exits with code 17, you're not on a real terminal — run from an interactive shell, not CI (see [`MANUAL.md`](MANUAL.md)).
 
-`harness check` may warn about a stale skeleton phase (`00-planning-hydration`) on a brand-new install. That's expected: the skeleton seeds template planning files that you replace once you declare your first real milestone. Add a bullet to `.planning/ROADMAP.md` and stamp it in `.planning/STATE.md`, then `harness check` quiets down.
+`harness check` may warn about a stale skeleton phase (`00-orientation`) on a brand-new install. That's expected: the skeleton seeds template planning files that you replace once you declare your first real milestone. Add a bullet to `.planning/ROADMAP.md` and stamp it in `.planning/STATE.md`, then `harness check` quiets down.
 
 ## Project layout
 
@@ -155,6 +161,6 @@ If `harness phase approve` exits with code 17, you're not on a real terminal —
 
 ## Contributing
 
-Workflow milestones are tracked as GitHub milestones + issues on this repo (`hjung3113/general-low-reasoning-agent-harness`). See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) and [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md). Per-milestone plans live under [`.planning/phases/NN-*/`](.planning/phases/).
+Workflow milestones are tracked as GitHub milestones + issues on this repo (`hjung3113/general-low-reasoning-agent-harness`). See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) and [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md). Per-milestone plans live under [`.planning/milestones/NN-*/`](.planning/milestones/).
 
 Decision history: [`docs/adr/`](docs/adr/).

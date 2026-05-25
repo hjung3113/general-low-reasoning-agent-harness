@@ -1,6 +1,6 @@
 """T0-5 preservation + paused-phase + JSON-refuse tests for state_repair.
 
-Plan: .planning/phases/02b-hardening/plans/02b-06-T0-5-PLAN.md (Task 3 list).
+Plan: .planning/milestones/02b-hardening/plans/02b-06-T0-5-PLAN.md (Task 3 list).
 Contract: CONTRACT-PIN.md §5.1 (load_state_json wrap), §6.1 (.bak filename),
 §4 (exit 5 = EXIT_UNPARSEABLE_JSON).
 
@@ -109,7 +109,7 @@ class PreservationTests(unittest.TestCase):
             phase_state={
                 "phase": "discuss",
                 "current_checkpoint": "CP-09-99",
-                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/09-test/CHECKPOINTS.md",
             }
         )
         report = repair(root)
@@ -265,7 +265,7 @@ class RapidRepairUniquenessTests(unittest.TestCase):
             phase_state={
                 "phase": "discuss",
                 "current_checkpoint": "CP-09-99",
-                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/09-test/CHECKPOINTS.md",
             }
         )
         # The first repair rewrites STATE.md; subsequent repairs are no-ops
@@ -278,7 +278,7 @@ class RapidRepairUniquenessTests(unittest.TestCase):
                 json.dumps({
                     "phase": "discuss",
                     "current_checkpoint": f"CP-09-{i:02d}",
-                    "checkpoint_path": f".planning/phases/09-test/CP-{i}.md",
+                    "checkpoint_path": f".planning/milestones/09-test/CP-{i}.md",
                 }),
                 encoding="utf-8",
             )
@@ -303,7 +303,7 @@ class RetentionCapE2ETests(unittest.TestCase):
             phase_state={
                 "phase": "discuss",
                 "current_checkpoint": "CP-09-99",
-                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/09-test/CHECKPOINTS.md",
             }
         )
         backups_dir = root / ".harness" / "backups"
@@ -337,7 +337,7 @@ class BackupsDirSecurityTests(unittest.TestCase):
             phase_state={
                 "phase": "discuss",
                 "current_checkpoint": "CP-09-99",
-                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/09-test/CHECKPOINTS.md",
             }
         )
         repair(root)
@@ -356,7 +356,7 @@ class BackupsDirSecurityTests(unittest.TestCase):
             phase_state={
                 "phase": "discuss",
                 "current_checkpoint": "CP-09-99",
-                "checkpoint_path": ".planning/phases/09-test/CHECKPOINTS.md",
+                "checkpoint_path": ".planning/milestones/09-test/CHECKPOINTS.md",
             }
         )
         backups_dir = root / ".harness" / "backups"

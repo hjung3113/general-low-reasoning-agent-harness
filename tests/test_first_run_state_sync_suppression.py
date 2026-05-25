@@ -58,7 +58,7 @@ _INIT_PHASE_STATE = {
     "summary": "Roo harness initialized; project planning memory needs hydration.",
     "plan_path": None,
     "state_path": ".planning/STATE.md",
-    "checkpoint_path": ".planning/phases/00-planning-hydration/00-CHECKPOINTS.md",
+    "checkpoint_path": ".planning/milestones/00-orientation/00-CHECKPOINTS.md",
     "current_checkpoint": "CP-00-01",
     "next_action": "Hydrate .planning documents from the target repository before implementation.",
     "automation_mode": "manual",
@@ -91,7 +91,7 @@ progress:
 ## Active Checkpoint
 
 - **Checkpoint**: CP-00-01
-- **Checkpoint file**: `.planning/phases/00-planning-hydration/00-CHECKPOINTS.md`
+- **Checkpoint file**: `.planning/milestones/00-orientation/00-CHECKPOINTS.md`
 <!-- HARNESS:END managed:state-current -->
 """
 
@@ -137,7 +137,7 @@ def _make_planning_init(root: Path) -> None:
     planning.mkdir(exist_ok=True)
     (planning / "STATE.md").write_text(_INIT_STATE_MD, encoding="utf-8")
     (planning / "ROADMAP.md").write_text(_INIT_ROADMAP_MD, encoding="utf-8")
-    phase_dir = planning / "phases" / "00-planning-hydration"
+    phase_dir = planning / "phases" / "00-orientation"
     phase_dir.mkdir(parents=True, exist_ok=True)
     (phase_dir / "00-CHECKPOINTS.md").write_text(_INIT_CHECKPOINTS_MD, encoding="utf-8")
 
@@ -173,7 +173,7 @@ progress:
 ## Active Checkpoint
 
 - **Checkpoint**: CP-01-01
-- **Checkpoint file**: `.planning/phases/01-bootstrap/01-CHECKPOINTS.md`
+- **Checkpoint file**: `.planning/milestones/01-bootstrap/01-CHECKPOINTS.md`
 <!-- HARNESS:END managed:state-current -->
 """
     roadmap_md = """\
@@ -253,7 +253,7 @@ def test_sync_applicable_after_real_milestone(tmp_path):
         "updated_by": "developer",
         "updated_at": "2026-06-01T10:00:00Z",
         "current_checkpoint": "CP-01-01",
-        "checkpoint_path": ".planning/phases/01-bootstrap/01-CHECKPOINTS.md",
+        "checkpoint_path": ".planning/milestones/01-bootstrap/01-CHECKPOINTS.md",
         "state_path": ".planning/STATE.md",
     }
     _make_scratch(tmp_path, real_phase_state)
@@ -301,7 +301,7 @@ def test_harness_check_enforces_sync_after_real_milestone(tmp_path):
         "updated_by": "developer",
         "updated_at": "2026-06-01T10:00:00Z",
         "current_checkpoint": "CP-01-01",
-        "checkpoint_path": ".planning/phases/01-bootstrap/01-CHECKPOINTS.md",
+        "checkpoint_path": ".planning/milestones/01-bootstrap/01-CHECKPOINTS.md",
         "state_path": ".planning/STATE.md",
     }
     _make_scratch(tmp_path, real_phase_state)

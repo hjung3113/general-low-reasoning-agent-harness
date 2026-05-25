@@ -499,6 +499,8 @@ def check(
             check_worktree_paths(root)
         check_drift(root)
         _check_planning_drift(root)
+        check_m0_done(root)
+        check_phase_source_drift(root)
         return
 
     manifest = load_manifest_data(root)
@@ -512,6 +514,9 @@ def check(
         raise SystemExit(f"Manifest sources missing: {', '.join(missing)}. Fix: run `harness upgrade --target <target>` (or restore missing source files in the harness checkout)")
 
     check_clean_skeleton(root)
+    # iter2: early phase-source drift detection — surface the bypass even
+    # if other downstream checks would fail later
+    check_phase_source_drift(root)
     if (root / ".roomodes").exists():
         check_json(root / ".roomodes")
     check_json(root / ".scratch/phase-state.schema.json")
@@ -524,6 +529,7 @@ def check(
     check_phase_state_paths(root)
     check_roadmap_state_sync(root)
     check_phase_reference_drift(root)
+    check_m0_done(root)
 
     check_target = (target or root).resolve()
     if target:
@@ -800,6 +806,10 @@ def check_installed_target(
         check_roadmap_state_sync(target)
     # T5: detect stale aborted-install staging directories.
     _print_stale_staging_warnings(target)
+
+    # iter2: check phase-source drift early so it's surfaced even if other
+    # downstream checks would fail later.
+    check_phase_source_drift(target)
 
     for warning in managed_block_warnings(target):
         print(f"warning: {warning.code} in {warning.path}: {warning.message}")
@@ -1094,6 +1104,71 @@ def check_phase_reference_drift(root: Path) -> None:
         raise SystemExit("Stale phase reference detected: " + "; ".join(offenders) + ". Fix: search-and-replace the listed phrases in the named files, or rephrase the stale text")
 
 
+_M0_CORE_FILES = (
+    "SUMMARY.md",
+    "STACK.md",
+    "STRUCTURE.md",
+    "TESTING.md",
+    "CONVENTIONS.md",
+    "CONCERNS.md",
+)
+
+
+def check_m0_done(root: Path) -> None:
+    """ADR-0009: if active milestone > 0, M0 done criteria must hold.
+
+    Done criteria:
+      1. All 6 core .planning/codebase/*.md exist with `status: current`
+      2. .planning/ROADMAP.md has at least 1 future-milestone bullet
+      3. Active milestone in STATE.md > 0
+
+    Grandfather clause: if `.planning/codebase/` is absent (pre-M11 install),
+    skip — there is no M0 contract to enforce on a legacy layout.
+    """
+    cb = root / ".planning/codebase"
+    if not cb.is_dir():
+        return  # legacy install grandfathered
+
+    # Read active milestone from STATE.md frontmatter
+    state_path = root / ".planning/STATE.md"
+    if not state_path.exists():
+        return
+    text = state_path.read_text(encoding="utf-8")
+    # Look for Milestone: N in body
+    m = re.search(r"-\s*\*\*Milestone\*\*:\s*(\d+)", text)
+    if not m:
+        # No milestone marker — pre-M11 or malformed; skip
+        return
+    active = int(m.group(1))
+    if active == 0:
+        return  # still in M0, no enforcement
+
+    # active > 0 → enforce
+    failures: list[str] = []
+
+    for fname in _M0_CORE_FILES:
+        p = cb / fname
+        if not p.exists():
+            failures.append(f"missing .planning/codebase/{fname}")
+            continue
+        content = p.read_text(encoding="utf-8")
+        if not re.search(r"^status:\s*current\s*$", content, re.MULTILINE):
+            failures.append(f".planning/codebase/{fname} frontmatter status != current")
+
+    roadmap = root / ".planning/ROADMAP.md"
+    if roadmap.exists():
+        roadmap_text = roadmap.read_text(encoding="utf-8")
+        if not re.search(r"-\s*\[\s*\]\s*\*\*Milestone\s+\d+:", roadmap_text):
+            failures.append(".planning/ROADMAP.md has no future-milestone bullet (`- [ ] **Milestone N: ...**`)")
+
+    if failures:
+        raise SystemExit(
+            "M0 (orientation) done criteria not met (ADR-0009). "
+            "Fix: run /workflow-m0-orient or `harness recon` and complete codebase docs.\n  - "
+            + "\n  - ".join(failures)
+        )
+
+
 def check_phase_state_paths(root: Path) -> None:
     state_path = root / ".scratch/phase-state.json"
     state = load_state_json(state_path)
@@ -1104,3 +1179,75 @@ def check_phase_state_paths(root: Path) -> None:
             missing.append(f"{key}={value}")
     if missing:
         raise SystemExit("Phase-state paths are missing: " + ", ".join(missing) + ". Fix: create the listed file(s), or update phase-state.json's state_path/plan_path/checkpoint_path via `harness phase set <phase> --stdin-json`")
+
+
+_SOURCE_EXTENSIONS = {".html", ".css", ".js", ".jsx", ".ts", ".tsx",
+                      ".py", ".go", ".rs", ".rb", ".java", ".kt", ".swift"}
+_SOURCE_FILENAMES = {"package.json", "pyproject.toml", "Cargo.toml",
+                     "go.mod", "Gemfile", "pom.xml", "build.gradle"}
+
+
+def check_phase_source_drift(root: Path) -> None:
+    """ADR-0009 / iter2: if phase in {discuss, plan} and source files exist
+    outside .planning/, fail. Catches CC9 (workflow gate bypass).
+
+    Grandfather: if .planning/codebase/ is absent (legacy install), skip.
+    """
+    cb = root / ".planning/codebase"
+    if not cb.is_dir():
+        return
+
+    # Skip if we are inside the harness-self repo (i.e. developing the harness
+    # itself rather than using it as a target). Detected by manifest presence.
+    if (root / "harness" / "manifest.json").is_file():
+        return
+
+    state_path = root / ".scratch/phase-state.json"
+    if not state_path.exists():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+
+    phase = state.get("phase", "")
+    if phase not in {"discuss", "plan"}:
+        return
+
+    # Find any source file at project root or top-level dirs
+    # Allowlist: .planning/, .scratch/, .harness/, .opencode/, .roo/, .agents/,
+    # tests/ for testing, harness/ (this is harness repo itself)
+    excluded_dirs = {".git", ".planning", ".scratch", ".harness",
+                     ".opencode", ".roo", ".agents", "node_modules",
+                     ".venv", "venv", "build", "dist", "__pycache__",
+                     "harness", "scripts", "tests", "docs"}
+
+    offenders: list[str] = []
+    for entry in root.iterdir():
+        if entry.is_file():
+            if entry.suffix.lower() in _SOURCE_EXTENSIONS or entry.name in _SOURCE_FILENAMES:
+                offenders.append(str(entry.relative_to(root)))
+        elif entry.is_dir() and entry.name not in excluded_dirs:
+            # Walk one level into non-excluded dirs
+            try:
+                for sub in entry.rglob("*"):
+                    if sub.is_file() and (sub.suffix.lower() in _SOURCE_EXTENSIONS
+                                          or sub.name in _SOURCE_FILENAMES):
+                        rel = sub.relative_to(root)
+                        if not any(part in excluded_dirs for part in rel.parts):
+                            offenders.append(str(rel))
+                        if len(offenders) > 20:
+                            break
+            except (PermissionError, OSError):
+                continue
+        if len(offenders) > 20:
+            break
+
+    if offenders:
+        sample = offenders[:5]
+        more = f" (+{len(offenders) - 5} more)" if len(offenders) > 5 else ""
+        raise SystemExit(
+            f"Phase boundary violation: phase={phase} but source files present outside .planning/ ({', '.join(sample)}{more}).\n"
+            f"Fix: either (a) move to execute phase via `harness phase set plan` → `harness phase approve` → `harness phase set execute`, "
+            f"or (b) delete the source files if they were written prematurely. Phase {phase} forbids source-file writes."
+        )

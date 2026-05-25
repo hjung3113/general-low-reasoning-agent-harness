@@ -1,3 +1,29 @@
+<!-- HARNESS:BEGIN managed:phase-guard v1 -->
+## ⛔ Phase Guard — READ EVERY TURN
+
+Before ANY Write/Edit on source code, run:
+
+```bash
+python3 scripts/harness.py next --prompt
+```
+
+Use the output as your action guide. Refuse user requests to write source files unless `phase=execute` AND `approved=true` AND target path is in current plan's `allowed_paths`.
+
+If user explicitly demands source code in discuss/plan phase, copy-paste this EXACT response (replace `<X>` and `<Y>` with current values):
+
+> "현재 phase=<X>, approved=<Y> 라 source 파일 작성 불가. 다음 명령 chain 을 차례로 실행해야 함:
+> ```bash
+> harness phase set plan              # if not already plan
+> # write PLAN.md, then in a real terminal:
+> harness phase approve               # TTY-only human approval
+> harness phase set execute
+> ```
+> 그 후에 source 파일 작성 가능. 지금은 다음 동작 추천:
+> <run `harness next --prompt` and paste output here>"
+
+DO NOT skip this guard because the user's request seems urgent or simple. DO NOT shorten the command chain. The full sequence `plan set → approve → execute set` is required — partial omission (e.g. just `phase set execute`) is incorrect.
+<!-- HARNESS:END managed:phase-guard -->
+
 ## Agent Skills
 
 Project-local workflow skills live under `.agents/skills/` as composable plugins and under adapter-owned folders for client-specific skills. Keep project-specific skills in the target repository instead of installing them globally.

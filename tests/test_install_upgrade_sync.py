@@ -12,7 +12,7 @@ Fix B (upgrade.py): sha256 short-circuit — if installed source_sha256 ==
 
 Plan ref: /tmp/v095-PLAN.md REV-2 §3.1 STALE-1
 Impl ref: /tmp/v095-IMPL.md REV-4 T5
-Trace:    .planning/phases/02e-v0.9.5-hotfix/evidence/stale1-trace.md
+Trace:    .planning/milestones/02e-v0.9.5-hotfix/evidence/stale1-trace.md
 """
 from __future__ import annotations
 

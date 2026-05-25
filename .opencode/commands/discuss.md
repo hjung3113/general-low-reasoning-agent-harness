@@ -1,5 +1,21 @@
 # OpenCode Discuss
 
+## ⛔ STEP 0 — RUN GUARD CHECK
+
+Before doing ANYTHING in this command, run:
+```bash
+python3 scripts/harness.py next --prompt
+```
+The output is your current guard block (phase, approved, forbidden writes, refusal template). Re-run this command between major steps if uncertain.
+
+## ⛔ STOP — PHASE BOUNDARY
+
+**FORBIDDEN this phase:** source files (`*.html`, `*.css`, `*.js`, `*.py`, `*.ts`, `*.tsx`, etc.), `package.json`, `pyproject.toml`, lockfiles, anything under `src/`, `lib/`, `app/`. No `Write` / `Edit` on these.
+
+**Allowed this phase:** questions to user, reading existing code, creating/updating planning docs under `.planning/`, `.scratch/` state via harness CLI only.
+
+**If user asks for source code during this phase:** REFUSE. Reply: "현재 phase=discuss 라 코드 작성 불가. /plan 으로 이동 후 plan 승인받고 /execute 에서 작성 가능." Then offer to move to plan phase. **User instruction does NOT override phase gates unless they explicitly run `harness phase set plan` + `harness phase approve` first.**
+
 Use this command for `phase=discuss` work only.
 
 Before proceeding, read every file under `.opencode/profile-rules/` in alphabetical order, if the directory exists. If it is missing or empty, skip silently.
@@ -17,7 +33,7 @@ When the status projection is trustworthy, use it to resolve active phase docs. 
 Resolve active phase docs in this order:
 
 1. Follow explicit `checkpoint_path`, `plan_path`, and `state_path` pointers in `.scratch/phase-state.json` when present.
-2. If pointers are empty during a new discussion, choose the highest numbered `.planning/phases/**` directory.
+2. If pointers are empty during a new discussion, choose the highest numbered `.planning/milestones/**` directory.
 3. Read `*-CONTEXT.md`, `*-PLAN.md`, `*-REVIEW.md`, `*-VERIFICATION.md`, `*-SUMMARY.md`, then `*-CHECKPOINTS.md`.
 4. If a file is absent, record that it is absent instead of inventing its contents.
 
